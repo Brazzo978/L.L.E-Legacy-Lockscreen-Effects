@@ -23,12 +23,21 @@ public class TouchDebugView extends View {
     private float lastRawX = -1f;
     private float lastRawY = -1f;
     private int pointerCount;
+    private boolean transparentMode = true;
 
     public TouchDebugView(Context context) {
         super(context);
         setWillNotDraw(false);
         setClickable(true);
         toneGenerator = createToneGenerator();
+    }
+
+    public void setTransparentMode(boolean transparentMode) {
+        if (this.transparentMode == transparentMode) {
+            return;
+        }
+        this.transparentMode = transparentMode;
+        invalidate();
     }
 
     @Override
@@ -71,6 +80,10 @@ public class TouchDebugView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (transparentMode) {
+            return;
+        }
+
         int width = getWidth();
         int height = getHeight();
         bounds.set(0f, 0f, width, height);

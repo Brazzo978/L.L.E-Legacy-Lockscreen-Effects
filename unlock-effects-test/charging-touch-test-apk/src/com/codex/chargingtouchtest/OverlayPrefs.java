@@ -13,6 +13,7 @@ final class OverlayPrefs {
     static final String POSITION_OFFSET_Y = "position_offset_y";
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
+    static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
 
@@ -53,6 +54,10 @@ final class OverlayPrefs {
 
     static boolean debugTouchArea(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_AREA, true);
+    }
+
+    static boolean debugTouchTransparent(Context context) {
+        return get(context).getBoolean(DEBUG_TOUCH_TRANSPARENT, true);
     }
 
     static int clampPositionOffset(int value) {

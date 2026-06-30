@@ -107,6 +107,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.DEBUG_TOUCH_AREA.equals(key) && overlayView != null) {
             syncTouchDebugOverlay();
         }
+        if (OverlayPrefs.DEBUG_TOUCH_TRANSPARENT.equals(key) && touchDebugView != null) {
+            touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+        }
         evaluateVisibility("prefs:" + key);
     }
 
@@ -206,9 +209,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (touchDebugView != null) {
+            touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
             return;
         }
         touchDebugView = new TouchDebugView(this);
+        touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
 
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
