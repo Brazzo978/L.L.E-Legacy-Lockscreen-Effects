@@ -1,0 +1,15 @@
+/*
+!/.gitignore
+!/unlock-effects-test/
+
+/unlock-effects-test/*
+!/unlock-effects-test/charging-lock-test-apk/
+!/unlock-effects-test/charging-lock-test-apk/**
+!/unlock-effects-test/charging-touch-test-apk/
+!/unlock-effects-test/charging-touch-test-apk/**
+
+/unlock-effects-test/charging-lock-test-apk/build/*
+!/unlock-effects-test/charging-lock-test-apk/build/ChargingLockTest-debug.apk
+
+/unlock-effects-test/charging-touch-test-apk/build/*
+!/unlock-effects-test/charging-touch-test-apk/build/ChargingTouchTest-debug.apk

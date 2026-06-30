@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Charging Touch Test</string>
+    <string name="accessibility_service_description">Charging touch test overlay</string>
+</resources>
