@@ -5,6 +5,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -14,6 +16,7 @@ public class TouchDebugView extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
+    private ToneGenerator toneGenerator;
     private String lastAction = "waiting";
     private float lastX = -1f;
     private float lastY = -1f;
@@ -25,6 +28,7 @@ public class TouchDebugView extends View {
         super(context);
         setWillNotDraw(false);
         setClickable(true);
+        toneGenerator = createToneGenerator();
     }
 
     @Override
@@ -42,8 +46,27 @@ public class TouchDebugView extends View {
                 + " local=" + Math.round(lastX) + "," + Math.round(lastY)
                 + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
                 + " pointers=" + pointerCount);
+        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            performClick();
+        }
         invalidate();
         return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        playClickTone();
+        return true;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (toneGenerator != null) {
+            toneGenerator.release();
+            toneGenerator = null;
+        }
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -74,6 +97,8 @@ public class TouchDebugView extends View {
         paint.setTextSize(dp(13));
         paint.setColor(Color.rgb(205, 224, 236));
         y += dp(24);
+        canvas.drawText("tap: beep", x, y, paint);
+        y += dp(20);
         canvas.drawText("action: " + lastAction, x, y, paint);
         y += dp(20);
         canvas.drawText("local: " + point(lastX, lastY), x, y, paint);
@@ -113,6 +138,23 @@ public class TouchDebugView extends View {
             default:
                 return String.valueOf(action);
         }
+    }
+
+    private ToneGenerator createToneGenerator() {
+        try {
+            return new ToneGenerator(AudioManager.STREAM_MUSIC, 80);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "tone generator unavailable", e);
+            return null;
+        }
+    }
+
+    private void playClickTone() {
+        if (toneGenerator == null) {
+            return;
+        }
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120);
+        Log.i(TAG, "click tone played");
     }
 
     private int dp(int value) {
