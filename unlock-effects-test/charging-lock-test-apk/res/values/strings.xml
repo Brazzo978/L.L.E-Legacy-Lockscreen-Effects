@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Charging Lock Test</string>
+    <string name="accessibility_service_description">Charging lock test overlay</string>
+</resources>
