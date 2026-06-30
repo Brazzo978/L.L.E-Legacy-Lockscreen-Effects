@@ -8,6 +8,7 @@ final class OverlayPrefs {
     static final String SHOW_LOCK = "show_lock";
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
+    static final String SHOW_DOODLE = "show_doodle";
     static final String SEASON_MODE = "season_mode";
     static final String POSITION_OFFSET_X = "position_offset_x";
     static final String POSITION_OFFSET_Y = "position_offset_y";
@@ -39,6 +40,10 @@ final class OverlayPrefs {
 
     static boolean showHome(Context context) {
         return get(context).getBoolean(SHOW_HOME, false);
+    }
+
+    static boolean showDoodle(Context context) {
+        return get(context).getBoolean(SHOW_DOODLE, true);
     }
 
     static int seasonMode(Context context) {

@@ -2,16 +2,20 @@ package com.codex.chargingtouchtest;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.GestureDescription;
 import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -26,7 +30,10 @@ import java.util.Set;
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "ChargingA11y";
+    private static final long PIN_ENTRY_DELAY_MS = 900L;
+    private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
 
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager windowManager;
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
@@ -39,6 +46,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
+    private boolean pinEntryRequested;
 
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
@@ -49,6 +57,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (Intent.ACTION_POWER_CONNECTED.equals(action)
                     || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
                 refreshChargingState();
+            } else if (Intent.ACTION_SCREEN_OFF.equals(action)
+                    || Intent.ACTION_USER_PRESENT.equals(action)) {
+                pinEntryRequested = false;
             }
             evaluateVisibility("broadcast:" + action);
         }
@@ -74,6 +85,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event != null && event.getPackageName() != null) {
             lastWindowPackage = event.getPackageName().toString();
+        }
+        if (isPinEntryEvent(event)) {
+            pinEntryRequested = true;
+            removeTouchDebugOverlay();
+            removeLensFlareOverlay();
         }
         evaluateVisibility("event:" + eventTypeName(event));
     }
@@ -104,7 +120,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         if ((OverlayPrefs.SEASON_MODE.equals(key)
                 || OverlayPrefs.POSITION_OFFSET_X.equals(key)
                 || OverlayPrefs.POSITION_OFFSET_Y.equals(key)
-                || OverlayPrefs.DEBUG_ROLLING_CHARGE.equals(key))
+                || OverlayPrefs.DEBUG_ROLLING_CHARGE.equals(key)
+                || OverlayPrefs.SHOW_DOODLE.equals(key))
                 && overlayView != null) {
             applyOverlayPrefs();
         }
@@ -126,6 +143,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void cleanup() {
+        handler.removeCallbacksAndMessages(null);
         if (prefs != null) {
             prefs.unregisterOnSharedPreferenceChangeListener(this);
         }
@@ -163,9 +181,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
+        if (!interactive || !locked) {
+            pinEntryRequested = false;
+        }
 
         boolean showForSurface = (!interactive && OverlayPrefs.showAod(this))
-                || (interactive && locked && OverlayPrefs.showLock(this))
+                || (interactive && locked && !pinEntryRequested && OverlayPrefs.showLock(this))
                 || (home && OverlayPrefs.showHome(this));
         boolean show = charging && showForSurface;
 
@@ -180,19 +201,26 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " charging=" + charging
                 + " interactive=" + interactive
                 + " locked=" + locked
+                + " pinEntryRequested=" + pinEntryRequested
                 + " home=" + home
                 + " pkg=" + lastWindowPackage);
     }
 
     private void showOverlay() {
-        if (overlayView != null) {
-            applyOverlayPrefs();
-            syncLensFlareOverlay();
-            syncTouchDebugOverlay();
+        syncDoodleOverlay();
+        syncLensFlareOverlay();
+        syncTouchDebugOverlay();
+    }
+
+    private void syncDoodleOverlay() {
+        if (!OverlayPrefs.showDoodle(this)) {
+            removeDoodleOverlay();
             return;
         }
-        overlayView = new SeasonalDoodleView(this);
-        applyOverlayPrefs();
+        if (overlayView != null) {
+            applyOverlayPrefs();
+            return;
+        }
 
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -211,10 +239,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         }
+        overlayView = new SeasonalDoodleView(this);
+        applyOverlayPrefs();
         windowManager.addView(overlayView, params);
-        syncLensFlareOverlay();
-        syncTouchDebugOverlay();
-        Log.i(TAG, "accessibility overlay shown");
+        Log.i(TAG, "doodle overlay shown");
     }
 
     private void syncLensFlareOverlay() {
@@ -298,6 +326,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void removeOverlay() {
+        removeDoodleOverlay();
+        removeLensFlareOverlay();
+        removeTouchDebugOverlay();
+    }
+
+    private void removeDoodleOverlay() {
         if (overlayView != null) {
             try {
                 windowManager.removeView(overlayView);
@@ -306,8 +340,6 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             overlayView = null;
         }
-        removeLensFlareOverlay();
-        removeTouchDebugOverlay();
     }
 
     private void removeLensFlareOverlay() {
@@ -391,7 +423,67 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (lensFlareView != null) {
             lensFlareView.trigger(rawX, rawY);
         }
+        schedulePinEntry();
         Log.i(TAG, "lens flare triggered raw=" + Math.round(rawX) + "," + Math.round(rawY));
+    }
+
+    private void schedulePinEntry() {
+        handler.removeCallbacksAndMessages(null);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                openPinEntry();
+            }
+        }, PIN_ENTRY_DELAY_MS);
+    }
+
+    private void openPinEntry() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+        if (!interactive || !locked) {
+            pinEntryRequested = false;
+            return;
+        }
+
+        pinEntryRequested = true;
+        removeTouchDebugOverlay();
+        removeLensFlareOverlay();
+        performPinEntrySwipe();
+        evaluateVisibility("pin_entry_requested");
+    }
+
+    private void performPinEntrySwipe() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Log.w(TAG, "pin entry swipe unavailable below Android N");
+            return;
+        }
+
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float x = metrics.widthPixels / 2f;
+        float startY = metrics.heightPixels * 0.82f;
+        float endY = metrics.heightPixels * 0.28f;
+
+        Path path = new Path();
+        path.moveTo(x, startY);
+        path.lineTo(x, endY);
+
+        GestureDescription.StrokeDescription stroke =
+                new GestureDescription.StrokeDescription(path, 0, PIN_ENTRY_SWIPE_DURATION_MS);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(stroke)
+                .build();
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription gestureDescription) {
+                Log.i(TAG, "pin entry swipe completed");
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                Log.w(TAG, "pin entry swipe cancelled");
+            }
+        }, handler);
+        Log.i(TAG, "pin entry swipe dispatched accepted=" + accepted);
     }
 
     private void loadHomePackages() {
@@ -458,6 +550,18 @@ public class ChargingAccessibilityService extends AccessibilityService
             default:
                 return String.valueOf(event.getEventType());
         }
+    }
+
+    private boolean isPinEntryEvent(AccessibilityEvent event) {
+        if (event == null || event.getClassName() == null) {
+            return false;
+        }
+        String className = event.getClassName().toString().toLowerCase();
+        return className.contains("pin")
+                || className.contains("password")
+                || className.contains("bouncer")
+                || className.contains("numpad")
+                || className.contains("keyguardsecurity");
     }
 
     private int dp(int value) {

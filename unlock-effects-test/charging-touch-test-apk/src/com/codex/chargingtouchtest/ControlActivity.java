@@ -214,6 +214,7 @@ public class ControlActivity extends Activity {
         section.addView(label, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+        section.addView(toggle("Charging doodle overlay", OverlayPrefs.SHOW_DOODLE, true));
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         section.addView(toggle("Touch debug area", OverlayPrefs.DEBUG_TOUCH_AREA, true));
         section.addView(toggle("Transparent touch area", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
