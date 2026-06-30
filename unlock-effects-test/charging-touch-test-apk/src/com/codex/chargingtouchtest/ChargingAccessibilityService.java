@@ -9,9 +9,11 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -31,6 +33,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private SharedPreferences prefs;
     private SeasonalDoodleView overlayView;
     private TouchDebugView touchDebugView;
+    private WindowManager.LayoutParams touchDebugParams;
+    private LensFlareEffectView lensFlareView;
     private final Set<String> homePackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
@@ -110,6 +114,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.DEBUG_TOUCH_TRANSPARENT.equals(key) && touchDebugView != null) {
             touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
         }
+        if ((OverlayPrefs.TOUCH_BOX_CONFIGURED.equals(key)
+                || OverlayPrefs.TOUCH_BOX_LEFT.equals(key)
+                || OverlayPrefs.TOUCH_BOX_TOP.equals(key)
+                || OverlayPrefs.TOUCH_BOX_RIGHT.equals(key)
+                || OverlayPrefs.TOUCH_BOX_BOTTOM.equals(key))
+                && overlayView != null) {
+            syncTouchDebugOverlay();
+        }
         evaluateVisibility("prefs:" + key);
     }
 
@@ -175,6 +187,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void showOverlay() {
         if (overlayView != null) {
             applyOverlayPrefs();
+            syncLensFlareOverlay();
             syncTouchDebugOverlay();
             return;
         }
@@ -199,8 +212,35 @@ public class ChargingAccessibilityService extends AccessibilityService
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         }
         windowManager.addView(overlayView, params);
+        syncLensFlareOverlay();
         syncTouchDebugOverlay();
         Log.i(TAG, "accessibility overlay shown");
+    }
+
+    private void syncLensFlareOverlay() {
+        if (lensFlareView != null) {
+            return;
+        }
+        lensFlareView = new LensFlareEffectView(this);
+        int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                flags,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.setTitle("ChargingLensFlareEffect");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        }
+        windowManager.addView(lensFlareView, params);
+        Log.i(TAG, "lens flare overlay shown");
     }
 
     private void syncTouchDebugOverlay() {
@@ -208,28 +248,41 @@ public class ChargingAccessibilityService extends AccessibilityService
             removeTouchDebugOverlay();
             return;
         }
+        Rect box = resolveTouchBox();
         if (touchDebugView != null) {
             touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+            updateTouchDebugLayout(box);
             return;
         }
         touchDebugView = new TouchDebugView(this);
         touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+        touchDebugView.setTouchTriggerListener(new TouchDebugView.TouchTriggerListener() {
+            @Override
+            public void onTouchTriggered(float rawX, float rawY) {
+                triggerLensFlare(rawX, rawY);
+            }
+        });
 
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
 
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                dp(230),
-                dp(150),
+        touchDebugParams = new WindowManager.LayoutParams(
+                box.width(),
+                box.height(),
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 flags,
                 PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        params.y = dp(72);
-        params.setTitle("ChargingTouchDebugArea");
-        windowManager.addView(touchDebugView, params);
-        Log.i(TAG, "touch debug overlay shown");
+        touchDebugParams.gravity = Gravity.TOP | Gravity.START;
+        touchDebugParams.x = box.left;
+        touchDebugParams.y = box.top;
+        touchDebugParams.setTitle("ChargingTouchListenBox");
+        windowManager.addView(touchDebugView, touchDebugParams);
+        Log.i(TAG, "touch listen box shown left=" + box.left
+                + " top=" + box.top
+                + " right=" + box.right
+                + " bottom=" + box.bottom);
     }
 
     private void applyOverlayPrefs() {
@@ -253,7 +306,19 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             overlayView = null;
         }
+        removeLensFlareOverlay();
         removeTouchDebugOverlay();
+    }
+
+    private void removeLensFlareOverlay() {
+        if (lensFlareView != null) {
+            try {
+                windowManager.removeView(lensFlareView);
+            } catch (RuntimeException ignored) {
+                // The service can be torn down after the effect window was already removed.
+            }
+            lensFlareView = null;
+        }
     }
 
     private void removeTouchDebugOverlay() {
@@ -264,7 +329,69 @@ public class ChargingAccessibilityService extends AccessibilityService
                 // The service can be torn down after the debug window was already removed.
             }
             touchDebugView = null;
+            touchDebugParams = null;
         }
+    }
+
+    private void updateTouchDebugLayout(Rect box) {
+        if (touchDebugView == null || touchDebugParams == null) {
+            return;
+        }
+        boolean changed = touchDebugParams.x != box.left
+                || touchDebugParams.y != box.top
+                || touchDebugParams.width != box.width()
+                || touchDebugParams.height != box.height();
+        if (!changed) {
+            return;
+        }
+        touchDebugParams.x = box.left;
+        touchDebugParams.y = box.top;
+        touchDebugParams.width = box.width();
+        touchDebugParams.height = box.height();
+        windowManager.updateViewLayout(touchDebugView, touchDebugParams);
+        Log.i(TAG, "touch listen box updated left=" + box.left
+                + " top=" + box.top
+                + " right=" + box.right
+                + " bottom=" + box.bottom);
+    }
+
+    private Rect resolveTouchBox() {
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int screenWidth = Math.max(dp(48), metrics.widthPixels);
+        int screenHeight = Math.max(dp(48), metrics.heightPixels);
+
+        int left;
+        int top;
+        int right;
+        int bottom;
+        if (OverlayPrefs.touchBoxConfigured(this)) {
+            left = OverlayPrefs.touchBoxLeft(this);
+            top = OverlayPrefs.touchBoxTop(this);
+            right = OverlayPrefs.touchBoxRight(this);
+            bottom = OverlayPrefs.touchBoxBottom(this);
+        } else {
+            int width = dp(230);
+            int height = dp(150);
+            left = (screenWidth - width) / 2;
+            top = screenHeight - height - dp(72);
+            right = left + width;
+            bottom = top + height;
+        }
+
+        int minSize = dp(48);
+        left = clamp(left, 0, screenWidth - minSize);
+        top = clamp(top, 0, screenHeight - minSize);
+        right = clamp(right, left + minSize, screenWidth);
+        bottom = clamp(bottom, top + minSize, screenHeight);
+        return new Rect(left, top, right, bottom);
+    }
+
+    private void triggerLensFlare(float rawX, float rawY) {
+        syncLensFlareOverlay();
+        if (lensFlareView != null) {
+            lensFlareView.trigger(rawX, rawY);
+        }
+        Log.i(TAG, "lens flare triggered raw=" + Math.round(rawX) + "," + Math.round(rawY));
     }
 
     private void loadHomePackages() {
@@ -335,6 +462,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
 

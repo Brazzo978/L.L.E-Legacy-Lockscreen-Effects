@@ -14,6 +14,11 @@ final class OverlayPrefs {
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
+    static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
+    static final String TOUCH_BOX_LEFT = "touch_box_left";
+    static final String TOUCH_BOX_TOP = "touch_box_top";
+    static final String TOUCH_BOX_RIGHT = "touch_box_right";
+    static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
 
@@ -58,6 +63,46 @@ final class OverlayPrefs {
 
     static boolean debugTouchTransparent(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_TRANSPARENT, true);
+    }
+
+    static boolean touchBoxConfigured(Context context) {
+        return get(context).getBoolean(TOUCH_BOX_CONFIGURED, false);
+    }
+
+    static int touchBoxLeft(Context context) {
+        return get(context).getInt(TOUCH_BOX_LEFT, -1);
+    }
+
+    static int touchBoxTop(Context context) {
+        return get(context).getInt(TOUCH_BOX_TOP, -1);
+    }
+
+    static int touchBoxRight(Context context) {
+        return get(context).getInt(TOUCH_BOX_RIGHT, -1);
+    }
+
+    static int touchBoxBottom(Context context) {
+        return get(context).getInt(TOUCH_BOX_BOTTOM, -1);
+    }
+
+    static void saveTouchBox(Context context, int left, int top, int right, int bottom) {
+        get(context).edit()
+                .putBoolean(TOUCH_BOX_CONFIGURED, true)
+                .putInt(TOUCH_BOX_LEFT, left)
+                .putInt(TOUCH_BOX_TOP, top)
+                .putInt(TOUCH_BOX_RIGHT, right)
+                .putInt(TOUCH_BOX_BOTTOM, bottom)
+                .apply();
+    }
+
+    static void clearTouchBox(Context context) {
+        get(context).edit()
+                .putBoolean(TOUCH_BOX_CONFIGURED, false)
+                .remove(TOUCH_BOX_LEFT)
+                .remove(TOUCH_BOX_TOP)
+                .remove(TOUCH_BOX_RIGHT)
+                .remove(TOUCH_BOX_BOTTOM)
+                .apply();
     }
 
     static int clampPositionOffset(int value) {
