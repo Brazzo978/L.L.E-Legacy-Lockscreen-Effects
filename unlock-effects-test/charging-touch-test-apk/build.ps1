@@ -14,6 +14,7 @@ $unsigned = Join-Path $out "ChargingTouchTest-unsigned.apk"
 $aligned = Join-Path $out "ChargingTouchTest-aligned.apk"
 $signed = Join-Path $out "ChargingTouchTest-debug.apk"
 $keystore = Join-Path $root "..\demo-apk\debug.keystore"
+$keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
 
 function Run($exe, $arguments) {
@@ -45,6 +46,7 @@ Copy-Item $unsigned $aligned
 Run "jar.exe" @("uf", $aligned, "-C", $dex, "classes.dex")
 
 if (-not (Test-Path $keystore)) {
+    New-Item -ItemType Directory -Force -Path $keystoreDir | Out-Null
     Run "keytool.exe" @("-genkeypair", "-keystore", $keystore, "-storepass", "android", "-keypass", "android", "-alias", "androiddebugkey", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Codex,C=US")
 }
 
