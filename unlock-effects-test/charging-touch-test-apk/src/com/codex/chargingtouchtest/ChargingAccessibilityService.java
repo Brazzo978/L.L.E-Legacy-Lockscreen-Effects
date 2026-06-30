@@ -30,7 +30,8 @@ import java.util.Set;
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "ChargingA11y";
-    private static final long PIN_ENTRY_DELAY_MS = 900L;
+    private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
+    private static final long PIN_ENTRY_DELAY_MS = 180L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -286,8 +287,25 @@ public class ChargingAccessibilityService extends AccessibilityService
         touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
         touchDebugView.setTouchTriggerListener(new TouchDebugView.TouchTriggerListener() {
             @Override
-            public void onTouchTriggered(float rawX, float rawY) {
-                triggerLensFlare(rawX, rawY);
+            public void onTouchStarted(float rawX, float rawY) {
+                beginLensFlareGesture(rawX, rawY);
+            }
+
+            @Override
+            public void onTouchMoved(float rawX, float rawY,
+                    float deltaX, float deltaY, float distance) {
+                updateLensFlareGesture(rawX, rawY);
+            }
+
+            @Override
+            public void onTouchEnded(float rawX, float rawY,
+                    float deltaX, float deltaY, float distance) {
+                finishLensFlareGesture(rawX, rawY, distance);
+            }
+
+            @Override
+            public void onTouchCancelled() {
+                cancelLensFlareGesture();
             }
         });
 
@@ -418,13 +436,41 @@ public class ChargingAccessibilityService extends AccessibilityService
         return new Rect(left, top, right, bottom);
     }
 
-    private void triggerLensFlare(float rawX, float rawY) {
+    private void beginLensFlareGesture(float rawX, float rawY) {
+        handler.removeCallbacksAndMessages(null);
         syncLensFlareOverlay();
         if (lensFlareView != null) {
-            lensFlareView.trigger(rawX, rawY);
+            lensFlareView.beginGesture(rawX, rawY);
         }
-        schedulePinEntry();
-        Log.i(TAG, "lens flare triggered raw=" + Math.round(rawX) + "," + Math.round(rawY));
+        Log.i(TAG, "lens flare gesture begin raw=" + Math.round(rawX) + "," + Math.round(rawY));
+    }
+
+    private void updateLensFlareGesture(float rawX, float rawY) {
+        if (lensFlareView != null) {
+            lensFlareView.updateGesture(rawX, rawY);
+        }
+    }
+
+    private void finishLensFlareGesture(float rawX, float rawY, float distance) {
+        boolean unlockTriggered = distance >= dp(UNLOCK_TRIGGER_DISTANCE_DP);
+        if (lensFlareView != null) {
+            lensFlareView.updateGesture(rawX, rawY);
+            lensFlareView.finishGesture(unlockTriggered);
+        }
+        if (unlockTriggered) {
+            schedulePinEntry();
+        }
+        Log.i(TAG, "lens flare gesture end raw=" + Math.round(rawX) + "," + Math.round(rawY)
+                + " distance=" + Math.round(distance)
+                + " unlockTriggered=" + unlockTriggered);
+    }
+
+    private void cancelLensFlareGesture() {
+        handler.removeCallbacksAndMessages(null);
+        if (lensFlareView != null) {
+            lensFlareView.cancelGesture();
+        }
+        Log.i(TAG, "lens flare gesture cancelled");
     }
 
     private void schedulePinEntry() {

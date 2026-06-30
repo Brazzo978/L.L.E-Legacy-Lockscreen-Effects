@@ -17,7 +17,13 @@ public class TouchDebugView extends View {
     private static final String TAG = "ChargingTouchDebug";
 
     interface TouchTriggerListener {
-        void onTouchTriggered(float rawX, float rawY);
+        void onTouchStarted(float rawX, float rawY);
+
+        void onTouchMoved(float rawX, float rawY, float deltaX, float deltaY, float distance);
+
+        void onTouchEnded(float rawX, float rawY, float deltaX, float deltaY, float distance);
+
+        void onTouchCancelled();
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -32,8 +38,11 @@ public class TouchDebugView extends View {
     private float lastY = -1f;
     private float lastRawX = -1f;
     private float lastRawY = -1f;
+    private float gestureStartRawX = -1f;
+    private float gestureStartRawY = -1f;
     private int pointerCount;
     private boolean transparentMode = true;
+    private boolean gestureActive;
 
     public TouchDebugView(Context context) {
         super(context);
@@ -79,8 +88,32 @@ public class TouchDebugView extends View {
                 + " local=" + Math.round(lastX) + "," + Math.round(lastY)
                 + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
                 + " pointers=" + pointerCount);
-        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-            performClick();
+
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                gestureActive = true;
+                gestureStartRawX = lastRawX;
+                gestureStartRawY = lastRawY;
+                playClickTone();
+                if (touchTriggerListener != null) {
+                    touchTriggerListener.onTouchStarted(lastRawX, lastRawY);
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                notifyMove();
+                break;
+            case MotionEvent.ACTION_UP:
+                notifyEnd();
+                performClick();
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                gestureActive = false;
+                if (touchTriggerListener != null) {
+                    touchTriggerListener.onTouchCancelled();
+                }
+                break;
+            default:
+                break;
         }
         invalidate();
         return true;
@@ -89,10 +122,6 @@ public class TouchDebugView extends View {
     @Override
     public boolean performClick() {
         super.performClick();
-        playClickTone();
-        if (touchTriggerListener != null && lastRawX >= 0f && lastRawY >= 0f) {
-            touchTriggerListener.onTouchTriggered(lastRawX, lastRawY);
-        }
         return true;
     }
 
@@ -141,7 +170,7 @@ public class TouchDebugView extends View {
         paint.setTextSize(dp(13));
         paint.setColor(Color.rgb(205, 224, 236));
         y += dp(24);
-        canvas.drawText("tap: beep", x, y, paint);
+        canvas.drawText("swipe: lens flare", x, y, paint);
         y += dp(20);
         canvas.drawText("action: " + lastAction, x, y, paint);
         y += dp(20);
@@ -156,6 +185,30 @@ public class TouchDebugView extends View {
             paint.setColor(Color.argb(210, 255, 210, 82));
             canvas.drawCircle(lastX, lastY, dp(8), paint);
         }
+    }
+
+    private void notifyMove() {
+        if (!gestureActive || touchTriggerListener == null) {
+            return;
+        }
+        float deltaX = lastRawX - gestureStartRawX;
+        float deltaY = lastRawY - gestureStartRawY;
+        float distance = (float) Math.hypot(deltaX, deltaY);
+        touchTriggerListener.onTouchMoved(lastRawX, lastRawY, deltaX, deltaY, distance);
+    }
+
+    private void notifyEnd() {
+        if (!gestureActive) {
+            return;
+        }
+        gestureActive = false;
+        if (touchTriggerListener == null) {
+            return;
+        }
+        float deltaX = lastRawX - gestureStartRawX;
+        float deltaY = lastRawY - gestureStartRawY;
+        float distance = (float) Math.hypot(deltaX, deltaY);
+        touchTriggerListener.onTouchEnded(lastRawX, lastRawY, deltaX, deltaY, distance);
     }
 
     private String point(float x, float y) {
