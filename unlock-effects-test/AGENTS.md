@@ -29,3 +29,8 @@
   - finger `Y_OFFSET` is `-80` px.
   - key durations: show `6000ms`, tap `4000ms`, fade-out `500ms`, unlock `1200ms`.
 - Current touch APK therefore uses a hardware-accelerated Canvas renderer in `LensFlareEffectView` with the original S4 bitmap assets and core timing constants. If exact Samsung parity is required later, continue reverse-porting the smali math into this Canvas class rather than returning to the broken accessibility-overlay wrapper.
+- The Canvas renderer now separates the S4 phases instead of using the earlier generic burst:
+  - `ACTION_DOWN`/`beginGesture` starts the tap animation immediately from the touched point.
+  - The tap phase draws the 5 Samsung tap hexagons plus ring, particle, and long-light using the smali timing formulas and the original `4000ms` `QuintEaseOut` curve.
+  - Drag draws the fog/light and distance-based drag hexagons while the finger moves.
+  - Completed swipe starts the `1200ms` unlock rainbow along the start-to-current vector.

@@ -12,26 +12,29 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.Random;
 
 public class LensFlareEffectView extends View {
     private static final String TAG = "ChargingS4LensFlare";
     private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
-    private static final long TAP_ANIMATION_DURATION_MS = 650L;
+    private static final long FOG_ON_DURATION_MS = 100L;
+    private static final long TAP_ANIMATION_DURATION_MS = 4000L;
     private static final long FADE_OUT_DURATION_MS = 500L;
     private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
+    private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
     private static final float FINGER_Y_OFFSET_PX = -80f;
-    private static final int MAX_TOUCH_HEXAGONS = 3;
+    private static final float MAX_ALPHA_DISTANCE_PX = 1500f;
+    private static final float TAP_AREA_RADIUS_PX = 600f;
+    private static final int TAP_HEXAGON_TOTAL = 5;
+    private static final int DRAG_HEXAGON_TOTAL = 6;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG
             | Paint.DITHER_FLAG);
     private final Matrix matrix = new Matrix();
-    private final List<FlareBurst> bursts = new ArrayList<FlareBurst>();
+    private final Random random = new Random();
     private final Bitmap flareLight;
     private final Bitmap flareRing;
     private final Bitmap flareParticle;
@@ -40,6 +43,8 @@ public class LensFlareEffectView extends View {
     private final Bitmap flareHoverLight;
     private final Bitmap flareVignetting;
     private final Bitmap[] hexagons;
+    private final float[] dragHexagonDistance = new float[DRAG_HEXAGON_TOTAL];
+    private final float[] dragHexagonScale = new float[DRAG_HEXAGON_TOTAL];
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
@@ -54,7 +59,9 @@ public class LensFlareEffectView extends View {
     private float fadeY;
     private long gestureStartedAt;
     private long fadeStartedAt;
-    private long lastHexagonAt;
+    private float randomRotation;
+    private TapAnimation tapAnimation;
+    private UnlockAnimation unlockAnimation;
 
     public LensFlareEffectView(Context context) {
         super(context);
@@ -94,10 +101,12 @@ public class LensFlareEffectView extends View {
         startY = visualY(screenY);
         currentX = startX;
         currentY = startY;
-        gestureStartedAt = now;
         fadeStartedAt = 0L;
-        bursts.clear();
-        addTrailBurst(startX, startY, now);
+        gestureStartedAt = now;
+        randomRotation = random.nextInt(360);
+        setHexagonRandomTarget();
+        tapAnimation = createTapAnimation(startX, startY, now);
+        unlockAnimation = null;
         play(tapSound);
         Log.i(TAG, "canvas lens flare begin x=" + Math.round(startX)
                 + " y=" + Math.round(startY));
@@ -111,7 +120,6 @@ public class LensFlareEffectView extends View {
         }
         currentX = screenX;
         currentY = visualY(screenY);
-        maybeAddMovingHexagon(SystemClock.uptimeMillis());
         invalidate();
     }
 
@@ -121,12 +129,18 @@ public class LensFlareEffectView extends View {
         }
         long now = SystemClock.uptimeMillis();
         gestureActive = false;
-        fading = !completed;
         fadeX = currentX;
         fadeY = currentY;
         fadeStartedAt = now;
-        addTapBurst(currentX, currentY, now, completed);
+        fading = !completed;
         if (completed) {
+            unlockAnimation = new UnlockAnimation(
+                    startX,
+                    startY,
+                    currentX,
+                    currentY,
+                    now,
+                    unlockRotation());
             play(unlockSound);
         }
         Log.i(TAG, "canvas lens flare finish completed=" + completed
@@ -160,27 +174,36 @@ public class LensFlareEffectView extends View {
         boolean keepAnimating = false;
 
         if (gestureActive) {
-            drawActiveFlare(canvas, now, currentX, currentY, 1f);
+            drawDragFlare(canvas, now, currentX, currentY, 1f);
             keepAnimating = true;
         } else if (fading) {
             float t = clamp01((now - fadeStartedAt) / (float) FADE_OUT_DURATION_MS);
-            drawActiveFlare(canvas, now, fadeX, fadeY, 1f - t);
+            drawDragFlare(canvas, now, fadeX, fadeY, 1f - t);
             keepAnimating = t < 1f;
             if (!keepAnimating) {
                 fading = false;
             }
         }
 
-        Iterator<FlareBurst> iterator = bursts.iterator();
-        while (iterator.hasNext()) {
-            FlareBurst burst = iterator.next();
-            float t = clamp01((now - burst.startedAt) / (float) burst.durationMs);
-            if (t >= 1f) {
-                iterator.remove();
-                continue;
+        if (tapAnimation != null) {
+            float t = clamp01((now - tapAnimation.startedAt) / (float) TAP_ANIMATION_DURATION_MS);
+            if (t < 1f) {
+                drawTapAnimation(canvas, tapAnimation, quintOut(t));
+                keepAnimating = true;
+            } else {
+                tapAnimation = null;
             }
-            drawBurst(canvas, burst, t);
-            keepAnimating = true;
+        }
+
+        if (unlockAnimation != null) {
+            float t = clamp01((now - unlockAnimation.startedAt)
+                    / (float) UNLOCK_ANIMATION_DURATION_MS);
+            if (t < 1f) {
+                drawUnlockAnimation(canvas, unlockAnimation, quintOut(t));
+                keepAnimating = true;
+            } else {
+                unlockAnimation = null;
+            }
         }
 
         if (keepAnimating) {
@@ -188,108 +211,115 @@ public class LensFlareEffectView extends View {
         }
     }
 
-    private void drawActiveFlare(Canvas canvas, long now, float x, float y, float fadeAlpha) {
-        float elapsed = now - gestureStartedAt;
-        float show = quintOut(clamp01(elapsed / (float) SHOW_ANIMATION_DURATION_MS));
-        float fog = FOG_MAX_ALPHA * quintOut(clamp01(elapsed / 100f));
+    private void drawDragFlare(Canvas canvas, long now, float x, float y, float fadeAlpha) {
+        float objValue = quintOut(clamp01((now - gestureStartedAt)
+                / (float) SHOW_ANIMATION_DURATION_MS));
+        float fogValue = quintOut(clamp01((now - gestureStartedAt)
+                / (float) FOG_ON_DURATION_MS));
         float distance = (float) Math.hypot(x - startX, y - startY);
-        float distanceAlpha = clamp01(distance / 1500f);
-        float alpha = GLOBAL_ALPHA * fadeAlpha * (0.56f + 0.44f * distanceAlpha);
-        float rotation = unlockRotation();
+        float distanceAlpha = clamp01(distance / MAX_ALPHA_DISTANCE_PX);
+        float fogAlpha = clamp01(fogValue * (1f - distanceAlpha)) * GLOBAL_ALPHA * fadeAlpha;
+        float objAlpha = clamp01(distanceAlpha * 3f) * GLOBAL_ALPHA * fadeAlpha;
+        float vignettingAlpha = clamp01(distanceAlpha * 1.3f) * 0.18f * fadeAlpha;
+        float rotation = -objValue * 30f - distanceAlpha * 160f;
+        float lightScale = 1f + distanceAlpha;
 
-        if (fadeAlpha > 0.98f) {
+        if (vignettingAlpha > 0f) {
             drawBitmapCentered(canvas, flareVignetting, getWidth() * 0.5f, getHeight() * 0.5f,
-                    Math.max(getWidth(), getHeight()) * 1.25f, 0.08f * alpha, 0f);
+                    Math.max(getWidth(), getHeight()) * 1.2f, vignettingAlpha, 0f);
         }
-        drawBitmapCentered(canvas, flareRainbow, x, y, dp(430f + show * 110f),
-                0.32f * alpha, rotation + show * 22f);
-        drawBitmapCentered(canvas, flareLong, x, y, dp(520f + show * 120f),
-                0.62f * alpha, rotation - 16f);
-        drawBitmapCentered(canvas, flareRing, x, y, dp(250f + show * 70f),
-                0.88f * alpha, rotation);
-        drawBitmapCentered(canvas, flareParticle, x, y, dp(270f + show * 95f),
-                0.78f * alpha, rotation + show * 50f);
-        drawBitmapCentered(canvas, flareHoverLight, x, y, dp(230f + show * 34f),
-                0.40f * alpha, rotation - 8f);
-        drawBitmapCentered(canvas, flareLight, x, y, dp(250f + show * 50f),
-                (0.62f + fog * 0.38f) * alpha, rotation);
-    }
+        drawBitmapCentered(canvas, flareLight, x, y,
+                bitmapSize(flareLight, lightScale), fogAlpha, rotation);
+        drawBitmapCentered(canvas, flareHoverLight, x, y,
+                bitmapSize(flareHoverLight, 1f + distanceAlpha * 0.4f),
+                fogAlpha * 0.5f, rotation - 8f);
 
-    private void drawBurst(Canvas canvas, FlareBurst burst, float t) {
-        if (burst.trail) {
-            drawTrailBurst(canvas, burst, t);
+        if (objAlpha <= 0f) {
             return;
         }
-        float ease = quintOut(t);
-        float alpha = (burst.unlock ? GLOBAL_ALPHA : 0.58f) * (1f - t);
-        float base = burst.unlock ? dp(420f) : dp(300f);
-        float rotation = burst.rotation + (burst.unlock ? ease * 72f : ease * 28f);
 
-        if (burst.unlock) {
-            drawBitmapCentered(canvas, flareRainbow, burst.x, burst.y,
-                    base * (0.62f + ease * 0.76f), 0.38f * alpha, rotation);
-            drawBitmapCentered(canvas, flareLong, burst.x, burst.y,
-                    base * (1.25f + ease * 0.75f), 0.55f * alpha, rotation - 20f);
-        }
-        drawBitmapCentered(canvas, flareRing, burst.x, burst.y,
-                base * (0.70f + ease * 0.65f), 0.86f * alpha, rotation);
-        drawBitmapCentered(canvas, flareParticle, burst.x, burst.y,
-                base * (0.70f + ease * 0.95f), 0.72f * alpha, rotation + 52f * ease);
-        drawBitmapCentered(canvas, flareLight, burst.x, burst.y,
-                base * (0.58f + ease * 0.55f), 0.95f * alpha, rotation);
-
-        for (int i = 0; i < MAX_TOUCH_HEXAGONS; i++) {
+        for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
             Bitmap hexagon = hexagons[i % hexagons.length];
-            float angle = burst.rotation + i * 72f + ease * (burst.unlock ? 90f : 40f);
-            float radius = dp(burst.unlock ? 58f + i * 24f : 30f + i * 18f) * ease;
-            float x = burst.x + (float) Math.cos(Math.toRadians(angle)) * radius;
-            float y = burst.y + (float) Math.sin(Math.toRadians(angle)) * radius;
-            drawBitmapCentered(canvas, hexagon, x, y,
-                    dp(42f + i * 5f) * (1f + ease * 0.5f),
-                    0.52f * alpha, angle + 35f);
+            float animationScale = 0.5f + objValue * 0.5f;
+            float byDistanceScale = 0.5f + (distance / 720f) * 0.5f;
+            float scale = dragHexagonScale[i] * byDistanceScale * animationScale;
+            float pathScale = dragHexagonDistance[i] * animationScale;
+            float tx = startX + (x - startX) * pathScale;
+            float ty = startY + (y - startY) * pathScale;
+            drawBitmapCentered(canvas, hexagon, tx, ty,
+                    bitmapSize(hexagon, scale), objAlpha * 0.65f, rotation);
         }
     }
 
-    private void drawTrailBurst(Canvas canvas, FlareBurst burst, float t) {
-        float ease = quintOut(t);
-        float alpha = 0.42f * (1f - t);
-        drawBitmapCentered(canvas, flareParticle, burst.x, burst.y,
-                dp(96f + ease * 44f), alpha, burst.rotation + ease * 70f);
-        for (int i = 0; i < MAX_TOUCH_HEXAGONS; i++) {
-            Bitmap hexagon = hexagons[i % hexagons.length];
-            float angle = burst.rotation + i * 72f + ease * 35f;
-            float radius = dp(16f + i * 8f) * ease;
-            float x = burst.x + (float) Math.cos(Math.toRadians(angle)) * radius;
-            float y = burst.y + (float) Math.sin(Math.toRadians(angle)) * radius;
-            drawBitmapCentered(canvas, hexagon, x, y,
-                    dp(24f + i * 3f), alpha * 0.85f, angle);
+    private void drawTapAnimation(Canvas canvas, TapAnimation animation, float value) {
+        float alpha = value < 0.5f ? 1f : 1f - (value - 0.5f) * 2f;
+        alpha = clamp01(alpha) * GLOBAL_ALPHA;
+        float distanceScale = 0.2f + 0.8f * value;
+
+        for (int i = 0; i < animation.hexagons.length; i++) {
+            TapHexagon hexagon = animation.hexagons[i];
+            float scale = hexagon.scale * (value * 0.8f + 0.7f);
+            float x = animation.x + hexagon.dx * distanceScale;
+            float y = animation.y + hexagon.dy * distanceScale;
+            drawBitmapCentered(canvas, hexagon.bitmap, x, y,
+                    bitmapSize(hexagon.bitmap, scale), alpha, hexagon.rotation);
         }
+
+        float particleValue = value * 1.8f;
+        float particleAlpha = pulseAlpha(particleValue) * GLOBAL_ALPHA;
+        drawBitmapCentered(canvas, flareParticle, animation.x, animation.y,
+                bitmapSize(flareParticle, value * 1.2f), particleAlpha,
+                animation.rotation + value * 40f);
+
+        float ringValue = value * 1.4f;
+        float ringAlpha = pulseAlpha(ringValue) * GLOBAL_ALPHA;
+        drawBitmapCentered(canvas, flareRing, animation.x, animation.y,
+                bitmapSize(flareRing, 0.5f + value), ringAlpha, animation.rotation);
+        drawBitmapCentered(canvas, flareLong, animation.x, animation.y,
+                bitmapSize(flareLong, 1.5f + value * 2f), ringAlpha,
+                animation.rotation + 30f * value);
     }
 
-    private void addTapBurst(float x, float y, long now, boolean unlock) {
-        bursts.add(new FlareBurst(
-                x,
-                y,
-                now,
-                unlock ? UNLOCK_ANIMATION_DURATION_MS : TAP_ANIMATION_DURATION_MS,
-                unlock,
-                unlock ? unlockRotation() : rotationFor(x, y),
-                false));
+    private void drawUnlockAnimation(Canvas canvas, UnlockAnimation animation, float value) {
+        float alpha = value < 0.5f ? value * 2f : 1f - (value - 0.5f) * 2f;
+        float x = animation.startX + (animation.endX - animation.startX) * 0.4f;
+        float y = animation.startY + (animation.endY - animation.startY) * 0.4f;
+        drawBitmapCentered(canvas, flareRainbow, x, y,
+                bitmapSize(flareRainbow, 1f + value * 1.3f),
+                clamp01(alpha) * GLOBAL_ALPHA, animation.rotation);
     }
 
-    private void addTrailBurst(float x, float y, long now) {
-        bursts.add(new FlareBurst(x, y, now, TAP_ANIMATION_DURATION_MS,
-                false, rotationFor(x, y), true));
-    }
-
-    private void maybeAddMovingHexagon(long now) {
-        if (now - lastHexagonAt < 120L) {
-            return;
+    private TapAnimation createTapAnimation(float x, float y, long now) {
+        TapHexagon[] tapHexagons = new TapHexagon[TAP_HEXAGON_TOTAL];
+        for (int i = 0; i < tapHexagons.length; i++) {
+            float angle = randomRotation;
+            float distance = random.nextFloat() * TAP_AREA_RADIUS_PX;
+            float dx = (float) Math.cos(angle) * distance;
+            float dy = (float) Math.sin(angle) * distance;
+            float scale = 0.2f + random.nextFloat() * 0.8f;
+            Bitmap bitmap = hexagons[i % hexagons.length];
+            tapHexagons[i] = new TapHexagon(dx, dy, scale, bitmap, randomRotation);
         }
-        lastHexagonAt = now;
-        addTrailBurst(currentX, currentY, now);
-        while (bursts.size() > 5) {
-            bursts.remove(0);
+        return new TapAnimation(x, y, now, randomRotation, tapHexagons);
+    }
+
+    private void setHexagonRandomTarget() {
+        float startDistance = 0.2f;
+        float distanceGap = 0.24f;
+        for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
+            float distance = startDistance + i * distanceGap
+                    + (random.nextFloat() - 0.5f) * 0.4f;
+            dragHexagonDistance[i] = Math.max(0.05f, distance);
+            dragHexagonScale[i] = dragHexagonDistance[i] + 0.1f;
+        }
+        for (int i = DRAG_HEXAGON_TOTAL - 1; i > 0; i--) {
+            int swapIndex = random.nextInt(i + 1);
+            float distance = dragHexagonDistance[i];
+            dragHexagonDistance[i] = dragHexagonDistance[swapIndex];
+            dragHexagonDistance[swapIndex] = distance;
+            float scale = dragHexagonScale[i];
+            dragHexagonScale[i] = dragHexagonScale[swapIndex];
+            dragHexagonScale[swapIndex] = scale;
         }
     }
 
@@ -297,13 +327,9 @@ public class LensFlareEffectView extends View {
         float dx = currentX - startX;
         float dy = currentY - startY;
         if (Math.abs(dx) < 1f && Math.abs(dy) < 1f) {
-            return rotationFor(currentX, currentY);
+            return randomRotation;
         }
         return (float) Math.toDegrees(Math.atan2(dy, dx)) - 40f;
-    }
-
-    private float rotationFor(float x, float y) {
-        return (x * 0.07f + y * 0.05f) % 360f;
     }
 
     private void drawBitmapCentered(Canvas canvas, Bitmap bitmap, float cx, float cy,
@@ -320,6 +346,15 @@ public class LensFlareEffectView extends View {
         paint.setAlpha(Math.max(0, Math.min(255, (int) (alpha * 255f))));
         canvas.drawBitmap(bitmap, matrix, paint);
         paint.setAlpha(255);
+    }
+
+    private float bitmapSize(Bitmap bitmap, float scale) {
+        if (bitmap == null) {
+            return 0f;
+        }
+        return Math.max(bitmap.getWidth(), bitmap.getHeight())
+                * DEFAULT_IN_SAMPLE_SIZE
+                * Math.max(0f, scale);
     }
 
     private Bitmap loadDrawable(String name) {
@@ -343,8 +378,9 @@ public class LensFlareEffectView extends View {
         return screenY + FINGER_Y_OFFSET_PX;
     }
 
-    private float dp(float value) {
-        return value * getResources().getDisplayMetrics().density;
+    private float pulseAlpha(float value) {
+        float corrected = value < 0.5f ? 1f : 1f - (value - 0.5f) * 2f;
+        return clamp01(corrected);
     }
 
     private float quintOut(float value) {
@@ -362,24 +398,55 @@ public class LensFlareEffectView extends View {
         return value;
     }
 
-    private static final class FlareBurst {
+    private static final class TapAnimation {
         final float x;
         final float y;
         final long startedAt;
-        final long durationMs;
-        final boolean unlock;
         final float rotation;
-        final boolean trail;
+        final TapHexagon[] hexagons;
 
-        FlareBurst(float x, float y, long startedAt, long durationMs,
-                boolean unlock, float rotation, boolean trail) {
+        TapAnimation(float x, float y, long startedAt, float rotation,
+                TapHexagon[] hexagons) {
             this.x = x;
             this.y = y;
             this.startedAt = startedAt;
-            this.durationMs = durationMs;
-            this.unlock = unlock;
             this.rotation = rotation;
-            this.trail = trail;
+            this.hexagons = hexagons;
+        }
+    }
+
+    private static final class TapHexagon {
+        final float dx;
+        final float dy;
+        final float scale;
+        final Bitmap bitmap;
+        final float rotation;
+
+        TapHexagon(float dx, float dy, float scale, Bitmap bitmap, float rotation) {
+            this.dx = dx;
+            this.dy = dy;
+            this.scale = scale;
+            this.bitmap = bitmap;
+            this.rotation = rotation;
+        }
+    }
+
+    private static final class UnlockAnimation {
+        final float startX;
+        final float startY;
+        final float endX;
+        final float endY;
+        final long startedAt;
+        final float rotation;
+
+        UnlockAnimation(float startX, float startY, float endX, float endY,
+                long startedAt, float rotation) {
+            this.startX = startX;
+            this.startY = startY;
+            this.endX = endX;
+            this.endY = endY;
+            this.startedAt = startedAt;
+            this.rotation = rotation;
         }
     }
 }
