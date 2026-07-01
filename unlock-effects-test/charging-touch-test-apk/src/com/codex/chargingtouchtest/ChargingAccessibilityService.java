@@ -93,12 +93,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         prefs = OverlayPrefs.get(this);
+        applyPerfDefaultsOnce();
         prefs.registerOnSharedPreferenceChangeListener(this);
         loadHomePackages();
         configurePassiveService();
         refreshChargingState();
         registerScreenReceiver();
         evaluateVisibility("connected");
+    }
+
+    private void applyPerfDefaultsOnce() {
+        if (prefs == null || prefs.getBoolean(OverlayPrefs.PERF_DEFAULTS_APPLIED, false)) {
+            return;
+        }
+        prefs.edit()
+                .putBoolean(OverlayPrefs.DEBUG_LENS_LOOP, false)
+                .putBoolean(OverlayPrefs.PERF_DEFAULTS_APPLIED, true)
+                .apply();
     }
 
     @Override

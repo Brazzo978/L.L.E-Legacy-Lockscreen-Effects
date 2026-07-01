@@ -218,7 +218,7 @@ public class ControlActivity extends Activity {
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         section.addView(toggle("Touch debug area", OverlayPrefs.DEBUG_TOUCH_AREA, true));
         section.addView(toggle("Transparent touch area", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
-        section.addView(toggle("Loop lens flare in touch box", OverlayPrefs.DEBUG_LENS_LOOP, true));
+        section.addView(toggle("Loop lens flare in touch box", OverlayPrefs.DEBUG_LENS_LOOP, false));
         section.addView(button("Calibrate touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {

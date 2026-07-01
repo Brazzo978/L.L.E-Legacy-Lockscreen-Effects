@@ -15,7 +15,7 @@
 - Charging doodles and unlock effects are separate concerns. Unlock FX must not require charging; charging remains relevant only to doodle visibility.
 - The touch listen box is a small touchable `TYPE_ACCESSIBILITY_OVERLAY`; the doodle and FX overlays stay pass-through.
 - The listen box is calibrated from the app with `TouchBoxSetupActivity` and stored in `overlay_prefs` as `touch_box_*`.
-- Default debug toggles: touch area on, transparent touch area on, lens flare loop on, doodle can be toggled off with `show_doodle`.
+- Default debug toggles: touch area on, transparent touch area on, lens flare loop off, doodle can be toggled off with `show_doodle`.
 
 ## S4 Lens Flare Status
 
@@ -28,4 +28,4 @@
   - `ACTION_UP/CANCEL` calls `hide()`.
   - finger `Y_OFFSET` is `-80` px.
   - key durations: show `6000ms`, tap `4000ms`, fade-out `500ms`, unlock `1200ms`.
-- Current touch APK therefore uses a Canvas renderer in `LensFlareEffectView` with the original S4 bitmap assets and those timing constants. If exact Samsung parity is required later, continue reverse-porting the smali math into this Canvas class rather than returning to the broken accessibility-overlay wrapper.
+- Current touch APK therefore uses a hardware-accelerated Canvas renderer in `LensFlareEffectView` with the original S4 bitmap assets and core timing constants. If exact Samsung parity is required later, continue reverse-porting the smali math into this Canvas class rather than returning to the broken accessibility-overlay wrapper.

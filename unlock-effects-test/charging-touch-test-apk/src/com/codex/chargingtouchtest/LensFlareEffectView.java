@@ -19,13 +19,13 @@ import java.util.List;
 public class LensFlareEffectView extends View {
     private static final String TAG = "ChargingS4LensFlare";
     private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
-    private static final long TAP_ANIMATION_DURATION_MS = 4000L;
+    private static final long TAP_ANIMATION_DURATION_MS = 650L;
     private static final long FADE_OUT_DURATION_MS = 500L;
     private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
     private static final float FINGER_Y_OFFSET_PX = -80f;
-    private static final int MAX_TOUCH_HEXAGONS = 5;
+    private static final int MAX_TOUCH_HEXAGONS = 3;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG
@@ -59,7 +59,7 @@ public class LensFlareEffectView extends View {
     public LensFlareEffectView(Context context) {
         super(context);
         setWillNotDraw(false);
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         flareLight = loadDrawable("keyguard_flare_light_00040");
         flareRing = loadDrawable("keyguard_flare_ring");
@@ -97,7 +97,7 @@ public class LensFlareEffectView extends View {
         gestureStartedAt = now;
         fadeStartedAt = 0L;
         bursts.clear();
-        addTapBurst(startX, startY, now, false);
+        addTrailBurst(startX, startY, now);
         play(tapSound);
         Log.i(TAG, "canvas lens flare begin x=" + Math.round(startX)
                 + " y=" + Math.round(startY));
@@ -197,8 +197,10 @@ public class LensFlareEffectView extends View {
         float alpha = GLOBAL_ALPHA * fadeAlpha * (0.56f + 0.44f * distanceAlpha);
         float rotation = unlockRotation();
 
-        drawBitmapCentered(canvas, flareVignetting, getWidth() * 0.5f, getHeight() * 0.5f,
-                Math.max(getWidth(), getHeight()) * 1.35f, 0.16f * alpha, 0f);
+        if (fadeAlpha > 0.98f) {
+            drawBitmapCentered(canvas, flareVignetting, getWidth() * 0.5f, getHeight() * 0.5f,
+                    Math.max(getWidth(), getHeight()) * 1.25f, 0.08f * alpha, 0f);
+        }
         drawBitmapCentered(canvas, flareRainbow, x, y, dp(430f + show * 110f),
                 0.32f * alpha, rotation + show * 22f);
         drawBitmapCentered(canvas, flareLong, x, y, dp(520f + show * 120f),
@@ -219,14 +221,16 @@ public class LensFlareEffectView extends View {
             return;
         }
         float ease = quintOut(t);
-        float alpha = GLOBAL_ALPHA * (1f - t);
+        float alpha = (burst.unlock ? GLOBAL_ALPHA : 0.58f) * (1f - t);
         float base = burst.unlock ? dp(420f) : dp(300f);
         float rotation = burst.rotation + (burst.unlock ? ease * 72f : ease * 28f);
 
-        drawBitmapCentered(canvas, flareRainbow, burst.x, burst.y,
-                base * (0.62f + ease * 0.76f), 0.38f * alpha, rotation);
-        drawBitmapCentered(canvas, flareLong, burst.x, burst.y,
-                base * (1.25f + ease * 0.75f), 0.55f * alpha, rotation - 20f);
+        if (burst.unlock) {
+            drawBitmapCentered(canvas, flareRainbow, burst.x, burst.y,
+                    base * (0.62f + ease * 0.76f), 0.38f * alpha, rotation);
+            drawBitmapCentered(canvas, flareLong, burst.x, burst.y,
+                    base * (1.25f + ease * 0.75f), 0.55f * alpha, rotation - 20f);
+        }
         drawBitmapCentered(canvas, flareRing, burst.x, burst.y,
                 base * (0.70f + ease * 0.65f), 0.86f * alpha, rotation);
         drawBitmapCentered(canvas, flareParticle, burst.x, burst.y,
@@ -273,14 +277,18 @@ public class LensFlareEffectView extends View {
                 false));
     }
 
+    private void addTrailBurst(float x, float y, long now) {
+        bursts.add(new FlareBurst(x, y, now, TAP_ANIMATION_DURATION_MS,
+                false, rotationFor(x, y), true));
+    }
+
     private void maybeAddMovingHexagon(long now) {
-        if (now - lastHexagonAt < 75L) {
+        if (now - lastHexagonAt < 120L) {
             return;
         }
         lastHexagonAt = now;
-        float rotation = rotationFor(currentX, currentY);
-        bursts.add(new FlareBurst(currentX, currentY, now, 520L, false, rotation, true));
-        while (bursts.size() > 8) {
+        addTrailBurst(currentX, currentY, now);
+        while (bursts.size() > 5) {
             bursts.remove(0);
         }
     }
