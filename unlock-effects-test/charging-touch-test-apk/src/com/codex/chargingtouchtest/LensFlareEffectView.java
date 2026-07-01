@@ -1,389 +1,377 @@
 package com.codex.chargingtouchtest;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.media.AudioAttributes;
+import android.media.SoundPool;
+import android.os.SystemClock;
 import android.util.Log;
-import android.view.InputDevice;
-import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
-public class LensFlareEffectView extends FrameLayout {
+public class LensFlareEffectView extends View {
     private static final String TAG = "ChargingS4LensFlare";
-    private static final int EFFECT_LENS_FLARE_S4 = 11;
-    private static final int CMD_UNLOCK = 2;
-    private static final int CMD_LENS_FLARE = 3;
-    private static final long STARTUP_RETRY_DELAY_MS = 180L;
-    private static final long CHILD_LAYOUT_RETRY_DELAY_MS = 90L;
+    private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
+    private static final long TAP_ANIMATION_DURATION_MS = 4000L;
+    private static final long FADE_OUT_DURATION_MS = 500L;
+    private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
+    private static final float GLOBAL_ALPHA = 0.8f;
+    private static final float FOG_MAX_ALPHA = 0.6f;
+    private static final float FINGER_Y_OFFSET_PX = -80f;
+    private static final int MAX_TOUCH_HEXAGONS = 5;
 
-    private Object effectView;
-    private Method handleTouchEvent;
-    private Method handleCustomEvent;
-    private Method clearScreen;
-    private final Runnable startupRetry = new Runnable() {
-        @Override
-        public void run() {
-            sendStartupCommands();
-        }
-    };
-    private final Runnable initRunnable = new Runnable() {
-        @Override
-        public void run() {
-            ensureReady();
-        }
-    };
-    private boolean ready;
-    private boolean touchDownSent;
-    private boolean childLayoutLogged;
-    private float lastX;
-    private float lastY;
-    private long downTime;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
+            | Paint.FILTER_BITMAP_FLAG
+            | Paint.DITHER_FLAG);
+    private final Matrix matrix = new Matrix();
+    private final List<FlareBurst> bursts = new ArrayList<FlareBurst>();
+    private final Bitmap flareLight;
+    private final Bitmap flareRing;
+    private final Bitmap flareParticle;
+    private final Bitmap flareLong;
+    private final Bitmap flareRainbow;
+    private final Bitmap flareHoverLight;
+    private final Bitmap flareVignetting;
+    private final Bitmap[] hexagons;
+    private final SoundPool soundPool;
+    private final int tapSound;
+    private final int unlockSound;
+
+    private boolean gestureActive;
+    private boolean fading;
+    private float startX;
+    private float startY;
+    private float currentX;
+    private float currentY;
+    private float fadeX;
+    private float fadeY;
+    private long gestureStartedAt;
+    private long fadeStartedAt;
+    private long lastHexagonAt;
 
     public LensFlareEffectView(Context context) {
         super(context);
         setWillNotDraw(false);
-        setClipChildren(false);
-        setClipToPadding(false);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-    }
 
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        post(initRunnable);
+        flareLight = loadDrawable("keyguard_flare_light_00040");
+        flareRing = loadDrawable("keyguard_flare_ring");
+        flareParticle = loadDrawable("keyguard_flare_particle");
+        flareLong = loadDrawable("keyguard_flare_long");
+        flareRainbow = loadDrawable("keyguard_flare_rainbow");
+        flareHoverLight = loadDrawable("keyguard_flare_hoverlight");
+        flareVignetting = loadDrawable("keyguard_flare_vignetting");
+        hexagons = new Bitmap[] {
+                loadDrawable("keyguard_flare_hexagon_blue"),
+                loadDrawable("keyguard_flare_hexagon_green"),
+                loadDrawable("keyguard_flare_hexagon_orange")
+        };
+
+        soundPool = new SoundPool.Builder()
+                .setMaxStreams(3)
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build())
+                .build();
+        tapSound = soundPool.load(context, R.raw.lens_flare_tap, 1);
+        unlockSound = soundPool.load(context, R.raw.lens_flare_unlock, 1);
+        Log.i(TAG, "S4 lens flare Canvas renderer loaded");
     }
 
     public void beginGesture(float screenX, float screenY) {
-        lastX = screenX;
-        lastY = screenY;
-        if (!ensureReady()) {
-            return;
-        }
-        downTime = SystemClockCompat.uptimeMillis();
-        touchDownSent = sendTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
+        long now = SystemClock.uptimeMillis();
+        gestureActive = true;
+        fading = false;
+        startX = screenX;
+        startY = visualY(screenY);
+        currentX = startX;
+        currentY = startY;
+        gestureStartedAt = now;
+        fadeStartedAt = 0L;
+        bursts.clear();
+        addTapBurst(startX, startY, now, false);
+        play(tapSound);
+        Log.i(TAG, "canvas lens flare begin x=" + Math.round(startX)
+                + " y=" + Math.round(startY));
+        invalidate();
     }
 
     public void updateGesture(float screenX, float screenY) {
-        lastX = screenX;
-        lastY = screenY;
-        if (!touchDownSent) {
+        if (!gestureActive) {
             beginGesture(screenX, screenY);
             return;
         }
-        if (!ensureReady()) {
-            return;
-        }
-        sendTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
+        currentX = screenX;
+        currentY = visualY(screenY);
+        maybeAddMovingHexagon(SystemClock.uptimeMillis());
+        invalidate();
     }
 
     public void finishGesture(boolean completed) {
-        if (!touchDownSent || !ensureReady()) {
-            touchDownSent = false;
+        if (!gestureActive) {
             return;
         }
-        sendTouch(MotionEvent.ACTION_UP, lastX, lastY);
-        touchDownSent = false;
+        long now = SystemClock.uptimeMillis();
+        gestureActive = false;
+        fading = !completed;
+        fadeX = currentX;
+        fadeY = currentY;
+        fadeStartedAt = now;
+        addTapBurst(currentX, currentY, now, completed);
         if (completed) {
-            sendUnlockCommand();
+            play(unlockSound);
         }
+        Log.i(TAG, "canvas lens flare finish completed=" + completed
+                + " x=" + Math.round(currentX)
+                + " y=" + Math.round(currentY));
+        invalidate();
     }
 
     public void cancelGesture() {
-        if (!touchDownSent || !ensureReady()) {
-            touchDownSent = false;
+        if (!gestureActive) {
             return;
         }
-        sendTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
-        touchDownSent = false;
+        gestureActive = false;
+        fading = true;
+        fadeX = currentX;
+        fadeY = currentY;
+        fadeStartedAt = SystemClock.uptimeMillis();
+        Log.i(TAG, "canvas lens flare cancel");
+        invalidate();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        if (ready && clearScreen != null && effectView != null) {
-            try {
-                clearScreen.invoke(effectView);
-            } catch (Throwable t) {
-                Log.d(TAG, "Samsung lens flare clear ignored", t);
-            }
-        }
-        removeCallbacks(startupRetry);
-        removeCallbacks(initRunnable);
+        soundPool.release();
         super.onDetachedFromWindow();
     }
 
-    private boolean ensureReady() {
-        if (ready) {
-            return true;
-        }
-        if (getWidth() <= 0 || getHeight() <= 0) {
-            Log.d(TAG, "waiting for layout before Samsung lens flare init");
-            return false;
-        }
-        ready = initOriginalSamsungLensFlare(getContext());
-        return ready;
-    }
+    @Override
+    protected void onDraw(Canvas canvas) {
+        long now = SystemClock.uptimeMillis();
+        boolean keepAnimating = false;
 
-    private boolean initOriginalSamsungLensFlare(Context context) {
-        try {
-            Class<?> effectViewClass = Class.forName("com.samsung.android.visualeffect.EffectView");
-            Class<?> dataClass = Class.forName("com.samsung.android.visualeffect.EffectDataObj");
-            Class<?> lensDataClass = Class.forName(
-                    "com.samsung.android.visualeffect.lock.data.LensFlareData");
-
-            effectView = effectViewClass.getConstructor(Context.class).newInstance(context);
-            handleTouchEvent = effectViewClass.getMethod(
-                    "handleTouchEvent", MotionEvent.class, View.class);
-            handleCustomEvent = effectViewClass.getMethod(
-                    "handleCustomEvent", int.class, HashMap.class);
-            clearScreen = effectViewClass.getMethod("clearScreen");
-            Method setEffect = effectViewClass.getMethod("setEffect", int.class);
-            Method init = effectViewClass.getMethod("init", dataClass);
-            Method setEffectData = dataClass.getMethod("setEffect", int.class);
-
-            Object data = dataClass.getConstructor().newInstance();
-            setEffectData.invoke(data, EFFECT_LENS_FLARE_S4);
-            Object lensData = getField(dataClass, data, "lensFlareData");
-            if (lensData == null) {
-                lensData = lensDataClass.getConstructor().newInstance();
-                setField(dataClass, data, "lensFlareData", lensData);
-            }
-            prepareLensFlareData(lensDataClass, lensData);
-
-            setEffect.invoke(effectView, EFFECT_LENS_FLARE_S4);
-            init.invoke(effectView, data);
-            View effectViewAsView = (View) effectView;
-            effectViewAsView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-            if (effectViewAsView instanceof ViewGroup) {
-                ((ViewGroup) effectViewAsView).setClipChildren(false);
-                ((ViewGroup) effectViewAsView).setClipToPadding(false);
-            }
-            addView(effectViewAsView, new LayoutParams(
-                    LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-            sendStartupCommands();
-            postDelayed(startupRetry, STARTUP_RETRY_DELAY_MS);
-            postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    logEffectTree("post_init");
-                }
-            }, CHILD_LAYOUT_RETRY_DELAY_MS);
-            Log.i(TAG, "original Samsung S4 lens flare loaded width=" + getWidth()
-                    + " height=" + getHeight());
-            return true;
-        } catch (Throwable t) {
-            Log.e(TAG, "original Samsung S4 lens flare unavailable", t);
-            effectView = null;
-            handleTouchEvent = null;
-            handleCustomEvent = null;
-            clearScreen = null;
-            return false;
-        }
-    }
-
-    private void prepareLensFlareData(Class<?> lensDataClass, Object lensData) throws Exception {
-        setInt(lensDataClass, lensData, "light", drawableId("keyguard_flare_light_00040"));
-        setInt(lensDataClass, lensData, "ring", drawableId("keyguard_flare_ring"));
-        setInt(lensDataClass, lensData, "particle", drawableId("keyguard_flare_particle"));
-        setInt(lensDataClass, lensData, "long_light", drawableId("keyguard_flare_long"));
-        setInt(lensDataClass, lensData, "rainbow", drawableId("keyguard_flare_rainbow"));
-        setInt(lensDataClass, lensData, "hoverlight", drawableId("keyguard_flare_hoverlight"));
-        setInt(lensDataClass, lensData, "vignetting", drawableId("keyguard_flare_vignetting"));
-        setInt(lensDataClass, lensData, "hexagon_blue", drawableId("keyguard_flare_hexagon_blue"));
-        setInt(lensDataClass, lensData, "hexagon_green", drawableId("keyguard_flare_hexagon_green"));
-        setInt(lensDataClass, lensData, "hexagon_orange", drawableId("keyguard_flare_hexagon_orange"));
-        setInt(lensDataClass, lensData, "tapSound", R.raw.lens_flare_tap);
-        setInt(lensDataClass, lensData, "unlockSound", R.raw.lens_flare_unlock);
-    }
-
-    private boolean sendTouch(int action, float screenX, float screenY) {
-        try {
-            if (!areSamsungChildrenLaidOut()) {
-                requestLayout();
-                postInvalidate();
-                Log.d(TAG, "waiting for Samsung child layout before touch action=" + action
-                        + " tree=" + describeEffectTree());
-                postDelayed(initRunnable, CHILD_LAYOUT_RETRY_DELAY_MS);
-                return false;
-            }
-            long now = SystemClockCompat.uptimeMillis();
-            long eventDownTime = downTime == 0L ? now : downTime;
-            MotionEvent event = MotionEvent.obtain(eventDownTime, now, action, screenX, screenY, 0);
-            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-            handleTouchEvent.invoke(effectView, event, this);
-            int[] viewLocation = new int[2];
-            getLocationOnScreen(viewLocation);
-            Log.i(TAG, "touch action=" + action
-                    + " screen=" + Math.round(screenX) + "," + Math.round(screenY)
-                    + " viewLoc=" + viewLocation[0] + "," + viewLocation[1]
-                    + " view=" + getWidth() + "x" + getHeight()
-                    + " tree=" + describeEffectTree());
-            event.recycle();
-            return true;
-        } catch (Throwable t) {
-            Log.e(TAG, "Samsung lens flare touch forwarding failed action=" + action
-                    + " cause=" + rootCauseMessage(t));
-            return false;
-        }
-    }
-
-    private boolean areSamsungChildrenLaidOut() {
-        if (!(effectView instanceof View)) {
-            return false;
-        }
-        View effectViewAsView = (View) effectView;
-        if (effectViewAsView.getWidth() <= 0 || effectViewAsView.getHeight() <= 0) {
-            return false;
-        }
-        return hasLaidOutImageViewBlended(effectViewAsView);
-    }
-
-    private boolean hasLaidOutImageViewBlended(View view) {
-        String className = view.getClass().getName();
-        if (className.contains("ImageViewBlended")) {
-            return view.getWidth() > 0 && view.getHeight() > 0;
-        }
-        if (!(view instanceof ViewGroup)) {
-            return false;
-        }
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            if (hasLaidOutImageViewBlended(group.getChildAt(i))) {
-                return true;
+        if (gestureActive) {
+            drawActiveFlare(canvas, now, currentX, currentY, 1f);
+            keepAnimating = true;
+        } else if (fading) {
+            float t = clamp01((now - fadeStartedAt) / (float) FADE_OUT_DURATION_MS);
+            drawActiveFlare(canvas, now, fadeX, fadeY, 1f - t);
+            keepAnimating = t < 1f;
+            if (!keepAnimating) {
+                fading = false;
             }
         }
-        return false;
+
+        Iterator<FlareBurst> iterator = bursts.iterator();
+        while (iterator.hasNext()) {
+            FlareBurst burst = iterator.next();
+            float t = clamp01((now - burst.startedAt) / (float) burst.durationMs);
+            if (t >= 1f) {
+                iterator.remove();
+                continue;
+            }
+            drawBurst(canvas, burst, t);
+            keepAnimating = true;
+        }
+
+        if (keepAnimating) {
+            postInvalidateOnAnimation();
+        }
     }
 
-    private void logEffectTree(String reason) {
-        if (childLayoutLogged && areSamsungChildrenLaidOut()) {
+    private void drawActiveFlare(Canvas canvas, long now, float x, float y, float fadeAlpha) {
+        float elapsed = now - gestureStartedAt;
+        float show = quintOut(clamp01(elapsed / (float) SHOW_ANIMATION_DURATION_MS));
+        float fog = FOG_MAX_ALPHA * quintOut(clamp01(elapsed / 100f));
+        float distance = (float) Math.hypot(x - startX, y - startY);
+        float distanceAlpha = clamp01(distance / 1500f);
+        float alpha = GLOBAL_ALPHA * fadeAlpha * (0.56f + 0.44f * distanceAlpha);
+        float rotation = unlockRotation();
+
+        drawBitmapCentered(canvas, flareVignetting, getWidth() * 0.5f, getHeight() * 0.5f,
+                Math.max(getWidth(), getHeight()) * 1.35f, 0.16f * alpha, 0f);
+        drawBitmapCentered(canvas, flareRainbow, x, y, dp(430f + show * 110f),
+                0.32f * alpha, rotation + show * 22f);
+        drawBitmapCentered(canvas, flareLong, x, y, dp(520f + show * 120f),
+                0.62f * alpha, rotation - 16f);
+        drawBitmapCentered(canvas, flareRing, x, y, dp(250f + show * 70f),
+                0.88f * alpha, rotation);
+        drawBitmapCentered(canvas, flareParticle, x, y, dp(270f + show * 95f),
+                0.78f * alpha, rotation + show * 50f);
+        drawBitmapCentered(canvas, flareHoverLight, x, y, dp(230f + show * 34f),
+                0.40f * alpha, rotation - 8f);
+        drawBitmapCentered(canvas, flareLight, x, y, dp(250f + show * 50f),
+                (0.62f + fog * 0.38f) * alpha, rotation);
+    }
+
+    private void drawBurst(Canvas canvas, FlareBurst burst, float t) {
+        if (burst.trail) {
+            drawTrailBurst(canvas, burst, t);
             return;
         }
-        childLayoutLogged = areSamsungChildrenLaidOut();
-        Log.i(TAG, "effect tree " + reason + " ready=" + childLayoutLogged
-                + " tree=" + describeEffectTree());
-        if (!childLayoutLogged) {
-            requestLayout();
-            postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    logEffectTree("retry_layout");
-                }
-            }, CHILD_LAYOUT_RETRY_DELAY_MS);
+        float ease = quintOut(t);
+        float alpha = GLOBAL_ALPHA * (1f - t);
+        float base = burst.unlock ? dp(420f) : dp(300f);
+        float rotation = burst.rotation + (burst.unlock ? ease * 72f : ease * 28f);
+
+        drawBitmapCentered(canvas, flareRainbow, burst.x, burst.y,
+                base * (0.62f + ease * 0.76f), 0.38f * alpha, rotation);
+        drawBitmapCentered(canvas, flareLong, burst.x, burst.y,
+                base * (1.25f + ease * 0.75f), 0.55f * alpha, rotation - 20f);
+        drawBitmapCentered(canvas, flareRing, burst.x, burst.y,
+                base * (0.70f + ease * 0.65f), 0.86f * alpha, rotation);
+        drawBitmapCentered(canvas, flareParticle, burst.x, burst.y,
+                base * (0.70f + ease * 0.95f), 0.72f * alpha, rotation + 52f * ease);
+        drawBitmapCentered(canvas, flareLight, burst.x, burst.y,
+                base * (0.58f + ease * 0.55f), 0.95f * alpha, rotation);
+
+        for (int i = 0; i < MAX_TOUCH_HEXAGONS; i++) {
+            Bitmap hexagon = hexagons[i % hexagons.length];
+            float angle = burst.rotation + i * 72f + ease * (burst.unlock ? 90f : 40f);
+            float radius = dp(burst.unlock ? 58f + i * 24f : 30f + i * 18f) * ease;
+            float x = burst.x + (float) Math.cos(Math.toRadians(angle)) * radius;
+            float y = burst.y + (float) Math.sin(Math.toRadians(angle)) * radius;
+            drawBitmapCentered(canvas, hexagon, x, y,
+                    dp(42f + i * 5f) * (1f + ease * 0.5f),
+                    0.52f * alpha, angle + 35f);
         }
     }
 
-    private String describeEffectTree() {
-        if (!(effectView instanceof View)) {
-            return "no-effect-view";
+    private void drawTrailBurst(Canvas canvas, FlareBurst burst, float t) {
+        float ease = quintOut(t);
+        float alpha = 0.42f * (1f - t);
+        drawBitmapCentered(canvas, flareParticle, burst.x, burst.y,
+                dp(96f + ease * 44f), alpha, burst.rotation + ease * 70f);
+        for (int i = 0; i < MAX_TOUCH_HEXAGONS; i++) {
+            Bitmap hexagon = hexagons[i % hexagons.length];
+            float angle = burst.rotation + i * 72f + ease * 35f;
+            float radius = dp(16f + i * 8f) * ease;
+            float x = burst.x + (float) Math.cos(Math.toRadians(angle)) * radius;
+            float y = burst.y + (float) Math.sin(Math.toRadians(angle)) * radius;
+            drawBitmapCentered(canvas, hexagon, x, y,
+                    dp(24f + i * 3f), alpha * 0.85f, angle);
         }
-        StringBuilder builder = new StringBuilder();
-        describeView((View) effectView, builder, 0);
-        return builder.toString();
     }
 
-    private void describeView(View view, StringBuilder builder, int depth) {
-        if (builder.length() > 420) {
+    private void addTapBurst(float x, float y, long now, boolean unlock) {
+        bursts.add(new FlareBurst(
+                x,
+                y,
+                now,
+                unlock ? UNLOCK_ANIMATION_DURATION_MS : TAP_ANIMATION_DURATION_MS,
+                unlock,
+                unlock ? unlockRotation() : rotationFor(x, y),
+                false));
+    }
+
+    private void maybeAddMovingHexagon(long now) {
+        if (now - lastHexagonAt < 75L) {
             return;
         }
-        if (builder.length() > 0) {
-            builder.append(" | ");
+        lastHexagonAt = now;
+        float rotation = rotationFor(currentX, currentY);
+        bursts.add(new FlareBurst(currentX, currentY, now, 520L, false, rotation, true));
+        while (bursts.size() > 8) {
+            bursts.remove(0);
         }
-        String name = view.getClass().getSimpleName();
-        if (name == null || name.length() == 0) {
-            name = view.getClass().getName();
+    }
+
+    private float unlockRotation() {
+        float dx = currentX - startX;
+        float dy = currentY - startY;
+        if (Math.abs(dx) < 1f && Math.abs(dy) < 1f) {
+            return rotationFor(currentX, currentY);
         }
-        builder.append(depth)
-                .append(":")
-                .append(name)
-                .append("@")
-                .append(Math.round(view.getX()))
-                .append(",")
-                .append(Math.round(view.getY()))
-                .append(" ")
-                .append(view.getWidth())
-                .append("x")
-                .append(view.getHeight())
-                .append(" v=")
-                .append(view.getVisibility());
-        if (!(view instanceof ViewGroup)) {
+        return (float) Math.toDegrees(Math.atan2(dy, dx)) - 40f;
+    }
+
+    private float rotationFor(float x, float y) {
+        return (x * 0.07f + y * 0.05f) % 360f;
+    }
+
+    private void drawBitmapCentered(Canvas canvas, Bitmap bitmap, float cx, float cy,
+            float targetSize, float alpha, float rotation) {
+        if (bitmap == null || alpha <= 0f || targetSize <= 0f) {
             return;
         }
-        ViewGroup group = (ViewGroup) view;
-        int childCount = Math.min(group.getChildCount(), 6);
-        for (int i = 0; i < childCount; i++) {
-            describeView(group.getChildAt(i), builder, depth + 1);
-        }
+        float scale = targetSize / Math.max(bitmap.getWidth(), bitmap.getHeight());
+        matrix.reset();
+        matrix.postTranslate(-bitmap.getWidth() * 0.5f, -bitmap.getHeight() * 0.5f);
+        matrix.postScale(scale, scale);
+        matrix.postRotate(rotation);
+        matrix.postTranslate(cx, cy);
+        paint.setAlpha(Math.max(0, Math.min(255, (int) (alpha * 255f))));
+        canvas.drawBitmap(bitmap, matrix, paint);
+        paint.setAlpha(255);
     }
 
-    private void sendStartupCommands() {
-        sendLensFlareCommand("manualInit");
-        sendLensFlareCommand("show");
-    }
-
-    private void sendLensFlareCommand(String command) {
-        try {
-            HashMap<String, Object> params = new HashMap<String, Object>();
-            params.put(command, Boolean.TRUE);
-            handleCustomEvent.invoke(effectView, CMD_LENS_FLARE, params);
-        } catch (Throwable t) {
-            Log.d(TAG, "Samsung lens flare command ignored: " + command, t);
-        }
-    }
-
-    private void sendUnlockCommand() {
-        try {
-            handleCustomEvent.invoke(effectView, CMD_UNLOCK, new HashMap<String, Object>());
-            Log.i(TAG, "Samsung lens flare unlock command sent");
-        } catch (Throwable t) {
-            Log.d(TAG, "Samsung lens flare unlock ignored", t);
-        }
-    }
-
-    private static String rootCauseMessage(Throwable throwable) {
-        Throwable current = throwable;
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-        String message = current.getMessage();
-        return current.getClass().getSimpleName()
-                + (message == null ? "" : ": " + message);
-    }
-
-    private int drawableId(String name) {
+    private Bitmap loadDrawable(String name) {
         int id = getResources().getIdentifier(name, "drawable", getContext().getPackageName());
         if (id == 0) {
-            throw new IllegalStateException("Missing drawable " + name);
+            Log.w(TAG, "missing lens flare drawable " + name);
+            return null;
         }
-        return id;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = false;
+        return BitmapFactory.decodeResource(getResources(), id, options);
     }
 
-    private static Object getField(Class<?> owner, Object target, String name) throws Exception {
-        Field field = owner.getField(name);
-        return field.get(target);
-    }
-
-    private static void setField(Class<?> owner, Object target, String name, Object value)
-            throws Exception {
-        Field field = owner.getField(name);
-        field.set(target, value);
-    }
-
-    private static void setInt(Class<?> owner, Object target, String name, int value)
-            throws Exception {
-        Field field = owner.getField(name);
-        field.setInt(target, value);
-    }
-
-    private static final class SystemClockCompat {
-        private SystemClockCompat() {
+    private void play(int soundId) {
+        if (soundId != 0) {
+            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
+    }
 
-        static long uptimeMillis() {
-            return android.os.SystemClock.uptimeMillis();
+    private float visualY(float screenY) {
+        return screenY + FINGER_Y_OFFSET_PX;
+    }
+
+    private float dp(float value) {
+        return value * getResources().getDisplayMetrics().density;
+    }
+
+    private float quintOut(float value) {
+        float inverse = 1f - clamp01(value);
+        return 1f - inverse * inverse * inverse * inverse * inverse;
+    }
+
+    private float clamp01(float value) {
+        if (value < 0f) {
+            return 0f;
+        }
+        if (value > 1f) {
+            return 1f;
+        }
+        return value;
+    }
+
+    private static final class FlareBurst {
+        final float x;
+        final float y;
+        final long startedAt;
+        final long durationMs;
+        final boolean unlock;
+        final float rotation;
+        final boolean trail;
+
+        FlareBurst(float x, float y, long startedAt, long durationMs,
+                boolean unlock, float rotation, boolean trail) {
+            this.x = x;
+            this.y = y;
+            this.startedAt = startedAt;
+            this.durationMs = durationMs;
+            this.unlock = unlock;
+            this.rotation = rotation;
+            this.trail = trail;
         }
     }
 }
