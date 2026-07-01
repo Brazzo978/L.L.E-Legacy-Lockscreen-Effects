@@ -5,6 +5,7 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
@@ -17,6 +18,7 @@ public class LensFlareEffectView extends FrameLayout {
     private static final int CMD_UNLOCK = 2;
     private static final int CMD_LENS_FLARE = 3;
     private static final long STARTUP_RETRY_DELAY_MS = 180L;
+    private static final long CHILD_LAYOUT_RETRY_DELAY_MS = 90L;
 
     private Object effectView;
     private Method handleTouchEvent;
@@ -36,6 +38,7 @@ public class LensFlareEffectView extends FrameLayout {
     };
     private boolean ready;
     private boolean touchDownSent;
+    private boolean childLayoutLogged;
     private float lastX;
     private float lastY;
     private long downTime;
@@ -45,6 +48,7 @@ public class LensFlareEffectView extends FrameLayout {
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
+        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
     }
 
     @Override
@@ -152,10 +156,21 @@ public class LensFlareEffectView extends FrameLayout {
             setEffect.invoke(effectView, EFFECT_LENS_FLARE_S4);
             init.invoke(effectView, data);
             View effectViewAsView = (View) effectView;
+            effectViewAsView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            if (effectViewAsView instanceof ViewGroup) {
+                ((ViewGroup) effectViewAsView).setClipChildren(false);
+                ((ViewGroup) effectViewAsView).setClipToPadding(false);
+            }
             addView(effectViewAsView, new LayoutParams(
                     LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             sendStartupCommands();
             postDelayed(startupRetry, STARTUP_RETRY_DELAY_MS);
+            postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    logEffectTree("post_init");
+                }
+            }, CHILD_LAYOUT_RETRY_DELAY_MS);
             Log.i(TAG, "original Samsung S4 lens flare loaded width=" + getWidth()
                     + " height=" + getHeight());
             return true;
@@ -186,6 +201,14 @@ public class LensFlareEffectView extends FrameLayout {
 
     private boolean sendTouch(int action, float screenX, float screenY) {
         try {
+            if (!areSamsungChildrenLaidOut()) {
+                requestLayout();
+                postInvalidate();
+                Log.d(TAG, "waiting for Samsung child layout before touch action=" + action
+                        + " tree=" + describeEffectTree());
+                postDelayed(initRunnable, CHILD_LAYOUT_RETRY_DELAY_MS);
+                return false;
+            }
             long now = SystemClockCompat.uptimeMillis();
             long eventDownTime = downTime == 0L ? now : downTime;
             MotionEvent event = MotionEvent.obtain(eventDownTime, now, action, screenX, screenY, 0);
@@ -196,13 +219,103 @@ public class LensFlareEffectView extends FrameLayout {
             Log.i(TAG, "touch action=" + action
                     + " screen=" + Math.round(screenX) + "," + Math.round(screenY)
                     + " viewLoc=" + viewLocation[0] + "," + viewLocation[1]
-                    + " view=" + getWidth() + "x" + getHeight());
+                    + " view=" + getWidth() + "x" + getHeight()
+                    + " tree=" + describeEffectTree());
             event.recycle();
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "Samsung lens flare touch forwarding failed action=" + action
                     + " cause=" + rootCauseMessage(t));
             return false;
+        }
+    }
+
+    private boolean areSamsungChildrenLaidOut() {
+        if (!(effectView instanceof View)) {
+            return false;
+        }
+        View effectViewAsView = (View) effectView;
+        if (effectViewAsView.getWidth() <= 0 || effectViewAsView.getHeight() <= 0) {
+            return false;
+        }
+        return hasLaidOutImageViewBlended(effectViewAsView);
+    }
+
+    private boolean hasLaidOutImageViewBlended(View view) {
+        String className = view.getClass().getName();
+        if (className.contains("ImageViewBlended")) {
+            return view.getWidth() > 0 && view.getHeight() > 0;
+        }
+        if (!(view instanceof ViewGroup)) {
+            return false;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            if (hasLaidOutImageViewBlended(group.getChildAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void logEffectTree(String reason) {
+        if (childLayoutLogged && areSamsungChildrenLaidOut()) {
+            return;
+        }
+        childLayoutLogged = areSamsungChildrenLaidOut();
+        Log.i(TAG, "effect tree " + reason + " ready=" + childLayoutLogged
+                + " tree=" + describeEffectTree());
+        if (!childLayoutLogged) {
+            requestLayout();
+            postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    logEffectTree("retry_layout");
+                }
+            }, CHILD_LAYOUT_RETRY_DELAY_MS);
+        }
+    }
+
+    private String describeEffectTree() {
+        if (!(effectView instanceof View)) {
+            return "no-effect-view";
+        }
+        StringBuilder builder = new StringBuilder();
+        describeView((View) effectView, builder, 0);
+        return builder.toString();
+    }
+
+    private void describeView(View view, StringBuilder builder, int depth) {
+        if (builder.length() > 420) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append(" | ");
+        }
+        String name = view.getClass().getSimpleName();
+        if (name == null || name.length() == 0) {
+            name = view.getClass().getName();
+        }
+        builder.append(depth)
+                .append(":")
+                .append(name)
+                .append("@")
+                .append(Math.round(view.getX()))
+                .append(",")
+                .append(Math.round(view.getY()))
+                .append(" ")
+                .append(view.getWidth())
+                .append("x")
+                .append(view.getHeight())
+                .append(" v=")
+                .append(view.getVisibility());
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        int childCount = Math.min(group.getChildCount(), 6);
+        for (int i = 0; i < childCount; i++) {
+            describeView(group.getChildAt(i), builder, depth + 1);
         }
     }
 

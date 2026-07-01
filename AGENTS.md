@@ -91,3 +91,10 @@
   automatic DOWN/MOVE/UP path inside the configured touch box, without opening
   PIN entry, to diagnose whether the original S4 renderer follows box
   coordinates or collapses elsewhere.
+- 2026-07-01 finding: user confirmed the loop still leaves a fixed lens-flare
+  frame at top-left, so the issue is not touch coordinate mapping. Current test
+  patch forces software layer rendering for the Samsung effect wrapper and waits
+  for internal `ImageViewBlended` children to have nonzero layout before sending
+  synthetic touches. If this still fails, treat the bundled Samsung renderer as
+  incompatible with this overlay/runtime and continue with a faithful
+  reimplementation from the reversed smali timings/assets.
