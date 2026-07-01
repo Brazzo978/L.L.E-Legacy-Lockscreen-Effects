@@ -86,3 +86,8 @@
   center of the configured touch box. MOVE/UP are forwarded as
   `boxCenter + swipeDelta`, so the effect can be checked independently from the
   exact finger-down point inside the box.
+- Current debug loop mode is controlled by `debug_lens_loop` and defaults on in
+  the touch test app. When active on the lockscreen it repeatedly sends an
+  automatic DOWN/MOVE/UP path inside the configured touch box, without opening
+  PIN entry, to diagnose whether the original S4 renderer follows box
+  coordinates or collapses elsewhere.

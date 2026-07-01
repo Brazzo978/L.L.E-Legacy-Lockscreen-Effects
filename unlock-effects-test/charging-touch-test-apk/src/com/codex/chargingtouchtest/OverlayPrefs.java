@@ -15,6 +15,7 @@ final class OverlayPrefs {
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
+    static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
     static final String TOUCH_BOX_LEFT = "touch_box_left";
     static final String TOUCH_BOX_TOP = "touch_box_top";
@@ -68,6 +69,10 @@ final class OverlayPrefs {
 
     static boolean debugTouchTransparent(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_TRANSPARENT, true);
+    }
+
+    static boolean debugLensLoop(Context context) {
+        return get(context).getBoolean(DEBUG_LENS_LOOP, true);
     }
 
     static boolean touchBoxConfigured(Context context) {

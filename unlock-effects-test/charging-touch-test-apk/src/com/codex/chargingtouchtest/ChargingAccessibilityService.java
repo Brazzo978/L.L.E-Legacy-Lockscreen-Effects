@@ -33,8 +33,22 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
     private static final long PIN_ENTRY_DELAY_MS = 180L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
+    private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
+    private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable pinEntryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            openPinEntry();
+        }
+    };
+    private final Runnable debugLensLoopRunnable = new Runnable() {
+        @Override
+        public void run() {
+            runDebugLensLoopFrame();
+        }
+    };
     private WindowManager windowManager;
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
@@ -45,6 +59,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private LensFlareEffectView lensFlareView;
     private float lensFlareAnchorX;
     private float lensFlareAnchorY;
+    private boolean debugLensLoopScheduled;
+    private boolean debugLensLoopGestureActive;
+    private int debugLensLoopFrame;
     private final Set<String> homePackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
@@ -134,6 +151,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.DEBUG_TOUCH_TRANSPARENT.equals(key) && touchDebugView != null) {
             touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
         }
+        if (OverlayPrefs.DEBUG_LENS_LOOP.equals(key)) {
+            if (OverlayPrefs.debugLensLoop(this)) {
+                syncDebugLensLoop();
+            } else {
+                stopDebugLensLoop();
+            }
+        }
         if ((OverlayPrefs.TOUCH_BOX_CONFIGURED.equals(key)
                 || OverlayPrefs.TOUCH_BOX_LEFT.equals(key)
                 || OverlayPrefs.TOUCH_BOX_TOP.equals(key)
@@ -203,7 +227,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (showFx) {
             syncLensFlareOverlay();
             syncTouchDebugOverlay();
+            syncDebugLensLoop();
         } else {
+            stopDebugLensLoop();
             removeLensFlareOverlay();
             removeTouchDebugOverlay();
         }
@@ -367,6 +393,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void removeLensFlareOverlay() {
+        stopDebugLensLoop();
         if (lensFlareView != null) {
             try {
                 windowManager.removeView(lensFlareView);
@@ -442,8 +469,119 @@ public class ChargingAccessibilityService extends AccessibilityService
         return new Rect(left, top, right, bottom);
     }
 
+    private void syncDebugLensLoop() {
+        if (!OverlayPrefs.debugLensLoop(this)) {
+            stopDebugLensLoop();
+            return;
+        }
+        if (!debugLensLoopScheduled && !debugLensLoopGestureActive) {
+            scheduleDebugLensLoop(0L);
+        }
+    }
+
+    private void scheduleDebugLensLoop(long delayMs) {
+        if (!OverlayPrefs.debugLensLoop(this) || lensFlareView == null || !isFxSurfaceActive()) {
+            return;
+        }
+        if (debugLensLoopScheduled) {
+            return;
+        }
+        debugLensLoopScheduled = true;
+        handler.postDelayed(debugLensLoopRunnable, delayMs);
+    }
+
+    private void runDebugLensLoopFrame() {
+        debugLensLoopScheduled = false;
+        if (!OverlayPrefs.debugLensLoop(this) || lensFlareView == null || !isFxSurfaceActive()) {
+            stopDebugLensLoop();
+            return;
+        }
+
+        Rect box = resolveTouchBox();
+        float centerX = box.exactCenterX();
+        float centerY = box.exactCenterY();
+        float insetX = Math.max(dp(12), box.width() * 0.18f);
+        float insetY = Math.max(dp(12), box.height() * 0.18f);
+        float left = box.left + insetX;
+        float right = box.right - insetX;
+        float top = box.top + insetY;
+        float bottom = box.bottom - insetY;
+        if (left > right) {
+            left = centerX;
+            right = centerX;
+        }
+        if (top > bottom) {
+            top = centerY;
+            bottom = centerY;
+        }
+
+        float x = centerX;
+        float y = centerY;
+        switch (debugLensLoopFrame) {
+            case 0:
+                lensFlareView.beginGesture(centerX, centerY);
+                debugLensLoopGestureActive = true;
+                Log.i(TAG, "lens flare debug loop begin box="
+                        + box.left + "," + box.top + "," + box.right + "," + box.bottom
+                        + " center=" + Math.round(centerX) + "," + Math.round(centerY));
+                debugLensLoopFrame = 1;
+                scheduleDebugLensLoop(DEBUG_LOOP_STEP_DELAY_MS);
+                return;
+            case 1:
+                x = right;
+                y = centerY;
+                break;
+            case 2:
+                x = right;
+                y = bottom;
+                break;
+            case 3:
+                x = centerX;
+                y = top;
+                break;
+            case 4:
+                x = left;
+                y = bottom;
+                break;
+            case 5:
+                x = centerX;
+                y = centerY;
+                break;
+            default:
+                lensFlareView.finishGesture(false);
+                debugLensLoopGestureActive = false;
+                debugLensLoopFrame = 0;
+                Log.i(TAG, "lens flare debug loop end");
+                scheduleDebugLensLoop(DEBUG_LOOP_RESTART_DELAY_MS);
+                return;
+        }
+
+        lensFlareView.updateGesture(x, y);
+        Log.i(TAG, "lens flare debug loop frame=" + debugLensLoopFrame
+                + " point=" + Math.round(x) + "," + Math.round(y));
+        debugLensLoopFrame++;
+        scheduleDebugLensLoop(DEBUG_LOOP_STEP_DELAY_MS);
+    }
+
+    private void stopDebugLensLoop() {
+        handler.removeCallbacks(debugLensLoopRunnable);
+        debugLensLoopScheduled = false;
+        debugLensLoopFrame = 0;
+        if (debugLensLoopGestureActive && lensFlareView != null) {
+            lensFlareView.cancelGesture();
+        }
+        debugLensLoopGestureActive = false;
+    }
+
+    private boolean isFxSurfaceActive() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+        return interactive && locked && !pinEntryRequested && OverlayPrefs.showLock(this);
+    }
+
     private void beginLensFlareGesture(float screenX, float screenY) {
-        handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacks(pinEntryRunnable);
+        stopDebugLensLoop();
         Rect touchBox = resolveTouchBox();
         lensFlareAnchorX = touchBox.exactCenterX();
         lensFlareAnchorY = touchBox.exactCenterY();
@@ -481,7 +619,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void cancelLensFlareGesture() {
-        handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacks(pinEntryRunnable);
         if (lensFlareView != null) {
             lensFlareView.cancelGesture();
         }
@@ -489,13 +627,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void schedulePinEntry() {
-        handler.removeCallbacksAndMessages(null);
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                openPinEntry();
-            }
-        }, PIN_ENTRY_DELAY_MS);
+        handler.removeCallbacks(pinEntryRunnable);
+        handler.postDelayed(pinEntryRunnable, PIN_ENTRY_DELAY_MS);
     }
 
     private void openPinEntry() {
