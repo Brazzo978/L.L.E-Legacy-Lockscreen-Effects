@@ -16,16 +16,23 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    static final String UNLOCK_EFFECT = "unlock_effect";
     static final String PERF_DEFAULTS_APPLIED = "perf_defaults_20260701";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
     static final String TOUCH_BOX_LEFT = "touch_box_left";
     static final String TOUCH_BOX_TOP = "touch_box_top";
     static final String TOUCH_BOX_RIGHT = "touch_box_right";
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
-    static final int DEFAULT_TOUCH_BOX_LEFT = 60;
-    static final int DEFAULT_TOUCH_BOX_TOP = 710;
-    static final int DEFAULT_TOUCH_BOX_RIGHT = 1030;
-    static final int DEFAULT_TOUCH_BOX_BOTTOM = 1900;
+    static final int EFFECT_S4_LENS_FLARE = 0;
+    static final int EFFECT_S5_PLACEHOLDER = 1;
+    static final int DEFAULT_TOUCH_BOX_LEFT = 0;
+    static final int DEFAULT_TOUCH_BOX_TOP = 730;
+    static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
+    static final int DEFAULT_TOUCH_BOX_BOTTOM = 2100;
+    static final int LEGACY_TOUCH_BOX_LEFT = 60;
+    static final int LEGACY_TOUCH_BOX_TOP = 710;
+    static final int LEGACY_TOUCH_BOX_RIGHT = 1030;
+    static final int LEGACY_TOUCH_BOX_BOTTOM = 1900;
     static final int TOUCH_BOX_ROUNDING_PX = 10;
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
@@ -78,7 +85,15 @@ final class OverlayPrefs {
     }
 
     static boolean debugLensLoop(Context context) {
-        return get(context).getBoolean(DEBUG_LENS_LOOP, false);
+        return false;
+    }
+
+    static int unlockEffect(Context context) {
+        int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
+        if (effect != EFFECT_S4_LENS_FLARE && effect != EFFECT_S5_PLACEHOLDER) {
+            return EFFECT_S4_LENS_FLARE;
+        }
+        return effect;
     }
 
     static boolean touchBoxConfigured(Context context) {
@@ -127,6 +142,26 @@ final class OverlayPrefs {
                 .remove(TOUCH_BOX_RIGHT)
                 .remove(TOUCH_BOX_BOTTOM)
                 .apply();
+    }
+
+    static void migrateLegacyTouchBoxIfNeeded(Context context) {
+        if (!touchBoxConfigured(context)) {
+            return;
+        }
+        int left = touchBoxLeft(context);
+        int top = touchBoxTop(context);
+        int right = touchBoxRight(context);
+        int bottom = touchBoxBottom(context);
+        if (left == LEGACY_TOUCH_BOX_LEFT
+                && top == LEGACY_TOUCH_BOX_TOP
+                && right == LEGACY_TOUCH_BOX_RIGHT
+                && bottom == LEGACY_TOUCH_BOX_BOTTOM) {
+            saveTouchBox(context,
+                    DEFAULT_TOUCH_BOX_LEFT,
+                    DEFAULT_TOUCH_BOX_TOP,
+                    DEFAULT_TOUCH_BOX_RIGHT,
+                    DEFAULT_TOUCH_BOX_BOTTOM);
+        }
     }
 
     static int clampPositionOffset(int value) {

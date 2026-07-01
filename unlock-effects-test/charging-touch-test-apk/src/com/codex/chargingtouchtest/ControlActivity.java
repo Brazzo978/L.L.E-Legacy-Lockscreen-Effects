@@ -28,6 +28,7 @@ public class ControlActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = OverlayPrefs.get(this);
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -58,6 +59,7 @@ public class ControlActivity extends Activity {
         root.addView(toggle("Lockscreen", OverlayPrefs.SHOW_LOCK, true));
         root.addView(toggle("AOD", OverlayPrefs.SHOW_AOD, false));
         root.addView(toggle("Home", OverlayPrefs.SHOW_HOME, false));
+        root.addView(effectSelector());
         root.addView(seasonSelector());
         root.addView(positionControls());
         root.addView(debugControls());
@@ -173,6 +175,62 @@ public class ControlActivity extends Activity {
         button.setPadding(0, dp(5), 0, dp(5));
         group.addView(button, new RadioGroup.LayoutParams(
                 RadioGroup.LayoutParams.MATCH_PARENT,
+            dp(44)));
+    }
+
+    private View effectSelector() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        sectionParams.setMargins(0, dp(18), 0, dp(10));
+        section.setLayoutParams(sectionParams);
+
+        TextView label = new TextView(this);
+        label.setText("Unlock effect");
+        label.setTextColor(Color.rgb(220, 232, 242));
+        label.setTextSize(18f);
+        section.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.VERTICAL);
+        addEffectOption(group, "S4 lens flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        addEffectOption(group, "S5 effect slot", OverlayPrefs.EFFECT_S5_PLACEHOLDER);
+
+        RadioButton checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.unlockEffect(this)));
+        if (checked == null) {
+            checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.EFFECT_S4_LENS_FLARE));
+        }
+        if (checked != null) {
+            checked.setChecked(true);
+        }
+
+        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
+                View checkedView = radioGroup.findViewById(checkedId);
+                Object tag = checkedView == null ? null : checkedView.getTag();
+                if (tag instanceof Integer) {
+                    prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, ((Integer) tag).intValue()).apply();
+                }
+            }
+        });
+        section.addView(group);
+        return section;
+    }
+
+    private void addEffectOption(RadioGroup group, String label, int value) {
+        RadioButton button = new RadioButton(this);
+        button.setText(label);
+        button.setTextColor(Color.WHITE);
+        button.setTextSize(17f);
+        button.setTag(Integer.valueOf(value));
+        button.setPadding(0, dp(5), 0, dp(5));
+        group.addView(button, new RadioGroup.LayoutParams(
+                RadioGroup.LayoutParams.MATCH_PARENT,
                 dp(44)));
     }
 
@@ -218,7 +276,6 @@ public class ControlActivity extends Activity {
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         section.addView(toggle("Touch debug area", OverlayPrefs.DEBUG_TOUCH_AREA, true));
         section.addView(toggle("Transparent touch area", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
-        section.addView(toggle("Loop lens flare in touch box", OverlayPrefs.DEBUG_LENS_LOOP, false));
         section.addView(button("Calibrate touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {

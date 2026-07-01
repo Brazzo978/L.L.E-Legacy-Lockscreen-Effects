@@ -15,8 +15,10 @@
 - Charging doodles and unlock effects are separate concerns. Unlock FX must not require charging; charging remains relevant only to doodle visibility.
 - The touch listen box is a small touchable `TYPE_ACCESSIBILITY_OVERLAY`; the doodle and FX overlays stay pass-through.
 - The listen box is calibrated from the app with `TouchBoxSetupActivity` and stored in `overlay_prefs` as `touch_box_*`.
-- Default listen box, rounded from the user's tested approximate box on SM-S918B 1080x2316: `left=60`, `top=710`, `right=1030`, `bottom=1900`. Touch box coordinates are rounded to 10 px on save/read, so existing approximate prefs are cleaned up without clearing them.
-- Default debug toggles: touch area on, transparent touch area on, lens flare loop off, doodle can be toggled off with `show_doodle`.
+- Default listen box on SM-S918B 1080x2316: `left=0`, `top=730`, `right=1080`, `bottom=2100`. This replaced the earlier rounded `60,710,1030,1900` box by extending to screen edges, extending downward, and trimming 20 px from the top. Touch box coordinates are rounded to 10 px on save/read; old defaultish prefs migrate to the new default automatically.
+- Default debug toggles: touch area on, transparent touch area on, doodle can be toggled off with `show_doodle`.
+- `debug_lens_loop` is no longer exposed in the UI and `OverlayPrefs.debugLensLoop()` returns false.
+- Unlock effect picker is stored in `unlock_effect`: `0` = S4 lens flare, `1` = S5 effect slot for the upcoming port. Until S5 is ported, S4 remains the only renderer.
 
 ## S4 Lens Flare Status
 
@@ -35,6 +37,7 @@
   - The tap phase draws the 5 Samsung tap hexagons plus ring, particle, and long-light using the smali timing formulas and the original `4000ms` `QuintEaseOut` curve.
   - Drag draws the fog/light and distance-based drag hexagons while the finger moves.
   - Completed swipe starts the `1200ms` unlock rainbow along the start-to-current vector.
+  - PIN handoff starts about `700ms` after a completed swipe-like movement. The trigger threshold is intentionally low (`8dp`) so short swipes still request PIN entry. The lens flare view is kept alive for another `900ms` so the unlock sound/animation is not cut by `SoundPool.release()`.
 - Fidelity audit notes:
   - `Y_OFFSET`, `MAX_ALPHA_DISTANCE`, and `TAP_AREA_RADIUS` are scaled with `min(widthPixels,heightPixels) / 1080`, matching Samsung `lensFlareinit`.
   - Drag hexagon assets follow Samsung order: blue, orange, blue, orange, green, green.

@@ -30,8 +30,9 @@ import java.util.Set;
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "ChargingA11y";
-    private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
-    private static final long PIN_ENTRY_DELAY_MS = 650L;
+    private static final int UNLOCK_TRIGGER_DISTANCE_DP = 8;
+    private static final long PIN_ENTRY_DELAY_MS = 700L;
+    private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS = 900L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
     private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
     private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
@@ -41,6 +42,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         @Override
         public void run() {
             openPinEntry();
+        }
+    };
+    private final Runnable pinEntryEffectCleanupRunnable = new Runnable() {
+        @Override
+        public void run() {
+            removeLensFlareOverlay();
         }
     };
     private final Runnable debugLensLoopRunnable = new Runnable() {
@@ -93,6 +100,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         prefs = OverlayPrefs.get(this);
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         applyPerfDefaultsOnce();
         prefs.registerOnSharedPreferenceChangeListener(this);
         loadHomePackages();
@@ -118,9 +126,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             lastWindowPackage = event.getPackageName().toString();
         }
         if (isPinEntryEvent(event)) {
+            boolean wasPinEntryRequested = pinEntryRequested;
             pinEntryRequested = true;
             removeTouchDebugOverlay();
-            removeLensFlareOverlay();
+            if (!wasPinEntryRequested) {
+                scheduleLensFlareCleanup();
+            }
         }
         evaluateVisibility("event:" + eventTypeName(event));
     }
@@ -241,7 +252,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             syncDebugLensLoop();
         } else {
             stopDebugLensLoop();
-            removeLensFlareOverlay();
+            if (!pinEntryRequested) {
+                removeLensFlareOverlay();
+            }
             removeTouchDebugOverlay();
         }
 
@@ -590,6 +603,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void beginLensFlareGesture(float screenX, float screenY) {
         handler.removeCallbacks(pinEntryRunnable);
+        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
         stopDebugLensLoop();
         lensFlareAnchorX = screenX;
         lensFlareAnchorY = screenY;
@@ -621,11 +635,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "lens flare gesture end effect="
                 + Math.round(screenX) + "," + Math.round(screenY)
                 + " distance=" + Math.round(distance)
+                + " threshold=" + dp(UNLOCK_TRIGGER_DISTANCE_DP)
                 + " unlockTriggered=" + unlockTriggered);
     }
 
     private void cancelLensFlareGesture() {
         handler.removeCallbacks(pinEntryRunnable);
+        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
         if (lensFlareView != null) {
             lensFlareView.cancelGesture();
         }
@@ -635,27 +651,42 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void schedulePinEntry() {
         handler.removeCallbacks(pinEntryRunnable);
         handler.postDelayed(pinEntryRunnable, PIN_ENTRY_DELAY_MS);
+        Log.i(TAG, "pin entry scheduled delayMs=" + PIN_ENTRY_DELAY_MS);
     }
 
     private void openPinEntry() {
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
-        if (!interactive || !locked) {
+        if (!interactive) {
+            Log.i(TAG, "pin entry skipped interactive=false locked=" + locked);
             pinEntryRequested = false;
             return;
+        }
+        if (!locked) {
+            Log.w(TAG, "pin entry swipe continuing while keyguard reports locked=false");
         }
 
         pinEntryRequested = true;
         removeTouchDebugOverlay();
-        removeLensFlareOverlay();
-        performPinEntrySwipe();
+        scheduleLensFlareCleanup();
+        boolean accepted = performPinEntrySwipe();
+        if (!accepted) {
+            pinEntryRequested = false;
+        }
         evaluateVisibility("pin_entry_requested");
     }
 
-    private void performPinEntrySwipe() {
+    private void scheduleLensFlareCleanup() {
+        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
+        handler.postDelayed(pinEntryEffectCleanupRunnable, PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS);
+        Log.i(TAG, "lens flare cleanup scheduled delayMs="
+                + PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS);
+    }
+
+    private boolean performPinEntrySwipe() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             Log.w(TAG, "pin entry swipe unavailable below Android N");
-            return;
+            return false;
         }
 
         DisplayMetrics metrics = getResources().getDisplayMetrics();
@@ -684,6 +715,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }, handler);
         Log.i(TAG, "pin entry swipe dispatched accepted=" + accepted);
+        return accepted;
     }
 
     private void loadHomePackages() {
