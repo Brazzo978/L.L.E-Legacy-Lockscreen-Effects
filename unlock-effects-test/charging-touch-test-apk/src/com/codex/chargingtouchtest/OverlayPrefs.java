@@ -16,6 +16,7 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
     static final String PERF_DEFAULTS_APPLIED = "perf_defaults_20260701";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
@@ -24,7 +25,7 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_RIGHT = "touch_box_right";
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
     static final int EFFECT_S4_LENS_FLARE = 0;
-    static final int EFFECT_S5_PLACEHOLDER = 1;
+    static final int EFFECT_S3_RIPPLE = 1;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -88,9 +89,13 @@ final class OverlayPrefs {
         return false;
     }
 
+    static boolean unlockEffectEnabled(Context context) {
+        return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
+    }
+
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
-        if (effect != EFFECT_S4_LENS_FLARE && effect != EFFECT_S5_PLACEHOLDER) {
+        if (effect != EFFECT_S4_LENS_FLARE && effect != EFFECT_S3_RIPPLE) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;

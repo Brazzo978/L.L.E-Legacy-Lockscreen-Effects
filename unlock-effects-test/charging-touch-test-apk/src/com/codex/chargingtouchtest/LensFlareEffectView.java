@@ -56,6 +56,7 @@ public class LensFlareEffectView extends View {
     private final int tapSound;
     private final int unlockSound;
 
+    private boolean destroyed;
     private boolean gestureActive;
     private boolean fading;
     private float startX;
@@ -123,6 +124,9 @@ public class LensFlareEffectView extends View {
     }
 
     public void beginGesture(float screenX, float screenY) {
+        if (destroyed) {
+            return;
+        }
         long now = SystemClock.uptimeMillis();
         gestureActive = true;
         fading = false;
@@ -191,9 +195,26 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    public void resetEffect() {
+        gestureActive = false;
+        fading = false;
+        tapAnimation = null;
+        unlockAnimation = null;
+        invalidate();
+    }
+
+    public void destroy() {
+        if (destroyed) {
+            return;
+        }
+        resetEffect();
+        destroyed = true;
+        soundPool.release();
+    }
+
     @Override
     protected void onDetachedFromWindow() {
-        soundPool.release();
+        resetEffect();
         super.onDetachedFromWindow();
     }
 
@@ -403,7 +424,7 @@ public class LensFlareEffectView extends View {
     }
 
     private void play(int soundId) {
-        if (soundId != 0) {
+        if (!destroyed && soundId != 0) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
     }

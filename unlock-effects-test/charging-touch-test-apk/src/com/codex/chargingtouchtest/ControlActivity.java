@@ -46,7 +46,7 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(this);
-        note.setText("Passive doodle plus touch debug area");
+        note.setText("Charging doodle and unlock effect test");
         note.setTextColor(Color.rgb(190, 205, 220));
         note.setTextSize(16f);
         note.setGravity(Gravity.CENTER);
@@ -56,12 +56,8 @@ public class ControlActivity extends Activity {
         noteParams.setMargins(0, dp(12), 0, dp(22));
         root.addView(note, noteParams);
 
-        root.addView(toggle("Lockscreen", OverlayPrefs.SHOW_LOCK, true));
-        root.addView(toggle("AOD", OverlayPrefs.SHOW_AOD, false));
-        root.addView(toggle("Home", OverlayPrefs.SHOW_HOME, false));
+        root.addView(chargingDoodleControls());
         root.addView(effectSelector());
-        root.addView(seasonSelector());
-        root.addView(positionControls());
         root.addView(debugControls());
 
         accessibilityStatus = new TextView(this);
@@ -116,6 +112,32 @@ public class ControlActivity extends Activity {
         params.setMargins(0, dp(4), 0, dp(4));
         toggle.setLayoutParams(params);
         return toggle;
+    }
+
+    private View chargingDoodleControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        sectionParams.setMargins(0, dp(18), 0, dp(10));
+        section.setLayoutParams(sectionParams);
+
+        TextView label = new TextView(this);
+        label.setText("Charging doodle");
+        label.setTextColor(Color.rgb(220, 232, 242));
+        label.setTextSize(18f);
+        section.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        section.addView(toggle("Enable charging doodle", OverlayPrefs.SHOW_DOODLE, true));
+        section.addView(toggle("Doodle on lockscreen", OverlayPrefs.SHOW_LOCK, true));
+        section.addView(toggle("Doodle on AOD", OverlayPrefs.SHOW_AOD, false));
+        section.addView(toggle("Doodle on Home", OverlayPrefs.SHOW_HOME, false));
+        section.addView(seasonSelector());
+        section.addView(positionControls());
+        return section;
     }
 
     private View seasonSelector() {
@@ -194,11 +216,12 @@ public class ControlActivity extends Activity {
         section.addView(label, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+        section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
 
         final RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
         addEffectOption(group, "S4 lens flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
-        addEffectOption(group, "S5 effect slot", OverlayPrefs.EFFECT_S5_PLACEHOLDER);
+        addEffectOption(group, "S3 ripple slot", OverlayPrefs.EFFECT_S3_RIPPLE);
 
         RadioButton checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.unlockEffect(this)));
         if (checked == null) {
@@ -272,7 +295,6 @@ public class ControlActivity extends Activity {
         section.addView(label, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        section.addView(toggle("Charging doodle overlay", OverlayPrefs.SHOW_DOODLE, true));
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         section.addView(toggle("Touch debug area", OverlayPrefs.DEBUG_TOUCH_AREA, true));
         section.addView(toggle("Transparent touch area", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
