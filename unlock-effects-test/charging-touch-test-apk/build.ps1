@@ -16,6 +16,7 @@ $signed = Join-Path $out "ChargingTouchTest-debug.apk"
 $keystore = Join-Path $root "..\demo-apk\debug.keystore"
 $keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
+$samsungVisualEffectDex = Join-Path $root "..\extracted\secvisualeffect_hybrid_dex\classes.dex"
 
 function Run($exe, $arguments) {
     & $exe @arguments
@@ -44,6 +45,12 @@ Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--output", $dex, $cl
 
 Copy-Item $unsigned $aligned
 Run "jar.exe" @("uf", $aligned, "-C", $dex, "classes.dex")
+if (Test-Path $samsungVisualEffectDex) {
+    Copy-Item $samsungVisualEffectDex (Join-Path $out "classes2.dex")
+    Run "jar.exe" @("uf", $aligned, "-C", $out, "classes2.dex")
+} else {
+    throw "Missing Samsung visual effect dex: $samsungVisualEffectDex"
+}
 
 if (-not (Test-Path $keystore)) {
     New-Item -ItemType Directory -Force -Path $keystoreDir | Out-Null

@@ -5,10 +5,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.media.AudioAttributes;
-import android.media.AudioManager;
-import android.media.SoundPool;
-import android.media.ToneGenerator;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -28,10 +24,6 @@ public class TouchDebugView extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
-    private ToneGenerator toneGenerator;
-    private SoundPool soundPool;
-    private int tapSoundId;
-    private boolean tapSoundLoaded;
     private TouchTriggerListener touchTriggerListener;
     private String lastAction = "waiting";
     private float lastX = -1f;
@@ -48,17 +40,6 @@ public class TouchDebugView extends View {
         super(context);
         setWillNotDraw(false);
         setClickable(true);
-        toneGenerator = createToneGenerator();
-        soundPool = createSoundPool();
-        if (soundPool != null) {
-            soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
-                @Override
-                public void onLoadComplete(SoundPool pool, int sampleId, int status) {
-                    tapSoundLoaded = status == 0 && sampleId == tapSoundId;
-                }
-            });
-            tapSoundId = soundPool.load(context, R.raw.lens_flare_tap, 1);
-        }
     }
 
     public void setTouchTriggerListener(TouchTriggerListener touchTriggerListener) {
@@ -94,7 +75,6 @@ public class TouchDebugView extends View {
                 gestureActive = true;
                 gestureStartRawX = lastRawX;
                 gestureStartRawY = lastRawY;
-                playClickTone();
                 if (touchTriggerListener != null) {
                     touchTriggerListener.onTouchStarted(lastRawX, lastRawY);
                 }
@@ -123,19 +103,6 @@ public class TouchDebugView extends View {
     public boolean performClick() {
         super.performClick();
         return true;
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        if (soundPool != null) {
-            soundPool.release();
-            soundPool = null;
-        }
-        if (toneGenerator != null) {
-            toneGenerator.release();
-            toneGenerator = null;
-        }
-        super.onDetachedFromWindow();
     }
 
     @Override
@@ -235,44 +202,6 @@ public class TouchDebugView extends View {
             default:
                 return String.valueOf(action);
         }
-    }
-
-    private ToneGenerator createToneGenerator() {
-        try {
-            return new ToneGenerator(AudioManager.STREAM_MUSIC, 80);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "tone generator unavailable", e);
-            return null;
-        }
-    }
-
-    private SoundPool createSoundPool() {
-        try {
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-            return new SoundPool.Builder()
-                    .setMaxStreams(2)
-                    .setAudioAttributes(audioAttributes)
-                    .build();
-        } catch (RuntimeException e) {
-            Log.w(TAG, "sound pool unavailable", e);
-            return null;
-        }
-    }
-
-    private void playClickTone() {
-        if (soundPool != null && tapSoundLoaded) {
-            soundPool.play(tapSoundId, 1f, 1f, 1, 0, 1f);
-            Log.i(TAG, "lens flare tap sound played");
-            return;
-        }
-        if (toneGenerator == null) {
-            return;
-        }
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120);
-        Log.i(TAG, "click tone played");
     }
 
     private int dp(int value) {
