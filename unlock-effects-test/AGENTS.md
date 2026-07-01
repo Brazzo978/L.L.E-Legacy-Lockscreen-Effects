@@ -34,3 +34,8 @@
   - The tap phase draws the 5 Samsung tap hexagons plus ring, particle, and long-light using the smali timing formulas and the original `4000ms` `QuintEaseOut` curve.
   - Drag draws the fog/light and distance-based drag hexagons while the finger moves.
   - Completed swipe starts the `1200ms` unlock rainbow along the start-to-current vector.
+- Fidelity audit notes:
+  - `Y_OFFSET`, `MAX_ALPHA_DISTANCE`, and `TAP_AREA_RADIUS` are scaled with `min(widthPixels,heightPixels) / 1080`, matching Samsung `lensFlareinit`.
+  - Drag hexagon assets follow Samsung order: blue, orange, blue, orange, green, green.
+  - Tap hexagon assets follow Samsung modulo order: blue, orange, green, with persistent per-hex random rotations.
+  - Not ported because they are outside the current lockscreen swipe test path: Samsung hover/stylus affordance animation and Samsung internal Activity/wallpaper wrapper.

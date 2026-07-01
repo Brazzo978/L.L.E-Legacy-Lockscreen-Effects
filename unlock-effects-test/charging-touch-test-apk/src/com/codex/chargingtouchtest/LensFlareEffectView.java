@@ -9,6 +9,7 @@ import android.graphics.Paint;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.os.SystemClock;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 
@@ -24,9 +25,10 @@ public class LensFlareEffectView extends View {
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
     private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
-    private static final float FINGER_Y_OFFSET_PX = -80f;
-    private static final float MAX_ALPHA_DISTANCE_PX = 1500f;
-    private static final float TAP_AREA_RADIUS_PX = 600f;
+    private static final float BASE_FINGER_Y_OFFSET_PX = -80f;
+    private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
+    private static final float BASE_TAP_AREA_RADIUS_PX = 600f;
+    private static final float BASE_SCREEN_WIDTH_PX = 1080f;
     private static final int TAP_HEXAGON_TOTAL = 5;
     private static final int DRAG_HEXAGON_TOTAL = 6;
 
@@ -42,9 +44,14 @@ public class LensFlareEffectView extends View {
     private final Bitmap flareRainbow;
     private final Bitmap flareHoverLight;
     private final Bitmap flareVignetting;
-    private final Bitmap[] hexagons;
+    private final Bitmap[] tapHexagons;
+    private final Bitmap[] dragHexagons;
+    private final float[] tapHexagonRotations = new float[TAP_HEXAGON_TOTAL];
     private final float[] dragHexagonDistance = new float[DRAG_HEXAGON_TOTAL];
     private final float[] dragHexagonScale = new float[DRAG_HEXAGON_TOTAL];
+    private final float fingerYOffsetPx;
+    private final float maxAlphaDistancePx;
+    private final float tapAreaRadiusPx;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
@@ -75,11 +82,30 @@ public class LensFlareEffectView extends View {
         flareRainbow = loadDrawable("keyguard_flare_rainbow");
         flareHoverLight = loadDrawable("keyguard_flare_hoverlight");
         flareVignetting = loadDrawable("keyguard_flare_vignetting");
-        hexagons = new Bitmap[] {
-                loadDrawable("keyguard_flare_hexagon_blue"),
-                loadDrawable("keyguard_flare_hexagon_green"),
-                loadDrawable("keyguard_flare_hexagon_orange")
+        Bitmap hexagonBlue = loadDrawable("keyguard_flare_hexagon_blue");
+        Bitmap hexagonOrange = loadDrawable("keyguard_flare_hexagon_orange");
+        Bitmap hexagonGreen = loadDrawable("keyguard_flare_hexagon_green");
+        tapHexagons = new Bitmap[] {
+                hexagonBlue,
+                hexagonOrange,
+                hexagonGreen
         };
+        dragHexagons = new Bitmap[] {
+                hexagonBlue,
+                hexagonOrange,
+                hexagonBlue,
+                hexagonOrange,
+                hexagonGreen,
+                hexagonGreen
+        };
+        for (int i = 0; i < tapHexagonRotations.length; i++) {
+            tapHexagonRotations[i] = random.nextInt(360);
+        }
+
+        float ratio = screenScaleRatio();
+        fingerYOffsetPx = BASE_FINGER_Y_OFFSET_PX * ratio;
+        maxAlphaDistancePx = BASE_MAX_ALPHA_DISTANCE_PX * ratio;
+        tapAreaRadiusPx = BASE_TAP_AREA_RADIUS_PX * ratio;
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(3)
@@ -90,7 +116,10 @@ public class LensFlareEffectView extends View {
                 .build();
         tapSound = soundPool.load(context, R.raw.lens_flare_tap, 1);
         unlockSound = soundPool.load(context, R.raw.lens_flare_unlock, 1);
-        Log.i(TAG, "S4 lens flare Canvas renderer loaded");
+        Log.i(TAG, "S4 lens flare Canvas renderer loaded ratio=" + ratio
+                + " yOffset=" + Math.round(fingerYOffsetPx)
+                + " maxAlphaDistance=" + Math.round(maxAlphaDistancePx)
+                + " tapRadius=" + Math.round(tapAreaRadiusPx));
     }
 
     public void beginGesture(float screenX, float screenY) {
@@ -217,7 +246,7 @@ public class LensFlareEffectView extends View {
         float fogValue = quintOut(clamp01((now - gestureStartedAt)
                 / (float) FOG_ON_DURATION_MS));
         float distance = (float) Math.hypot(x - startX, y - startY);
-        float distanceAlpha = clamp01(distance / MAX_ALPHA_DISTANCE_PX);
+        float distanceAlpha = clamp01(distance / maxAlphaDistancePx);
         float fogAlpha = clamp01(fogValue * (1f - distanceAlpha)) * GLOBAL_ALPHA * fadeAlpha;
         float objAlpha = clamp01(distanceAlpha * 3f) * GLOBAL_ALPHA * fadeAlpha;
         float vignettingAlpha = clamp01(distanceAlpha * 1.3f) * 0.18f * fadeAlpha;
@@ -239,7 +268,7 @@ public class LensFlareEffectView extends View {
         }
 
         for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
-            Bitmap hexagon = hexagons[i % hexagons.length];
+            Bitmap hexagon = dragHexagons[i];
             float animationScale = 0.5f + objValue * 0.5f;
             float byDistanceScale = 0.5f + (distance / 720f) * 0.5f;
             float scale = dragHexagonScale[i] * byDistanceScale * animationScale;
@@ -290,17 +319,22 @@ public class LensFlareEffectView extends View {
     }
 
     private TapAnimation createTapAnimation(float x, float y, long now) {
-        TapHexagon[] tapHexagons = new TapHexagon[TAP_HEXAGON_TOTAL];
-        for (int i = 0; i < tapHexagons.length; i++) {
+        TapHexagon[] animationHexagons = new TapHexagon[TAP_HEXAGON_TOTAL];
+        for (int i = 0; i < animationHexagons.length; i++) {
             float angle = randomRotation;
-            float distance = random.nextFloat() * TAP_AREA_RADIUS_PX;
+            float distance = random.nextFloat() * tapAreaRadiusPx;
             float dx = (float) Math.cos(angle) * distance;
             float dy = (float) Math.sin(angle) * distance;
             float scale = 0.2f + random.nextFloat() * 0.8f;
-            Bitmap bitmap = hexagons[i % hexagons.length];
-            tapHexagons[i] = new TapHexagon(dx, dy, scale, bitmap, randomRotation);
+            Bitmap bitmap = tapHexagons[i % tapHexagons.length];
+            animationHexagons[i] = new TapHexagon(
+                    dx,
+                    dy,
+                    scale,
+                    bitmap,
+                    tapHexagonRotations[i]);
         }
-        return new TapAnimation(x, y, now, randomRotation, tapHexagons);
+        return new TapAnimation(x, y, now, randomRotation, animationHexagons);
     }
 
     private void setHexagonRandomTarget() {
@@ -375,7 +409,16 @@ public class LensFlareEffectView extends View {
     }
 
     private float visualY(float screenY) {
-        return screenY + FINGER_Y_OFFSET_PX;
+        return screenY + fingerYOffsetPx;
+    }
+
+    private float screenScaleRatio() {
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int smallestWidth = Math.min(metrics.widthPixels, metrics.heightPixels);
+        if (smallestWidth <= 0 || smallestWidth == (int) BASE_SCREEN_WIDTH_PX) {
+            return 1f;
+        }
+        return smallestWidth / BASE_SCREEN_WIDTH_PX;
     }
 
     private float pulseAlpha(float value) {
