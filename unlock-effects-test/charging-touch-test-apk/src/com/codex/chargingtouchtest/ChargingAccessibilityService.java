@@ -43,6 +43,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private TouchDebugView touchDebugView;
     private WindowManager.LayoutParams touchDebugParams;
     private LensFlareEffectView lensFlareView;
+    private float lensFlareAnchorX;
+    private float lensFlareAnchorY;
     private final Set<String> homePackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
@@ -298,13 +300,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             @Override
             public void onTouchMoved(float screenX, float screenY,
                     float deltaX, float deltaY, float distance) {
-                updateLensFlareGesture(screenX, screenY);
+                updateLensFlareGesture(deltaX, deltaY);
             }
 
             @Override
             public void onTouchEnded(float screenX, float screenY,
                     float deltaX, float deltaY, float distance) {
-                finishLensFlareGesture(screenX, screenY, distance);
+                finishLensFlareGesture(deltaX, deltaY, distance);
             }
 
             @Override
@@ -442,31 +444,38 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void beginLensFlareGesture(float screenX, float screenY) {
         handler.removeCallbacksAndMessages(null);
+        Rect touchBox = resolveTouchBox();
+        lensFlareAnchorX = touchBox.exactCenterX();
+        lensFlareAnchorY = touchBox.exactCenterY();
         syncLensFlareOverlay();
         if (lensFlareView != null) {
-            lensFlareView.beginGesture(screenX, screenY);
+            lensFlareView.beginGesture(lensFlareAnchorX, lensFlareAnchorY);
         }
-        Log.i(TAG, "lens flare gesture begin screen="
-                + Math.round(screenX) + "," + Math.round(screenY));
+        Log.i(TAG, "lens flare gesture begin touch="
+                + Math.round(screenX) + "," + Math.round(screenY)
+                + " anchorCenter=" + Math.round(lensFlareAnchorX)
+                + "," + Math.round(lensFlareAnchorY));
     }
 
-    private void updateLensFlareGesture(float screenX, float screenY) {
+    private void updateLensFlareGesture(float deltaX, float deltaY) {
         if (lensFlareView != null) {
-            lensFlareView.updateGesture(screenX, screenY);
+            lensFlareView.updateGesture(lensFlareAnchorX + deltaX, lensFlareAnchorY + deltaY);
         }
     }
 
-    private void finishLensFlareGesture(float screenX, float screenY, float distance) {
+    private void finishLensFlareGesture(float deltaX, float deltaY, float distance) {
         boolean unlockTriggered = distance >= dp(UNLOCK_TRIGGER_DISTANCE_DP);
+        float effectX = lensFlareAnchorX + deltaX;
+        float effectY = lensFlareAnchorY + deltaY;
         if (lensFlareView != null) {
-            lensFlareView.updateGesture(screenX, screenY);
+            lensFlareView.updateGesture(effectX, effectY);
             lensFlareView.finishGesture(unlockTriggered);
         }
         if (unlockTriggered) {
             schedulePinEntry();
         }
-        Log.i(TAG, "lens flare gesture end screen="
-                + Math.round(screenX) + "," + Math.round(screenY)
+        Log.i(TAG, "lens flare gesture end effect="
+                + Math.round(effectX) + "," + Math.round(effectY)
                 + " distance=" + Math.round(distance)
                 + " unlockTriggered=" + unlockTriggered);
     }

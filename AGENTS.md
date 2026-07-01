@@ -82,3 +82,7 @@
   small accessibility overlay. `TouchDebugView` computes screen coordinates as
   `getLocationOnScreen() + event.getX/Y()` and forwards those to the S4 effect,
   because the original Samsung code consumes `getRawX/Y()` internally.
+- Current coordinate test mode binds the S4 lens flare gesture start to the
+  center of the configured touch box. MOVE/UP are forwarded as
+  `boxCenter + swipeDelta`, so the effect can be checked independently from the
+  exact finger-down point inside the box.
