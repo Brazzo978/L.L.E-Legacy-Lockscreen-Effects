@@ -31,7 +31,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "ChargingA11y";
     private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
-    private static final long PIN_ENTRY_DELAY_MS = 900L;
+    private static final long PIN_ENTRY_DELAY_MS = 650L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
     private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
     private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
@@ -464,12 +464,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             right = OverlayPrefs.touchBoxRight(this);
             bottom = OverlayPrefs.touchBoxBottom(this);
         } else {
-            int width = dp(230);
-            int height = dp(150);
-            left = (screenWidth - width) / 2;
-            top = screenHeight - height - dp(72);
-            right = left + width;
-            bottom = top + height;
+            left = OverlayPrefs.DEFAULT_TOUCH_BOX_LEFT;
+            top = OverlayPrefs.DEFAULT_TOUCH_BOX_TOP;
+            right = OverlayPrefs.DEFAULT_TOUCH_BOX_RIGHT;
+            bottom = OverlayPrefs.DEFAULT_TOUCH_BOX_BOTTOM;
         }
 
         int minSize = dp(48);

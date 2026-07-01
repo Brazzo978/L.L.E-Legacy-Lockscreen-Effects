@@ -97,9 +97,6 @@ public class TouchBoxSetupActivity extends Activity {
         }
 
         private void drawExistingBox(Canvas canvas) {
-            if (!OverlayPrefs.touchBoxConfigured(TouchBoxSetupActivity.this)) {
-                return;
-            }
             savedBox.set(
                     OverlayPrefs.touchBoxLeft(TouchBoxSetupActivity.this),
                     OverlayPrefs.touchBoxTop(TouchBoxSetupActivity.this),

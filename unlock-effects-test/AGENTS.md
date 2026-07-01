@@ -15,6 +15,7 @@
 - Charging doodles and unlock effects are separate concerns. Unlock FX must not require charging; charging remains relevant only to doodle visibility.
 - The touch listen box is a small touchable `TYPE_ACCESSIBILITY_OVERLAY`; the doodle and FX overlays stay pass-through.
 - The listen box is calibrated from the app with `TouchBoxSetupActivity` and stored in `overlay_prefs` as `touch_box_*`.
+- Default listen box, rounded from the user's tested approximate box on SM-S918B 1080x2316: `left=60`, `top=710`, `right=1030`, `bottom=1900`. Touch box coordinates are rounded to 10 px on save/read, so existing approximate prefs are cleaned up without clearing them.
 - Default debug toggles: touch area on, transparent touch area on, lens flare loop off, doodle can be toggled off with `show_doodle`.
 
 ## S4 Lens Flare Status

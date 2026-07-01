@@ -22,6 +22,11 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_TOP = "touch_box_top";
     static final String TOUCH_BOX_RIGHT = "touch_box_right";
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
+    static final int DEFAULT_TOUCH_BOX_LEFT = 60;
+    static final int DEFAULT_TOUCH_BOX_TOP = 710;
+    static final int DEFAULT_TOUCH_BOX_RIGHT = 1030;
+    static final int DEFAULT_TOUCH_BOX_BOTTOM = 1900;
+    static final int TOUCH_BOX_ROUNDING_PX = 10;
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
 
@@ -81,28 +86,36 @@ final class OverlayPrefs {
     }
 
     static int touchBoxLeft(Context context) {
-        return get(context).getInt(TOUCH_BOX_LEFT, -1);
+        return roundTouchCoordinate(get(context).getInt(
+                TOUCH_BOX_LEFT,
+                DEFAULT_TOUCH_BOX_LEFT));
     }
 
     static int touchBoxTop(Context context) {
-        return get(context).getInt(TOUCH_BOX_TOP, -1);
+        return roundTouchCoordinate(get(context).getInt(
+                TOUCH_BOX_TOP,
+                DEFAULT_TOUCH_BOX_TOP));
     }
 
     static int touchBoxRight(Context context) {
-        return get(context).getInt(TOUCH_BOX_RIGHT, -1);
+        return roundTouchCoordinate(get(context).getInt(
+                TOUCH_BOX_RIGHT,
+                DEFAULT_TOUCH_BOX_RIGHT));
     }
 
     static int touchBoxBottom(Context context) {
-        return get(context).getInt(TOUCH_BOX_BOTTOM, -1);
+        return roundTouchCoordinate(get(context).getInt(
+                TOUCH_BOX_BOTTOM,
+                DEFAULT_TOUCH_BOX_BOTTOM));
     }
 
     static void saveTouchBox(Context context, int left, int top, int right, int bottom) {
         get(context).edit()
                 .putBoolean(TOUCH_BOX_CONFIGURED, true)
-                .putInt(TOUCH_BOX_LEFT, left)
-                .putInt(TOUCH_BOX_TOP, top)
-                .putInt(TOUCH_BOX_RIGHT, right)
-                .putInt(TOUCH_BOX_BOTTOM, bottom)
+                .putInt(TOUCH_BOX_LEFT, roundTouchCoordinate(left))
+                .putInt(TOUCH_BOX_TOP, roundTouchCoordinate(top))
+                .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinate(right))
+                .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinate(bottom))
                 .apply();
     }
 
@@ -118,6 +131,10 @@ final class OverlayPrefs {
 
     static int clampPositionOffset(int value) {
         return Math.max(POSITION_OFFSET_MIN, Math.min(POSITION_OFFSET_MAX, value));
+    }
+
+    static int roundTouchCoordinate(int value) {
+        return Math.round(value / (float) TOUCH_BOX_ROUNDING_PX) * TOUCH_BOX_ROUNDING_PX;
     }
 }
 
