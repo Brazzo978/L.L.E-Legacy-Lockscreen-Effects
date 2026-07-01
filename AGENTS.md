@@ -30,6 +30,8 @@
   - Current active lens flare path is the original Samsung S4 visual effect dex loaded by `LensFlareEffectView`.
   - Current gesture flow: effect starts on `ACTION_DOWN`, follows `MOVE`, opens PIN only after swipe distance threshold.
   - PIN opening is attempted with Accessibility `dispatchGesture`; service XML includes `android:canPerformGestures="true"`.
+- Important separation: charging doodles and unlock FX are separate systems.
+  Doodles remain gated by real charging state; unlock/touch FX must work on the lockscreen even when not charging.
 
 ## Build and install
 - Build stable:
@@ -72,3 +74,11 @@
 - Touch app now builds `classes2.dex` from the Samsung visual effect dex and
   `LensFlareEffectView` is a reflection wrapper around the original Samsung effect.
 - The old Canvas fake Lens Flare was removed from the active touch flow.
+- LensFlareEffectView must initialize Samsung's effect after the accessibility
+  overlay has real layout dimensions, then send `manualInit` and `show`.
+- The Samsung effect must receive an accepted `ACTION_DOWN` before `MOVE` or `UP`;
+  otherwise its original `move()` path can hit null animator state.
+- For the touch listen box, do not rely on `MotionEvent.getRawX/Y()` from the
+  small accessibility overlay. `TouchDebugView` computes screen coordinates as
+  `getLocationOnScreen() + event.getX/Y()` and forwards those to the S4 effect,
+  because the original Samsung code consumes `getRawX/Y()` internally.

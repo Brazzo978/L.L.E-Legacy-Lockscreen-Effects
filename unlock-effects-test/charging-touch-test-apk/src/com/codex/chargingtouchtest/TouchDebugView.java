@@ -13,11 +13,11 @@ public class TouchDebugView extends View {
     private static final String TAG = "ChargingTouchDebug";
 
     interface TouchTriggerListener {
-        void onTouchStarted(float rawX, float rawY);
+        void onTouchStarted(float screenX, float screenY);
 
-        void onTouchMoved(float rawX, float rawY, float deltaX, float deltaY, float distance);
+        void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY, float distance);
 
-        void onTouchEnded(float rawX, float rawY, float deltaX, float deltaY, float distance);
+        void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY, float distance);
 
         void onTouchCancelled();
     }
@@ -30,8 +30,10 @@ public class TouchDebugView extends View {
     private float lastY = -1f;
     private float lastRawX = -1f;
     private float lastRawY = -1f;
-    private float gestureStartRawX = -1f;
-    private float gestureStartRawY = -1f;
+    private float lastScreenX = -1f;
+    private float lastScreenY = -1f;
+    private float gestureStartScreenX = -1f;
+    private float gestureStartScreenY = -1f;
     private int pointerCount;
     private boolean transparentMode = true;
     private boolean gestureActive;
@@ -64,19 +66,25 @@ public class TouchDebugView extends View {
         lastY = event.getY();
         lastRawX = event.getRawX();
         lastRawY = event.getRawY();
+        int[] locationOnScreen = new int[2];
+        getLocationOnScreen(locationOnScreen);
+        lastScreenX = locationOnScreen[0] + lastX;
+        lastScreenY = locationOnScreen[1] + lastY;
         pointerCount = event.getPointerCount();
         Log.i(TAG, "action=" + lastAction
                 + " local=" + Math.round(lastX) + "," + Math.round(lastY)
                 + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
+                + " screen=" + Math.round(lastScreenX) + "," + Math.round(lastScreenY)
+                + " window=" + locationOnScreen[0] + "," + locationOnScreen[1]
                 + " pointers=" + pointerCount);
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 gestureActive = true;
-                gestureStartRawX = lastRawX;
-                gestureStartRawY = lastRawY;
+                gestureStartScreenX = lastScreenX;
+                gestureStartScreenY = lastScreenY;
                 if (touchTriggerListener != null) {
-                    touchTriggerListener.onTouchStarted(lastRawX, lastRawY);
+                    touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
                 }
                 break;
             case MotionEvent.ACTION_MOVE:
@@ -145,6 +153,8 @@ public class TouchDebugView extends View {
         y += dp(20);
         canvas.drawText("raw: " + point(lastRawX, lastRawY), x, y, paint);
         y += dp(20);
+        canvas.drawText("screen: " + point(lastScreenX, lastScreenY), x, y, paint);
+        y += dp(20);
         canvas.drawText("pointers: " + pointerCount, x, y, paint);
 
         if (lastX >= 0f && lastY >= 0f) {
@@ -158,10 +168,10 @@ public class TouchDebugView extends View {
         if (!gestureActive || touchTriggerListener == null) {
             return;
         }
-        float deltaX = lastRawX - gestureStartRawX;
-        float deltaY = lastRawY - gestureStartRawY;
+        float deltaX = lastScreenX - gestureStartScreenX;
+        float deltaY = lastScreenY - gestureStartScreenY;
         float distance = (float) Math.hypot(deltaX, deltaY);
-        touchTriggerListener.onTouchMoved(lastRawX, lastRawY, deltaX, deltaY, distance);
+        touchTriggerListener.onTouchMoved(lastScreenX, lastScreenY, deltaX, deltaY, distance);
     }
 
     private void notifyEnd() {
@@ -172,10 +182,10 @@ public class TouchDebugView extends View {
         if (touchTriggerListener == null) {
             return;
         }
-        float deltaX = lastRawX - gestureStartRawX;
-        float deltaY = lastRawY - gestureStartRawY;
+        float deltaX = lastScreenX - gestureStartScreenX;
+        float deltaY = lastScreenY - gestureStartScreenY;
         float distance = (float) Math.hypot(deltaX, deltaY);
-        touchTriggerListener.onTouchEnded(lastRawX, lastRawY, deltaX, deltaY, distance);
+        touchTriggerListener.onTouchEnded(lastScreenX, lastScreenY, deltaX, deltaY, distance);
     }
 
     private String point(float x, float y) {

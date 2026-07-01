@@ -28,7 +28,14 @@ public class LensFlareEffectView extends FrameLayout {
             sendStartupCommands();
         }
     };
+    private final Runnable initRunnable = new Runnable() {
+        @Override
+        public void run() {
+            ensureReady();
+        }
+    };
     private boolean ready;
+    private boolean touchDownSent;
     private float lastX;
     private float lastY;
     private long downTime;
@@ -38,43 +45,56 @@ public class LensFlareEffectView extends FrameLayout {
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
-        ready = initOriginalSamsungLensFlare(context);
     }
 
-    public void beginGesture(float x, float y) {
-        if (!ready) {
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        post(initRunnable);
+    }
+
+    public void beginGesture(float screenX, float screenY) {
+        lastX = screenX;
+        lastY = screenY;
+        if (!ensureReady()) {
             return;
         }
         downTime = SystemClockCompat.uptimeMillis();
-        lastX = x;
-        lastY = y;
-        sendTouch(MotionEvent.ACTION_DOWN, x, y);
+        touchDownSent = sendTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
     }
 
-    public void updateGesture(float x, float y) {
-        if (!ready) {
+    public void updateGesture(float screenX, float screenY) {
+        lastX = screenX;
+        lastY = screenY;
+        if (!touchDownSent) {
+            beginGesture(screenX, screenY);
             return;
         }
-        lastX = x;
-        lastY = y;
-        sendTouch(MotionEvent.ACTION_MOVE, x, y);
+        if (!ensureReady()) {
+            return;
+        }
+        sendTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
     }
 
     public void finishGesture(boolean completed) {
-        if (!ready) {
+        if (!touchDownSent || !ensureReady()) {
+            touchDownSent = false;
             return;
         }
         sendTouch(MotionEvent.ACTION_UP, lastX, lastY);
+        touchDownSent = false;
         if (completed) {
             sendUnlockCommand();
         }
     }
 
     public void cancelGesture() {
-        if (!ready) {
+        if (!touchDownSent || !ensureReady()) {
+            touchDownSent = false;
             return;
         }
         sendTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
+        touchDownSent = false;
     }
 
     @Override
@@ -87,7 +107,20 @@ public class LensFlareEffectView extends FrameLayout {
             }
         }
         removeCallbacks(startupRetry);
+        removeCallbacks(initRunnable);
         super.onDetachedFromWindow();
+    }
+
+    private boolean ensureReady() {
+        if (ready) {
+            return true;
+        }
+        if (getWidth() <= 0 || getHeight() <= 0) {
+            Log.d(TAG, "waiting for layout before Samsung lens flare init");
+            return false;
+        }
+        ready = initOriginalSamsungLensFlare(getContext());
+        return ready;
     }
 
     private boolean initOriginalSamsungLensFlare(Context context) {
@@ -118,11 +151,13 @@ public class LensFlareEffectView extends FrameLayout {
 
             setEffect.invoke(effectView, EFFECT_LENS_FLARE_S4);
             init.invoke(effectView, data);
-            addView((View) effectView, new LayoutParams(
+            View effectViewAsView = (View) effectView;
+            addView(effectViewAsView, new LayoutParams(
                     LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
             sendStartupCommands();
             postDelayed(startupRetry, STARTUP_RETRY_DELAY_MS);
-            Log.i(TAG, "original Samsung S4 lens flare loaded");
+            Log.i(TAG, "original Samsung S4 lens flare loaded width=" + getWidth()
+                    + " height=" + getHeight());
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "original Samsung S4 lens flare unavailable", t);
@@ -149,16 +184,25 @@ public class LensFlareEffectView extends FrameLayout {
         setInt(lensDataClass, lensData, "unlockSound", R.raw.lens_flare_unlock);
     }
 
-    private void sendTouch(int action, float x, float y) {
+    private boolean sendTouch(int action, float screenX, float screenY) {
         try {
             long now = SystemClockCompat.uptimeMillis();
             long eventDownTime = downTime == 0L ? now : downTime;
-            MotionEvent event = MotionEvent.obtain(eventDownTime, now, action, x, y, 0);
+            MotionEvent event = MotionEvent.obtain(eventDownTime, now, action, screenX, screenY, 0);
             event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
             handleTouchEvent.invoke(effectView, event, this);
+            int[] viewLocation = new int[2];
+            getLocationOnScreen(viewLocation);
+            Log.i(TAG, "touch action=" + action
+                    + " screen=" + Math.round(screenX) + "," + Math.round(screenY)
+                    + " viewLoc=" + viewLocation[0] + "," + viewLocation[1]
+                    + " view=" + getWidth() + "x" + getHeight());
             event.recycle();
+            return true;
         } catch (Throwable t) {
-            Log.e(TAG, "Samsung lens flare touch forwarding failed", t);
+            Log.e(TAG, "Samsung lens flare touch forwarding failed action=" + action
+                    + " cause=" + rootCauseMessage(t));
+            return false;
         }
     }
 
@@ -184,6 +228,16 @@ public class LensFlareEffectView extends FrameLayout {
         } catch (Throwable t) {
             Log.d(TAG, "Samsung lens flare unlock ignored", t);
         }
+    }
+
+    private static String rootCauseMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        String message = current.getMessage();
+        return current.getClass().getSimpleName()
+                + (message == null ? "" : ": " + message);
     }
 
     private int drawableId(String name) {

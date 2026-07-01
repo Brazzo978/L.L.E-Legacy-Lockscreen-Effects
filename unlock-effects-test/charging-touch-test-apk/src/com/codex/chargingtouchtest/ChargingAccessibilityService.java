@@ -186,31 +186,35 @@ public class ChargingAccessibilityService extends AccessibilityService
             pinEntryRequested = false;
         }
 
-        boolean showForSurface = (!interactive && OverlayPrefs.showAod(this))
+        boolean showDoodleForSurface = (!interactive && OverlayPrefs.showAod(this))
                 || (interactive && locked && !pinEntryRequested && OverlayPrefs.showLock(this))
                 || (home && OverlayPrefs.showHome(this));
-        boolean show = charging && showForSurface;
+        boolean showDoodle = charging && showDoodleForSurface;
+        boolean showFx = interactive && locked && !pinEntryRequested && OverlayPrefs.showLock(this);
 
-        if (show) {
-            showOverlay();
+        if (showDoodle) {
+            syncDoodleOverlay();
         } else {
-            removeOverlay();
+            removeDoodleOverlay();
+        }
+
+        if (showFx) {
+            syncLensFlareOverlay();
+            syncTouchDebugOverlay();
+        } else {
+            removeLensFlareOverlay();
+            removeTouchDebugOverlay();
         }
 
         Log.i(TAG, "visibility reason=" + reason
-                + " show=" + show
+                + " showDoodle=" + showDoodle
+                + " showFx=" + showFx
                 + " charging=" + charging
                 + " interactive=" + interactive
                 + " locked=" + locked
                 + " pinEntryRequested=" + pinEntryRequested
                 + " home=" + home
                 + " pkg=" + lastWindowPackage);
-    }
-
-    private void showOverlay() {
-        syncDoodleOverlay();
-        syncLensFlareOverlay();
-        syncTouchDebugOverlay();
     }
 
     private void syncDoodleOverlay() {
@@ -287,20 +291,20 @@ public class ChargingAccessibilityService extends AccessibilityService
         touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
         touchDebugView.setTouchTriggerListener(new TouchDebugView.TouchTriggerListener() {
             @Override
-            public void onTouchStarted(float rawX, float rawY) {
-                beginLensFlareGesture(rawX, rawY);
+            public void onTouchStarted(float screenX, float screenY) {
+                beginLensFlareGesture(screenX, screenY);
             }
 
             @Override
-            public void onTouchMoved(float rawX, float rawY,
+            public void onTouchMoved(float screenX, float screenY,
                     float deltaX, float deltaY, float distance) {
-                updateLensFlareGesture(rawX, rawY);
+                updateLensFlareGesture(screenX, screenY);
             }
 
             @Override
-            public void onTouchEnded(float rawX, float rawY,
+            public void onTouchEnded(float screenX, float screenY,
                     float deltaX, float deltaY, float distance) {
-                finishLensFlareGesture(rawX, rawY, distance);
+                finishLensFlareGesture(screenX, screenY, distance);
             }
 
             @Override
@@ -436,31 +440,33 @@ public class ChargingAccessibilityService extends AccessibilityService
         return new Rect(left, top, right, bottom);
     }
 
-    private void beginLensFlareGesture(float rawX, float rawY) {
+    private void beginLensFlareGesture(float screenX, float screenY) {
         handler.removeCallbacksAndMessages(null);
         syncLensFlareOverlay();
         if (lensFlareView != null) {
-            lensFlareView.beginGesture(rawX, rawY);
+            lensFlareView.beginGesture(screenX, screenY);
         }
-        Log.i(TAG, "lens flare gesture begin raw=" + Math.round(rawX) + "," + Math.round(rawY));
+        Log.i(TAG, "lens flare gesture begin screen="
+                + Math.round(screenX) + "," + Math.round(screenY));
     }
 
-    private void updateLensFlareGesture(float rawX, float rawY) {
+    private void updateLensFlareGesture(float screenX, float screenY) {
         if (lensFlareView != null) {
-            lensFlareView.updateGesture(rawX, rawY);
+            lensFlareView.updateGesture(screenX, screenY);
         }
     }
 
-    private void finishLensFlareGesture(float rawX, float rawY, float distance) {
+    private void finishLensFlareGesture(float screenX, float screenY, float distance) {
         boolean unlockTriggered = distance >= dp(UNLOCK_TRIGGER_DISTANCE_DP);
         if (lensFlareView != null) {
-            lensFlareView.updateGesture(rawX, rawY);
+            lensFlareView.updateGesture(screenX, screenY);
             lensFlareView.finishGesture(unlockTriggered);
         }
         if (unlockTriggered) {
             schedulePinEntry();
         }
-        Log.i(TAG, "lens flare gesture end raw=" + Math.round(rawX) + "," + Math.round(rawY)
+        Log.i(TAG, "lens flare gesture end screen="
+                + Math.round(screenX) + "," + Math.round(screenY)
                 + " distance=" + Math.round(distance)
                 + " unlockTriggered=" + unlockTriggered);
     }
