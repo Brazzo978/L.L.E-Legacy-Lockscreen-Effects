@@ -37,6 +37,7 @@ public class TouchDebugView extends View {
     private int pointerCount;
     private boolean transparentMode = true;
     private boolean gestureActive;
+    private boolean listeningEnabled = true;
 
     public TouchDebugView(Context context) {
         super(context);
@@ -56,10 +57,24 @@ public class TouchDebugView extends View {
         invalidate();
     }
 
+    public void setListeningEnabled(boolean listeningEnabled) {
+        if (this.listeningEnabled == listeningEnabled) {
+            return;
+        }
+        if (!listeningEnabled && gestureActive && touchTriggerListener != null) {
+            touchTriggerListener.onTouchCancelled();
+        }
+        this.listeningEnabled = listeningEnabled;
+        gestureActive = false;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (event == null) {
             return true;
+        }
+        if (!listeningEnabled) {
+            return false;
         }
         lastAction = actionName(event.getActionMasked());
         lastX = event.getX();
@@ -145,7 +160,7 @@ public class TouchDebugView extends View {
         paint.setTextSize(dp(13));
         paint.setColor(Color.rgb(205, 224, 236));
         y += dp(24);
-        canvas.drawText("swipe: lens flare", x, y, paint);
+        canvas.drawText("swipe: unlock effect", x, y, paint);
         y += dp(20);
         canvas.drawText("action: " + lastAction, x, y, paint);
         y += dp(20);

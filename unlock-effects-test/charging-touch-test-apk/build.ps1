@@ -17,6 +17,7 @@ $keystore = Join-Path $root "..\demo-apk\debug.keystore"
 $keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
 $samsungVisualEffectDex = Join-Path $root "..\extracted\secvisualeffect_hybrid_dex\classes.dex"
+$nativeLibs = Join-Path $root "native-libs"
 
 function Run($exe, $arguments) {
     & $exe @arguments
@@ -50,6 +51,9 @@ if (Test-Path $samsungVisualEffectDex) {
     Run "jar.exe" @("uf", $aligned, "-C", $out, "classes2.dex")
 } else {
     throw "Missing Samsung visual effect dex: $samsungVisualEffectDex"
+}
+if (Test-Path $nativeLibs) {
+    Run "jar.exe" @("uf", $aligned, "-C", $nativeLibs, ".")
 }
 
 if (-not (Test-Path $keystore)) {

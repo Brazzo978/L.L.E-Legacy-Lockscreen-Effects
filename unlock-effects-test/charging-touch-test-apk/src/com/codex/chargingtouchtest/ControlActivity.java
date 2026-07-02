@@ -5,6 +5,8 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -18,17 +20,30 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class ControlActivity extends Activity {
+    private static final String STATE_SELECTED_TAB = "selected_tab";
+    private static final int TAB_CHARGING_DOODLE = 0;
+    private static final int TAB_LOCKSCREEN_EFFECT = 1;
+
     private SharedPreferences prefs;
     private TextView accessibilityStatus;
     private Button accessibilityButton;
+    private Button chargingDoodleTabButton;
+    private Button lockscreenEffectTabButton;
+    private LinearLayout tabContent;
+    private int selectedTab = TAB_CHARGING_DOODLE;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = OverlayPrefs.get(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
+        ensureTouchAreaEnabled();
+        if (savedInstanceState != null) {
+            selectedTab = savedInstanceState.getInt(STATE_SELECTED_TAB, TAB_CHARGING_DOODLE);
+        }
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -56,9 +71,14 @@ public class ControlActivity extends Activity {
         noteParams.setMargins(0, dp(12), 0, dp(22));
         root.addView(note, noteParams);
 
-        root.addView(chargingDoodleControls());
-        root.addView(effectSelector());
-        root.addView(debugControls());
+        root.addView(tabSelector());
+
+        tabContent = new LinearLayout(this);
+        tabContent.setOrientation(LinearLayout.VERTICAL);
+        root.addView(tabContent, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        showTab(selectedTab);
 
         accessibilityStatus = new TextView(this);
         accessibilityStatus.setTextSize(16f);
@@ -88,9 +108,94 @@ public class ControlActivity extends Activity {
     }
 
     @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putInt(STATE_SELECTED_TAB, selectedTab);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         updateAccessibilityStatus();
+    }
+
+    private View tabSelector() {
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(50));
+        tabsParams.setMargins(0, 0, 0, dp(12));
+        tabs.setLayoutParams(tabsParams);
+
+        chargingDoodleTabButton = tabButton("Charging doodle", TAB_CHARGING_DOODLE);
+        lockscreenEffectTabButton = tabButton("Lockscreen effect", TAB_LOCKSCREEN_EFFECT);
+
+        LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f);
+        tabs.addView(chargingDoodleTabButton, firstParams);
+
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f);
+        secondParams.setMargins(dp(8), 0, 0, 0);
+        tabs.addView(lockscreenEffectTabButton, secondParams);
+        return tabs;
+    }
+
+    private Button tabButton(String label, final int tab) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(15f);
+        button.setAllCaps(false);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setGravity(Gravity.CENTER);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showTab(tab);
+            }
+        });
+        return button;
+    }
+
+    private void showTab(int tab) {
+        selectedTab = tab == TAB_LOCKSCREEN_EFFECT ? TAB_LOCKSCREEN_EFFECT : TAB_CHARGING_DOODLE;
+        updateTabStyles();
+        if (tabContent == null) {
+            return;
+        }
+        tabContent.removeAllViews();
+        if (selectedTab == TAB_CHARGING_DOODLE) {
+            tabContent.addView(chargingDoodleControls());
+        } else {
+            tabContent.addView(effectSelector());
+            tabContent.addView(lockscreenTouchControls());
+        }
+    }
+
+    private void updateTabStyles() {
+        styleTabButton(chargingDoodleTabButton, selectedTab == TAB_CHARGING_DOODLE);
+        styleTabButton(lockscreenEffectTabButton, selectedTab == TAB_LOCKSCREEN_EFFECT);
+    }
+
+    private void styleTabButton(Button button, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(8));
+        background.setColor(selected ? Color.rgb(66, 134, 245) : Color.rgb(30, 38, 52));
+        background.setStroke(dp(1),
+                selected ? Color.rgb(136, 184, 255) : Color.rgb(72, 84, 105));
+        button.setBackground(background);
+        button.setTextColor(selected ? Color.WHITE : Color.rgb(190, 205, 220));
+        button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
     }
 
     private Switch toggle(String label, final String key, boolean defaultValue) {
@@ -104,6 +209,27 @@ public class ControlActivity extends Activity {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 prefs.edit().putBoolean(key, isChecked).apply();
+            }
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(56));
+        params.setMargins(0, dp(4), 0, dp(4));
+        toggle.setLayoutParams(params);
+        return toggle;
+    }
+
+    private Switch invertedToggle(String label, final String key, boolean defaultStoredValue) {
+        Switch toggle = new Switch(this);
+        toggle.setText(label);
+        toggle.setTextColor(Color.WHITE);
+        toggle.setTextSize(18f);
+        toggle.setChecked(!prefs.getBoolean(key, defaultStoredValue));
+        toggle.setPadding(0, dp(8), 0, dp(8));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(key, !isChecked).apply();
             }
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -137,6 +263,7 @@ public class ControlActivity extends Activity {
         section.addView(toggle("Doodle on Home", OverlayPrefs.SHOW_HOME, false));
         section.addView(seasonSelector());
         section.addView(positionControls());
+        section.addView(doodleDebugControls());
         return section;
     }
 
@@ -222,6 +349,9 @@ public class ControlActivity extends Activity {
         group.setOrientation(RadioGroup.VERTICAL);
         addEffectOption(group, "S4 lens flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
         addEffectOption(group, "S3 ripple slot", OverlayPrefs.EFFECT_S3_RIPPLE);
+        addEffectOption(group, "S5 popping colours", OverlayPrefs.EFFECT_S5_POPPING_COLOURS);
+        addEffectOption(group, "S5 coloured droplets", OverlayPrefs.EFFECT_COLOUR_DROPLET);
+        addEffectOption(group, "S5 sparkling bubbles", OverlayPrefs.EFFECT_SPARKLING_BUBBLES);
 
         RadioButton checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.unlockEffect(this)));
         if (checked == null) {
@@ -242,6 +372,18 @@ public class ControlActivity extends Activity {
             }
         });
         section.addView(group);
+        section.addView(button("Refresh effect background map", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                int token = prefs.getInt(OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN, 0);
+                prefs.edit()
+                        .putInt(OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN, token + 1)
+                        .apply();
+                Toast.makeText(ControlActivity.this,
+                        "Effect background refresh queued",
+                        Toast.LENGTH_SHORT).show();
+            }
+        }));
         return section;
     }
 
@@ -279,7 +421,7 @@ public class ControlActivity extends Activity {
         return section;
     }
 
-    private View debugControls() {
+    private View doodleDebugControls() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -296,8 +438,26 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
-        section.addView(toggle("Touch debug area", OverlayPrefs.DEBUG_TOUCH_AREA, true));
-        section.addView(toggle("Transparent touch area", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
+        return section;
+    }
+
+    private View lockscreenTouchControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, dp(12));
+        section.setLayoutParams(params);
+
+        TextView label = new TextView(this);
+        label.setText("Touch box");
+        label.setTextColor(Color.rgb(220, 232, 242));
+        label.setTextSize(18f);
+        section.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(button("Calibrate touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -367,6 +527,12 @@ public class ControlActivity extends Activity {
 
     private String signedValue(int value) {
         return value > 0 ? "+" + value : String.valueOf(value);
+    }
+
+    private void ensureTouchAreaEnabled() {
+        if (!prefs.getBoolean(OverlayPrefs.DEBUG_TOUCH_AREA, true)) {
+            prefs.edit().putBoolean(OverlayPrefs.DEBUG_TOUCH_AREA, true).apply();
+        }
     }
 
     private Button button(String text, View.OnClickListener listener) {

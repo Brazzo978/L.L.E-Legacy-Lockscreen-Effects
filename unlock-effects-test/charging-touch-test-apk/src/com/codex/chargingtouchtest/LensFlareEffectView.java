@@ -15,7 +15,7 @@ import android.view.View;
 
 import java.util.Random;
 
-public class LensFlareEffectView extends View {
+public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private static final String TAG = "ChargingS4LensFlare";
     private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
     private static final long FOG_ON_DURATION_MS = 100L;
@@ -57,6 +57,8 @@ public class LensFlareEffectView extends View {
     private final int unlockSound;
 
     private boolean destroyed;
+    private boolean warmUpPending;
+    private boolean warmedUp;
     private boolean gestureActive;
     private boolean fading;
     private float startX;
@@ -99,6 +101,7 @@ public class LensFlareEffectView extends View {
                 hexagonGreen,
                 hexagonGreen
         };
+        prepareBitmapsForDraw();
         for (int i = 0; i < tapHexagonRotations.length; i++) {
             tapHexagonRotations[i] = random.nextInt(360);
         }
@@ -123,10 +126,22 @@ public class LensFlareEffectView extends View {
                 + " tapRadius=" + Math.round(tapAreaRadiusPx));
     }
 
+    @Override
+    public View asView() {
+        return this;
+    }
+
+    @Override
+    public String effectName() {
+        return "S4 lens flare";
+    }
+
+    @Override
     public void beginGesture(float screenX, float screenY) {
         if (destroyed) {
             return;
         }
+        warmedUp = true;
         long now = SystemClock.uptimeMillis();
         gestureActive = true;
         fading = false;
@@ -146,6 +161,7 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    @Override
     public void updateGesture(float screenX, float screenY) {
         if (!gestureActive) {
             beginGesture(screenX, screenY);
@@ -156,6 +172,7 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    @Override
     public void finishGesture(boolean completed) {
         if (!gestureActive) {
             return;
@@ -182,6 +199,7 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    @Override
     public void cancelGesture() {
         if (!gestureActive) {
             return;
@@ -195,6 +213,7 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    @Override
     public void resetEffect() {
         gestureActive = false;
         fading = false;
@@ -203,6 +222,18 @@ public class LensFlareEffectView extends View {
         invalidate();
     }
 
+    @Override
+    public void warmUp() {
+        if (destroyed || warmedUp) {
+            return;
+        }
+        warmUpPending = true;
+        if (getWidth() > 0 && getHeight() > 0) {
+            invalidate();
+        }
+    }
+
+    @Override
     public void destroy() {
         if (destroyed) {
             return;
@@ -215,13 +246,41 @@ public class LensFlareEffectView extends View {
     @Override
     protected void onDetachedFromWindow() {
         resetEffect();
+        warmUpPending = false;
+        warmedUp = false;
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        post(new Runnable() {
+            @Override
+            public void run() {
+                warmUp();
+            }
+        });
+    }
+
+    @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        if (warmUpPending && width > 0 && height > 0) {
+            invalidate();
+        }
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         long now = SystemClock.uptimeMillis();
         boolean keepAnimating = false;
+
+        if (warmUpPending) {
+            drawWarmUpFrame(canvas);
+            warmUpPending = false;
+            warmedUp = true;
+            Log.i(TAG, "canvas lens flare warmed");
+        }
 
         if (gestureActive) {
             drawDragFlare(canvas, now, currentX, currentY, 1f);
@@ -258,6 +317,22 @@ public class LensFlareEffectView extends View {
 
         if (keepAnimating) {
             postInvalidateOnAnimation();
+        }
+    }
+
+    private void drawWarmUpFrame(Canvas canvas) {
+        drawBitmapCentered(canvas, flareLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareRing, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareParticle, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareLong, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareRainbow, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareHoverLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawBitmapCentered(canvas, flareVignetting, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        for (int i = 0; i < tapHexagons.length; i++) {
+            drawBitmapCentered(canvas, tapHexagons[i], 0.5f, 0.5f, 1f, 0.004f, 0f);
+        }
+        for (int i = 0; i < dragHexagons.length; i++) {
+            drawBitmapCentered(canvas, dragHexagons[i], 0.5f, 0.5f, 1f, 0.004f, 0f);
         }
     }
 
@@ -421,6 +496,28 @@ public class LensFlareEffectView extends View {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inScaled = false;
         return BitmapFactory.decodeResource(getResources(), id, options);
+    }
+
+    private void prepareBitmapsForDraw() {
+        prepareBitmap(flareLight);
+        prepareBitmap(flareRing);
+        prepareBitmap(flareParticle);
+        prepareBitmap(flareLong);
+        prepareBitmap(flareRainbow);
+        prepareBitmap(flareHoverLight);
+        prepareBitmap(flareVignetting);
+        for (int i = 0; i < tapHexagons.length; i++) {
+            prepareBitmap(tapHexagons[i]);
+        }
+        for (int i = 0; i < dragHexagons.length; i++) {
+            prepareBitmap(dragHexagons[i]);
+        }
+    }
+
+    private void prepareBitmap(Bitmap bitmap) {
+        if (bitmap != null) {
+            bitmap.prepareToDraw();
+        }
     }
 
     private void play(int soundId) {

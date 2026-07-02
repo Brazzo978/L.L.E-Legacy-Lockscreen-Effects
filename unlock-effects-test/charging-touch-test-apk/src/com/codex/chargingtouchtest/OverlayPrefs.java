@@ -18,6 +18,7 @@ final class OverlayPrefs {
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    static final String POPPING_COLOR_REFRESH_TOKEN = "popping_color_refresh_token";
     static final String PERF_DEFAULTS_APPLIED = "perf_defaults_20260701";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
     static final String TOUCH_BOX_LEFT = "touch_box_left";
@@ -26,6 +27,10 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
     static final int EFFECT_S4_LENS_FLARE = 0;
     static final int EFFECT_S3_RIPPLE = 1;
+    static final int EFFECT_S5_POPPING_COLOURS = 2;
+    static final int EFFECT_WATERCOLOUR = 3;
+    static final int EFFECT_COLOUR_DROPLET = 4;
+    static final int EFFECT_SPARKLING_BUBBLES = 5;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -95,7 +100,14 @@ final class OverlayPrefs {
 
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
-        if (effect != EFFECT_S4_LENS_FLARE && effect != EFFECT_S3_RIPPLE) {
+        if (effect == EFFECT_WATERCOLOUR) {
+            return EFFECT_S5_POPPING_COLOURS;
+        }
+        if (effect != EFFECT_S4_LENS_FLARE
+                && effect != EFFECT_S3_RIPPLE
+                && effect != EFFECT_S5_POPPING_COLOURS
+                && effect != EFFECT_COLOUR_DROPLET
+                && effect != EFFECT_SPARKLING_BUBBLES) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
