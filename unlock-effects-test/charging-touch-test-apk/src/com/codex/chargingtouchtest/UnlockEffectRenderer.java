@@ -1,5 +1,6 @@
 package com.codex.chargingtouchtest;
 
+import android.graphics.Rect;
 import android.view.View;
 
 interface UnlockEffectRenderer {
@@ -18,6 +19,8 @@ interface UnlockEffectRenderer {
     void resetEffect();
 
     void warmUp();
+
+    void showUnlockAffordance(Rect screenRect, long startDelayMs);
 
     void destroy();
 }

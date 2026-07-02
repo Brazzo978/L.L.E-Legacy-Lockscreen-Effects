@@ -23,6 +23,10 @@ public class PoppingColoursEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer {
     private static final String TAG = "ChargingS5Popping";
     private static final int SAMSUNG_EFFECT_ID = 3;
+    private static final int CMD_SET_BACKGROUND = 0;
+    private static final int CMD_LOCK_AFFORDANCE = 1;
+    private static final int CMD_UNLOCK = 2;
+    private static final int CMD_CUSTOM = 3;
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -166,6 +170,26 @@ public class PoppingColoursEffectView extends FrameLayout
         sendBackgroundBitmap();
     }
 
+    @Override
+    public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
+        if (!canRender() || handleCustomEvent == null) {
+            return;
+        }
+        sendBackgroundBitmap();
+        sendScreenTurnedOnCommand();
+        Rect rect = safeRect(screenRect);
+        try {
+            HashMap<String, Object> params = new HashMap<String, Object>();
+            params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
+            params.put("Rect", rect);
+            handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
+            Log.i(TAG, "popping colours affordance queued delayMs=" + startDelayMs
+                    + " rect=" + rect.left + "," + rect.top + "," + rect.right + "," + rect.bottom);
+        } catch (Throwable t) {
+            Log.d(TAG, "affordance command ignored", t);
+        }
+    }
+
     public void setColorSourceBitmap(Bitmap source, String sourceName) {
         if (destroyed || source == null || source.isRecycled()) {
             return;
@@ -294,7 +318,7 @@ public class PoppingColoursEffectView extends FrameLayout
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
             params.put("BGBitmap", getBackgroundBitmap());
-            handleCustomEvent.invoke(effectView, 0, params);
+            handleCustomEvent.invoke(effectView, CMD_SET_BACKGROUND, params);
         } catch (Throwable t) {
             Log.d(TAG, "BGBitmap command ignored", t);
         }
@@ -397,10 +421,28 @@ public class PoppingColoursEffectView extends FrameLayout
             return;
         }
         try {
-            handleCustomEvent.invoke(effectView, 2, new HashMap<String, Object>());
+            handleCustomEvent.invoke(effectView, CMD_UNLOCK, new HashMap<String, Object>());
         } catch (Throwable t) {
             Log.d(TAG, "unlock command ignored", t);
         }
+    }
+
+    private void sendScreenTurnedOnCommand() {
+        if (!canRender() || handleCustomEvent == null) {
+            return;
+        }
+        try {
+            handleCustomEvent.invoke(effectView, CMD_CUSTOM, null);
+        } catch (Throwable t) {
+            Log.d(TAG, "screen-on command ignored", t);
+        }
+    }
+
+    private Rect safeRect(Rect rect) {
+        if (rect != null && rect.width() > 0 && rect.height() > 0) {
+            return new Rect(rect);
+        }
+        return new Rect(0, 0, Math.max(1, getRenderWidth()), Math.max(1, getRenderHeight()));
     }
 
     private boolean canRender() {

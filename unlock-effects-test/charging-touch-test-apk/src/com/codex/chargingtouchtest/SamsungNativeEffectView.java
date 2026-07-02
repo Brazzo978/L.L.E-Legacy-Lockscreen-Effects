@@ -179,6 +179,11 @@ public class SamsungNativeEffectView extends FrameLayout
     }
 
     @Override
+    public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
+        // Other native effects are gesture-only in this package.
+    }
+
+    @Override
     public boolean hasBackgroundSourceBitmap() {
         return externalBackgroundSource
                 && backgroundBitmap != null

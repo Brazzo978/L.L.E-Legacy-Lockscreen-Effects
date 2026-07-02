@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.os.SystemClock;
@@ -22,6 +23,8 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private static final long TAP_ANIMATION_DURATION_MS = 4000L;
     private static final long FADE_OUT_DURATION_MS = 500L;
     private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
+    private static final long AFFORDANCE_ON_DURATION_MS = 200L;
+    private static final long AFFORDANCE_OFF_DURATION_MS = 1100L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
     private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
@@ -72,6 +75,15 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private float randomRotation;
     private TapAnimation tapAnimation;
     private UnlockAnimation unlockAnimation;
+    private AffordanceAnimation affordanceAnimation;
+    private float pendingAffordanceX;
+    private float pendingAffordanceY;
+    private final Runnable unlockAffordanceRunnable = new Runnable() {
+        @Override
+        public void run() {
+            playUnlockAffordance(pendingAffordanceX, pendingAffordanceY);
+        }
+    };
 
     public LensFlareEffectView(Context context) {
         super(context);
@@ -141,6 +153,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         if (destroyed) {
             return;
         }
+        cancelUnlockAffordance();
         warmedUp = true;
         long now = SystemClock.uptimeMillis();
         gestureActive = true;
@@ -215,6 +228,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
 
     @Override
     public void resetEffect() {
+        cancelUnlockAffordance();
         gestureActive = false;
         fading = false;
         tapAnimation = null;
@@ -231,6 +245,21 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         if (getWidth() > 0 && getHeight() > 0) {
             invalidate();
         }
+    }
+
+    @Override
+    public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
+        if (destroyed) {
+            return;
+        }
+        Rect rect = safeRect(screenRect);
+        pendingAffordanceX = rect.exactCenterX();
+        pendingAffordanceY = rect.exactCenterY();
+        removeCallbacks(unlockAffordanceRunnable);
+        postDelayed(unlockAffordanceRunnable, Math.max(0L, startDelayMs));
+        Log.i(TAG, "lens flare affordance queued delayMs=" + startDelayMs
+                + " center=" + Math.round(pendingAffordanceX)
+                + "," + Math.round(pendingAffordanceY));
     }
 
     @Override
@@ -301,6 +330,14 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
                 keepAnimating = true;
             } else {
                 tapAnimation = null;
+            }
+        }
+
+        if (affordanceAnimation != null) {
+            if (drawUnlockAffordance(canvas, now, affordanceAnimation)) {
+                keepAnimating = true;
+            } else {
+                affordanceAnimation = null;
             }
         }
 
@@ -405,6 +442,23 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
                 animation.rotation + 30f * value);
     }
 
+    private boolean drawUnlockAffordance(Canvas canvas, long now, AffordanceAnimation animation) {
+        long elapsed = now - animation.startedAt;
+        float alpha;
+        if (elapsed < AFFORDANCE_ON_DURATION_MS) {
+            alpha = FOG_MAX_ALPHA * clamp01(elapsed / (float) AFFORDANCE_ON_DURATION_MS);
+        } else if (elapsed < AFFORDANCE_ON_DURATION_MS + AFFORDANCE_OFF_DURATION_MS) {
+            float offT = (elapsed - AFFORDANCE_ON_DURATION_MS)
+                    / (float) AFFORDANCE_OFF_DURATION_MS;
+            alpha = FOG_MAX_ALPHA * (1f - clamp01(offT));
+        } else {
+            return false;
+        }
+        drawBitmapCentered(canvas, flareLight, animation.x, animation.y,
+                bitmapSize(flareLight, 1f), alpha, 0f);
+        return true;
+    }
+
     private void drawUnlockAnimation(Canvas canvas, UnlockAnimation animation, float value) {
         float alpha = value < 0.5f ? value * 2f : 1f - (value - 0.5f) * 2f;
         float x = animation.startX + (animation.endX - animation.startX) * 0.4f;
@@ -431,6 +485,35 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
                     tapHexagonRotations[i]);
         }
         return new TapAnimation(x, y, now, randomRotation, animationHexagons);
+    }
+
+    private void playUnlockAffordance(float x, float y) {
+        if (destroyed || gestureActive) {
+            return;
+        }
+        warmedUp = true;
+        randomRotation = random.nextInt(360);
+        setHexagonRandomTarget();
+        long now = SystemClock.uptimeMillis();
+        tapAnimation = createTapAnimation(x, y, now);
+        affordanceAnimation = new AffordanceAnimation(x, y, now);
+        invalidate();
+        Log.i(TAG, "lens flare affordance play center="
+                + Math.round(x) + "," + Math.round(y));
+    }
+
+    private void cancelUnlockAffordance() {
+        removeCallbacks(unlockAffordanceRunnable);
+        affordanceAnimation = null;
+    }
+
+    private Rect safeRect(Rect rect) {
+        if (rect != null && rect.width() > 0 && rect.height() > 0) {
+            return rect;
+        }
+        int width = getWidth() > 0 ? getWidth() : getResources().getDisplayMetrics().widthPixels;
+        int height = getHeight() > 0 ? getHeight() : getResources().getDisplayMetrics().heightPixels;
+        return new Rect(0, 0, Math.max(1, width), Math.max(1, height));
     }
 
     private void setHexagonRandomTarget() {
@@ -589,6 +672,18 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
             this.scale = scale;
             this.bitmap = bitmap;
             this.rotation = rotation;
+        }
+    }
+
+    private static final class AffordanceAnimation {
+        final float x;
+        final float y;
+        final long startedAt;
+
+        AffordanceAnimation(float x, float y, long startedAt) {
+            this.x = x;
+            this.y = y;
+            this.startedAt = startedAt;
         }
     }
 

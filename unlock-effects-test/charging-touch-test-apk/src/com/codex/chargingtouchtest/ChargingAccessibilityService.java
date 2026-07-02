@@ -50,6 +50,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_SWIPE_START_DELAY_MS = 60L;
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS = 900L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
+    private static final long UNLOCK_AFFORDANCE_DELAY_MS = 500L;
     private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
     private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
     private static final long SCREEN_ON_REFRESH_FAST_MS = 35L;
@@ -205,6 +206,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean pinEntrySurfaceVisible;
     private boolean notificationShadeVisible;
     private boolean unlockTouchCachedWhileScreenOff;
+    private boolean unlockAffordancePending;
     private boolean lockscreenSessionPolling;
     private long nextContentAwarePollAt;
     private long pinEntryLastSeenAt;
@@ -225,12 +227,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                 Log.i(TAG, "screen off broadcast interactive="
                         + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false));
+                unlockAffordancePending = false;
                 stopLockscreenSessionPolling();
                 clearBlockedSurfaceState();
                 colorScreenshotAttemptedThisSession = false;
                 cacheUnlockTouchForScreenOff();
                 scheduleScreenOffPrearm();
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+                unlockAffordancePending = false;
                 stopLockscreenSessionPolling();
                 handler.removeCallbacks(screenOffPrearmRunnable);
                 clearBlockedSurfaceState();
@@ -240,6 +244,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 Log.i(TAG, "screen on broadcast cached=" + unlockTouchCachedWhileScreenOff
                         + " interactive=" + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false));
+                unlockAffordancePending = true;
                 handler.removeCallbacks(screenOffPrearmRunnable);
                 if (unlockTouchCachedWhileScreenOff) {
                     notificationShadeVisible = false;
@@ -581,6 +586,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }
         if (!interactive || !locked) {
+            unlockAffordancePending = false;
             clearBlockedSurfaceState();
         } else if (pinEntryRequested && pinEntrySurfaceSeen && !pinEntrySurfaceVisible) {
             long elapsedSincePinSeen = pinEntryLastSeenAt <= 0L
@@ -612,6 +618,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (showFx) {
             refreshUnlockEffectBackgroundSourceIfNeeded("showFx:" + reason);
             syncUnlockEffectOverlay();
+            showPendingUnlockAffordance(reason);
             syncTouchDebugOverlay(true, true);
             syncDebugLensLoop();
         } else {
@@ -743,6 +750,57 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " name=" + unlockEffectRenderer.effectName());
     }
 
+    private void showPendingUnlockAffordance(String reason) {
+        if (!unlockAffordancePending
+                || unlockEffectRenderer == null
+                || unlockEffectView == null
+                || !unlockEffectOverlayAttached
+                || OverlayPrefs.debugLensLoop(this)) {
+            return;
+        }
+        if (unlockAffordanceWaitingForBackground(reason)) {
+            return;
+        }
+        Rect rect = unlockEffectVisibleRect();
+        unlockEffectRenderer.showUnlockAffordance(rect, UNLOCK_AFFORDANCE_DELAY_MS);
+        unlockAffordancePending = false;
+        Log.i(TAG, "unlock affordance scheduled reason=" + reason
+                + " delayMs=" + UNLOCK_AFFORDANCE_DELAY_MS
+                + " rect=" + rect.left + "," + rect.top + "," + rect.right + "," + rect.bottom
+                + " effect=" + OverlayPrefs.unlockEffect(this));
+    }
+
+    private Rect unlockEffectVisibleRect() {
+        int width = unlockEffectView == null ? 0 : unlockEffectView.getWidth();
+        int height = unlockEffectView == null ? 0 : unlockEffectView.getHeight();
+        if (width <= 0 || height <= 0) {
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            width = Math.max(dp(48), metrics.widthPixels);
+            height = Math.max(dp(48), metrics.heightPixels);
+        }
+        return new Rect(0, 0, width, height);
+    }
+
+    private boolean unlockAffordanceWaitingForBackground(String reason) {
+        if (!effectUsesScreenshotBackground(unlockEffectRendererType)
+                || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
+            return false;
+        }
+        BackgroundSourceRenderer backgroundRenderer =
+                (BackgroundSourceRenderer) unlockEffectRenderer;
+        if (backgroundRenderer.hasBackgroundSourceBitmap()) {
+            return false;
+        }
+        if (!colorScreenshotAttemptedThisSession || colorScreenshotInFlight) {
+            refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
+            Log.i(TAG, "unlock affordance waiting for background reason=" + reason
+                    + " inFlight=" + colorScreenshotInFlight
+                    + " attempted=" + colorScreenshotAttemptedThisSession);
+            return true;
+        }
+        return false;
+    }
+
     private void refreshUnlockEffectBackgroundSourceIfNeeded(final String reason) {
         int effect = OverlayPrefs.unlockEffect(this);
         if (!effectUsesScreenshotBackground(effect)
@@ -770,10 +828,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                     Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
                     if (bitmap == null) {
                         Log.i(TAG, "unlock effect background screenshot empty reason=" + reason);
+                        showPendingUnlockAffordance("background_empty:" + reason);
                         return;
                     }
                     applyUnlockEffectBackgroundSource(bitmap, "accessibility_screenshot");
                     bitmap.recycle();
+                    showPendingUnlockAffordance("background:" + reason);
                 }
 
                 @Override
@@ -781,11 +841,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                     colorScreenshotInFlight = false;
                     Log.i(TAG, "unlock effect background screenshot failed code=" + errorCode
                             + " reason=" + reason);
+                    showPendingUnlockAffordance("background_failed:" + reason);
                 }
             });
         } catch (Throwable t) {
             colorScreenshotInFlight = false;
             Log.d(TAG, "unlock effect background screenshot request failed reason=" + reason, t);
+            showPendingUnlockAffordance("background_request_failed:" + reason);
         }
     }
 
@@ -1193,6 +1255,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         handler.removeCallbacks(pinEntrySwipeRunnable);
         handler.removeCallbacks(pinEntryEffectCleanupRunnable);
         stopDebugLensLoop();
+        unlockAffordancePending = false;
         unlockEffectAnchorX = screenX;
         unlockEffectAnchorY = screenY;
         syncUnlockEffectOverlay();
