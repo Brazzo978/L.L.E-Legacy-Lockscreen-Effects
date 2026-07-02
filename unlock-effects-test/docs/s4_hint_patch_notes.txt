@@ -1,0 +1,204 @@
+S4 Lens Flare screen-on hint patch notes
+========================================
+
+Scopo
+-----
+Questa nota serve per applicare l'hint centrale S4 Lens Flare su una build piu
+recente dell'app, senza dipendere dalla build compilata oggi.
+
+Nota importante:
+- In questa build l'hint S4 Lens Flare funziona.
+- S5 / Popping Colours in questa build e rotto/indietro, quindi non usare questa
+  build come riferimento per Popping.
+- Per ora applica solo la parte S4 Lens Flare.
+
+
+Comportamento originale S4 da replicare
+---------------------------------------
+Quando la lockscreen si riaccende:
+
+1. SystemUI aspetta 500 ms.
+2. Calcola il centro della lockscreen visibile.
+3. Chiama l'effetto Lens Flare con una "unlock affordance".
+4. Lens Flare fa partire un tap burst al centro.
+5. Il fog/light centrale va:
+
+   alpha 0.0 -> 0.6 in 200 ms
+   alpha 0.6 -> 0.0 in 1100 ms
+
+Il punto NON e l'ultimo touch. Deve essere il centro dello schermo/overlay.
+
+
+Costanti da usare
+-----------------
+Nel servizio/lifecycle lockscreen:
+
+    UNLOCK_AFFORDANCE_DELAY_MS = 500
+
+Nel renderer Lens Flare:
+
+    AFFORDANCE_ON_DURATION_MS = 200
+    AFFORDANCE_OFF_DURATION_MS = 1100
+    FOG_MAX_ALPHA = 0.6
+
+
+Patch lato servizio / overlay lockscreen
+----------------------------------------
+Quando arriva ACTION_SCREEN_ON, arma un flag:
+
+    unlockAffordancePending = true
+
+Quando l'overlay dell'effetto e montato, se:
+
+    unlockAffordancePending == true
+    renderer != null
+    effectView/overlay gia montato
+    non sei in debug loop
+
+allora:
+
+    rect = Rect(0, 0, overlayWidth, overlayHeight)
+    renderer.showUnlockAffordance(rect, 500)
+    unlockAffordancePending = false
+
+Se width/height non sono ancora pronti, usa DisplayMetrics come fallback.
+
+Quando arriva uno di questi eventi, azzera il pending:
+
+    ACTION_SCREEN_OFF
+    ACTION_USER_PRESENT
+    lockscreen non piu locked
+    inizio gesture utente sull'effetto
+
+
+Interfaccia renderer
+--------------------
+Se l'app ha un'interfaccia tipo UnlockEffectRenderer, aggiungi:
+
+    void showUnlockAffordance(Rect screenRect, long startDelayMs);
+
+I renderer che non supportano l'hint possono implementarlo vuoto.
+
+
+Patch LensFlareEffectView
+-------------------------
+Nel renderer S4 Lens Flare aggiungi uno stato separato dalla gesture:
+
+    AffordanceAnimation affordanceAnimation;
+    float pendingAffordanceX;
+    float pendingAffordanceY;
+
+    Runnable unlockAffordanceRunnable = new Runnable() {
+        public void run() {
+            playUnlockAffordance(pendingAffordanceX, pendingAffordanceY);
+        }
+    };
+
+Metodo pubblico:
+
+    public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
+        Rect rect = safeRect(screenRect);
+        pendingAffordanceX = rect.exactCenterX();
+        pendingAffordanceY = rect.exactCenterY();
+        removeCallbacks(unlockAffordanceRunnable);
+        postDelayed(unlockAffordanceRunnable, Math.max(0L, startDelayMs));
+    }
+
+playUnlockAffordance:
+
+    private void playUnlockAffordance(float x, float y) {
+        if (destroyed || gestureActive) {
+            return;
+        }
+        warmedUp = true;
+        randomRotation = random.nextInt(360);
+        setHexagonRandomTarget();
+        long now = SystemClock.uptimeMillis();
+        tapAnimation = createTapAnimation(x, y, now);
+        affordanceAnimation = new AffordanceAnimation(x, y, now);
+        invalidate();
+    }
+
+Nel reset/beginGesture cancella l'hint pendente:
+
+    removeCallbacks(unlockAffordanceRunnable);
+    affordanceAnimation = null;
+
+
+Draw Lens Flare affordance
+--------------------------
+Nel onDraw, oltre a gesture/tap/unlock, disegna anche:
+
+    if (affordanceAnimation != null) {
+        if (drawUnlockAffordance(canvas, now, affordanceAnimation)) {
+            keepAnimating = true;
+        } else {
+            affordanceAnimation = null;
+        }
+    }
+
+La funzione deve fare solo il fog/light centrale:
+
+    private boolean drawUnlockAffordance(Canvas canvas, long now, AffordanceAnimation a) {
+        long elapsed = now - a.startedAt;
+        float alpha;
+
+        if (elapsed < 200) {
+            alpha = 0.6f * clamp01(elapsed / 200f);
+        } else if (elapsed < 1300) {
+            float offT = (elapsed - 200) / 1100f;
+            alpha = 0.6f * (1f - clamp01(offT));
+        } else {
+            return false;
+        }
+
+        drawBitmapCentered(canvas, flareLight, a.x, a.y,
+                bitmapSize(flareLight, 1f), alpha, 0f);
+        return true;
+    }
+
+Il tap burst viene gia creato da:
+
+    tapAnimation = createTapAnimation(x, y, now);
+
+Quindi il risultato e:
+
+    500 ms dopo screen-on
+    centro lockscreen
+    tap burst + luce/fog alpha 0 -> 0.6 -> 0
+
+
+Classe dati minimale
+--------------------
+    private static final class AffordanceAnimation {
+        final float x;
+        final float y;
+        final long startedAt;
+
+        AffordanceAnimation(float x, float y, long startedAt) {
+            this.x = x;
+            this.y = y;
+            this.startedAt = startedAt;
+        }
+    }
+
+
+File dove la patch e stata applicata oggi
+-----------------------------------------
+Branch:
+
+    codex/charging-touch-advanced
+
+Commit:
+
+    e1437d0 Add S4 screen-on unlock affordance
+
+File principali:
+
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/ChargingAccessibilityService.java
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/LensFlareEffectView.java
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/UnlockEffectRenderer.java
+
+Per portarla sulla build piu recente, prendi solo la parte S4 Lens Flare da quei
+file. Evita di copiare la parte Popping Colours da questa build, perche qui non
+e affidabile.
