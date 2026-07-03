@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.app.Activity;
 import android.content.Context;
@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Random;
 
 public class ChargingActivity extends Activity {
-    private static final String TAG = "ChargingTouchTest";
+    private static final String TAG = "LLE";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,7 +52,7 @@ public class ChargingActivity extends Activity {
         getWindow().setFormat(PixelFormat.TRANSLUCENT);
         getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
-        setContentView(new ChargingTouchTestView(this));
+        setContentView(new LLEView(this));
         hideSystemBars();
     }
 
@@ -101,7 +101,7 @@ public class ChargingActivity extends Activity {
                         | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
-    static final class ChargingTouchTestView extends View {
+    static final class LLEView extends View {
         private static final int MAX_PARTICLES = 180;
         private static final long PARTICLE_DURATION_MS = 1450L;
         private static final long RING_DURATION_MS = 1250L;
@@ -114,7 +114,7 @@ public class ChargingActivity extends Activity {
         private long lastMoveBurstAt;
         private long startedAt;
 
-        ChargingTouchTestView(Context context) {
+        LLEView(Context context) {
             super(context);
             setWillNotDraw(false);
             setFocusable(true);

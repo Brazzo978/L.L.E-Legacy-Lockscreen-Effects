@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
@@ -16,6 +16,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.hardware.HardwareBuffer;
+import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
@@ -83,6 +84,17 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int BLOCKED_SURFACE_NOTIFICATION_SHADE = 1 << 1;
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String AOD_PACKAGE = "com.samsung.android.app.aodservice";
+    private static final String[] CALL_SURFACE_PACKAGES = {
+            "com.samsung.android.dialer",
+            "com.samsung.android.incallui",
+            "com.samsung.android.app.telephonyui",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.android.incallui",
+            "com.android.server.telecom",
+            "com.android.phone",
+            "com.sec.phone"
+    };
     private static final String SAMSUNG_KEYBOARD_PACKAGE = "com.samsung.android.honeyboard";
     private static final String GOOGLE_KEYBOARD_PACKAGE = "com.google.android.inputmethod.latin";
     private static final String AOSP_KEYBOARD_PACKAGE = "com.android.inputmethod.latin";
@@ -213,6 +225,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private WindowManager windowManager;
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
+    private AudioManager audioManager;
     private SharedPreferences prefs;
     private SeasonalDoodleView overlayView;
     private TouchDebugView touchDebugView;
@@ -222,12 +235,14 @@ public class ChargingAccessibilityService extends AccessibilityService
     private View unlockEffectView;
     private int unlockEffectRendererType = -1;
     private boolean unlockEffectOverlayAttached;
+    private boolean doodleOverlayAttached;
     private float unlockEffectAnchorX;
     private float unlockEffectAnchorY;
     private boolean debugLensLoopScheduled;
     private boolean debugLensLoopGestureActive;
     private int debugLensLoopFrame;
     private final Set<String> homePackages = new HashSet<String>();
+    private final Set<String> callPackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
@@ -321,14 +336,17 @@ public class ChargingAccessibilityService extends AccessibilityService
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         prefs = OverlayPrefs.get(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         applyPerfDefaultsOnce();
         ensureInternalTouchAreaEnabled();
         prefs.registerOnSharedPreferenceChangeListener(this);
         loadHomePackages();
+        loadCallPackages();
         configurePassiveService();
         refreshChargingState();
+        ensureDoodleLoaded();
         preloadUnlockEffectRenderer();
         registerScreenReceiver();
         if (powerManager != null && !powerManager.isInteractive()) {
@@ -360,6 +378,19 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         logSystemUiEvent(event);
         boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (event != null && isCallPackage(event.getPackageName())) {
+            unlockAffordancePending = false;
+            unlockTouchCachedWhileScreenOff = false;
+            stopDebugLensLoop();
+            removeDoodleOverlay();
+            removeUnlockEffectOverlay();
+            removeTouchDebugOverlay();
+            evaluateVisibility("event:" + eventTypeName(event) + ":call_surface", false);
+            handler.removeCallbacks(screenOnRefreshRunnable);
+            handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
+            handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
+            return;
+        }
         boolean pinEntryEvent = isPinEntryEvent(event);
         boolean keyboardPinEntryEvent = isKeyboardPinEntryEvent(event);
         if (interactive && (pinEntryEvent || keyboardPinEntryEvent)) {
@@ -421,6 +452,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN.equals(key)) {
             invalidateUnlockEffectBackgroundSource();
+        }
+        if (OverlayPrefs.SHOW_DOODLE.equals(key) && !OverlayPrefs.showDoodle(this)) {
+            destroyDoodleOverlay();
+        } else if (OverlayPrefs.SHOW_DOODLE.equals(key)) {
+            ensureDoodleLoaded();
         }
         if ((OverlayPrefs.SEASON_MODE.equals(key)
                 || OverlayPrefs.POSITION_OFFSET_X.equals(key)
@@ -588,6 +624,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean showDoodle = isDoodleVisible(false, true, false, false);
         return screenOffOrLocked
                 && !showDoodle
+                && !isCallSurfaceActive()
                 && OverlayPrefs.unlockEffectEnabled(this)
                 && OverlayPrefs.debugTouchArea(this);
     }
@@ -622,7 +659,22 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = isLockscreenLocked(contentAware);
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
+        boolean callSurface = isCallSurfaceActive();
         if (!interactive && unlockTouchCachedWhileScreenOff) {
+            if (callSurface) {
+                removeDoodleOverlay();
+                removeUnlockEffectOverlay();
+                removeTouchDebugOverlay();
+                unlockTouchCachedWhileScreenOff = false;
+                Log.i(TAG, "visibility reason=" + reason
+                        + " showDoodle=false showFx=false"
+                        + " charging=" + charging
+                        + " interactive=false"
+                        + " locked=" + locked
+                        + " callSurface=true"
+                        + " pkg=" + lastWindowPackage);
+                return;
+            }
             boolean showDoodle = isDoodleVisible(false, locked, false, false);
             if (showDoodle) {
                 syncDoodleOverlay();
@@ -643,6 +695,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
+                    + " callSurface=false"
                     + " home=false"
                     + " pkg=" + lastWindowPackage);
             return;
@@ -691,7 +744,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
 
         boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
-        boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible;
+        boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible || callSurface;
         boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
         boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
         syncTouchBoxScreenshotCapture(reason, interactive, locked, blockedSurfaceActive);
@@ -742,6 +795,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
+                    + " callSurface=" + callSurface
                     + " touchBoxCapture=" + touchBoxCapturePending
                     + " home=" + home
                     + " pkg=" + lastWindowPackage);
@@ -757,7 +811,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             removeDoodleOverlay();
             return;
         }
-        if (overlayView != null) {
+        ensureDoodleLoaded();
+        if (overlayView == null) {
+            return;
+        }
+        if (doodleOverlayAttached) {
             applyOverlayPrefs();
             return;
         }
@@ -774,15 +832,24 @@ public class ChargingAccessibilityService extends AccessibilityService
                 flags,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
-        params.setTitle("ChargingAccessibilityOverlay");
+        params.setTitle("LLEDoodleOverlay");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         }
-        overlayView = new SeasonalDoodleView(this);
         applyOverlayPrefs();
         windowManager.addView(overlayView, params);
+        doodleOverlayAttached = true;
         Log.i(TAG, "doodle overlay shown");
+    }
+
+    private void ensureDoodleLoaded() {
+        if (overlayView != null || !OverlayPrefs.showDoodle(this)) {
+            return;
+        }
+        overlayView = new SeasonalDoodleView(this);
+        applyOverlayPrefs();
+        Log.i(TAG, "doodle view preloaded");
     }
 
     private void syncUnlockEffectOverlay() {
@@ -807,7 +874,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 flags,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
-        params.setTitle("ChargingUnlockEffect");
+        params.setTitle("LLEUnlockEffect");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
@@ -1070,7 +1137,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible) {
+                || notificationShadeVisible || isCallSurfaceActive()) {
             return false;
         }
         if (AOD_PACKAGE.equals(lastWindowPackage)) {
@@ -1480,7 +1547,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         touchDebugParams.gravity = Gravity.TOP | Gravity.START;
         touchDebugParams.x = box.left;
         touchDebugParams.y = box.top;
-        touchDebugParams.setTitle("ChargingTouchListenBox");
+        touchDebugParams.setTitle("LLETouchListenBox");
         windowManager.addView(touchDebugView, touchDebugParams);
         Log.i(TAG, "touch listen box shown left=" + box.left
                 + " top=" + box.top
@@ -1503,20 +1570,25 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void removeOverlay() {
-        removeDoodleOverlay();
+        destroyDoodleOverlay();
         destroyUnlockEffectOverlay();
         removeTouchDebugOverlay();
     }
 
     private void removeDoodleOverlay() {
-        if (overlayView != null) {
+        if (doodleOverlayAttached && overlayView != null) {
             try {
                 windowManager.removeView(overlayView);
             } catch (RuntimeException ignored) {
                 // The service can be torn down after the window was already removed.
             }
-            overlayView = null;
+            doodleOverlayAttached = false;
         }
+    }
+
+    private void destroyDoodleOverlay() {
+        removeDoodleOverlay();
+        overlayView = null;
     }
 
     private void removeUnlockEffectOverlay() {
@@ -1746,7 +1818,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean locked = isLockscreenLocked(contentAware);
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
         boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
-        boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible;
+        boolean blockedSurfaceActive = pinEntryActive
+                || notificationShadeVisible
+                || isCallSurfaceActive();
         boolean showDoodle = isDoodleVisible(interactive, locked, home, blockedSurfaceActive);
         return interactive
                 && locked
@@ -1767,8 +1841,11 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean isDoodleVisible(boolean interactive, boolean locked, boolean home,
             boolean blockedSurfaceActive) {
+        if (blockedSurfaceActive) {
+            return false;
+        }
         boolean showDoodleForSurface = (!interactive && OverlayPrefs.showAod(this))
-                || (interactive && locked && !blockedSurfaceActive && OverlayPrefs.showLock(this))
+                || (interactive && locked && OverlayPrefs.showLock(this))
                 || (home && OverlayPrefs.showHome(this));
         return charging && OverlayPrefs.showDoodle(this) && showDoodleForSurface;
     }
@@ -1776,7 +1853,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void beginUnlockEffectGesture(float screenX, float screenY) {
         long startedAt = SystemClock.uptimeMillis();
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible) {
+                || notificationShadeVisible || isCallSurfaceActive()) {
             Log.i(TAG, "unlock effect gesture blocked by content surface");
             evaluateVisibility("gesture_blocked_surface");
             return;
@@ -1939,6 +2016,29 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean isHomePackage(String packageName) {
         return packageName != null && homePackages.contains(packageName);
+    }
+
+    private void loadCallPackages() {
+        callPackages.clear();
+        for (int i = 0; i < CALL_SURFACE_PACKAGES.length; i++) {
+            callPackages.add(CALL_SURFACE_PACKAGES[i]);
+        }
+    }
+
+    private boolean isCallPackage(CharSequence packageName) {
+        return packageName != null && callPackages.contains(packageName.toString());
+    }
+
+    private boolean isCallSurfaceActive() {
+        return isCallPackage(lastWindowPackage) || isCallAudioActive();
+    }
+
+    private boolean isCallAudioActive() {
+        if (audioManager == null) {
+            return false;
+        }
+        int mode = audioManager.getMode();
+        return mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL;
     }
 
     private int detectContentBlockedSurfaces() {

@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -10,7 +10,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 public class TouchDebugView extends View {
-    private static final String TAG = "ChargingTouchDebug";
+    private static final String TAG = "LLEDebug";
 
     interface TouchTriggerListener {
         void onTouchStarted(float screenX, float screenY);

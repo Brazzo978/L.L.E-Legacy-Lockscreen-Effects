@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.graphics.Rect;
 import android.view.View;

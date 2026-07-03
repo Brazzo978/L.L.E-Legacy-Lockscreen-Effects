@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Charging Touch Test</string>
-    <string name="accessibility_service_description">Charging touch test overlay</string>
+    <string name="app_name">L.L.E</string>
+    <string name="accessibility_service_description">Legacy Lockscreen Effect overlay</string>
 </resources>

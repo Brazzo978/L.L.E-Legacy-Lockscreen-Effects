@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.app.Activity;
 import android.content.Context;

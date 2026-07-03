@@ -10,9 +10,9 @@ $assets = Join-Path $root "assets"
 $resZip = Join-Path $out "res.zip"
 $classes = Join-Path $out "classes"
 $dex = Join-Path $out "dex"
-$unsigned = Join-Path $out "ChargingTouchTest-unsigned.apk"
-$aligned = Join-Path $out "ChargingTouchTest-aligned.apk"
-$signed = Join-Path $out "ChargingTouchTest-debug.apk"
+$unsigned = Join-Path $out "LLE-unsigned.apk"
+$aligned = Join-Path $out "LLE-aligned.apk"
+$signed = Join-Path $out "LLE-debug.apk"
 $keystore = Join-Path $root "..\demo-apk\debug.keystore"
 $keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
@@ -61,8 +61,8 @@ if (-not (Test-Path $keystore)) {
     Run "keytool.exe" @("-genkeypair", "-keystore", $keystore, "-storepass", "android", "-keypass", "android", "-alias", "androiddebugkey", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Codex,C=US")
 }
 
-Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $aligned, (Join-Path $out "ChargingTouchTest-zipaligned.apk"))
-Run (Join-Path $buildTools "apksigner.bat") @("sign", "--ks", $keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", $signed, (Join-Path $out "ChargingTouchTest-zipaligned.apk"))
+Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $aligned, (Join-Path $out "LLE-zipaligned.apk"))
+Run (Join-Path $buildTools "apksigner.bat") @("sign", "--ks", $keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", $signed, (Join-Path $out "LLE-zipaligned.apk"))
 Run (Join-Path $buildTools "apksigner.bat") @("verify", $signed)
 
 Write-Host $signed

@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.app.Activity;
 import android.content.ComponentName;
@@ -147,7 +147,7 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(this);
-        title.setText("Charging Touch");
+        title.setText("L.L.E");
         title.setTextColor(COLOR_TEXT);
         title.setTextSize(20f);
         title.setSingleLine(true);

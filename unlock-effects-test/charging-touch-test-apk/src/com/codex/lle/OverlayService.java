@@ -1,4 +1,4 @@
-package com.codex.chargingtouchtest;
+package com.codex.lle;
 
 import android.app.Service;
 import android.content.Intent;
@@ -11,7 +11,7 @@ import android.view.Gravity;
 import android.view.WindowManager;
 
 public class OverlayService extends Service {
-    static final String ACTION_STOP = "com.codex.chargingtouchtest.STOP_OVERLAY";
+    static final String ACTION_STOP = "com.codex.lle.STOP_OVERLAY";
     static final String EXTRA_MODE = "mode";
     static final String MODE_PASS_THROUGH = "pass";
     static final String MODE_TOUCH = "touch";
@@ -19,7 +19,7 @@ public class OverlayService extends Service {
     private static final String TAG = "ChargingOverlay";
 
     private WindowManager windowManager;
-    private ChargingActivity.ChargingTouchTestView overlayView;
+    private ChargingActivity.LLEView overlayView;
 
     @Override
     public void onCreate() {
@@ -62,7 +62,7 @@ public class OverlayService extends Service {
 
         removeOverlay();
 
-        overlayView = new ChargingActivity.ChargingTouchTestView(this);
+        overlayView = new ChargingActivity.LLEView(this);
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
@@ -84,7 +84,7 @@ public class OverlayService extends Service {
                 windowFlags,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
-        params.setTitle(touchable ? "ChargingTouchOverlay" : "ChargingPassThroughOverlay");
+        params.setTitle(touchable ? "LLETouchOverlay" : "LLEPassThroughOverlay");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
