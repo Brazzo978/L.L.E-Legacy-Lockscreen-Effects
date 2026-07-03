@@ -442,7 +442,8 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
                 animation.rotation + 30f * value);
     }
 
-    private boolean drawUnlockAffordance(Canvas canvas, long now, AffordanceAnimation animation) {
+    private boolean drawUnlockAffordance(Canvas canvas, long now,
+            AffordanceAnimation animation) {
         long elapsed = now - animation.startedAt;
         float alpha;
         if (elapsed < AFFORDANCE_ON_DURATION_MS) {

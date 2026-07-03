@@ -3,6 +3,8 @@ package com.codex.chargingtouchtest;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.io.File;
+
 final class OverlayPrefs {
     static final String PREFS = "overlay_prefs";
     static final String SHOW_LOCK = "show_lock";
@@ -25,12 +27,20 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_TOP = "touch_box_top";
     static final String TOUCH_BOX_RIGHT = "touch_box_right";
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
+    static final String TOUCH_BOX_CAPTURE_REQUEST_ID = "touch_box_capture_request_id";
+    static final String TOUCH_BOX_CAPTURE_RESULT_ID = "touch_box_capture_result_id";
+    static final String TOUCH_BOX_CAPTURE_STATE = "touch_box_capture_state";
+    static final String TOUCH_BOX_CAPTURE_ERROR = "touch_box_capture_error";
+    static final int TOUCH_BOX_CAPTURE_IDLE = 0;
+    static final int TOUCH_BOX_CAPTURE_REQUESTED = 1;
+    static final int TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN = 2;
+    static final int TOUCH_BOX_CAPTURE_CAPTURING = 3;
+    static final int TOUCH_BOX_CAPTURE_READY = 4;
+    static final int TOUCH_BOX_CAPTURE_FAILED = 5;
     static final int EFFECT_S4_LENS_FLARE = 0;
     static final int EFFECT_S3_RIPPLE = 1;
     static final int EFFECT_S5_POPPING_COLOURS = 2;
     static final int EFFECT_WATERCOLOUR = 3;
-    static final int EFFECT_COLOUR_DROPLET = 4;
-    static final int EFFECT_SPARKLING_BUBBLES = 5;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -100,14 +110,10 @@ final class OverlayPrefs {
 
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
-        if (effect == EFFECT_WATERCOLOUR) {
-            return EFFECT_S5_POPPING_COLOURS;
-        }
         if (effect != EFFECT_S4_LENS_FLARE
                 && effect != EFFECT_S3_RIPPLE
                 && effect != EFFECT_S5_POPPING_COLOURS
-                && effect != EFFECT_COLOUR_DROPLET
-                && effect != EFFECT_SPARKLING_BUBBLES) {
+                && effect != EFFECT_WATERCOLOUR) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
@@ -151,6 +157,16 @@ final class OverlayPrefs {
                 .apply();
     }
 
+    static void saveTouchBoxOutward(Context context, int left, int top, int right, int bottom) {
+        get(context).edit()
+                .putBoolean(TOUCH_BOX_CONFIGURED, true)
+                .putInt(TOUCH_BOX_LEFT, roundTouchCoordinateDown(left))
+                .putInt(TOUCH_BOX_TOP, roundTouchCoordinateDown(top))
+                .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinateUp(right))
+                .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinateUp(bottom))
+                .apply();
+    }
+
     static void clearTouchBox(Context context) {
         get(context).edit()
                 .putBoolean(TOUCH_BOX_CONFIGURED, false)
@@ -187,6 +203,25 @@ final class OverlayPrefs {
 
     static int roundTouchCoordinate(int value) {
         return Math.round(value / (float) TOUCH_BOX_ROUNDING_PX) * TOUCH_BOX_ROUNDING_PX;
+    }
+
+    static int roundTouchCoordinateDown(int value) {
+        if (value >= 0) {
+            return (value / TOUCH_BOX_ROUNDING_PX) * TOUCH_BOX_ROUNDING_PX;
+        }
+        return -roundTouchCoordinateUp(-value);
+    }
+
+    static int roundTouchCoordinateUp(int value) {
+        if (value >= 0) {
+            return ((value + TOUCH_BOX_ROUNDING_PX - 1)
+                    / TOUCH_BOX_ROUNDING_PX) * TOUCH_BOX_ROUNDING_PX;
+        }
+        return -roundTouchCoordinateDown(-value);
+    }
+
+    static File touchBoxScreenshotFile(Context context) {
+        return new File(context.getFilesDir(), "touch_box_lockscreen.png");
     }
 }
 

@@ -22,6 +22,8 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+
 public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
     private static final int TAB_CHARGING_DOODLE = 0;
@@ -33,6 +35,7 @@ public class ControlActivity extends Activity {
     private Button chargingDoodleTabButton;
     private Button lockscreenEffectTabButton;
     private LinearLayout tabContent;
+    private TextView touchBoxSummary;
     private int selectedTab = TAB_CHARGING_DOODLE;
 
     @Override
@@ -117,6 +120,7 @@ public class ControlActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateAccessibilityStatus();
+        updateTouchBoxSummary();
     }
 
     private View tabSelector() {
@@ -347,11 +351,10 @@ public class ControlActivity extends Activity {
 
         final RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
-        addEffectOption(group, "S4 lens flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
-        addEffectOption(group, "S3 ripple slot", OverlayPrefs.EFFECT_S3_RIPPLE);
-        addEffectOption(group, "S5 popping colours", OverlayPrefs.EFFECT_S5_POPPING_COLOURS);
-        addEffectOption(group, "S5 coloured droplets", OverlayPrefs.EFFECT_COLOUR_DROPLET);
-        addEffectOption(group, "S5 sparkling bubbles", OverlayPrefs.EFFECT_SPARKLING_BUBBLES);
+        addEffectOption(group, "S3 ripple WIP", OverlayPrefs.EFFECT_S3_RIPPLE);
+        addEffectOption(group, "S4 Lens Flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        addEffectOption(group, "S5 Popping Colours", OverlayPrefs.EFFECT_S5_POPPING_COLOURS);
+        addEffectOption(group, "N4 Watercolor WIP", OverlayPrefs.EFFECT_WATERCOLOUR);
 
         RadioButton checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.unlockEffect(this)));
         if (checked == null) {
@@ -457,20 +460,52 @@ public class ControlActivity extends Activity {
         section.addView(label, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        touchBoxSummary = new TextView(this);
+        touchBoxSummary.setTextColor(Color.rgb(190, 205, 220));
+        touchBoxSummary.setTextSize(14f);
+        touchBoxSummary.setPadding(0, dp(8), 0, dp(8));
+        section.addView(touchBoxSummary, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        updateTouchBoxSummary();
+
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
-        section.addView(button("Calibrate touch box", new View.OnClickListener() {
+        section.addView(button("Touch box screenshot wizard", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startActivity(new Intent(ControlActivity.this, TouchBoxSetupActivity.class));
+                Intent intent = new Intent(ControlActivity.this, TouchBoxSetupActivity.class);
+                intent.putExtra(TouchBoxSetupActivity.EXTRA_START_CAPTURE, true);
+                startActivity(intent);
             }
         }));
         section.addView(button("Reset touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 OverlayPrefs.clearTouchBox(ControlActivity.this);
+                updateTouchBoxSummary();
             }
         }));
         return section;
+    }
+
+    private void updateTouchBoxSummary() {
+        if (touchBoxSummary == null) {
+            return;
+        }
+        boolean configured = OverlayPrefs.touchBoxConfigured(this);
+        int left = OverlayPrefs.touchBoxLeft(this);
+        int top = OverlayPrefs.touchBoxTop(this);
+        int right = OverlayPrefs.touchBoxRight(this);
+        int bottom = OverlayPrefs.touchBoxBottom(this);
+        File screenshot = OverlayPrefs.touchBoxScreenshotFile(this);
+        String cache = screenshot.exists() && screenshot.length() > 0L
+                ? "screenshot cache ready"
+                : "no screenshot cache";
+        touchBoxSummary.setText((configured ? "Current" : "Default")
+                + ": " + left + "," + top + " - " + right + "," + bottom
+                + " (" + (right - left) + " x " + (bottom - top) + ")"
+                + "\n" + cache);
     }
 
     private View positionSlider(final String label, final String key, int defaultValue) {

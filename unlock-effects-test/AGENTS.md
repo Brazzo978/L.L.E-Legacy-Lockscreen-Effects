@@ -37,7 +37,7 @@
   - `LensFlareEffectView` calls `Bitmap.prepareToDraw()` for all S4 lens flare bitmaps and requests an invisible warm-up draw when the overlay is attached, reducing the first visible frame delay after `ACTION_DOWN`.
 - While the phone is in the interactive lockscreen session, `ChargingAccessibilityService` runs a low-latency polling loop: fast visibility pass every 10 ms, content-aware Accessibility scan about every 40 ms. The fast pass keeps the touch box immediate; the content-aware pass corrects PIN/pattern/bouncer and notification shade state, including returning from PIN back to the base lockscreen. The loop stops on screen-off/user-present/unlocked state; do not turn it into global always-on polling.
 - Notification shade handling has an event-side fast guard too: SystemUI events containing specific shade/quick-settings text such as `Area notifiche` mark `notificationShadeVisible=true`, remove the touch box/effect immediately, and then let the delayed content-aware scan confirm/clear the state. This avoids starting unlock FX during the brief window before the full scan catches up.
-- Unlock effect picker is stored in `unlock_effect`: `0` = S4 lens flare, `1` = S3 ripple slot, `2` = S5 popping colours, `3` = reserved/disabled Watercolor slot, `4` = S5 coloured droplets, `5` = S5 sparkling bubbles. S3 is still only a placeholder slot and must not silently show S4 as if it were S3.
+- Unlock effect picker is stored in `unlock_effect`: `0` = S4 Lens Flare, `1` = S3 ripple WIP, `2` = S5 Popping Colours, `3` = N4 Watercolor WIP. UI order requested by user: S3 ripple WIP, S4 Lens Flare, S5 Popping Colours, N4 Watercolor WIP. S3 is still only a placeholder slot and must not silently show S4 as if it were S3. Droplets/bubbles were removed from the active app after phone testing showed they are broken.
 
 ## S4 Lens Flare Status
 
@@ -51,6 +51,13 @@
   - finger `Y_OFFSET` is `-80` px.
   - key durations: show `6000ms`, tap `4000ms`, fade-out `500ms`, unlock `1200ms`.
 - Current touch APK therefore uses a hardware-accelerated Canvas renderer in `LensFlareEffectView` with the original S4 bitmap assets and core timing constants. If exact Samsung parity is required later, continue reverse-porting the smali math into this Canvas class rather than returning to the broken accessibility-overlay wrapper.
+- 2026-07-03 GitHub hint sync:
+  - Remote commits `e1437d0` / `175b9d2` added the S4 screen-on center hint on top of an older app state; do not merge them blindly over the current local WIP.
+  - The useful logic has been manually re-applied as a generic hook: `ACTION_SCREEN_ON` sets an `unlockAffordancePending` flag, and once the selected effect overlay is mounted the service calls `showUnlockAffordance(Rect fullOverlay, 500ms)`.
+  - S4 Lens Flare plays the hint with its app-owned Canvas tap burst/fog.
+  - S5 Popping Colours also plays the hint: it waits for/reuses the lockscreen screenshot color map, sends Samsung's screen-on custom command, then calls `handleCustomEvent(1, {"StartDelay","Rect"})` on the original Popping renderer.
+  - N4 Watercolor WIP currently implements `showUnlockAffordance` as no-op until the Watercolor effect is faithful enough to have a meaningful original-style hint.
+  - The visual hint is center-screen tap burst plus fog/light alpha `0.0 -> 0.6` over `200ms`, then `0.6 -> 0.0` over `1100ms`, matching the note from the GitHub patch.
 - The Canvas renderer now separates the S4 phases instead of using the earlier generic burst:
   - `ACTION_DOWN`/`beginGesture` starts the tap animation immediately from the touched point.
   - The tap phase draws the 5 Samsung tap hexagons plus ring, particle, and long-light using the smali timing formulas and the original `4000ms` `QuintEaseOut` curve.
@@ -106,7 +113,7 @@
   - On lockscreen, logs showed `unlock effect overlay shown type=2 name=S5 popping colours`, touch listen box mounted, and Samsung `VisualEffectParticleEffect` accepted `BGBitmap : 1080 x 2316`.
   - ADB dropped offline during the synthetic swipe test, so physical/user validation of the visible particle trail and PIN handoff is still needed.
 
-## Watercolor / Coloured Droplets / Sparkling Bubbles Prep
+## Watercolor Prep / Removed Droplets And Bubbles
 
 - 2026-07-02 native-effect direct-wrapper test result:
   - Watercolor broke the app/test flow when attempted through the original Samsung native wrapper.
@@ -121,33 +128,38 @@
   - Inference: touch writes radial density/velocity into offscreen textures using the mask/brush assets; then the background is advected/distorted with noise and radial vectors; final pass mixes the distorted background with brightness/saturation/RGB-saturation style parameters.
   - Assets already present and matching the native texture names: `waterbrush_tube.png` 480x480, `watercolor_mask1.png` 641x655, `watercolor_mask2.png` 675x733, `watercolor_mask3.png` 803x793, `watercolor_noise.jpg` 360x640, plus `bg.jpg` as fallback/test background.
   - Visible timing hints: renderer ready after 3 frames, Keyguard wrapper unlock delay about 250 ms, long-press tap repeat about 411 ms, cleanup about 400 ms, sound release about 2000 ms. Exact shader constants, decay, timestep, blend equations, and empty/stop criteria remain inside the 32-bit native library.
-  - Do not use the earlier `WatercolorEffectView` reconstruction. It was an approximation, user rejected it, and it has been deleted from the touch app source.
+  - Do not present the current `WatercolorEffectView` Canvas reconstruction as exact. It is a transparent/WIP renderer used to keep the lockscreen safe while porting the effect piece by piece. It now uses original mask/tube/noise assets and the lockscreen screenshot as a color map, but the user confirmed it still does not visually resemble the original enough; keep it labeled `N4 Watercolor WIP`.
   - Do not present the Samsung native wrapper as the solution either. The direct native path was already observed to break/cover the lockscreen in this overlay context.
-  - Current source safety state: Watercolor picker value `3` is reserved but hidden from the UI, and `OverlayPrefs.unlockEffect()` maps old value `3` back to S5 Popping Colours until an exact app-owned renderer exists.
-  - `ChargingAccessibilityService` no longer routes `EFFECT_WATERCOLOUR` into `SamsungNativeEffectView`, and `effectUsesScreenshotBackground()` currently remains true only for S5 Popping Colours.
-  - Next valid implementation must be a new app-owned OpenGL renderer, likely `WatercolorExactEffectView`, built from the reversed native call-order/shaders/constants. Do not add Watercolor back to the picker until that renderer is mounted.
+  - Current active test state: Watercolor picker value `3` is visible and routed to `WatercolorEffectView` only as a WIP slot while the exact port is rebuilt. `effectUsesScreenshotBackground()` is true for S5 Popping Colours and Watercolor; for Watercolor the screenshot is only sampled for brush color and is never drawn as a full background.
+  - Do not route Watercolor back into `SamsungNativeEffectView`; that file has been removed from the active source because the direct full Samsung wrapper already broke the overlay/lockscreen flow.
+  - Do not route Watercolor into a direct `GLSurfaceView` accessibility overlay either. The 2026-07-02 phone test of an app-owned `WatercolorExactEffectView` host, calling Samsung's original `Native.loadEffect/loadTexture/init/draw/onTouch/showUnlock` bridge and original `libsecveWaterColor.so`, produced a black screen/no visible effect on the lockscreen.
+  - The failed exact-host test has been removed from the active source: `WatercolorExactEffectView.java` is deleted. Do not route Watercolor into a direct Surface/GLSurface overlay again.
+  - Valid Watercolor work must avoid the full Samsung wrapper path and the direct `SurfaceView`/`GLSurfaceView` overlay path. The active app-owned renderer must stay transparent outside brush marks and should be upgraded toward the native shader/FBO behavior piece by piece instead of reintroducing native full-screen output.
   - Ghidra/reverse status:
     - `watercolor reverse.txt` is the working reverse log at `C:\Users\Admin\Documents\New project\watercolor reverse.txt`.
     - `createScene` is at Ghidra VMA `0x21c74` / raw `0x11c74`.
     - The constructor/setup called by `createScene` is raw `0xeb90`, which corresponds to Ghidra VMA `0x1eb90`; reverse agents should not discard it as out-of-range.
     - Candidate vtable is raw `0x13c88` / Ghidra VMA `0x23c88`; remaining required work is mapping virtual methods to init/resize/touch/update/draw/isEmpty/clear/showUnlock/destructor.
     - Common shaders have been extracted from `libsecveSrkCommon.so` for `SPDrawRadialWaterBrush`, `SPDrawBGAdvectWaterBrush`, and `SPDrawMixWaterBrush`, but Watercolor-specific pass ordering and parameter values still need the `libsecveWaterColor.so` constructor/vtable reverse.
-- Current easier native-test effects:
-  - Picker value `4`: S5 coloured droplets, original Samsung effect id `16`.
-  - Picker value `5`: S5 sparkling bubbles, original Samsung effect id `14`.
-  - Both use `src/com/codex/chargingtouchtest/SamsungNativeEffectView.java` as a reflection wrapper around Samsung `EffectView`.
-  - Both are SPhysics/`GLTextureView` effects, not the older `LockBGEffect` common renderer path.
+- Removed native-test effects:
+  - S5 coloured droplets and S5 sparkling bubbles were removed from the active app after user testing confirmed they are broken.
+  - `SamsungNativeEffectView.java` was deleted, effect values `4` and `5` are no longer accepted by `OverlayPrefs.unlockEffect()`, and the picker no longer exposes them.
+  - Droplet/bubbles-specific raw sounds, Note5 assets, and native libs were removed from `charging-touch-test-apk`; only Watercolor/common native libs needed for reverse/testing remain.
 - Packaging state:
   - `classes2.dex` remains copied from `extracted/secvisualeffect_hybrid_dex/classes.dex`.
   - 32-bit native libs still exist under `native-libs/lib/armeabi-v7a` from the first probe.
   - A brief test packaged Note5 arm64 libs under `native-libs/lib/arm64-v8a` (`libColourDropletEffect.so`, `libSparklingBubblesEffect.so`), but that pushed the app to `primaryCpuAbi=arm64-v8a` and broke the previously working S4 Lens Flare/S5 Popping path.
   - The arm64 directory was removed again; the installed recovery build reports `primaryCpuAbi=armeabi-v7a` and S4 Lens Flare works again.
   - No arm64 Watercolor/common `libsecveWaterColor.so`/`libsecveSrkCommon.so` was found in the available dumps.
-- Overlay/black-screen mitigation:
-  - The first native probe showed Droplets could animate but sometimes covered/blackened the lockscreen because Samsung's GL view was drawing a full opaque surface.
-  - `SamsungNativeEffectView.configureTransparentSurfaces()` now forces nested `TextureView` instances to `setOpaque(false)` and still forces `SurfaceView` instances translucent if present.
-  - Droplets/Bubbles use a transparent fallback bitmap and no accessibility screenshot background; `effectUsesScreenshotBackground()` currently returns true only for S5 Popping Colours.
-  - If Droplets/Bubbles still cover the lockscreen after this patch, treat the direct native wrapper as unsuitable for production and reverse/reimplement the foreground visual layer instead.
+- 2026-07-02 transparent Watercolor WIP implementation:
+  - `WatercolorEffectView` implements both `UnlockEffectRenderer` and `BackgroundSourceRenderer`.
+  - It decodes original assets `watercolor_mask1/2/3`, `waterbrush_tube`, and `watercolor_noise`.
+  - It creates local brush marks on `ACTION_DOWN/MOVE/UP`, samples the cached screenshot/background map for color, applies a native-inspired brightness/saturation mix, and invalidates only the union of active brush dirty rects.
+  - It does not draw a background, does not call Samsung `Native`, and does not create a `SurfaceView`/`TextureView`.
+  - 2026-07-02 ADB verification: build/install succeeded; logs showed `unlock effect overlay shown type=3 name=S5 watercolor transparent port`, `watercolor port begin ... bg=accessibility_screenshot`, completed swipe `pin entry scheduled delayMs=250`, and accepted PIN-entry synthetic swipe. No native/TextureView/AndroidRuntime crash appeared in filtered logs.
+- Removed native-wrapper finding:
+  - The native wrapper path for Droplets/Bubbles covered/blackened the lockscreen and was removed from the app instead of carrying a broken option forward.
+  - `effectUsesScreenshotBackground()` currently returns true for S5 Popping Colours and Watercolor.
 - Verification state:
   - Local build succeeded and produced `charging-touch-test-apk/build/ChargingTouchTest-debug.apk`.
   - Recovery build was installed on SM-S918B and `dumpsys package com.codex.chargingtouchtest` reported `primaryCpuAbi=armeabi-v7a`.
@@ -177,3 +189,74 @@
   - native library reference: `extracted/s3_system_files/lib/libWaterRipple.so`
 - Direct wrapper risk is high for the touch APK because the real S3 effect is `GLSurfaceView` plus `libWaterRipple.so`, likely 32-bit/old Samsung-framework dependent, and the S4 direct Samsung wrapper already rendered incorrectly in `TYPE_ACCESSIBILITY_OVERLAY`.
 - Recommended production path: reverse-port S3 ripple into an app-owned renderer, likely Canvas or a controlled GL view, using the S3 reflection/wallpaper/ripple audio assets and the original smali/JNI behavior as the reference.
+- 2026-07-03 reverse update from smali deodex + Ghidra native:
+  - S3 Ripple is not a simple bitmap effect. It is an OpenGL renderer with mesh plus Java/JNI height/velocity arrays, backed by native `Fluid` code that generates per-frame distortion/velocity data for refraction, reflection, and specular highlights.
+  - Saved reverse report files:
+    - `s3ripplereverse\s3_ripple_smali_params_2026-07-03.md` for Java/smali-side constants, grid profiles, gesture behavior, and JNI signatures.
+    - `s3ripplereverse\s3_ripple_native_extraction_agent2_2026-07-03.md` for native/GL constants, shader behavior, wave core, and transparent-overlay translation notes.
+  - Confirmed smali anchors:
+    - `extracted/s3_android_policy_deodex_smali/com/android/internal/policy/impl/keyguard/sec/CircleUnlockRippleRenderer.smali`
+    - `extracted/s3_android_policy_deodex_smali/com/android/internal/policy/impl/keyguard/sec/RippleUnlockView.smali`
+    - `extracted/s3_android_policy_smali/com/android/internal/policy/impl/keyguard/sec/JniWaterRippleRender.smali`
+  - Confirmed native functions include `Fluid::Ripple_Render`, `Fluid::Ripple_Gravity_Render`, `Fluid::Update`, `AdvectDensity`, `AdvectVelocity`, `Jacobi`, `ComputeDivergence`, `SubtractGradient`, `AddInk`, and `AddVelocity`.
+  - Required touch APK assets:
+    - `res/drawable-nodpi/s3_reflectionmap.jpg`
+    - `res/drawable-nodpi/s3_keyguard_default_wallpaper.jpg` only as fallback/debug, never as an opaque lockscreen layer
+    - optional fallback `res/drawable-nodpi/s3_default_wallpaper.jpg`
+    - `res/raw/s3_ripple_down.ogg`
+    - `res/raw/s3_ripple_up.ogg`
+    - optional gravity `res/raw/s3_gravity_effect.ogg`
+  - Static water/depth assets are not required. Original water/depth/velocity maps are generated at runtime from arrays such as heights, velocity, heightsSub1/2, velocitySub1/2, and gpuHeights.
+  - Key parameters:
+    - `mWaveVelocity=0.5`, `mReductionRate=0.94`, `mReductionRateSub=0.99`
+    - `mLightHeight=1.5`, `refractiveIndex=0.93`
+    - reflection ratio usually `0.13`, with some configs around `0.2`
+    - touch Fresnel `0.1`, specular `0.5`, exponent `20`
+    - hover Fresnel `1.0`, specular `10.0`, exponent `20.0`, intensity `0.025`
+    - portrait mesh/config base `XRatio=25`, `YRatio=46`; landscape `XRatio=45`, `YRatio=25`
+    - projection FOV `45`, near `0.1`, far `500`, world scale `1.03`
+    - translate Z base portrait `-44`, landscape `-23`
+  - Touch coordinate mapping:
+    - `glX = ((rawX - width / 2) - XRatioAdjust) * XRatio / width`
+    - `glY = -(((height - rawY) - height / 2) * YRatio / height)`
+  - CPU/GPU-style ripple update reference:
+    - `heightNext[x,y] = ((hL + hR + hT + hB) / 2 - heightPrev[x,y]) * reduction`
+    - `velocity += impulse(mx, my, intensity)`
+    - `gpuNormal = gradient(height)`
+    - `distort = gpuNormal * refractiveScale`
+  - Transparent compositing target:
+    - sample lockscreen screenshot/color-map only where the wave exists
+    - sample `s3_reflectionmap.jpg` for ambient highlight
+    - compute refracted color, reflection, specular, and Fresnel
+    - output local premultiplied alpha; outside waves alpha must be `0`
+    - native extraction confirms original Samsung fragment alpha is always `1.0`, so the transparent overlay must derive alpha from local wave energy/gradient/density instead of copying Samsung's final alpha
+  - Suggested input behavior:
+    - `ACTION_DOWN`: impulse `intensityForRipple * 4`, play down sound
+    - `MOVE`: accumulate distance, impulse around every `>150px` with strength `*3`
+    - `UP`: if hold `>600ms`, impulse `*4`, play up sound
+  - Planned implementation route:
+    - create `S3RippleEffectView` as app-owned renderer, not Samsung native wrapper
+    - start with reduced resolution height/velocity buffers around `74x74`
+    - render through transparent overlay control, either controlled EGL/FBO or bitmap-backed pipeline
+    - add debug modes for normal/depth map, forced alpha `0.35`, and center-touch loop
+    - do not draw fallback wallpaper as a full opaque layer over the lockscreen
+- 2026-07-03 first WIP implementation:
+  - `S3RippleEffectView.java` has been added and routed from `OverlayPrefs.EFFECT_S3_RIPPLE`.
+  - It is app-owned Java/Canvas/Bitmap, not Samsung native. Direct native/GL wrapper remains avoided because Samsung's renderer is fullscreen opaque and risky in `TYPE_ACCESSIBILITY_OVERLAY`.
+  - 2026-07-03 port pass moved the renderer from the earlier reduced/aspect grid to exact normal-phone S3 constants: detail grid `104x104`, mesh `50x50`, damping `0.94`, wave coefficient `0.5`, second Laplacian coefficient `0.068`, injection radius `3`, drag threshold `150px`, portrait/landscape intensity `0.5/0.35`, `refractiveIndex=0.93`, `reflectionRatio=0.13`, `fresnel/specular/exponent=0.1/0.5/20`.
+  - It follows the native coordinate path from the dumps: Java smali calls `ripple(glY, glX, intensity, true)`, and native `JniWaterRippleRender_ripple @ 0x0000bfe4` maps `mx/my` into the detail grid as `(mx / MESH_SIZE_WIDTH + 0.5) * NUM_DETAILS_WIDTH` and `(my / MESH_SIZE_HEIGHT + 0.5) * NUM_DETAILS_HEIGHT`.
+  - 2026-07-03 5.5 crosscheck correction: the native cell basis is swapped (`cellX` driven by raw Y, `cellY` by raw X), and Samsung later interprets it through OpenGL mesh/projection. The Canvas renderer now transposes the height field at draw time to compensate for the missing Samsung mesh/projection basis.
+  - It implements the reversed core shape: touch impulses deposit energy into `velocity`; each frame applies Laplacian velocity integration, height integration/clamp, and the native-observed second Laplacian pass. The third pass now updates `heightMap` in-place like native `move()`, rather than using a separate render smoothing buffer.
+  - It implements `BackgroundSourceRenderer`; the lockscreen screenshot/color-map is sampled only to color local wave pixels. The fallback S3 wallpaper is debug/fallback only and is never drawn as an opaque layer.
+  - It copies/uses S3 assets in the touch app: `s3_reflectionmap.jpg`, `s3_keyguard_default_wallpaper.jpg`, `s3_default_wallpaper.jpg`, `s3_ripple_down.ogg`, `s3_ripple_up.ogg`, and `s3_gravity_effect.ogg`.
+  - 2026-07-03 brightness crosscheck: normal Samsung shader is `bgColor.rgb + positive water/specular contribution` with final fullscreen `alpha=1.0`; it should not globally darken. The transparent renderer therefore encodes a positive local delta over the sampled lockscreen base instead of alpha-blending a dark mixed replacement color.
+  - Older Canvas path emitted a transparent ARGB ripple bitmap scaled over the lockscreen; it remains useful only as fallback/reference because the active route is now the mesh renderer below.
+  - Build/install succeeded after this port pass; installed APK stayed `primaryCpuAbi=armeabi-v7a`.
+- 2026-07-03 mesh renderer pass:
+  - The Canvas path still showed black halo/non-concentric waves. 5.5 crosschecks found the structural reason: Samsung does not stretch the `104x104` grid as a bitmap; it copies the inner `100x100` height field into `aHeights`, draws a projected OpenGL mesh, and lets the recovered GLSL compute normals/refraction/specular.
+  - New class `S3RippleMeshEffectView` is routed from `ChargingAccessibilityService` for picker value `1`.
+  - It is an app-owned transparent `TextureView`/GLES renderer, not the Samsung native wrapper. It keeps the confirmed CPU `ripple()`/`move()` simulation, builds the native-shaped `100x100` mesh, uploads `aPosition` and `aHeights`, samples the lockscreen screenshot as `sBGTexture`, and samples `s3_reflectionmap.jpg` as `sWaterTexture`.
+  - Recovered shader constants applied in the mesh path: vertex refraction uses `center * 0.25`, normal from `(center - neighbors) * 0.25`, `vNormal=normalize(vec3(n.x,n.y,0.6))`, `vBGTexture1Coord` formula with `30.0/30.9`, `vWaterTextureCoord` formula using `pos.y / meshW` and `pos.x / meshH`, fragment `t=clamp(abs(vHeights),0,1.13)`, raw light `vec3(5,-5,1)`, specular clamp `1.0..5.5`, additive `bgColor + water/specular`.
+  - The only intentional non-Samsung part is final alpha: Samsung writes fullscreen `alpha=1.0`; the overlay writes local premultiplied alpha from wave/slope energy so the real lockscreen is not covered.
+  - `S3RippleMeshEffectView` refuses to draw visible ripple until a live external background screenshot has been uploaded; this avoids the dark halo caused by trying to cancel source-over blending with a stale/fallback wallpaper.
+  - 2026-07-03 ADB state after build/install: APK installed successfully, accessibility still enabled, logs showed `S3 ripple mesh renderer loaded` and `unlock effect renderer preloaded type=1 name=S3 ripple mesh WIP` without AndroidRuntime crash while non-interactive/AOD.

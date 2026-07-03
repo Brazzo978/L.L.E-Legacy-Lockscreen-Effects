@@ -33,6 +33,8 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -45,8 +47,6 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_MS = 400L;
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 200L;
     private static final long PIN_ENTRY_DELAY_WATERCOLOUR_MS = 250L;
-    private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 250L;
-    private static final long PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS = 300L;
     private static final long PIN_ENTRY_SWIPE_START_DELAY_MS = 60L;
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS = 900L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
@@ -60,6 +60,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long SCREEN_OFF_PREARM_FAST_MS = 80L;
     private static final long SCREEN_OFF_PREARM_SETTLE_MS = 180L;
     private static final long BLOCKED_SURFACE_CLEAR_GRACE_MS = 120L;
+    private static final long TOUCH_BOX_SCREENSHOT_DELAY_MS = 2000L;
+    private static final long TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS = 180L;
+    private static final long UNLOCK_EFFECT_SCREENSHOT_RETRY_MS = 90L;
+    private static final long UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS = 360L;
+    private static final long S3_RIPPLE_BACKGROUND_REFRESH_MS = 900L;
+    private static final long S3_RIPPLE_BACKGROUND_DEBUG_PERSIST_MS = 10000L;
     private static final int TOUCH_LISTEN_BOX_BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -180,6 +186,24 @@ public class ChargingAccessibilityService extends AccessibilityService
             prearmUnlockTouchForScreenOff();
         }
     };
+    private final Runnable touchBoxScreenshotDelayRunnable = new Runnable() {
+        @Override
+        public void run() {
+            runTouchBoxScreenshotDelay();
+        }
+    };
+    private final Runnable touchBoxScreenshotCaptureRunnable = new Runnable() {
+        @Override
+        public void run() {
+            runTouchBoxScreenshotCapture();
+        }
+    };
+    private final Runnable unlockEffectBackgroundRetryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refreshUnlockEffectBackgroundSourceIfNeeded("background_retry");
+        }
+    };
     private WindowManager windowManager;
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
@@ -201,6 +225,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
+    private boolean pinEntryPending;
     private boolean pinEntryRequested;
     private boolean pinEntrySurfaceSeen;
     private boolean pinEntrySurfaceVisible;
@@ -211,8 +236,14 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long nextContentAwarePollAt;
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
+    private long lastScreenOnAt;
+    private long unlockEffectBackgroundCapturedAt;
+    private long unlockEffectBackgroundDebugPersistAt;
+    private int unlockEffectBackgroundEffect = -1;
     private boolean colorScreenshotInFlight;
     private boolean colorScreenshotAttemptedThisSession;
+    private boolean touchBoxScreenshotScheduled;
+    private boolean touchBoxScreenshotInFlight;
 
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
@@ -228,19 +259,27 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false));
                 unlockAffordancePending = false;
+                lastScreenOnAt = 0L;
                 stopLockscreenSessionPolling();
                 clearBlockedSurfaceState();
                 colorScreenshotAttemptedThisSession = false;
+                unlockEffectBackgroundCapturedAt = 0L;
+                unlockEffectBackgroundEffect = -1;
+                handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
                 cacheUnlockTouchForScreenOff();
                 scheduleScreenOffPrearm();
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
                 unlockAffordancePending = false;
                 stopLockscreenSessionPolling();
                 handler.removeCallbacks(screenOffPrearmRunnable);
+                handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
                 clearBlockedSurfaceState();
                 unlockTouchCachedWhileScreenOff = false;
                 colorScreenshotAttemptedThisSession = false;
+                unlockEffectBackgroundCapturedAt = 0L;
+                unlockEffectBackgroundEffect = -1;
             } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                lastScreenOnAt = SystemClock.uptimeMillis();
                 Log.i(TAG, "screen on broadcast cached=" + unlockTouchCachedWhileScreenOff
                         + " interactive=" + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false));
@@ -306,6 +345,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean keyboardPinEntryEvent = isKeyboardPinEntryEvent(event);
         if (pinEntryEvent || keyboardPinEntryEvent) {
             boolean wasPinEntryRequested = pinEntryRequested;
+            pinEntryPending = false;
             pinEntryRequested = true;
             pinEntrySurfaceSeen = true;
             pinEntrySurfaceVisible = true;
@@ -395,6 +435,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || OverlayPrefs.TOUCH_BOX_BOTTOM.equals(key))
                 && touchDebugView != null) {
             syncTouchDebugOverlay();
+        }
+        if (OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID.equals(key)) {
+            touchBoxScreenshotScheduled = false;
+            handler.removeCallbacks(touchBoxScreenshotDelayRunnable);
+            handler.removeCallbacks(touchBoxScreenshotCaptureRunnable);
         }
         if (OverlayPrefs.UNLOCK_EFFECT.equals(key) && unlockEffectRenderer != null) {
             destroyUnlockEffectOverlay();
@@ -505,6 +550,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void clearBlockedSurfaceState() {
+        pinEntryPending = false;
         pinEntryRequested = false;
         pinEntrySurfaceSeen = false;
         pinEntrySurfaceVisible = false;
@@ -550,6 +596,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " charging=" + charging
                     + " interactive=false"
                     + " locked=" + locked
+                    + " pinEntryPending=" + pinEntryPending
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
@@ -600,11 +647,17 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }
 
-        boolean pinEntryActive = pinEntryRequested || pinEntrySurfaceVisible;
+        boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
         boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible;
-        boolean showDoodle = isDoodleVisible(interactive, locked, home, blockedSurfaceActive);
+        boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
+        boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
+        syncTouchBoxScreenshotCapture(reason, interactive, locked, blockedSurfaceActive);
+
+        boolean showDoodle = !hideOverlaysForTouchBoxCapture
+                && isDoodleVisible(interactive, locked, home, blockedSurfaceActive);
         boolean showFx = interactive
                 && locked
+                && !hideOverlaysForTouchBoxCapture
                 && !blockedSurfaceActive
                 && !showDoodle
                 && OverlayPrefs.unlockEffectEnabled(this);
@@ -623,7 +676,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             syncDebugLensLoop();
         } else {
             stopDebugLensLoop();
-            if (!pinEntryRequested && !pinEntrySurfaceVisible) {
+            if (!pinEntryPending && !pinEntryRequested && !pinEntrySurfaceVisible) {
                 removeUnlockEffectOverlay();
             }
             removeTouchDebugOverlay();
@@ -642,9 +695,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " charging=" + charging
                     + " interactive=" + interactive
                     + " locked=" + locked
+                    + " pinEntryPending=" + pinEntryPending
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
+                    + " touchBoxCapture=" + touchBoxCapturePending
                     + " home=" + home
                     + " pkg=" + lastWindowPackage);
         }
@@ -734,11 +789,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectRendererType = effect;
         if (effect == OverlayPrefs.EFFECT_S4_LENS_FLARE) {
             unlockEffectRenderer = new LensFlareEffectView(this);
+        } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+            unlockEffectRenderer = new S3RippleMeshEffectView(this);
         } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             unlockEffectRenderer = new PoppingColoursEffectView(this);
-        } else if (effect == OverlayPrefs.EFFECT_COLOUR_DROPLET
-                || effect == OverlayPrefs.EFFECT_SPARKLING_BUBBLES) {
-            unlockEffectRenderer = new SamsungNativeEffectView(this, effect);
+        } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
+            unlockEffectRenderer = new WatercolorEffectView(this);
         } else {
             unlockEffectRenderer = null;
             unlockEffectView = null;
@@ -751,8 +807,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void showPendingUnlockAffordance(String reason) {
-        if (!unlockAffordancePending
-                || unlockEffectRenderer == null
+        if (!unlockAffordancePending) {
+            return;
+        }
+        if (unlockEffectRenderer == null
                 || unlockEffectView == null
                 || !unlockEffectOverlayAttached
                 || OverlayPrefs.debugLensLoop(this)) {
@@ -806,7 +864,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!effectUsesScreenshotBackground(effect)
                 || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
                 || colorScreenshotInFlight
-                || colorScreenshotAttemptedThisSession) {
+                || (effect != OverlayPrefs.EFFECT_S3_RIPPLE
+                && colorScreenshotAttemptedThisSession)) {
             return;
         }
         preloadUnlockEffectRenderer();
@@ -815,9 +874,21 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
-        if (backgroundRenderer.hasBackgroundSourceBitmap()) {
+        if (!shouldRefreshUnlockEffectBackground(effect,
+                backgroundRenderer.hasBackgroundSourceBitmap())) {
             return;
         }
+        if (!canCaptureUnlockEffectBackground()) {
+            scheduleUnlockEffectBackgroundRetry(reason);
+            Log.i(TAG, "unlock effect background capture waiting reason=" + reason
+                    + " interactive=" + (powerManager == null || powerManager.isInteractive())
+                    + " locked=" + isLockscreenLocked(false)
+                    + " displayState=" + displayStateName(currentDisplayState())
+                    + " sinceScreenOnMs=" + elapsedSinceScreenOn()
+                    + " pkg=" + lastWindowPackage);
+            return;
+        }
+        final int captureEffect = effect;
         colorScreenshotAttemptedThisSession = true;
         colorScreenshotInFlight = true;
         try {
@@ -828,11 +899,50 @@ public class ChargingAccessibilityService extends AccessibilityService
                     Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
                     if (bitmap == null) {
                         Log.i(TAG, "unlock effect background screenshot empty reason=" + reason);
+                        if (captureEffect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+                            colorScreenshotAttemptedThisSession = false;
+                            scheduleUnlockEffectBackgroundRetry("empty:" + reason);
+                        }
                         showPendingUnlockAffordance("background_empty:" + reason);
                         return;
                     }
+                    if (OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)
+                            != captureEffect || !canCaptureUnlockEffectBackground()) {
+                        Log.i(TAG, "unlock effect background screenshot discarded reason="
+                                + reason
+                                + " effect=" + captureEffect
+                                + " currentEffect="
+                                + OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)
+                                + " pinEntryPending=" + pinEntryPending
+                                + " pinEntryRequested=" + pinEntryRequested
+                                + " pinEntrySurface=" + pinEntrySurfaceVisible
+                                + " notificationShade=" + notificationShadeVisible
+                                + " pkg=" + lastWindowPackage);
+                        bitmap.recycle();
+                        if (captureEffect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+                            colorScreenshotAttemptedThisSession = false;
+                        }
+                        return;
+                    }
+                    long now = SystemClock.uptimeMillis();
+                    if (captureEffect != OverlayPrefs.EFFECT_S3_RIPPLE
+                            || now - unlockEffectBackgroundDebugPersistAt
+                            >= S3_RIPPLE_BACKGROUND_DEBUG_PERSIST_MS) {
+                        persistTouchBoxScreenshot(bitmap, "effect_background");
+                        unlockEffectBackgroundDebugPersistAt = now;
+                    }
                     applyUnlockEffectBackgroundSource(bitmap, "accessibility_screenshot");
+                    unlockEffectBackgroundCapturedAt = now;
+                    unlockEffectBackgroundEffect = captureEffect;
+                    Log.i(TAG, "unlock effect background screenshot applied reason=" + reason
+                            + " size=" + bitmap.getWidth() + "x" + bitmap.getHeight()
+                            + " displayState=" + displayStateName(currentDisplayState())
+                            + " effect=" + captureEffect
+                            + " pkg=" + lastWindowPackage);
                     bitmap.recycle();
+                    if (captureEffect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+                        scheduleS3RippleBackgroundRefresh("applied:" + reason);
+                    }
                     showPendingUnlockAffordance("background:" + reason);
                 }
 
@@ -841,13 +951,121 @@ public class ChargingAccessibilityService extends AccessibilityService
                     colorScreenshotInFlight = false;
                     Log.i(TAG, "unlock effect background screenshot failed code=" + errorCode
                             + " reason=" + reason);
+                    if (captureEffect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+                        colorScreenshotAttemptedThisSession = false;
+                        scheduleUnlockEffectBackgroundRetry("failed:" + reason);
+                    }
                     showPendingUnlockAffordance("background_failed:" + reason);
                 }
             });
         } catch (Throwable t) {
             colorScreenshotInFlight = false;
             Log.d(TAG, "unlock effect background screenshot request failed reason=" + reason, t);
+            if (captureEffect == OverlayPrefs.EFFECT_S3_RIPPLE) {
+                colorScreenshotAttemptedThisSession = false;
+                scheduleUnlockEffectBackgroundRetry("exception:" + reason);
+            }
             showPendingUnlockAffordance("background_request_failed:" + reason);
+        }
+    }
+
+    private boolean shouldRefreshUnlockEffectBackground(int effect, boolean hasBackground) {
+        if (!hasBackground || unlockEffectBackgroundEffect != effect) {
+            return true;
+        }
+        if (effect != OverlayPrefs.EFFECT_S3_RIPPLE) {
+            return false;
+        }
+        long ageMs = SystemClock.uptimeMillis() - unlockEffectBackgroundCapturedAt;
+        return unlockEffectBackgroundCapturedAt <= 0L
+                || ageMs >= S3_RIPPLE_BACKGROUND_REFRESH_MS;
+    }
+
+    private boolean canCaptureUnlockEffectBackground() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (!interactive || !isLockscreenLocked(false)) {
+            return false;
+        }
+        if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
+                || notificationShadeVisible) {
+            return false;
+        }
+        if (AOD_PACKAGE.equals(lastWindowPackage)) {
+            return false;
+        }
+        int displayState = currentDisplayState();
+        if (displayState != Display.STATE_UNKNOWN && displayState != Display.STATE_ON) {
+            return false;
+        }
+        long sinceScreenOn = elapsedSinceScreenOn();
+        return sinceScreenOn < 0L
+                || sinceScreenOn >= UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
+    }
+
+    private void scheduleUnlockEffectBackgroundRetry(String reason) {
+        int effect = OverlayPrefs.unlockEffect(this);
+        if (colorScreenshotInFlight
+                || (effect != OverlayPrefs.EFFECT_S3_RIPPLE
+                && colorScreenshotAttemptedThisSession)) {
+            return;
+        }
+        handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
+        long sinceScreenOn = elapsedSinceScreenOn();
+        long delayMs = UNLOCK_EFFECT_SCREENSHOT_RETRY_MS;
+        if (sinceScreenOn >= 0L && sinceScreenOn < UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS) {
+            delayMs = Math.max(delayMs,
+                    UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS - sinceScreenOn);
+        }
+        handler.postDelayed(unlockEffectBackgroundRetryRunnable, delayMs);
+        Log.i(TAG, "unlock effect background retry scheduled reason=" + reason
+                + " delayMs=" + delayMs);
+    }
+
+    private void scheduleS3RippleBackgroundRefresh(String reason) {
+        if (OverlayPrefs.unlockEffect(this) != OverlayPrefs.EFFECT_S3_RIPPLE
+                || !isFxSurfaceActive(false)
+                || colorScreenshotInFlight) {
+            return;
+        }
+        handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
+        handler.postDelayed(unlockEffectBackgroundRetryRunnable,
+                S3_RIPPLE_BACKGROUND_REFRESH_MS);
+        Log.i(TAG, "s3 background refresh scheduled reason=" + reason
+                + " delayMs=" + S3_RIPPLE_BACKGROUND_REFRESH_MS);
+    }
+
+    private int currentDisplayState() {
+        if (windowManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT_WATCH) {
+            return Display.STATE_UNKNOWN;
+        }
+        try {
+            Display display = windowManager.getDefaultDisplay();
+            return display == null ? Display.STATE_UNKNOWN : display.getState();
+        } catch (Throwable t) {
+            return Display.STATE_UNKNOWN;
+        }
+    }
+
+    private long elapsedSinceScreenOn() {
+        if (lastScreenOnAt <= 0L) {
+            return -1L;
+        }
+        return SystemClock.uptimeMillis() - lastScreenOnAt;
+    }
+
+    private String displayStateName(int state) {
+        switch (state) {
+            case Display.STATE_OFF:
+                return "OFF";
+            case Display.STATE_ON:
+                return "ON";
+            case Display.STATE_DOZE:
+                return "DOZE";
+            case Display.STATE_DOZE_SUSPEND:
+                return "DOZE_SUSPEND";
+            case Display.STATE_UNKNOWN:
+            default:
+                return "UNKNOWN";
         }
     }
 
@@ -888,6 +1106,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void invalidateUnlockEffectBackgroundSource() {
         colorScreenshotInFlight = false;
         colorScreenshotAttemptedThisSession = false;
+        unlockEffectBackgroundCapturedAt = 0L;
+        unlockEffectBackgroundEffect = -1;
+        handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
         preloadUnlockEffectRenderer();
         if (unlockEffectRenderer instanceof BackgroundSourceRenderer) {
             ((BackgroundSourceRenderer) unlockEffectRenderer).clearBackgroundSourceBitmap();
@@ -895,8 +1116,215 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "unlock effect background map refresh requested");
     }
 
+    private void syncTouchBoxScreenshotCapture(String reason, boolean interactive,
+            boolean locked, boolean blockedSurfaceActive) {
+        if (!isTouchBoxScreenshotPending()) {
+            touchBoxScreenshotScheduled = false;
+            handler.removeCallbacks(touchBoxScreenshotDelayRunnable);
+            if (!touchBoxScreenshotInFlight) {
+                handler.removeCallbacks(touchBoxScreenshotCaptureRunnable);
+            }
+            return;
+        }
+        if (touchBoxScreenshotInFlight) {
+            return;
+        }
+        if (!interactive || !locked || blockedSurfaceActive) {
+            if (touchBoxScreenshotScheduled) {
+                touchBoxScreenshotScheduled = false;
+                handler.removeCallbacks(touchBoxScreenshotDelayRunnable);
+            }
+            markTouchBoxCaptureWaitingForLockscreen();
+            return;
+        }
+        if (touchBoxScreenshotScheduled) {
+            return;
+        }
+        touchBoxScreenshotScheduled = true;
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                        OverlayPrefs.TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN)
+                .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR)
+                .apply();
+        handler.postDelayed(touchBoxScreenshotDelayRunnable, TOUCH_BOX_SCREENSHOT_DELAY_MS);
+        Log.i(TAG, "touch box screenshot scheduled reason=" + reason
+                + " delayMs=" + TOUCH_BOX_SCREENSHOT_DELAY_MS);
+    }
+
+    private void runTouchBoxScreenshotDelay() {
+        touchBoxScreenshotScheduled = false;
+        if (!isTouchBoxScreenshotPending()) {
+            return;
+        }
+        if (!canCaptureTouchBoxScreenshot()) {
+            markTouchBoxCaptureWaitingForLockscreen();
+            evaluateVisibility("touch_box_capture_not_ready", false);
+            return;
+        }
+        touchBoxScreenshotInFlight = true;
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                        OverlayPrefs.TOUCH_BOX_CAPTURE_CAPTURING)
+                .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR)
+                .apply();
+        removeDoodleOverlay();
+        removeUnlockEffectOverlay();
+        removeTouchDebugOverlay();
+        handler.postDelayed(touchBoxScreenshotCaptureRunnable,
+                TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS);
+        Log.i(TAG, "touch box screenshot capture armed");
+    }
+
+    private void runTouchBoxScreenshotCapture() {
+        if (!isTouchBoxScreenshotPending()) {
+            touchBoxScreenshotInFlight = false;
+            return;
+        }
+        if (!canCaptureTouchBoxScreenshot()) {
+            touchBoxScreenshotInFlight = false;
+            markTouchBoxCaptureWaitingForLockscreen();
+            evaluateVisibility("touch_box_capture_cancelled", false);
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            touchBoxScreenshotInFlight = false;
+            failTouchBoxScreenshotCapture("Screenshot requires Android 11+");
+            return;
+        }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, new TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(ScreenshotResult screenshotResult) {
+                    touchBoxScreenshotInFlight = false;
+                    Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
+                    if (bitmap == null) {
+                        failTouchBoxScreenshotCapture("Screenshot empty");
+                        return;
+                    }
+                    if (persistTouchBoxScreenshot(bitmap, "wizard")) {
+                        Log.i(TAG, "touch box screenshot capture ready");
+                    } else {
+                        failTouchBoxScreenshotCapture("Screenshot save failed");
+                    }
+                    bitmap.recycle();
+                    evaluateVisibility("touch_box_capture_done", false);
+                }
+
+                @Override
+                public void onFailure(int errorCode) {
+                    touchBoxScreenshotInFlight = false;
+                    failTouchBoxScreenshotCapture("Screenshot failed code=" + errorCode);
+                    evaluateVisibility("touch_box_capture_failed", false);
+                }
+            });
+        } catch (Throwable t) {
+            touchBoxScreenshotInFlight = false;
+            Log.d(TAG, "touch box screenshot request failed", t);
+            failTouchBoxScreenshotCapture("Screenshot request failed");
+            evaluateVisibility("touch_box_capture_exception", false);
+        }
+    }
+
+    private boolean canCaptureTouchBoxScreenshot() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        return interactive
+                && isLockscreenLocked(false)
+                && !pinEntryPending
+                && !pinEntryRequested
+                && !pinEntrySurfaceVisible
+                && !notificationShadeVisible;
+    }
+
+    private boolean isTouchBoxScreenshotPending() {
+        if (prefs == null) {
+            return false;
+        }
+        int state = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                OverlayPrefs.TOUCH_BOX_CAPTURE_IDLE);
+        if (state != OverlayPrefs.TOUCH_BOX_CAPTURE_REQUESTED
+                && state != OverlayPrefs.TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN
+                && state != OverlayPrefs.TOUCH_BOX_CAPTURE_CAPTURING) {
+            return false;
+        }
+        int requestId = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, 0);
+        int resultId = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_RESULT_ID, 0);
+        return requestId > 0 && requestId != resultId;
+    }
+
+    private int pendingTouchBoxScreenshotRequestId() {
+        if (!isTouchBoxScreenshotPending()) {
+            return 0;
+        }
+        return prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, 0);
+    }
+
+    private void markTouchBoxCaptureWaitingForLockscreen() {
+        if (!isTouchBoxScreenshotPending()) {
+            return;
+        }
+        int state = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                OverlayPrefs.TOUCH_BOX_CAPTURE_IDLE);
+        if (state == OverlayPrefs.TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN) {
+            return;
+        }
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                        OverlayPrefs.TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN)
+                .apply();
+    }
+
+    private void failTouchBoxScreenshotCapture(String message) {
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                        OverlayPrefs.TOUCH_BOX_CAPTURE_FAILED)
+                .putString(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR, message)
+                .apply();
+        Log.i(TAG, "touch box screenshot capture failed: " + message);
+    }
+
+    private boolean persistTouchBoxScreenshot(Bitmap bitmap, String sourceName) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return false;
+        }
+        File file = OverlayPrefs.touchBoxScreenshotFile(this);
+        FileOutputStream output = null;
+        try {
+            output = new FileOutputStream(file);
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                return false;
+            }
+            output.flush();
+            int requestId = pendingTouchBoxScreenshotRequestId();
+            SharedPreferences.Editor editor = OverlayPrefs.get(this).edit()
+                    .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                            OverlayPrefs.TOUCH_BOX_CAPTURE_READY)
+                    .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR);
+            if (requestId > 0) {
+                editor.putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_RESULT_ID, requestId);
+            }
+            editor.apply();
+            Log.i(TAG, "touch box screenshot saved source=" + sourceName
+                    + " path=" + file.getAbsolutePath()
+                    + " size=" + bitmap.getWidth() + "x" + bitmap.getHeight());
+            return true;
+        } catch (Throwable t) {
+            Log.d(TAG, "touch box screenshot save failed", t);
+            return false;
+        } finally {
+            if (output != null) {
+                try {
+                    output.close();
+                } catch (Throwable ignored) {
+                    // Best effort close for the cached wizard screenshot.
+                }
+            }
+        }
+    }
+
     private boolean effectUsesScreenshotBackground(int effect) {
-        return effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS;
+        return effect == OverlayPrefs.EFFECT_S3_RIPPLE
+                || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
+                || effect == OverlayPrefs.EFFECT_WATERCOLOUR;
     }
 
     private void syncTouchDebugOverlay() {
@@ -1014,6 +1442,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (effectUsesScreenshotBackground(unlockEffectRendererType)) {
             colorScreenshotInFlight = false;
             colorScreenshotAttemptedThisSession = false;
+            unlockEffectBackgroundCapturedAt = 0L;
+            unlockEffectBackgroundEffect = -1;
+            handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
         }
         if (unlockEffectRenderer != null) {
             unlockEffectRenderer.destroy();
@@ -1217,7 +1648,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = isLockscreenLocked(contentAware);
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
-        boolean pinEntryActive = pinEntryRequested || pinEntrySurfaceVisible;
+        boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
         boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible;
         boolean showDoodle = isDoodleVisible(interactive, locked, home, blockedSurfaceActive);
         return interactive
@@ -1246,7 +1677,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void beginUnlockEffectGesture(float screenX, float screenY) {
-        if (pinEntryRequested || pinEntrySurfaceVisible || notificationShadeVisible) {
+        if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
+                || notificationShadeVisible) {
             Log.i(TAG, "unlock effect gesture blocked by content surface");
             evaluateVisibility("gesture_blocked_surface");
             return;
@@ -1292,9 +1724,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void cancelUnlockEffectGesture() {
-        handler.removeCallbacks(pinEntryRunnable);
-        handler.removeCallbacks(pinEntrySwipeRunnable);
-        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
+        if (!pinEntryPending) {
+            handler.removeCallbacks(pinEntryRunnable);
+            handler.removeCallbacks(pinEntrySwipeRunnable);
+            handler.removeCallbacks(pinEntryEffectCleanupRunnable);
+        }
         if (unlockEffectRenderer != null) {
             unlockEffectRenderer.cancelGesture();
         }
@@ -1303,6 +1737,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void schedulePinEntry() {
         long delayMs = pinEntryDelayMs();
+        pinEntryPending = true;
         handler.removeCallbacks(pinEntryRunnable);
         handler.postDelayed(pinEntryRunnable, delayMs);
         Log.i(TAG, "pin entry scheduled delayMs=" + delayMs
@@ -1317,16 +1752,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
             return PIN_ENTRY_DELAY_WATERCOLOUR_MS;
         }
-        if (effect == OverlayPrefs.EFFECT_COLOUR_DROPLET) {
-            return PIN_ENTRY_DELAY_COLOUR_DROPLET_MS;
-        }
-        if (effect == OverlayPrefs.EFFECT_SPARKLING_BUBBLES) {
-            return PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS;
-        }
         return PIN_ENTRY_DELAY_LENS_FLARE_MS;
     }
 
     private void openPinEntry() {
+        pinEntryPending = false;
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
         if (!interactive) {
@@ -1736,5 +2166,5 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }
-}
 
+}

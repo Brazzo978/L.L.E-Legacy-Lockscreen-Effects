@@ -1,6 +1,9 @@
 /*
 !/.gitignore
 !/AGENTS.md
+!/s3ripplereverse/
+/s3ripplereverse/*
+!/s3ripplereverse/*.md
 !/unlock-effects-test/
 
 /unlock-effects-test/*
