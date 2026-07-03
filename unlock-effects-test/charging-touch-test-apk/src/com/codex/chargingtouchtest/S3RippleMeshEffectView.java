@@ -124,39 +124,25 @@ public class S3RippleMeshEffectView extends TextureView
                     + "uniform float specularRatio;\n"
                     + "uniform float exponent;\n"
                     + "void main() {\n"
-                    + "  vec2 baseCoord = vec2(gl_FragCoord.x / uSurfaceSize.x,\n"
-                    + "      1.0 - gl_FragCoord.y / uSurfaceSize.y);\n"
-                    + "  baseCoord = clamp(baseCoord, vec2(0.001), vec2(0.999));\n"
                     + "  vec4 waterColor = texture2D(sWaterTexture, vWaterTextureCoord);\n"
-                    + "  vec4 baseColor = texture2D(sBGTexture, baseCoord);\n"
                     + "  float NdotHV = max(dot(vNormal, vHalfVec), 0.0);\n"
                     + "  float t = clamp(abs(vHeights), 0.0, 1.13);\n"
                     + "  float specular = clamp(specularRatio * pow(NdotHV, exponent), 1.0, 4.5);\n"
                     + "  float NdotL = max(dot(vNormal, vec3(5.0, -5.0, 1.0)), 0.0);\n"
-                    + "  float baseLum = dot(baseColor.rgb, vec3(0.299, 0.587, 0.114));\n"
-                    + "  vec3 baseHue = clamp(baseColor.rgb / max(baseLum, 0.10), 0.0, 1.35);\n"
-                    + "  float tintMix = smoothstep(0.025, 0.34, baseLum);\n"
-                    + "  vec3 screenTint = mix(vec3(0.72, 0.86, 1.0), baseHue, tintMix);\n"
-                    + "  float tintEnergy = mix(1.08, 0.92, tintMix);\n"
-                    + "  float reflectionLum = max(max(waterColor.r, waterColor.g), waterColor.b);\n"
-                    + "  float reflectionMask = smoothstep(0.02, 0.62, reflectionLum);\n"
                     + "  float samsungLight = alphaRatio1\n"
                     + "      + fresnelRatio * clamp((NdotL - 0.99), 0.0, 0.3);\n"
-                    + "  float overlayLight = 0.12 + samsungLight * 0.98;\n"
-                    + "  vec3 brightWater = mix(screenTint * 0.66 + vec3(0.13),\n"
-                    + "      vec3(1.0), reflectionMask * 0.42);\n"
-                    + "  vec3 waterTerm = t * specular * overlayLight\n"
-                    + "      * (0.13 + reflectionLum * 1.10) * brightWater * waterColor.a\n"
-                    + "      * tintEnergy;\n"
-                    + "  float waterLum = max(max(waterTerm.r, waterTerm.g), waterTerm.b);\n"
-                    + "  float slope = length(vNormal.xy);\n"
-                    + "  vec3 crestTerm = vec3(slope * 0.082) * (screenTint * 0.52\n"
-                    + "      + brightWater * 0.28 + vec3(0.10));\n"
-                    + "  vec3 delta = waterTerm + crestTerm;\n"
-                    + "  float crestLum = slope * 0.082;\n"
-                    + "  float energy = max(waterLum, crestLum);\n"
-                    + "  float outAlpha = clamp(waterLum * 1.10 + crestLum * 1.75, 0.0, 0.46);\n"
-                    + "  outAlpha *= smoothstep(0.006, 0.045, energy);\n"
+                    + "  vec3 baseColor = texture2D(sBGTexture, vBGTexture0Coord).rgb;\n"
+                    + "  float baseLum = dot(baseColor, vec3(0.299, 0.587, 0.114));\n"
+                    + "  vec3 baseTint = clamp(baseColor / max(baseLum, 0.18), vec3(0.72), vec3(1.35));\n"
+                    + "  float tintMix = smoothstep(0.05, 0.60, baseLum) * 0.55;\n"
+                    + "  vec3 screenTint = mix(vec3(0.82, 0.92, 1.0), baseTint, tintMix);\n"
+                    + "  float clarity = mix(1.12, 0.96, tintMix);\n"
+                    + "  vec3 delta = t * specular * waterColor.rgb * samsungLight\n"
+                    + "      * screenTint * clarity;\n"
+                    + "  float waterLum = max(max(delta.r, delta.g), delta.b);\n"
+                    + "  float energy = t + length(vNormal.xy) * 0.18;\n"
+                    + "  float outAlpha = clamp(waterLum * 0.78 + t * 0.018, 0.0, 0.34);\n"
+                    + "  outAlpha *= smoothstep(0.010, 0.070, energy);\n"
                     + "  if (outAlpha <= 0.003) discard;\n"
                     + "  vec3 src = clamp(delta / max(outAlpha, 0.02), 0.0, 1.0);\n"
                     + "  gl_FragColor = vec4(src * outAlpha, outAlpha);\n"
@@ -189,14 +175,19 @@ public class S3RippleMeshEffectView extends TextureView
     private boolean externalBackground;
     private boolean backgroundReadyForGl;
     private String backgroundSource = "none";
+    private volatile boolean glReady;
+    private volatile long glReadyAt;
     private float lastX;
     private float lastY;
+    private float pendingAffordanceX;
+    private float pendingAffordanceY;
     private float rippleDistance;
     private long pressStartedAt;
     private int emptyFrames;
 
     public S3RippleMeshEffectView(Context context) {
         super(context);
+        long startedAt = SystemClock.uptimeMillis();
         setOpaque(false);
         setSurfaceTextureListener(this);
         reflectionMap = decode(R.drawable.s3_reflectionmap);
@@ -210,7 +201,8 @@ public class S3RippleMeshEffectView extends TextureView
                 .build();
         downSound = soundPool.load(context, R.raw.s3_ripple_down, 1);
         upSound = soundPool.load(context, R.raw.s3_ripple_up, 1);
-        Log.i(TAG, "S3 ripple mesh renderer loaded");
+        Log.i(TAG, "S3 ripple mesh renderer loaded elapsedMs="
+                + (SystemClock.uptimeMillis() - startedAt));
     }
 
     @Override
@@ -218,9 +210,13 @@ public class S3RippleMeshEffectView extends TextureView
         return this;
     }
 
+    public boolean isGlReadyForFrame() {
+        return glReady;
+    }
+
     @Override
     public String effectName() {
-        return "S3 ripple mesh WIP full-blur-map boosted";
+        return "S3 ripple mesh WIP neutral-sharp";
     }
 
     @Override
@@ -244,7 +240,11 @@ public class S3RippleMeshEffectView extends TextureView
         play(downSound);
         Log.i(TAG, "s3 mesh begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY)
-                + " bg=" + backgroundSource);
+                + " bg=" + backgroundSource
+                + " glReady=" + glReady
+                + " sinceGlReadyMs=" + (glReadyAt <= 0L
+                ? -1L
+                : SystemClock.uptimeMillis() - glReadyAt));
     }
 
     @Override
@@ -262,6 +262,7 @@ public class S3RippleMeshEffectView extends TextureView
                 if (rippleDistance > MOVE_RIPPLE_DISTANCE_PX) {
                     addRippleLocked(screenX, screenY, intensityForOrientation() * 3f);
                     rippleDistance = 0f;
+                    play(upSound);
                 }
                 lastX = screenX;
                 lastY = screenY;
@@ -280,6 +281,7 @@ public class S3RippleMeshEffectView extends TextureView
             return;
         }
         long heldMs;
+        boolean playLongReleaseSound = false;
         synchronized (lock) {
             if (!gestureActive) {
                 return;
@@ -288,12 +290,15 @@ public class S3RippleMeshEffectView extends TextureView
             heldMs = SystemClock.uptimeMillis() - pressStartedAt;
             if (heldMs > UP_RIPPLE_HOLD_MS) {
                 addRippleLocked(lastX, lastY, intensityForOrientation() * 4f);
+                playLongReleaseSound = true;
             }
             animating = true;
             dirtyFrame = true;
             lock.notifyAll();
         }
-        play(upSound);
+        if (playLongReleaseSound) {
+            play(downSound);
+        }
         Log.i(TAG, "s3 mesh finish completed=" + completed
                 + " heldMs=" + heldMs);
     }
@@ -336,8 +341,14 @@ public class S3RippleMeshEffectView extends TextureView
         if (destroyed) {
             return;
         }
+        Rect rect = safeRect(screenRect);
+        pendingAffordanceX = rect.exactCenterX();
+        pendingAffordanceY = rect.exactCenterY();
         removeCallbacks(affordanceRunnable);
         postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+        Log.i(TAG, "s3 mesh affordance queued delayMs=" + startDelayMs
+                + " center=" + Math.round(pendingAffordanceX)
+                + "," + Math.round(pendingAffordanceY));
     }
 
     @Override
@@ -408,6 +419,7 @@ public class S3RippleMeshEffectView extends TextureView
 
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+        Log.i(TAG, "s3 surface available size=" + width + "x" + height);
         GLThread thread = new GLThread(surface, width, height);
         glThread = thread;
         thread.start();
@@ -428,6 +440,9 @@ public class S3RippleMeshEffectView extends TextureView
             thread.requestStop();
             glThread = null;
         }
+        glReady = false;
+        glReadyAt = 0L;
+        Log.i(TAG, "s3 surface destroyed");
         return true;
     }
 
@@ -440,13 +455,28 @@ public class S3RippleMeshEffectView extends TextureView
             return;
         }
         synchronized (lock) {
-            addRippleLocked(getRenderWidth() * 0.5f, getRenderHeight() * 0.5f,
-                    intensityForOrientation() * 3.2f);
+            float x = pendingAffordanceX > 0f
+                    ? pendingAffordanceX
+                    : getRenderWidth() * 0.5f;
+            float y = pendingAffordanceY > 0f
+                    ? pendingAffordanceY
+                    : getRenderHeight() * 0.5f;
+            addRippleLocked(x, y, intensityForOrientation() * 4f);
             animating = true;
             dirtyFrame = true;
             emptyFrames = 0;
             lock.notifyAll();
         }
+        Log.i(TAG, "s3 mesh affordance fired center="
+                + Math.round(pendingAffordanceX)
+                + "," + Math.round(pendingAffordanceY));
+    }
+
+    private Rect safeRect(Rect rect) {
+        if (rect != null && rect.width() > 0 && rect.height() > 0) {
+            return rect;
+        }
+        return new Rect(0, 0, getRenderWidth(), getRenderHeight());
     }
 
     private boolean stepRippleLocked() {
@@ -506,7 +536,7 @@ public class S3RippleMeshEffectView extends TextureView
     }
 
     private void addRippleLocked(float screenX, float screenY, float intensity) {
-        float[] point = nativeRipplePoint(screenX, screenY);
+        float[] point = projectedRipplePoint(screenX, screenY);
         float cx = point[0];
         float cy = point[1];
         int x0 = cx <= 5f ? 2 : (int) Math.floor(cx - RIPPLE_RADIUS);
@@ -532,19 +562,23 @@ public class S3RippleMeshEffectView extends TextureView
         }
     }
 
-    private float[] nativeRipplePoint(float screenX, float screenY) {
+    private float[] projectedRipplePoint(float screenX, float screenY) {
         float width = Math.max(1f, getRenderWidth());
         float height = Math.max(1f, getRenderHeight());
         boolean portrait = height >= width;
-        float xRatio = portrait ? PORTRAIT_X_RATIO : LANDSCAPE_X_RATIO;
-        float yRatio = portrait ? PORTRAIT_Y_RATIO : LANDSCAPE_Y_RATIO;
-        float glX = (screenX - width * 0.5f) * xRatio / width;
-        float glY = (screenY - height * 0.5f) * yRatio / height;
-        float mx = glY;
-        float my = glX;
+        float translateZ = portrait ? TRANSLATE_Z_PORTRAIT : TRANSLATE_Z_LANDSCAPE;
+        float distance = 1f - translateZ;
+        float halfHeight = (float) Math.tan(Math.toRadians(45f * 0.5f)) * distance;
+        float halfWidth = halfHeight * width / height;
+        float ndcX = screenX / width * 2f - 1f;
+        float ndcY = 1f - screenY / height * 2f;
+        float worldX = ndcX * halfWidth;
+        float worldY = ndcY * halfHeight;
+        float surfaceX = (0.5f - worldY / MESH_SIZE_HEIGHT) * (SURFACE_SIZE - 1f);
+        float surfaceY = (worldX / MESH_SIZE_WIDTH + 0.5f) * (SURFACE_SIZE - 1f);
         return new float[] {
-                clamp((mx / MESH_SIZE_WIDTH + 0.5f) * DETAIL_SIZE, 1f, DETAIL_SIZE - 2f),
-                clamp((my / MESH_SIZE_HEIGHT + 0.5f) * DETAIL_SIZE, 1f, DETAIL_SIZE - 2f)
+                clamp(surfaceX + 2f, 1f, DETAIL_SIZE - 2f),
+                clamp(surfaceY + 2f, 1f, DETAIL_SIZE - 2f)
         };
     }
 
@@ -630,8 +664,9 @@ public class S3RippleMeshEffectView extends TextureView
 
     private BackgroundTexture createRippleBackgroundTexture(Bitmap source) {
         BackgroundStats stats = sampleBackgroundStats(source);
-        Bitmap blurMap = createBlurredScreenMapBitmap(source);
-        return new BackgroundTexture(blurMap, "screen_blur_map sourceMean="
+        Bitmap map = source.copy(Bitmap.Config.ARGB_8888, false);
+        map.prepareToDraw();
+        return new BackgroundTexture(map, "screen_map sourceMean="
                 + Math.round(stats.meanLuma)
                 + " brightPct=" + Math.round(stats.brightFraction * 100f));
     }
@@ -870,6 +905,7 @@ public class S3RippleMeshEffectView extends TextureView
         private int exponentHandle;
         private int waterTexture;
         private int bgTexture;
+        private boolean firstDrawLogged;
 
         GLThread(SurfaceTexture surfaceTexture, int width, int height) {
             super("S3RippleGL");
@@ -952,6 +988,7 @@ public class S3RippleMeshEffectView extends TextureView
         }
 
         private void initGl() {
+            long startedAt = SystemClock.uptimeMillis();
             display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
             int[] version = new int[2];
             EGL14.eglInitialize(display, version, 0, version, 1);
@@ -1000,9 +1037,14 @@ public class S3RippleMeshEffectView extends TextureView
             GLES20.glDisable(GLES20.GL_DEPTH_TEST);
             GLES20.glDisable(GLES20.GL_CULL_FACE);
             GLES20.glDisable(GLES20.GL_BLEND);
+            glReadyAt = SystemClock.uptimeMillis();
+            glReady = true;
+            Log.i(TAG, "s3 gl ready surface=" + surfaceWidth + "x" + surfaceHeight
+                    + " elapsedMs=" + (glReadyAt - startedAt));
         }
 
         private void drawFrame() {
+            long startedAt = firstDrawLogged ? 0L : SystemClock.uptimeMillis();
             GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight);
             GLES20.glClearColor(0f, 0f, 0f, 0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
@@ -1041,15 +1083,24 @@ public class S3RippleMeshEffectView extends TextureView
             GLES20.glDisableVertexAttribArray(positionHandle);
             GLES20.glDisableVertexAttribArray(heightsHandle);
             EGL14.eglSwapBuffers(display, surface);
+            if (!firstDrawLogged) {
+                firstDrawLogged = true;
+                Log.i(TAG, "s3 first frame drawn elapsedMs="
+                        + (SystemClock.uptimeMillis() - startedAt));
+            }
         }
 
         private void uploadBackground(Bitmap bitmap) {
+            long startedAt = SystemClock.uptimeMillis();
             EGL14.eglMakeCurrent(display, surface, surface, context);
             if (bgTexture != 0) {
                 int[] old = {bgTexture};
                 GLES20.glDeleteTextures(1, old, 0);
             }
             bgTexture = createTexture(bitmap);
+            Log.i(TAG, "s3 background uploaded size=" + bitmap.getWidth()
+                    + "x" + bitmap.getHeight()
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
         }
 
         private int createSolidTexture(int color) {
@@ -1128,6 +1179,8 @@ public class S3RippleMeshEffectView extends TextureView
             if (display != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglTerminate(display);
             }
+            glReady = false;
+            glReadyAt = 0L;
         }
 
         private FloatBuffer newFloatBuffer(int floats) {

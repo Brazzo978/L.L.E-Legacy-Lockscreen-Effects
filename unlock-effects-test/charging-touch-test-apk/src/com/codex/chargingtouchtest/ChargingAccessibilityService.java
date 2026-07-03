@@ -59,12 +59,18 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long LOCKSCREEN_SESSION_CONTENT_POLL_MS = 40L;
     private static final long SCREEN_OFF_PREARM_FAST_MS = 80L;
     private static final long SCREEN_OFF_PREARM_SETTLE_MS = 180L;
+    private static final long SCREEN_OFF_PREARM_LATE_MS = 420L;
+    private static final long SCREEN_OFF_PREARM_FINAL_MS = 900L;
+    private static final long SCREEN_OFF_PREARM_DOZE_MS = 2200L;
+    private static final long SCREEN_OFF_PREARM_SUSPEND_MS = 5200L;
     private static final long BLOCKED_SURFACE_CLEAR_GRACE_MS = 120L;
     private static final long TOUCH_BOX_SCREENSHOT_DELAY_MS = 2000L;
     private static final long TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS = 180L;
     private static final long UNLOCK_EFFECT_SCREENSHOT_RETRY_MS = 90L;
     private static final long UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS = 360L;
+    private static final long S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS = 1400L;
     private static final long S3_RIPPLE_BACKGROUND_REFRESH_MS = 900L;
+    private static final long S3_RIPPLE_SURFACE_REATTACH_MIN_MS = 280L;
     private static final long S3_RIPPLE_BACKGROUND_DEBUG_PERSIST_MS = 10000L;
     private static final int TOUCH_LISTEN_BOX_BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -237,8 +243,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
     private long lastScreenOnAt;
+    private long lastScreenOffAt;
     private long unlockEffectBackgroundCapturedAt;
     private long unlockEffectBackgroundDebugPersistAt;
+    private long lastS3SurfaceReattachAt;
     private int unlockEffectBackgroundEffect = -1;
     private boolean colorScreenshotInFlight;
     private boolean colorScreenshotAttemptedThisSession;
@@ -255,6 +263,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
                 refreshChargingState();
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                lastScreenOffAt = SystemClock.uptimeMillis();
                 Log.i(TAG, "screen off broadcast interactive="
                         + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false));
@@ -282,12 +291,18 @@ public class ChargingAccessibilityService extends AccessibilityService
                 lastScreenOnAt = SystemClock.uptimeMillis();
                 Log.i(TAG, "screen on broadcast cached=" + unlockTouchCachedWhileScreenOff
                         + " interactive=" + (powerManager == null || powerManager.isInteractive())
-                        + " locked=" + isLockscreenLocked(false));
+                        + " locked=" + isLockscreenLocked(false)
+                        + " sinceScreenOffMs=" + elapsedSinceScreenOff());
                 unlockAffordancePending = true;
                 handler.removeCallbacks(screenOffPrearmRunnable);
                 if (unlockTouchCachedWhileScreenOff) {
                     notificationShadeVisible = false;
                     notificationShadeLastSeenAt = 0L;
+                    syncUnlockEffectOverlay();
+                    if (unlockEffectRenderer != null) {
+                        unlockEffectRenderer.warmUp();
+                    }
+                    syncTouchDebugOverlay(true, true);
                 }
                 evaluateVisibility("broadcast:" + action + ":fast", false);
                 unlockTouchCachedWhileScreenOff = false;
@@ -316,6 +331,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         refreshChargingState();
         preloadUnlockEffectRenderer();
         registerScreenReceiver();
+        if (powerManager != null && !powerManager.isInteractive()) {
+            scheduleScreenOffPrearm();
+        }
         evaluateVisibility("connected");
     }
 
@@ -341,9 +359,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             lastWindowPackage = event.getPackageName().toString();
         }
         logSystemUiEvent(event);
+        boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean pinEntryEvent = isPinEntryEvent(event);
         boolean keyboardPinEntryEvent = isKeyboardPinEntryEvent(event);
-        if (pinEntryEvent || keyboardPinEntryEvent) {
+        if (interactive && (pinEntryEvent || keyboardPinEntryEvent)) {
             boolean wasPinEntryRequested = pinEntryRequested;
             pinEntryPending = false;
             pinEntryRequested = true;
@@ -363,8 +382,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
-        } else if ((powerManager == null || powerManager.isInteractive())
-                && isNotificationShadeEvent(event)) {
+        } else if (interactive && isNotificationShadeEvent(event)) {
             notificationShadeVisible = true;
             notificationShadeLastSeenAt = SystemClock.uptimeMillis();
             removeTouchDebugOverlay();
@@ -482,6 +500,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         handler.post(screenOffPrearmRunnable);
         handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_FAST_MS);
         handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_SETTLE_MS);
+        handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_LATE_MS);
+        handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_FINAL_MS);
+        handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_DOZE_MS);
+        handler.postDelayed(screenOffPrearmRunnable, SCREEN_OFF_PREARM_SUSPEND_MS);
     }
 
     private void startLockscreenSessionPolling() {
@@ -518,35 +540,56 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void cacheUnlockTouchForScreenOff() {
-        unlockTouchCachedWhileScreenOff = touchDebugView != null
-                && OverlayPrefs.unlockEffectEnabled(this)
-                && OverlayPrefs.debugTouchArea(this);
+        long startedAt = SystemClock.uptimeMillis();
+        unlockTouchCachedWhileScreenOff = shouldPrearmUnlockEffectForScreenOff();
         if (unlockEffectRenderer != null) {
             unlockEffectRenderer.resetEffect();
         }
         if (unlockTouchCachedWhileScreenOff) {
+            syncUnlockEffectOverlay();
+            if (unlockEffectRenderer != null) {
+                unlockEffectRenderer.warmUp();
+            }
             syncTouchDebugOverlay(true, false);
-            Log.i(TAG, "unlock touch box cached for screen off");
+            Log.i(TAG, "unlock effect and touch box cached for screen off"
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
+                    + " overlayAttached=" + unlockEffectOverlayAttached
+                    + " touchBox=" + (touchDebugView != null)
+                    + " displayState=" + displayStateName(currentDisplayState()));
         }
     }
 
     private void prearmUnlockTouchForScreenOff() {
+        long startedAt = SystemClock.uptimeMillis();
         boolean interactive = powerManager == null || powerManager.isInteractive();
-        if (interactive || !isLockscreenLocked(false)) {
-            return;
-        }
-        boolean showDoodle = isDoodleVisible(false, true, false, false);
-        if (showDoodle
-                || !OverlayPrefs.unlockEffectEnabled(this)
-                || !OverlayPrefs.debugTouchArea(this)) {
+        if (interactive || !shouldPrearmUnlockEffectForScreenOff()) {
             return;
         }
         syncUnlockEffectOverlay();
+        if (unlockEffectRenderer != null) {
+            unlockEffectRenderer.warmUp();
+        }
         syncTouchDebugOverlay(true, false);
         unlockTouchCachedWhileScreenOff = touchDebugView != null;
         if (unlockTouchCachedWhileScreenOff) {
-            Log.i(TAG, "unlock touch box prearmed for screen off");
+            Log.i(TAG, "unlock touch box prearmed for screen off"
+                    + " sinceScreenOffMs=" + elapsedSinceScreenOff()
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
+                    + " overlayAttached=" + unlockEffectOverlayAttached
+                    + " touchBox=" + (touchDebugView != null)
+                    + " displayState=" + displayStateName(currentDisplayState()));
         }
+    }
+
+    private boolean shouldPrearmUnlockEffectForScreenOff() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean locked = isLockscreenLocked(false);
+        boolean screenOffOrLocked = !interactive || locked;
+        boolean showDoodle = isDoodleVisible(false, true, false, false);
+        return screenOffOrLocked
+                && !showDoodle
+                && OverlayPrefs.unlockEffectEnabled(this)
+                && OverlayPrefs.debugTouchArea(this);
     }
 
     private void clearBlockedSurfaceState() {
@@ -743,7 +786,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void syncUnlockEffectOverlay() {
+        long startedAt = SystemClock.uptimeMillis();
         preloadUnlockEffectRenderer();
+        if (unlockEffectOverlayAttached && unlockEffectView != null
+                && shouldReattachUnlockEffectSurfaceForWarmup()) {
+            reattachUnlockEffectOverlay("surface_not_ready");
+        }
         if (unlockEffectOverlayAttached || unlockEffectView == null) {
             return;
         }
@@ -777,10 +825,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "unlock effect overlay shown type=" + unlockEffectRendererType
                 + " name=" + (unlockEffectRenderer == null
                 ? "none"
-                : unlockEffectRenderer.effectName()));
+                : unlockEffectRenderer.effectName())
+                + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
     }
 
     private void preloadUnlockEffectRenderer() {
+        long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
         if (unlockEffectRenderer != null && unlockEffectRendererType == effect) {
             return;
@@ -803,7 +853,34 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         unlockEffectView = unlockEffectRenderer.asView();
         Log.i(TAG, "unlock effect renderer preloaded type=" + effect
-                + " name=" + unlockEffectRenderer.effectName());
+                + " name=" + unlockEffectRenderer.effectName()
+                + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
+    }
+
+    private boolean shouldReattachUnlockEffectSurfaceForWarmup() {
+        if (!(unlockEffectRenderer instanceof S3RippleMeshEffectView)) {
+            return false;
+        }
+        if (((S3RippleMeshEffectView) unlockEffectRenderer).isGlReadyForFrame()) {
+            return false;
+        }
+        long now = SystemClock.uptimeMillis();
+        return now - lastS3SurfaceReattachAt >= S3_RIPPLE_SURFACE_REATTACH_MIN_MS;
+    }
+
+    private void reattachUnlockEffectOverlay(String reason) {
+        if (!unlockEffectOverlayAttached || unlockEffectView == null) {
+            return;
+        }
+        lastS3SurfaceReattachAt = SystemClock.uptimeMillis();
+        try {
+            windowManager.removeView(unlockEffectView);
+        } catch (RuntimeException ignored) {
+            // Display state transitions can remove the accessibility window first.
+        }
+        unlockEffectOverlayAttached = false;
+        Log.i(TAG, "unlock effect overlay reattaching reason=" + reason
+                + " type=" + unlockEffectRendererType);
     }
 
     private void showPendingUnlockAffordance(String reason) {
@@ -846,6 +923,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
+        if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE) {
+            if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
+                refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
+            }
+            return false;
+        }
         if (backgroundRenderer.hasBackgroundSourceBitmap()) {
             return false;
         }
@@ -998,8 +1081,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         long sinceScreenOn = elapsedSinceScreenOn();
+        long minScreenOnMs = OverlayPrefs.unlockEffect(this) == OverlayPrefs.EFFECT_S3_RIPPLE
+                ? S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS
+                : UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
         return sinceScreenOn < 0L
-                || sinceScreenOn >= UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
+                || sinceScreenOn >= minScreenOnMs;
     }
 
     private void scheduleUnlockEffectBackgroundRetry(String reason) {
@@ -1012,9 +1098,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
         long sinceScreenOn = elapsedSinceScreenOn();
         long delayMs = UNLOCK_EFFECT_SCREENSHOT_RETRY_MS;
-        if (sinceScreenOn >= 0L && sinceScreenOn < UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS) {
-            delayMs = Math.max(delayMs,
-                    UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS - sinceScreenOn);
+        long minScreenOnMs = effect == OverlayPrefs.EFFECT_S3_RIPPLE
+                ? S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS
+                : UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
+        if (sinceScreenOn >= 0L && sinceScreenOn < minScreenOnMs) {
+            delayMs = Math.max(delayMs, minScreenOnMs - sinceScreenOn);
         }
         handler.postDelayed(unlockEffectBackgroundRetryRunnable, delayMs);
         Log.i(TAG, "unlock effect background retry scheduled reason=" + reason
@@ -1051,6 +1139,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             return -1L;
         }
         return SystemClock.uptimeMillis() - lastScreenOnAt;
+    }
+
+    private long elapsedSinceScreenOff() {
+        if (lastScreenOffAt <= 0L) {
+            return -1L;
+        }
+        return SystemClock.uptimeMillis() - lastScreenOffAt;
     }
 
     private String displayStateName(int state) {
@@ -1336,6 +1431,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void syncTouchDebugOverlay(boolean mounted, boolean touchable) {
+        long startedAt = SystemClock.uptimeMillis();
         if (!OverlayPrefs.debugTouchArea(this) || !mounted) {
             removeTouchDebugOverlay();
             return;
@@ -1390,7 +1486,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " top=" + box.top
                 + " right=" + box.right
                 + " bottom=" + box.bottom
-                + " touchable=" + touchable);
+                + " touchable=" + touchable
+                + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
     }
 
     private void applyOverlayPrefs() {
@@ -1677,6 +1774,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void beginUnlockEffectGesture(float screenX, float screenY) {
+        long startedAt = SystemClock.uptimeMillis();
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
                 || notificationShadeVisible) {
             Log.i(TAG, "unlock effect gesture blocked by content surface");
@@ -1691,6 +1789,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectAnchorX = screenX;
         unlockEffectAnchorY = screenY;
         syncUnlockEffectOverlay();
+        long syncedAt = SystemClock.uptimeMillis();
         if (unlockEffectRenderer != null) {
             unlockEffectRenderer.beginGesture(unlockEffectAnchorX, unlockEffectAnchorY);
         }
@@ -1698,7 +1797,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + Math.round(screenX) + "," + Math.round(screenY)
                 + " anchor=" + Math.round(unlockEffectAnchorX)
                 + "," + Math.round(unlockEffectAnchorY)
-                + " type=" + OverlayPrefs.unlockEffect(this));
+                + " type=" + OverlayPrefs.unlockEffect(this)
+                + " syncMs=" + (syncedAt - startedAt)
+                + " beginMs=" + (SystemClock.uptimeMillis() - syncedAt));
     }
 
     private void updateUnlockEffectGesture(float screenX, float screenY) {

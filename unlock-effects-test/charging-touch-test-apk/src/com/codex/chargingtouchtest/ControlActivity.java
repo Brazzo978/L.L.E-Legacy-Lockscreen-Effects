@@ -7,10 +7,13 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
@@ -28,19 +31,32 @@ public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
     private static final int TAB_CHARGING_DOODLE = 0;
     private static final int TAB_LOCKSCREEN_EFFECT = 1;
+    private static final int COLOR_BACKGROUND = Color.rgb(244, 246, 249);
+    private static final int COLOR_SURFACE = Color.WHITE;
+    private static final int COLOR_TEXT = Color.rgb(33, 40, 48);
+    private static final int COLOR_MUTED = Color.rgb(102, 114, 128);
+    private static final int COLOR_DIVIDER = Color.rgb(214, 222, 232);
+    private static final int COLOR_ACCENT = Color.rgb(24, 124, 235);
+    private static final int COLOR_ACCENT_SOFT = Color.rgb(228, 240, 255);
+    private static final int COLOR_WARNING = Color.rgb(202, 126, 38);
+    private static final int COLOR_OK = Color.rgb(24, 150, 82);
+    private static final int COLOR_ERROR = Color.rgb(210, 70, 70);
 
     private SharedPreferences prefs;
     private TextView accessibilityStatus;
     private Button accessibilityButton;
+    private Switch serviceSwitch;
     private Button chargingDoodleTabButton;
     private Button lockscreenEffectTabButton;
     private LinearLayout tabContent;
     private TextView touchBoxSummary;
     private int selectedTab = TAB_CHARGING_DOODLE;
+    private boolean updatingServiceSwitch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        configureGraceWindow();
         prefs = OverlayPrefs.get(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         ensureTouchAreaEnabled();
@@ -48,31 +64,20 @@ public class ControlActivity extends Activity {
             selectedTab = savedInstanceState.getInt(STATE_SELECTED_TAB, TAB_CHARGING_DOODLE);
         }
 
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(COLOR_BACKGROUND);
+        outer.setPadding(0, statusBarHeight(), 0, 0);
+        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        outer.addView(appHeader(), headerParams);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.TOP);
-        root.setPadding(dp(24), dp(24), dp(24), dp(24));
-        root.setBackgroundColor(Color.rgb(16, 20, 28));
-
-        TextView title = new TextView(this);
-        title.setText("Charging Touch Test");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(24f);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView note = new TextView(this);
-        note.setText("Charging doodle and unlock effect test");
-        note.setTextColor(Color.rgb(190, 205, 220));
-        note.setTextSize(16f);
-        note.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        noteParams.setMargins(0, dp(12), 0, dp(22));
-        root.addView(note, noteParams);
+        root.setPadding(dp(16), dp(16), dp(16), dp(24));
+        root.setBackgroundColor(COLOR_BACKGROUND);
 
         root.addView(tabSelector());
 
@@ -83,31 +88,21 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         showTab(selectedTab);
 
-        accessibilityStatus = new TextView(this);
-        accessibilityStatus.setTextSize(16f);
-        accessibilityStatus.setGravity(Gravity.CENTER);
-        accessibilityStatus.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        statusParams.setMargins(0, dp(8), 0, dp(4));
-        root.addView(accessibilityStatus, statusParams);
-
-        accessibilityButton = button("Open accessibility settings", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            }
-        });
-        root.addView(accessibilityButton);
-        updateAccessibilityStatus();
-
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.rgb(16, 20, 28));
+        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(COLOR_BACKGROUND);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
-        setContentView(scrollView);
+        outer.addView(scrollView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f));
+        outer.addView(accessibilityFooter(), new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        setContentView(outer);
+        updateAccessibilityStatus();
     }
 
     @Override
@@ -123,13 +118,127 @@ public class ControlActivity extends Activity {
         updateTouchBoxSummary();
     }
 
+    private void configureGraceWindow() {
+        Window window = getWindow();
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.setStatusBarColor(COLOR_BACKGROUND);
+            window.setNavigationBarColor(COLOR_SURFACE);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        }
+    }
+
+    private View appHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(dp(16), dp(8), dp(16), dp(8));
+        header.setBackgroundColor(COLOR_SURFACE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            header.setElevation(dp(3));
+        }
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView title = new TextView(this);
+        title.setText("Charging Touch");
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(20f);
+        title.setSingleLine(true);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        row.addView(title, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        serviceSwitch = new Switch(this);
+        serviceSwitch.setText("");
+        serviceSwitch.setTextSize(13f);
+        serviceSwitch.setTextColor(COLOR_TEXT);
+        serviceSwitch.setMinWidth(dp(52));
+        serviceSwitch.setPadding(0, 0, 0, 0);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            serviceSwitch.setShowText(false);
+        }
+        serviceSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (updatingServiceSwitch) {
+                    return;
+                }
+                if (!isChargingAccessibilityEnabled()) {
+                    Toast.makeText(ControlActivity.this,
+                            "Enable accessibility first", Toast.LENGTH_SHORT).show();
+                    openAccessibilitySettings();
+                    updateAccessibilityStatus();
+                    return;
+                }
+                if (!isChecked) {
+                    Toast.makeText(ControlActivity.this,
+                            "Disable the service from Accessibility settings",
+                            Toast.LENGTH_SHORT).show();
+                    updateAccessibilityStatus();
+                }
+            }
+        });
+        row.addView(serviceSwitch, new LinearLayout.LayoutParams(
+                dp(62),
+                dp(48)));
+
+        accessibilityStatus = new TextView(this);
+        accessibilityStatus.setGravity(Gravity.CENTER);
+        accessibilityStatus.setTextSize(22f);
+        accessibilityStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                dp(30),
+                dp(44));
+        statusParams.setMargins(dp(4), 0, 0, 0);
+        row.addView(accessibilityStatus, statusParams);
+        return header;
+    }
+
+    private View accessibilityFooter() {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setPadding(dp(16), dp(10), dp(16), dp(16));
+        footer.setBackgroundColor(COLOR_SURFACE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            footer.setElevation(dp(4));
+        }
+        accessibilityButton = outlineButton("Settings", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openAccessibilitySettings();
+            }
+        });
+        footer.addView(accessibilityButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48)));
+        return footer;
+    }
+
+    private void openAccessibilitySettings() {
+        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+    }
+
     private View tabSelector() {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(12));
+        background.setColor(Color.rgb(232, 237, 244));
+        tabs.setBackground(background);
         LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(50));
-        tabsParams.setMargins(0, 0, 0, dp(12));
+                dp(52));
+        tabsParams.setMargins(0, 0, 0, dp(14));
         tabs.setLayoutParams(tabsParams);
 
         chargingDoodleTabButton = tabButton("Charging doodle", TAB_CHARGING_DOODLE);
@@ -153,11 +262,11 @@ public class ControlActivity extends Activity {
     private Button tabButton(String label, final int tab) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextSize(15f);
+        button.setTextSize(14f);
         button.setAllCaps(false);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
-        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setPadding(dp(6), 0, dp(6), 0);
         button.setGravity(Gravity.CENTER);
         button.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -193,20 +302,42 @@ public class ControlActivity extends Activity {
             return;
         }
         GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(8));
-        background.setColor(selected ? Color.rgb(66, 134, 245) : Color.rgb(30, 38, 52));
+        background.setCornerRadius(dp(9));
+        background.setColor(selected ? COLOR_SURFACE : Color.TRANSPARENT);
         background.setStroke(dp(1),
-                selected ? Color.rgb(136, 184, 255) : Color.rgb(72, 84, 105));
+                selected ? COLOR_DIVIDER : Color.TRANSPARENT);
         button.setBackground(background);
-        button.setTextColor(selected ? Color.WHITE : Color.rgb(190, 205, 220));
+        button.setTextColor(selected ? COLOR_ACCENT : COLOR_MUTED);
         button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+    }
+
+    private void styleCard(LinearLayout section) {
+        section.setPadding(dp(16), dp(14), dp(16), dp(16));
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(8));
+        background.setColor(COLOR_SURFACE);
+        background.setStroke(dp(1), Color.rgb(232, 237, 244));
+        section.setBackground(background);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            section.setElevation(dp(1));
+        }
+    }
+
+    private TextView sectionTitle(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(COLOR_TEXT);
+        label.setTextSize(18f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setPadding(0, 0, 0, dp(8));
+        return label;
     }
 
     private Switch toggle(String label, final String key, boolean defaultValue) {
         Switch toggle = new Switch(this);
         toggle.setText(label);
-        toggle.setTextColor(Color.WHITE);
-        toggle.setTextSize(18f);
+        toggle.setTextColor(COLOR_TEXT);
+        toggle.setTextSize(16f);
         toggle.setChecked(prefs.getBoolean(key, defaultValue));
         toggle.setPadding(0, dp(8), 0, dp(8));
         toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -226,8 +357,8 @@ public class ControlActivity extends Activity {
     private Switch invertedToggle(String label, final String key, boolean defaultStoredValue) {
         Switch toggle = new Switch(this);
         toggle.setText(label);
-        toggle.setTextColor(Color.WHITE);
-        toggle.setTextSize(18f);
+        toggle.setTextColor(COLOR_TEXT);
+        toggle.setTextSize(16f);
         toggle.setChecked(!prefs.getBoolean(key, defaultStoredValue));
         toggle.setPadding(0, dp(8), 0, dp(8));
         toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -250,16 +381,10 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, dp(18), 0, dp(10));
+        sectionParams.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(sectionParams);
-
-        TextView label = new TextView(this);
-        label.setText("Charging doodle");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Charging doodle"));
 
         section.addView(toggle("Enable charging doodle", OverlayPrefs.SHOW_DOODLE, true));
         section.addView(toggle("Doodle on lockscreen", OverlayPrefs.SHOW_LOCK, true));
@@ -277,16 +402,10 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, dp(18), 0, dp(10));
+        sectionParams.setMargins(0, dp(10), 0, dp(12));
         section.setLayoutParams(sectionParams);
-
-        TextView label = new TextView(this);
-        label.setText("Seasonal doodle");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Seasonal doodle"));
 
         final RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
@@ -322,7 +441,7 @@ public class ControlActivity extends Activity {
     private void addSeasonOption(RadioGroup group, String label, int value) {
         RadioButton button = new RadioButton(this);
         button.setText(label);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(COLOR_TEXT);
         button.setTextSize(17f);
         button.setTag(Integer.valueOf(value));
         button.setPadding(0, dp(5), 0, dp(5));
@@ -337,45 +456,35 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, dp(18), 0, dp(10));
+        sectionParams.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(sectionParams);
-
-        TextView label = new TextView(this);
-        label.setText("Unlock effect");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Unlock effect"));
         section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
 
-        final RadioGroup group = new RadioGroup(this);
-        group.setOrientation(RadioGroup.VERTICAL);
-        addEffectOption(group, "S3 ripple WIP", OverlayPrefs.EFFECT_S3_RIPPLE);
-        addEffectOption(group, "S4 Lens Flare", OverlayPrefs.EFFECT_S4_LENS_FLARE);
-        addEffectOption(group, "S5 Popping Colours", OverlayPrefs.EFFECT_S5_POPPING_COLOURS);
-        addEffectOption(group, "N4 Watercolor WIP", OverlayPrefs.EFFECT_WATERCOLOUR);
+        int current = OverlayPrefs.unlockEffect(this);
+        section.addView(effectOption(
+                "S3 ripple WIP",
+                "Reverse-backed, overlay-safe port. Not millimeter-exact because Samsung fullscreen refraction is disabled.",
+                OverlayPrefs.EFFECT_S3_RIPPLE,
+                current));
+        section.addView(effectOption(
+                "S4 Lens Flare",
+                "Original-style lens flare path for the S4 unlock gesture.",
+                OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current));
+        section.addView(effectOption(
+                "S5 Popping Colours",
+                "Popping colour effect with screenshot-backed color map.",
+                OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
+                current));
+        section.addView(effectOption(
+                "N4 Watercolor WIP",
+                "Transparent app-owned watercolor renderer, still a WIP slot.",
+                OverlayPrefs.EFFECT_WATERCOLOUR,
+                current));
 
-        RadioButton checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.unlockEffect(this)));
-        if (checked == null) {
-            checked = group.findViewWithTag(Integer.valueOf(OverlayPrefs.EFFECT_S4_LENS_FLARE));
-        }
-        if (checked != null) {
-            checked.setChecked(true);
-        }
-
-        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
-                View checkedView = radioGroup.findViewById(checkedId);
-                Object tag = checkedView == null ? null : checkedView.getTag();
-                if (tag instanceof Integer) {
-                    prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, ((Integer) tag).intValue()).apply();
-                }
-            }
-        });
-        section.addView(group);
-        section.addView(button("Refresh effect background map", new View.OnClickListener() {
+        section.addView(outlineButton("Refresh effect background map", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 int token = prefs.getInt(OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN, 0);
@@ -390,10 +499,76 @@ public class ControlActivity extends Activity {
         return section;
     }
 
+    private View effectOption(String title, String subtitle, final int value, int current) {
+        final boolean selected = value == current;
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setMinimumHeight(dp(68));
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, value).apply();
+                showTab(TAB_LOCKSCREEN_EFFECT);
+            }
+        });
+
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(8));
+        background.setColor(selected ? COLOR_ACCENT_SOFT : Color.rgb(249, 251, 253));
+        background.setStroke(dp(1), selected ? COLOR_ACCENT : COLOR_DIVIDER);
+        row.setBackground(background);
+
+        View marker = new View(this);
+        GradientDrawable markerBackground = new GradientDrawable();
+        markerBackground.setShape(GradientDrawable.OVAL);
+        markerBackground.setColor(selected ? COLOR_ACCENT : Color.TRANSPARENT);
+        markerBackground.setStroke(dp(2), selected ? COLOR_ACCENT : Color.rgb(154, 166, 180));
+        marker.setBackground(markerBackground);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+        markerParams.setMargins(0, 0, dp(12), 0);
+        row.addView(marker, markerParams);
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        row.addView(copy, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        titleView.setSingleLine(false);
+        copy.addView(titleView);
+
+        TextView subtitleView = new TextView(this);
+        subtitleView.setText(subtitle);
+        subtitleView.setTextColor(COLOR_MUTED);
+        subtitleView.setTextSize(13f);
+        subtitleView.setSingleLine(false);
+        subtitleView.setLineSpacing(dp(1), 1.0f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.setMargins(0, dp(2), 0, 0);
+        copy.addView(subtitleView, subtitleParams);
+
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, dp(6), 0, 0);
+        row.setLayoutParams(rowParams);
+        return row;
+    }
+
     private void addEffectOption(RadioGroup group, String label, int value) {
         RadioButton button = new RadioButton(this);
         button.setText(label);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(COLOR_TEXT);
         button.setTextSize(17f);
         button.setTag(Integer.valueOf(value));
         button.setPadding(0, dp(5), 0, dp(5));
@@ -402,22 +577,26 @@ public class ControlActivity extends Activity {
                 dp(44)));
     }
 
+    private TextView infoText(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(COLOR_MUTED);
+        view.setTextSize(13f);
+        view.setLineSpacing(dp(2), 1.0f);
+        view.setPadding(0, dp(8), 0, dp(10));
+        return view;
+    }
+
     private View positionControls() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(10), 0, dp(14));
+        params.setMargins(0, dp(10), 0, dp(12));
         section.setLayoutParams(params);
-
-        TextView label = new TextView(this);
-        label.setText("Position offset");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Position offset"));
 
         section.addView(positionSlider("Horizontal", OverlayPrefs.POSITION_OFFSET_X, 0));
         section.addView(positionSlider("Vertical", OverlayPrefs.POSITION_OFFSET_Y, 0));
@@ -430,16 +609,10 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(8), 0, dp(12));
+        params.setMargins(0, dp(10), 0, dp(12));
         section.setLayoutParams(params);
-
-        TextView label = new TextView(this);
-        label.setText("Debug");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Debug"));
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         return section;
     }
@@ -450,19 +623,13 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(8), 0, dp(12));
+        params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
-
-        TextView label = new TextView(this);
-        label.setText("Touch box");
-        label.setTextColor(Color.rgb(220, 232, 242));
-        label.setTextSize(18f);
-        section.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        styleCard(section);
+        section.addView(sectionTitle("Touch box"));
 
         touchBoxSummary = new TextView(this);
-        touchBoxSummary.setTextColor(Color.rgb(190, 205, 220));
+        touchBoxSummary.setTextColor(COLOR_MUTED);
         touchBoxSummary.setTextSize(14f);
         touchBoxSummary.setPadding(0, dp(8), 0, dp(8));
         section.addView(touchBoxSummary, new LinearLayout.LayoutParams(
@@ -471,7 +638,7 @@ public class ControlActivity extends Activity {
         updateTouchBoxSummary();
 
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
-        section.addView(button("Touch box screenshot wizard", new View.OnClickListener() {
+        section.addView(outlineButton("Touch box screenshot wizard", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Intent intent = new Intent(ControlActivity.this, TouchBoxSetupActivity.class);
@@ -479,7 +646,7 @@ public class ControlActivity extends Activity {
                 startActivity(intent);
             }
         }));
-        section.addView(button("Reset touch box", new View.OnClickListener() {
+        section.addView(outlineButton("Reset touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 OverlayPrefs.clearTouchBox(ControlActivity.this);
@@ -518,7 +685,7 @@ public class ControlActivity extends Activity {
         row.setLayoutParams(rowParams);
 
         final TextView valueLabel = new TextView(this);
-        valueLabel.setTextColor(Color.rgb(190, 205, 220));
+        valueLabel.setTextColor(COLOR_MUTED);
         valueLabel.setTextSize(15f);
         row.addView(valueLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -571,30 +738,50 @@ public class ControlActivity extends Activity {
     }
 
     private Button button(String text, View.OnClickListener listener) {
+        return outlineButton(text, listener);
+    }
+
+    private Button outlineButton(String text, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(text);
         button.setAllCaps(false);
+        button.setTextSize(14f);
+        button.setTextColor(COLOR_TEXT);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(8), 0, dp(8), 0);
         button.setOnClickListener(listener);
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(8));
+        background.setColor(COLOR_SURFACE);
+        background.setStroke(dp(1), COLOR_DIVIDER);
+        button.setBackground(background);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(52));
-        params.setMargins(0, dp(7), 0, dp(7));
+                dp(48));
+        params.setMargins(0, dp(8), 0, 0);
         button.setLayoutParams(params);
         return button;
     }
 
     private void updateAccessibilityStatus() {
-        if (accessibilityStatus == null || accessibilityButton == null) {
+        if (accessibilityStatus == null || accessibilityButton == null || serviceSwitch == null) {
             return;
         }
-        if (isChargingAccessibilityEnabled()) {
-            accessibilityStatus.setText("Accessibilita OK");
-            accessibilityStatus.setTextColor(Color.rgb(85, 230, 145));
-            accessibilityButton.setText("Gestisci accessibilita");
+        boolean enabled = isChargingAccessibilityEnabled();
+        updatingServiceSwitch = true;
+        serviceSwitch.setChecked(enabled);
+        serviceSwitch.setEnabled(true);
+        serviceSwitch.setText("");
+        updatingServiceSwitch = false;
+        if (enabled) {
+            accessibilityStatus.setText("\u2713");
+            accessibilityStatus.setTextColor(COLOR_OK);
+            accessibilityButton.setText("Settings");
         } else {
-            accessibilityStatus.setText("Devi attivare accessibilita: premi il tasto qui sotto.");
-            accessibilityStatus.setTextColor(Color.rgb(255, 178, 105));
-            accessibilityButton.setText("Attiva accessibilita");
+            accessibilityStatus.setText("\u00d7");
+            accessibilityStatus.setTextColor(COLOR_ERROR);
+            accessibilityButton.setText("Enable");
         }
     }
 
@@ -617,6 +804,14 @@ public class ControlActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private int statusBarHeight() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (id > 0) {
+            return getResources().getDimensionPixelSize(id);
+        }
+        return dp(24);
     }
 }
 

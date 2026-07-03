@@ -51,6 +51,7 @@ public class PoppingColoursEffectView extends FrameLayout
 
     public PoppingColoursEffectView(Context context) {
         super(context);
+        long startedAt = SystemClock.uptimeMillis();
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
@@ -71,7 +72,8 @@ public class PoppingColoursEffectView extends FrameLayout
             createSamsungEffect(context);
             ready = true;
             sendBackgroundBitmap();
-            Log.i(TAG, "S5 popping colours Samsung renderer loaded");
+            Log.i(TAG, "S5 popping colours Samsung renderer loaded elapsedMs="
+                    + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
             Log.e(TAG, "S5 popping colours Samsung renderer unavailable", t);
@@ -167,7 +169,10 @@ public class PoppingColoursEffectView extends FrameLayout
         if (destroyed || !ready) {
             return;
         }
+        long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
+        Log.i(TAG, "S5 popping colours warmed elapsedMs="
+                + (SystemClock.uptimeMillis() - startedAt));
     }
 
     @Override
@@ -315,10 +320,13 @@ public class PoppingColoursEffectView extends FrameLayout
         if (!ready || handleCustomEvent == null || effectView == null) {
             return;
         }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
             params.put("BGBitmap", getBackgroundBitmap());
             handleCustomEvent.invoke(effectView, CMD_SET_BACKGROUND, params);
+            Log.i(TAG, "BGBitmap sent source=" + backgroundSource
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             Log.d(TAG, "BGBitmap command ignored", t);
         }
