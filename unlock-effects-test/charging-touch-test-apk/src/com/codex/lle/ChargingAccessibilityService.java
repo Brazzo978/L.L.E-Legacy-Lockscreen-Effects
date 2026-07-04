@@ -1745,16 +1745,19 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         Rect box = resolveTouchBox();
-        boolean standbyTouchable = touchable || OverlayPrefs.debugTouchStandby(this);
+        boolean standbyEnabled = OverlayPrefs.debugTouchStandby(this);
+        boolean standbyTouchable = touchable || standbyEnabled;
+        // Let an early wake touch try the same readiness gate used by normal gestures.
+        boolean listening = touchable || standbyEnabled;
         if (touchDebugView != null) {
             touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
-            touchDebugView.setListeningEnabled(touchable);
+            touchDebugView.setListeningEnabled(listening);
             updateTouchDebugLayout(box, standbyTouchable);
             return;
         }
         touchDebugView = new TouchDebugView(this);
         touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
-        touchDebugView.setListeningEnabled(touchable);
+        touchDebugView.setListeningEnabled(listening);
         touchDebugView.setTouchTriggerListener(new TouchDebugView.TouchTriggerListener() {
             @Override
             public boolean onTouchStarted(float screenX, float screenY) {
@@ -1795,7 +1798,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " top=" + box.top
                 + " right=" + box.right
                 + " bottom=" + box.bottom
-                + " touchable=" + standbyTouchable + " listening=" + touchable
+                + " touchable=" + standbyTouchable + " listening=" + listening
+                + " active=" + touchable
                 + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
     }
 

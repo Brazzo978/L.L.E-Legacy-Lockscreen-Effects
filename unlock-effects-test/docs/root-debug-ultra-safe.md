@@ -62,7 +62,9 @@ reader, raw event parsing, coordinate mapping, and extra failure modes.
 
 The root keepalive item stays as a future-only option: it writes a reversible
 plan for battery/optimization experiments, but the app does not apply those
-commands automatically.
+commands automatically. A short SM-S918B wake test did not prove a clear
+keepalive win; the useful improvement was keeping the existing standby touch
+box listening and relying on the normal lockscreen readiness gate.
 
 Files written by the app-side buttons can be pulled from the debuggable app
 private directory:
