@@ -125,6 +125,11 @@ Quando una cattura N5 e necessaria o gia in volo, l'hint dell'effetto resta
 pendente fino a quando la bitmap e pronta. Questo evita che lo screenshot
 includa l'hint stesso e poi lo trasformi in una zona bianca dentro la goccia.
 
+Il `TextureView` Samsung puo distruggere e ricreare il contesto native quando
+l'overlay viene rimosso e riattaccato. Il wrapper invalida quindi il marker
+`lastSentBackgroundBitmap` su attach/detach, cosi la bitmap cached viene
+rimandata al nuovo renderer anche se il contenuto non e cambiato.
+
 ## Asset aggiunti al package
 
 - `charging-touch-test-apk/res/drawable-nodpi/n5_colour_droplet_normal.png`

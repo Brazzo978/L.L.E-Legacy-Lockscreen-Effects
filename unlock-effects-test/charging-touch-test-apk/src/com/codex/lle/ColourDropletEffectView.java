@@ -254,12 +254,20 @@ public class ColourDropletEffectView extends FrameLayout
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        invalidateSentBackground();
         post(new Runnable() {
             @Override
             public void run() {
                 warmUp();
             }
         });
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        gestureActive = false;
+        invalidateSentBackground();
+        super.onDetachedFromWindow();
     }
 
     private void createSamsungEffect(Context context) throws Exception {
@@ -371,6 +379,11 @@ public class ColourDropletEffectView extends FrameLayout
         } catch (Throwable t) {
             Log.d(TAG, "background command ignored", t);
         }
+    }
+
+    private void invalidateSentBackground() {
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
     }
 
     private Bitmap getBackgroundBitmap() {
