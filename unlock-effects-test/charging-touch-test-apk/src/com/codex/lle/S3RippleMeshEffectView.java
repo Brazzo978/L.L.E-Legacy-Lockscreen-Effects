@@ -30,10 +30,15 @@ public class S3RippleMeshEffectView extends TextureView
         implements TextureView.SurfaceTextureListener, UnlockEffectRenderer, BackgroundSourceRenderer {
     private static final String TAG = "ChargingS3Ripple";
 
-    private static final int DETAIL_SIZE = 104;
-    private static final int SURFACE_SIZE = 100;
+    private static final int DETAIL_SIZE = 84;
+    private static final int SURFACE_SIZE = 80;
     private static final int FLOAT_SIZE_BYTES = 4;
     private static final int SHORT_SIZE_BYTES = 2;
+    private static final int BACKGROUND_TEXTURE_MAX_WIDTH = 540;
+    private static final int DRAW_CLIP_MIN_RADIUS_PX = 320;
+    private static final float DRAW_CLIP_INITIAL_RADIUS_RATIO = 0.38f;
+    private static final float DRAW_CLIP_EXPAND_RATIO = 0.035f;
+    private static final float DRAW_CLIP_MAX_RADIUS_RATIO = 0.82f;
     private static final float EMPTY_THRESHOLD = 0.01f;
     private static final float HEIGHT_CLAMP = 100f;
     private static final float NORMAL_DAMPING = 0.94f;
@@ -184,6 +189,11 @@ public class S3RippleMeshEffectView extends TextureView
     private float rippleDistance;
     private long pressStartedAt;
     private int emptyFrames;
+    private boolean drawClipActive;
+    private int drawClipLeft;
+    private int drawClipTop;
+    private int drawClipRight;
+    private int drawClipBottom;
 
     public S3RippleMeshEffectView(Context context) {
         super(context);
@@ -324,6 +334,7 @@ public class S3RippleMeshEffectView extends TextureView
                 heightMap[i] = 0f;
                 velocity[i] = 0f;
             }
+            clearDrawClipLocked();
             lock.notifyAll();
         }
     }
@@ -365,7 +376,7 @@ public class S3RippleMeshEffectView extends TextureView
         }
         int renderWidth = getRenderWidth();
         int renderHeight = getRenderHeight();
-        Bitmap cropped = createTopStartCropBitmap(source, renderWidth, renderHeight);
+        Bitmap cropped = createBackgroundTextureSourceBitmap(source, renderWidth, renderHeight);
         BackgroundTexture texture = createRippleBackgroundTexture(cropped);
         Bitmap next = texture.bitmap;
         next.prepareToDraw();
@@ -536,6 +547,7 @@ public class S3RippleMeshEffectView extends TextureView
     }
 
     private void addRippleLocked(float screenX, float screenY, float intensity) {
+        includeDrawClipLocked(screenX, screenY);
         float[] point = projectedRipplePoint(screenX, screenY);
         float cx = point[0];
         float cy = point[1];
@@ -560,6 +572,62 @@ public class S3RippleMeshEffectView extends TextureView
                 }
             }
         }
+    }
+
+    private void includeDrawClipLocked(float screenX, float screenY) {
+        int width = getRenderWidth();
+        int height = getRenderHeight();
+        int minSide = Math.max(1, Math.min(width, height));
+        int radius = Math.max(DRAW_CLIP_MIN_RADIUS_PX,
+                Math.round(minSide * DRAW_CLIP_INITIAL_RADIUS_RATIO));
+        int left = clamp(Math.round(screenX) - radius, 0, width);
+        int top = clamp(Math.round(screenY) - radius, 0, height);
+        int right = clamp(Math.round(screenX) + radius, 0, width);
+        int bottom = clamp(Math.round(screenY) + radius, 0, height);
+        if (!drawClipActive) {
+            drawClipLeft = left;
+            drawClipTop = top;
+            drawClipRight = right;
+            drawClipBottom = bottom;
+            drawClipActive = true;
+            return;
+        }
+        drawClipLeft = Math.min(drawClipLeft, left);
+        drawClipTop = Math.min(drawClipTop, top);
+        drawClipRight = Math.max(drawClipRight, right);
+        drawClipBottom = Math.max(drawClipBottom, bottom);
+    }
+
+    private void expandDrawClipLocked() {
+        if (!drawClipActive) {
+            return;
+        }
+        int width = getRenderWidth();
+        int height = getRenderHeight();
+        int minSide = Math.max(1, Math.min(width, height));
+        int maxDiameter = Math.max(DRAW_CLIP_MIN_RADIUS_PX * 2,
+                Math.round(minSide * DRAW_CLIP_MAX_RADIUS_RATIO) * 2);
+        int expand = Math.max(8, Math.round(minSide * DRAW_CLIP_EXPAND_RATIO));
+        int currentWidth = drawClipRight - drawClipLeft;
+        int currentHeight = drawClipBottom - drawClipTop;
+        int expandX = currentWidth >= maxDiameter
+                ? 0
+                : Math.min(expand, Math.max(0, (maxDiameter - currentWidth + 1) / 2));
+        int expandY = currentHeight >= maxDiameter
+                ? 0
+                : Math.min(expand, Math.max(0, (maxDiameter - currentHeight + 1) / 2));
+        drawClipLeft = clamp(drawClipLeft - expandX, 0, width);
+        drawClipTop = clamp(drawClipTop - expandY, 0, height);
+        drawClipRight = clamp(drawClipRight + expandX, 0, width);
+        drawClipBottom = clamp(drawClipBottom + expandY, 0, height);
+    }
+
+    private void clearDrawClipLocked() {
+        drawClipActive = false;
+        drawClipLeft = 0;
+        drawClipTop = 0;
+        drawClipRight = 0;
+        drawClipBottom = 0;
     }
 
     private float[] projectedRipplePoint(float screenX, float screenY) {
@@ -610,11 +678,8 @@ public class S3RippleMeshEffectView extends TextureView
         }
     }
 
-    private void updateMvp(int width, int height) {
-        float[] view = new float[16];
-        float[] projection = new float[16];
-        float[] model = new float[16];
-        float[] vp = new float[16];
+    private void updateMvp(int width, int height, float[] view, float[] projection,
+            float[] model, float[] vp) {
         boolean portrait = height >= width;
         Matrix.setLookAtM(view, 0, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f);
         Matrix.perspectiveM(projection, 0, 45f, width / (float) Math.max(1, height),
@@ -634,6 +699,18 @@ public class S3RippleMeshEffectView extends TextureView
             bitmap.prepareToDraw();
         }
         return bitmap;
+    }
+
+    private Bitmap createBackgroundTextureSourceBitmap(Bitmap source, int renderWidth,
+            int renderHeight) {
+        int textureWidth = Math.max(1, renderWidth);
+        int textureHeight = Math.max(1, renderHeight);
+        if (textureWidth > BACKGROUND_TEXTURE_MAX_WIDTH) {
+            textureWidth = BACKGROUND_TEXTURE_MAX_WIDTH;
+            textureHeight = Math.max(1,
+                    Math.round(textureWidth * renderHeight / (float) Math.max(1, renderWidth)));
+        }
+        return createTopStartCropBitmap(source, textureWidth, textureHeight);
     }
 
     private Bitmap createTopStartCropBitmap(Bitmap source, int width, int height) {
@@ -883,6 +960,10 @@ public class S3RippleMeshEffectView extends TextureView
         private final FloatBuffer positionBuffer = newFloatBuffer(positions.length);
         private final FloatBuffer heightsBuffer = newFloatBuffer(heightAttribs.length);
         private final ShortBuffer indexBuffer = newShortBuffer(indices.length);
+        private final float[] viewMatrix = new float[16];
+        private final float[] projectionMatrix = new float[16];
+        private final float[] modelMatrix = new float[16];
+        private final float[] viewProjectionMatrix = new float[16];
         private volatile boolean shouldStop;
         private int surfaceWidth;
         private int surfaceHeight;
@@ -946,6 +1027,11 @@ public class S3RippleMeshEffectView extends TextureView
             while (!shouldStop) {
                 Bitmap uploadBitmap = null;
                 boolean shouldDraw;
+                boolean clipActive;
+                int clipLeft;
+                int clipTop;
+                int clipRight;
+                int clipBottom;
                 synchronized (lock) {
                     if (!dirtyFrame && !animating && !shouldStop) {
                         try {
@@ -965,11 +1051,21 @@ public class S3RippleMeshEffectView extends TextureView
                     if (animating) {
                         boolean empty = stepRippleLocked();
                         buildHeightAttribsLocked();
+                        expandDrawClipLocked();
                         emptyFrames = empty ? emptyFrames + 1 : 0;
                         animating = gestureActive || emptyFrames < 8;
+                        if (!animating) {
+                            clearDrawClipLocked();
+                        }
                     } else {
                         buildHeightAttribsLocked();
+                        clearDrawClipLocked();
                     }
+                    clipActive = drawClipActive && animating;
+                    clipLeft = drawClipLeft;
+                    clipTop = drawClipTop;
+                    clipRight = drawClipRight;
+                    clipBottom = drawClipBottom;
                 }
                 if (uploadBitmap != null) {
                     uploadBackground(uploadBitmap);
@@ -979,7 +1075,7 @@ public class S3RippleMeshEffectView extends TextureView
                     }
                 }
                 if (shouldDraw) {
-                    drawFrame();
+                    drawFrame(clipActive, clipLeft, clipTop, clipRight, clipBottom);
                 }
                 if (animating) {
                     SystemClock.sleep(16L);
@@ -1043,16 +1139,33 @@ public class S3RippleMeshEffectView extends TextureView
                     + " elapsedMs=" + (glReadyAt - startedAt));
         }
 
-        private void drawFrame() {
+        private void drawFrame(boolean clipActive, int clipLeft, int clipTop,
+                int clipRight, int clipBottom) {
             long startedAt = firstDrawLogged ? 0L : SystemClock.uptimeMillis();
             GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight);
+            GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
             GLES20.glClearColor(0f, 0f, 0f, 0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+            boolean scissorEnabled = false;
+            if (clipActive) {
+                int left = clamp(clipLeft, 0, surfaceWidth);
+                int top = clamp(clipTop, 0, surfaceHeight);
+                int right = clamp(clipRight, left, surfaceWidth);
+                int bottom = clamp(clipBottom, top, surfaceHeight);
+                int width = right - left;
+                int height = bottom - top;
+                if (width > 0 && height > 0) {
+                    GLES20.glEnable(GLES20.GL_SCISSOR_TEST);
+                    GLES20.glScissor(left, surfaceHeight - bottom, width, height);
+                    scissorEnabled = true;
+                }
+            }
             synchronized (lock) {
                 heightsBuffer.clear();
                 heightsBuffer.put(heightAttribs).position(0);
             }
-            updateMvp(surfaceWidth, surfaceHeight);
+            updateMvp(surfaceWidth, surfaceHeight, viewMatrix, projectionMatrix,
+                    modelMatrix, viewProjectionMatrix);
             GLES20.glUseProgram(program);
             GLES20.glUniformMatrix4fv(mvpHandle, 1, false, mvp, 0);
             GLES20.glUniform1f(meshWidthHandle, MESH_SIZE_WIDTH);
@@ -1082,6 +1195,9 @@ public class S3RippleMeshEffectView extends TextureView
                     GLES20.GL_UNSIGNED_SHORT, indexBuffer);
             GLES20.glDisableVertexAttribArray(positionHandle);
             GLES20.glDisableVertexAttribArray(heightsHandle);
+            if (scissorEnabled) {
+                GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
+            }
             EGL14.eglSwapBuffers(display, surface);
             if (!firstDrawLogged) {
                 firstDrawLogged = true;

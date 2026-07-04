@@ -2,6 +2,7 @@ package com.codex.lle;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -12,25 +13,29 @@ import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.TextureView;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 
-public class PoppingColoursEffectView extends FrameLayout
+public class ColourDropletEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer {
-    private static final String TAG = "ChargingS5Popping";
-    private static final int SAMSUNG_EFFECT_ID = 3;
+    private static final String TAG = "ChargingColourDroplet";
+    private static final int SAMSUNG_EFFECT_ID = 0x11;
     private static final int CMD_SET_BACKGROUND = 0;
     private static final int CMD_LOCK_AFFORDANCE = 1;
     private static final int CMD_UNLOCK = 2;
-    private static final int CMD_CUSTOM = 3;
+    private static final int CMD_SCREEN_OFF = 3;
+    private static final int CMD_SCREEN_ON = 4;
+    private static final int BACKGROUND_MODE_NORMAL = 0;
 
     private final SoundPool soundPool;
     private final int tapSound;
-    private final int dragSound;
+    private final int lockSound;
     private final int unlockSound;
 
     private Object effectView;
@@ -38,6 +43,9 @@ public class PoppingColoursEffectView extends FrameLayout
     private Method handleTouchEvent;
     private Method handleCustomEvent;
     private Method clearScreen;
+    private Method removeEffect;
+    private Bitmap normalResourceBitmap;
+    private Bitmap edgeDensityResourceBitmap;
     private Bitmap backgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
@@ -47,37 +55,37 @@ public class PoppingColoursEffectView extends FrameLayout
     private boolean destroyed;
     private boolean gestureActive;
     private long downTime;
-    private float lastDragSoundX;
-    private float lastDragSoundY;
-    private float dragSoundDistance;
+    private float lastX;
+    private float lastY;
 
-    public PoppingColoursEffectView(Context context) {
+    public ColourDropletEffectView(Context context) {
         super(context);
         long startedAt = SystemClock.uptimeMillis();
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
+        setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         soundPool = new SoundPool.Builder()
-                .setMaxStreams(4)
+                .setMaxStreams(3)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build())
                 .build();
-        tapSound = soundPool.load(context, R.raw.particle_tap, 1);
-        dragSound = soundPool.load(context, R.raw.particle_drag, 1);
-        unlockSound = soundPool.load(context, R.raw.particle_unlock, 1);
+        tapSound = soundPool.load(context, R.raw.ve_colourdroplet_tap, 1);
+        lockSound = soundPool.load(context, R.raw.ve_colourdroplet_lock, 1);
+        unlockSound = soundPool.load(context, R.raw.ve_colourdroplet_unlock, 1);
 
         try {
             createSamsungEffect(context);
             ready = true;
-            Log.i(TAG, "S5 popping colours Samsung renderer loaded elapsedMs="
+            Log.i(TAG, "Note5 colour droplet native renderer loaded elapsedMs="
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
-            Log.e(TAG, "S5 popping colours Samsung renderer unavailable", t);
+            Log.e(TAG, "Note5 colour droplet native renderer unavailable", t);
         }
     }
 
@@ -88,7 +96,7 @@ public class PoppingColoursEffectView extends FrameLayout
 
     @Override
     public String effectName() {
-        return "S5 popping colours";
+        return "N5 Colored Droplet";
     }
 
     @Override
@@ -96,15 +104,17 @@ public class PoppingColoursEffectView extends FrameLayout
         if (!canRender()) {
             return;
         }
+        sendBackgroundBitmap();
+        sendScreenTurnedOnCommand();
         downTime = SystemClock.uptimeMillis();
         gestureActive = true;
-        lastDragSoundX = screenX;
-        lastDragSoundY = screenY;
-        dragSoundDistance = 0f;
+        lastX = screenX;
+        lastY = screenY;
         play(tapSound);
         forwardTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
-        Log.i(TAG, "popping colours begin x=" + Math.round(screenX)
-                + " y=" + Math.round(screenY));
+        Log.i(TAG, "colour droplet begin x=" + Math.round(screenX)
+                + " y=" + Math.round(screenY)
+                + " bg=" + backgroundSource);
     }
 
     @Override
@@ -113,15 +123,8 @@ public class PoppingColoursEffectView extends FrameLayout
             beginGesture(screenX, screenY);
             return;
         }
-        float dx = screenX - lastDragSoundX;
-        float dy = screenY - lastDragSoundY;
-        dragSoundDistance += (float) Math.sqrt(dx * dx + dy * dy);
-        lastDragSoundX = screenX;
-        lastDragSoundY = screenY;
-        if (dragSoundDistance >= dragSoundThreshold()) {
-            play(dragSound);
-            dragSoundDistance = 0f;
-        }
+        lastX = screenX;
+        lastY = screenY;
         forwardTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
     }
 
@@ -131,14 +134,14 @@ public class PoppingColoursEffectView extends FrameLayout
             return;
         }
         gestureActive = false;
-        forwardTouch(MotionEvent.ACTION_UP, lastDragSoundX, lastDragSoundY);
+        forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
         if (completed) {
             sendUnlockCommand();
             play(unlockSound);
         }
-        Log.i(TAG, "popping colours finish completed=" + completed
-                + " x=" + Math.round(lastDragSoundX)
-                + " y=" + Math.round(lastDragSoundY));
+        Log.i(TAG, "colour droplet finish completed=" + completed
+                + " x=" + Math.round(lastX)
+                + " y=" + Math.round(lastY));
     }
 
     @Override
@@ -147,14 +150,13 @@ public class PoppingColoursEffectView extends FrameLayout
             return;
         }
         gestureActive = false;
-        forwardTouch(MotionEvent.ACTION_CANCEL, lastDragSoundX, lastDragSoundY);
-        Log.i(TAG, "popping colours cancel");
+        forwardTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
+        Log.i(TAG, "colour droplet cancel");
     }
 
     @Override
     public void resetEffect() {
         gestureActive = false;
-        dragSoundDistance = 0f;
         if (!ready || clearScreen == null || effectView == null) {
             return;
         }
@@ -172,44 +174,34 @@ public class PoppingColoursEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        Log.i(TAG, "S5 popping colours warmed elapsedMs="
+        sendScreenTurnedOnCommand();
+        Log.i(TAG, "colour droplet warmed elapsedMs="
                 + (SystemClock.uptimeMillis() - startedAt));
     }
 
     @Override
     public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
-        if (!canRender() || handleCustomEvent == null) {
+        if (!canRender()) {
             return;
         }
         sendBackgroundBitmap();
-        sendScreenTurnedOnCommand();
         Rect rect = safeRect(screenRect);
+        sendScreenTurnedOnCommand();
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
             params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
             params.put("Rect", rect);
             handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
-            Log.i(TAG, "popping colours affordance queued delayMs=" + startDelayMs
-                    + " rect=" + rect.left + "," + rect.top + "," + rect.right + "," + rect.bottom);
+            Log.i(TAG, "colour droplet affordance sent delayMs=" + Math.max(0L, startDelayMs)
+                    + " rect=" + rect.left + "," + rect.top + ","
+                    + rect.right + "," + rect.bottom);
         } catch (Throwable t) {
             Log.d(TAG, "affordance command ignored", t);
         }
     }
 
-    public void setColorSourceBitmap(Bitmap source, String sourceName) {
-        if (destroyed || source == null || source.isRecycled()) {
-            return;
-        }
-        replaceBackgroundBitmap(source, sourceName == null ? "external" : sourceName);
-        sendBackgroundBitmap();
-    }
-
     @Override
-    public void setBackgroundSourceBitmap(Bitmap source, String sourceName) {
-        setColorSourceBitmap(source, sourceName);
-    }
-
-    public boolean hasColorSourceBitmap() {
+    public boolean hasBackgroundSourceBitmap() {
         return externalColorSource
                 && backgroundBitmap != null
                 && !backgroundBitmap.isRecycled()
@@ -218,25 +210,23 @@ public class PoppingColoursEffectView extends FrameLayout
     }
 
     @Override
-    public boolean hasBackgroundSourceBitmap() {
-        return hasColorSourceBitmap();
-    }
-
-    public void clearColorSourceBitmap() {
-        externalColorSource = false;
-        backgroundSource = "none";
-        lastSentBackgroundBitmap = null;
-        lastSentBackgroundSource = "";
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
+    public void setBackgroundSourceBitmap(Bitmap source, String sourceName) {
+        if (destroyed || source == null || source.isRecycled()) {
+            return;
         }
-        backgroundBitmap = null;
+        replaceBackgroundBitmap(source, sourceName == null ? "external" : sourceName);
         sendBackgroundBitmap();
     }
 
     @Override
     public void clearBackgroundSourceBitmap() {
-        clearColorSourceBitmap();
+        externalColorSource = false;
+        backgroundSource = "none";
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
+        recycle(backgroundBitmap);
+        backgroundBitmap = null;
+        sendBackgroundBitmap();
     }
 
     @Override
@@ -247,10 +237,18 @@ public class PoppingColoursEffectView extends FrameLayout
         resetEffect();
         destroyed = true;
         soundPool.release();
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
+        if (removeEffect != null && effectView != null) {
+            try {
+                removeEffect.invoke(effectView);
+            } catch (Throwable t) {
+                Log.d(TAG, "removeEffect ignored", t);
+            }
         }
-        backgroundBitmap = null;
+        clearBackgroundSourceBitmap();
+        recycle(normalResourceBitmap);
+        recycle(edgeDensityResourceBitmap);
+        normalResourceBitmap = null;
+        edgeDensityResourceBitmap = null;
     }
 
     @Override
@@ -271,8 +269,6 @@ public class PoppingColoursEffectView extends FrameLayout
                 Class.forName("com.samsung.android.visualeffect.EffectDataObj");
         effectView = effectViewClass.getConstructor(Context.class).newInstance(context);
         effectViewAsView = (View) effectView;
-        effectViewAsView.setBackgroundColor(Color.TRANSPARENT);
-        effectViewAsView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         addView(effectViewAsView, new LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT));
@@ -288,23 +284,35 @@ public class PoppingColoursEffectView extends FrameLayout
                 int.class,
                 HashMap.class);
         clearScreen = effectViewClass.getMethod("clearScreen");
+        removeEffect = effectViewClass.getMethod("removeEffect");
 
         Object data = dataClass.getConstructor().newInstance();
         dataClass.getMethod("setEffect", int.class).invoke(data, SAMSUNG_EFFECT_ID);
-        Object poppingData = getOrCreate(
+        Object colourDropletData = getOrCreate(
                 dataClass,
                 data,
-                "poppingColorData",
-                "com.samsung.android.visualeffect.lock.data.PoppingColorData");
-        Class<?> poppingDataClass = poppingData.getClass();
-        FrameLayout widgetLayer = new FrameLayout(context);
-        FrameLayout wallpaperLayer = new FrameLayout(context);
-        widgetLayer.setAlpha(0f);
-        wallpaperLayer.setAlpha(0f);
-        getField(poppingDataClass, "widgetLayout").set(poppingData, widgetLayer);
-        getField(poppingDataClass, "wallpaperWidget").set(poppingData, wallpaperLayer);
+                "colorDroplet",
+                "com.samsung.android.visualeffect.lock.data.ColourDropletData");
+        Class<?> colourDropletDataClass = colourDropletData.getClass();
+
+        normalResourceBitmap = decodeOriginalBitmap(R.drawable.n5_colour_droplet_normal);
+        edgeDensityResourceBitmap =
+                decodeOriginalBitmap(R.drawable.n5_colour_droplet_edge_density);
+        getField(colourDropletDataClass, "windowWidth").setInt(
+                colourDropletData,
+                Math.max(1, getRenderWidth()));
+        getField(colourDropletDataClass, "windowHeight").setInt(
+                colourDropletData,
+                Math.max(1, getRenderHeight()));
+        getField(colourDropletDataClass, "resNormal").set(
+                colourDropletData,
+                normalResourceBitmap);
+        getField(colourDropletDataClass, "resEdgeDensity").set(
+                colourDropletData,
+                edgeDensityResourceBitmap);
 
         setEffect.invoke(effectView, SAMSUNG_EFFECT_ID);
+        makeTransparent(effectViewAsView);
         init.invoke(effectView, data);
     }
 
@@ -319,6 +327,28 @@ public class PoppingColoursEffectView extends FrameLayout
         return value;
     }
 
+    private Field getField(Class<?> owner, String fieldName) throws Exception {
+        Class<?> current = owner;
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException(owner.getName() + "." + fieldName);
+    }
+
+    private Bitmap decodeOriginalBitmap(int resId) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = false;
+        Bitmap bitmap = BitmapFactory.decodeResource(getResources(), resId, options);
+        bitmap.prepareToDraw();
+        return bitmap;
+    }
+
     private void sendBackgroundBitmap() {
         if (!ready || handleCustomEvent == null || effectView == null) {
             return;
@@ -331,14 +361,15 @@ public class PoppingColoursEffectView extends FrameLayout
         }
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
-            params.put("BGBitmap", bitmap);
+            params.put("Bitmap", bitmap);
+            params.put("Mode", Integer.valueOf(BACKGROUND_MODE_NORMAL));
             handleCustomEvent.invoke(effectView, CMD_SET_BACKGROUND, params);
             lastSentBackgroundBitmap = bitmap;
             lastSentBackgroundSource = backgroundSource;
-            Log.i(TAG, "BGBitmap sent source=" + backgroundSource
+            Log.i(TAG, "colour droplet background sent source=" + backgroundSource
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
-            Log.d(TAG, "BGBitmap command ignored", t);
+            Log.d(TAG, "background command ignored", t);
         }
     }
 
@@ -351,16 +382,13 @@ public class PoppingColoursEffectView extends FrameLayout
                 && backgroundBitmap.getHeight() == height) {
             return backgroundBitmap;
         }
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
-        }
+        recycle(backgroundBitmap);
         backgroundBitmap = createWhiteBitmap(width, height);
         backgroundSource = "white_fallback";
         externalColorSource = false;
         backgroundBitmap.prepareToDraw();
-        Log.i(TAG, "BGBitmap prepared source=" + backgroundSource
-                + " size=" + backgroundBitmap.getWidth()
-                + "x" + backgroundBitmap.getHeight());
+        Log.i(TAG, "colour droplet fallback background prepared size="
+                + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
         return backgroundBitmap;
     }
 
@@ -369,13 +397,11 @@ public class PoppingColoursEffectView extends FrameLayout
         int height = Math.max(1, getRenderHeight());
         Bitmap next = createCenterCropBitmap(source, width, height);
         next.prepareToDraw();
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
-        }
+        recycle(backgroundBitmap);
         backgroundBitmap = next;
         backgroundSource = sourceName;
         externalColorSource = true;
-        Log.i(TAG, "BGBitmap replaced source=" + backgroundSource
+        Log.i(TAG, "colour droplet background replaced source=" + backgroundSource
                 + " size=" + backgroundBitmap.getWidth()
                 + "x" + backgroundBitmap.getHeight());
     }
@@ -426,7 +452,7 @@ public class PoppingColoursEffectView extends FrameLayout
                 screenY,
                 0);
         try {
-            handleTouchEvent.invoke(effectView, event, this);
+            handleTouchEvent.invoke(effectView, event, effectViewAsView);
         } catch (Throwable t) {
             Log.e(TAG, "touch forwarding failed", t);
         } finally {
@@ -450,9 +476,21 @@ public class PoppingColoursEffectView extends FrameLayout
             return;
         }
         try {
-            handleCustomEvent.invoke(effectView, CMD_CUSTOM, null);
+            handleCustomEvent.invoke(effectView, CMD_SCREEN_ON, new HashMap<String, Object>());
         } catch (Throwable t) {
             Log.d(TAG, "screen-on command ignored", t);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private void sendScreenTurnedOffCommand() {
+        if (!canRender() || handleCustomEvent == null) {
+            return;
+        }
+        try {
+            handleCustomEvent.invoke(effectView, CMD_SCREEN_OFF, new HashMap<String, Object>());
+        } catch (Throwable t) {
+            Log.d(TAG, "screen-off command ignored", t);
         }
     }
 
@@ -467,10 +505,22 @@ public class PoppingColoursEffectView extends FrameLayout
         return !destroyed && ready && effectView != null;
     }
 
-    private float dragSoundThreshold() {
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
-        int smallest = Math.min(metrics.widthPixels, metrics.heightPixels);
-        return Math.max(dp(72), smallest * 0.2f);
+    private void makeTransparent(View view) {
+        if (view == null) {
+            return;
+        }
+        if (view instanceof TextureView) {
+            ((TextureView) view).setOpaque(false);
+            return;
+        }
+        view.setBackgroundColor(Color.TRANSPARENT);
+        view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                makeTransparent(group.getChildAt(i));
+            }
+        }
     }
 
     private int getRenderWidth() {
@@ -478,7 +528,8 @@ public class PoppingColoursEffectView extends FrameLayout
         if (width > 0) {
             return width;
         }
-        return Math.max(1, getResources().getDisplayMetrics().widthPixels);
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        return Math.max(1, metrics.widthPixels);
     }
 
     private int getRenderHeight() {
@@ -486,22 +537,19 @@ public class PoppingColoursEffectView extends FrameLayout
         if (height > 0) {
             return height;
         }
-        return Math.max(1, getResources().getDisplayMetrics().heightPixels);
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        return Math.max(1, metrics.heightPixels);
     }
 
     private void play(int soundId) {
-        if (soundId != 0) {
+        if (!destroyed && soundId != 0) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
     }
 
-    private static Field getField(Class<?> owner, String name) throws NoSuchFieldException {
-        Field field = owner.getField(name);
-        field.setAccessible(true);
-        return field;
+    private void recycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) {
+            bitmap.recycle();
+        }
     }
 }

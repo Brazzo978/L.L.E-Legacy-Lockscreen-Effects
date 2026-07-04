@@ -13,7 +13,7 @@ public class TouchDebugView extends View {
     private static final String TAG = "LLEDebug";
 
     interface TouchTriggerListener {
-        void onTouchStarted(float screenX, float screenY);
+        boolean onTouchStarted(float screenX, float screenY);
 
         void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY, float distance);
 
@@ -95,12 +95,16 @@ public class TouchDebugView extends View {
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                gestureActive = true;
                 gestureStartScreenX = lastScreenX;
                 gestureStartScreenY = lastScreenY;
-                if (touchTriggerListener != null) {
-                    touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
+                boolean accepted = touchTriggerListener == null
+                        || touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
+                if (!accepted) {
+                    gestureActive = false;
+                    invalidate();
+                    return false;
                 }
+                gestureActive = true;
                 break;
             case MotionEvent.ACTION_MOVE:
                 notifyMove();

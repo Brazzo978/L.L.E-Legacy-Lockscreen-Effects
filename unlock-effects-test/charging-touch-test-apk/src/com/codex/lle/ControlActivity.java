@@ -1,9 +1,15 @@
 package com.codex.lle;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.ComponentName;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -11,11 +17,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -41,10 +50,12 @@ public class ControlActivity extends Activity {
     private static final int COLOR_WARNING = Color.rgb(202, 126, 38);
     private static final int COLOR_OK = Color.rgb(24, 150, 82);
     private static final int COLOR_ERROR = Color.rgb(210, 70, 70);
+    private static final int TAB_SWIPE_MIN_DISTANCE_DP = 72;
+    private static final long TAB_ANIMATION_DURATION_MS = 180L;
+    private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
 
     private SharedPreferences prefs;
     private TextView accessibilityStatus;
-    private Button accessibilityButton;
     private Switch serviceSwitch;
     private Button chargingDoodleTabButton;
     private Button lockscreenEffectTabButton;
@@ -52,6 +63,10 @@ public class ControlActivity extends Activity {
     private TextView touchBoxSummary;
     private int selectedTab = TAB_CHARGING_DOODLE;
     private boolean updatingServiceSwitch;
+    private float tabSwipeDownX;
+    private float tabSwipeDownY;
+    private boolean tabSwipeStartedOnSlider;
+    private boolean tabAnimationRunning;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,7 +101,7 @@ public class ControlActivity extends Activity {
         root.addView(tabContent, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        showTab(selectedTab);
+        showTab(selectedTab, false, 0);
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
@@ -98,9 +113,6 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
                 1f));
-        outer.addView(accessibilityFooter(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
         setContentView(outer);
         updateAccessibilityStatus();
     }
@@ -116,6 +128,14 @@ public class ControlActivity extends Activity {
         super.onResume();
         updateAccessibilityStatus();
         updateTouchBoxSummary();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (trackTabSwipe(event)) {
+            return true;
+        }
+        return super.dispatchTouchEvent(event);
     }
 
     private void configureGraceWindow() {
@@ -172,19 +192,16 @@ public class ControlActivity extends Activity {
                 if (updatingServiceSwitch) {
                     return;
                 }
-                if (!isChargingAccessibilityEnabled()) {
+                boolean accessibilityEnabled = isChargingAccessibilityEnabled();
+                if (isChecked && !accessibilityEnabled) {
                     Toast.makeText(ControlActivity.this,
                             "Enable accessibility first", Toast.LENGTH_SHORT).show();
                     openAccessibilitySettings();
                     updateAccessibilityStatus();
                     return;
                 }
-                if (!isChecked) {
-                    Toast.makeText(ControlActivity.this,
-                            "Disable the service from Accessibility settings",
-                            Toast.LENGTH_SHORT).show();
-                    updateAccessibilityStatus();
-                }
+                prefs.edit().putBoolean(OverlayPrefs.MASTER_ENABLED, isChecked).apply();
+                updateAccessibilityStatus();
             }
         });
         row.addView(serviceSwitch, new LinearLayout.LayoutParams(
@@ -195,32 +212,20 @@ public class ControlActivity extends Activity {
         accessibilityStatus.setGravity(Gravity.CENTER);
         accessibilityStatus.setTextSize(22f);
         accessibilityStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        accessibilityStatus.setClickable(true);
+        accessibilityStatus.setFocusable(true);
+        accessibilityStatus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                openAccessibilitySettings();
+            }
+        });
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 dp(30),
                 dp(44));
         statusParams.setMargins(dp(4), 0, 0, 0);
         row.addView(accessibilityStatus, statusParams);
         return header;
-    }
-
-    private View accessibilityFooter() {
-        LinearLayout footer = new LinearLayout(this);
-        footer.setOrientation(LinearLayout.VERTICAL);
-        footer.setPadding(dp(16), dp(10), dp(16), dp(16));
-        footer.setBackgroundColor(COLOR_SURFACE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            footer.setElevation(dp(4));
-        }
-        accessibilityButton = outlineButton("Settings", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openAccessibilitySettings();
-            }
-        });
-        footer.addView(accessibilityButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48)));
-        return footer;
     }
 
     private void openAccessibilitySettings() {
@@ -278,18 +283,168 @@ public class ControlActivity extends Activity {
     }
 
     private void showTab(int tab) {
-        selectedTab = tab == TAB_LOCKSCREEN_EFFECT ? TAB_LOCKSCREEN_EFFECT : TAB_CHARGING_DOODLE;
-        updateTabStyles();
+        int targetTab = normalizeTab(tab);
+        int direction = targetTab >= selectedTab ? 1 : -1;
+        showTab(targetTab, true, direction);
+    }
+
+    private void showTab(final int tab, boolean animate, final int direction) {
+        final int targetTab = normalizeTab(tab);
         if (tabContent == null) {
+            selectedTab = targetTab;
+            updateTabStyles();
             return;
         }
+        boolean sameTab = targetTab == selectedTab;
+        boolean canAnimate = animate
+                && !sameTab
+                && !tabAnimationRunning
+                && tabContent.getChildCount() > 0
+                && tabContent.getWidth() > 0;
+
+        selectedTab = targetTab;
+        updateTabStyles();
+
+        if (!canAnimate) {
+            tabContent.animate().cancel();
+            populateTabContent(targetTab);
+            tabContent.setAlpha(1f);
+            tabContent.setTranslationX(0f);
+            return;
+        }
+        animateTabContentChange(targetTab, direction);
+    }
+
+    private int normalizeTab(int tab) {
+        return tab == TAB_LOCKSCREEN_EFFECT ? TAB_LOCKSCREEN_EFFECT : TAB_CHARGING_DOODLE;
+    }
+
+    private void populateTabContent(int tab) {
         tabContent.removeAllViews();
-        if (selectedTab == TAB_CHARGING_DOODLE) {
+        if (tab == TAB_CHARGING_DOODLE) {
             tabContent.addView(chargingDoodleControls());
         } else {
             tabContent.addView(effectSelector());
             tabContent.addView(lockscreenTouchControls());
         }
+    }
+
+    private void animateTabContentChange(final int targetTab, final int direction) {
+        tabAnimationRunning = true;
+        final float width = Math.max(dp(120), tabContent.getWidth());
+        tabContent.animate()
+                .cancel();
+        tabContent.animate()
+                .alpha(0f)
+                .translationX(-direction * width * 0.28f)
+                .setDuration(TAB_ANIMATION_DURATION_MS / 2L)
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        populateTabContent(targetTab);
+                        tabContent.setTranslationX(direction * width * 0.42f);
+                        tabContent.setAlpha(0f);
+                        tabContent.animate()
+                                .alpha(1f)
+                                .translationX(0f)
+                                .setDuration(TAB_ANIMATION_DURATION_MS)
+                                .setListener(new AnimatorListenerAdapter() {
+                                    @Override
+                                    public void onAnimationEnd(Animator animation) {
+                                        tabContent.setAlpha(1f);
+                                        tabContent.setTranslationX(0f);
+                                        tabAnimationRunning = false;
+                                    }
+
+                                    @Override
+                                    public void onAnimationCancel(Animator animation) {
+                                        tabAnimationRunning = false;
+                                    }
+                                })
+                                .start();
+                    }
+
+                    @Override
+                    public void onAnimationCancel(Animator animation) {
+                        tabAnimationRunning = false;
+                    }
+                })
+                .start();
+    }
+
+    private boolean trackTabSwipe(MotionEvent event) {
+        if (event == null) {
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            tabSwipeDownX = event.getRawX();
+            tabSwipeDownY = event.getRawY();
+            tabSwipeStartedOnSlider = isPointInsideViewType(
+                    getWindow().getDecorView(),
+                    tabSwipeDownX,
+                    tabSwipeDownY,
+                    SeekBar.class);
+            return false;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            boolean handled = maybeSwitchTabBySwipe(event);
+            tabSwipeStartedOnSlider = false;
+            return handled;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            tabSwipeStartedOnSlider = false;
+        }
+        return false;
+    }
+
+    private boolean maybeSwitchTabBySwipe(MotionEvent event) {
+        if (tabSwipeStartedOnSlider) {
+            return false;
+        }
+        float dx = event.getRawX() - tabSwipeDownX;
+        float dy = event.getRawY() - tabSwipeDownY;
+        float absX = Math.abs(dx);
+        float absY = Math.abs(dy);
+        if (absX < dp(TAB_SWIPE_MIN_DISTANCE_DP) || absX < absY * TAB_SWIPE_AXIS_RATIO) {
+            return false;
+        }
+        if (dx < 0f && selectedTab == TAB_CHARGING_DOODLE) {
+            showTab(TAB_LOCKSCREEN_EFFECT, true, 1);
+            return true;
+        }
+        if (dx > 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
+            showTab(TAB_CHARGING_DOODLE, true, -1);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isPointInsideViewType(View view, float rawX, float rawY, Class<?> type) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        if (type.isInstance(view) && isPointInsideView(view, rawX, rawY)) {
+            return true;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (isPointInsideViewType(group.getChildAt(i), rawX, rawY, type)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isPointInsideView(View view, float rawX, float rawY) {
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        return rawX >= location[0]
+                && rawX <= location[0] + view.getWidth()
+                && rawY >= location[1]
+                && rawY <= location[1] + view.getHeight();
     }
 
     private void updateTabStyles() {
@@ -479,6 +634,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
         section.addView(effectOption(
+                "N5 Colored Droplet",
+                "Ghidra-backed transparent droplet renderer with screenshot color sampling.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                current));
+        section.addView(effectOption(
                 "N4 Watercolor WIP",
                 "Transparent app-owned watercolor renderer, still a WIP slot.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
@@ -496,7 +656,101 @@ public class ControlActivity extends Activity {
                         Toast.LENGTH_SHORT).show();
             }
         }));
+        section.addView(outlineButton("View colormap screenshot", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showEffectBackgroundScreenshot();
+            }
+        }));
         return section;
+    }
+
+    private void showEffectBackgroundScreenshot() {
+        File screenshot = OverlayPrefs.touchBoxScreenshotFile(this);
+        if (!screenshot.exists() || screenshot.length() <= 0L) {
+            Toast.makeText(this, "No colormap screenshot yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final Bitmap bitmap = decodePreviewBitmap(screenshot);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, "Colormap screenshot unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackgroundColor(COLOR_BACKGROUND);
+
+        TextView title = sectionTitle("Colormap screenshot");
+        root.addView(title);
+
+        TextView meta = infoText(bitmap.getWidth() + " x " + bitmap.getHeight()
+                + " | " + Math.max(1L, screenshot.length() / 1024L) + " KB");
+        root.addView(meta);
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private Bitmap decodePreviewBitmap(File file) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = previewSampleSize(bounds.outWidth, bounds.outHeight);
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    }
+
+    private int previewSampleSize(int width, int height) {
+        int maxWidth = Math.max(dp(320), getResources().getDisplayMetrics().widthPixels);
+        int maxHeight = Math.max(dp(480), getResources().getDisplayMetrics().heightPixels);
+        int sample = 1;
+        while ((width / sample) > maxWidth * 2 || (height / sample) > maxHeight * 2) {
+            sample *= 2;
+        }
+        return sample;
     }
 
     private View effectOption(String title, String subtitle, final int value, int current) {
@@ -638,6 +892,7 @@ public class ControlActivity extends Activity {
         updateTouchBoxSummary();
 
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
+        section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
         section.addView(outlineButton("Touch box screenshot wizard", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -765,23 +1020,24 @@ public class ControlActivity extends Activity {
     }
 
     private void updateAccessibilityStatus() {
-        if (accessibilityStatus == null || accessibilityButton == null || serviceSwitch == null) {
+        if (accessibilityStatus == null || serviceSwitch == null) {
             return;
         }
-        boolean enabled = isChargingAccessibilityEnabled();
+        boolean accessibilityEnabled = isChargingAccessibilityEnabled();
+        boolean masterEnabled = OverlayPrefs.masterEnabled(this);
         updatingServiceSwitch = true;
-        serviceSwitch.setChecked(enabled);
+        serviceSwitch.setChecked(accessibilityEnabled && masterEnabled);
         serviceSwitch.setEnabled(true);
         serviceSwitch.setText("");
         updatingServiceSwitch = false;
-        if (enabled) {
+        if (accessibilityEnabled) {
             accessibilityStatus.setText("\u2713");
             accessibilityStatus.setTextColor(COLOR_OK);
-            accessibilityButton.setText("Settings");
+            accessibilityStatus.setContentDescription("Accessibility enabled. Tap to open settings.");
         } else {
             accessibilityStatus.setText("\u00d7");
             accessibilityStatus.setTextColor(COLOR_ERROR);
-            accessibilityButton.setText("Enable");
+            accessibilityStatus.setContentDescription("Accessibility disabled. Tap to enable.");
         }
     }
 

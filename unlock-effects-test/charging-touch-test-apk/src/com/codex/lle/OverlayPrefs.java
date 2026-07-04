@@ -7,6 +7,7 @@ import java.io.File;
 
 final class OverlayPrefs {
     static final String PREFS = "overlay_prefs";
+    static final String MASTER_ENABLED = "master_enabled";
     static final String SHOW_LOCK = "show_lock";
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
@@ -17,6 +18,7 @@ final class OverlayPrefs {
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
+    static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
@@ -41,6 +43,7 @@ final class OverlayPrefs {
     static final int EFFECT_S3_RIPPLE = 1;
     static final int EFFECT_S5_POPPING_COLOURS = 2;
     static final int EFFECT_WATERCOLOUR = 3;
+    static final int EFFECT_N5_COLOUR_DROPLET = 4;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -62,6 +65,10 @@ final class OverlayPrefs {
 
     static boolean showLock(Context context) {
         return get(context).getBoolean(SHOW_LOCK, true);
+    }
+
+    static boolean masterEnabled(Context context) {
+        return get(context).getBoolean(MASTER_ENABLED, true);
     }
 
     static boolean showAod(Context context) {
@@ -100,6 +107,10 @@ final class OverlayPrefs {
         return get(context).getBoolean(DEBUG_TOUCH_TRANSPARENT, true);
     }
 
+    static boolean debugTouchStandby(Context context) {
+        return get(context).getBoolean(DEBUG_TOUCH_STANDBY, true);
+    }
+
     static boolean debugLensLoop(Context context) {
         return false;
     }
@@ -113,7 +124,8 @@ final class OverlayPrefs {
         if (effect != EFFECT_S4_LENS_FLARE
                 && effect != EFFECT_S3_RIPPLE
                 && effect != EFFECT_S5_POPPING_COLOURS
-                && effect != EFFECT_WATERCOLOUR) {
+                && effect != EFFECT_WATERCOLOUR
+                && effect != EFFECT_N5_COLOUR_DROPLET) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
