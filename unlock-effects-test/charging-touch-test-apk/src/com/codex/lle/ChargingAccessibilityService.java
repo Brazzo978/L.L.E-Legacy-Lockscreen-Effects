@@ -50,6 +50,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 200L;
     private static final long PIN_ENTRY_DELAY_WATERCOLOUR_MS = 250L;
     private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 260L;
+    private static final long PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS = 260L;
     private static final long PIN_ENTRY_SWIPE_START_DELAY_MS = 60L;
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_MS = 900L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
@@ -74,6 +75,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS = 1400L;
     private static final long S5_POPPING_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
     private static final long COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
+    private static final long SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
     private static final long S3_RIPPLE_SURFACE_REATTACH_MIN_MS = 280L;
     private static final int TOUCH_LISTEN_BOX_BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -999,6 +1001,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectRenderer = new WatercolorEffectView(this);
         } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
             unlockEffectRenderer = new ColourDropletEffectView(this);
+        } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+            unlockEffectRenderer = new SparklingBubblesEffectView(this);
         } else {
             unlockEffectRenderer = null;
             unlockEffectView = null;
@@ -1079,16 +1083,19 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
-        if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+        if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
             if (colorScreenshotInFlight) {
-                Log.i(TAG, "colour droplet affordance waiting for screenshot reason="
-                        + reason);
+                Log.i(TAG, "native N5 affordance waiting for screenshot reason="
+                        + reason
+                        + " effect=" + unlockEffectRendererType);
                 return true;
             }
             if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
                 refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
-                Log.i(TAG, "colour droplet affordance waiting for background reason="
+                Log.i(TAG, "native N5 affordance waiting for background reason="
                         + reason
+                        + " effect=" + unlockEffectRendererType
                         + " attempted=" + colorScreenshotAttemptedThisSession);
                 return true;
             }
@@ -1150,7 +1157,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         final int captureEffect = effect;
         colorScreenshotAttemptedThisSession = true;
         colorScreenshotInFlight = true;
-        if (captureEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+        if ((captureEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || captureEffect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES)
                 && unlockEffectRenderer != null) {
             unlockEffectRenderer.resetEffect();
         }
@@ -1264,7 +1272,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean shouldRetryUnlockEffectBackgroundCapture(int effect) {
         return effect == OverlayPrefs.EFFECT_S3_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET;
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     private void scheduleUnlockEffectBackgroundRetry(String reason) {
@@ -1295,6 +1304,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
             return COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS;
+        }
+        if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+            return SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS;
         }
         return UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
     }
@@ -1449,7 +1461,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean effectUsesCachedScreenshotBackground(int effect) {
         return effect == OverlayPrefs.EFFECT_S3_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET;
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     private void syncTouchBoxScreenshotCapture(String reason, boolean interactive,
@@ -1661,7 +1674,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         return effect == OverlayPrefs.EFFECT_S3_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET;
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     private void syncTouchDebugOverlay() {
@@ -2149,6 +2163,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
             return PIN_ENTRY_DELAY_COLOUR_DROPLET_MS;
+        }
+        if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+            return PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS;
         }
         return PIN_ENTRY_DELAY_LENS_FLARE_MS;
     }

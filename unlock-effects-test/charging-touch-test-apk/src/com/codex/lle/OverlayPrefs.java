@@ -44,6 +44,7 @@ final class OverlayPrefs {
     static final int EFFECT_S5_POPPING_COLOURS = 2;
     static final int EFFECT_WATERCOLOUR = 3;
     static final int EFFECT_N5_COLOUR_DROPLET = 4;
+    static final int EFFECT_N5_SPARKLING_BUBBLES = 5;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -125,7 +126,8 @@ final class OverlayPrefs {
                 && effect != EFFECT_S3_RIPPLE
                 && effect != EFFECT_S5_POPPING_COLOURS
                 && effect != EFFECT_WATERCOLOUR
-                && effect != EFFECT_N5_COLOUR_DROPLET) {
+                && effect != EFFECT_N5_COLOUR_DROPLET
+                && effect != EFFECT_N5_SPARKLING_BUBBLES) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;

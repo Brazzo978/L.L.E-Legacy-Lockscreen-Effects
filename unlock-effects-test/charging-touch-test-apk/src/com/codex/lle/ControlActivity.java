@@ -639,6 +639,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
                 current));
         section.addView(effectOption(
+                "N5 Sparkling Bubbles",
+                "Samsung native bubbles renderer with cached lockscreen color sampling.",
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                current));
+        section.addView(effectOption(
                 "N4 Watercolor WIP",
                 "Transparent app-owned watercolor renderer, still a WIP slot.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
