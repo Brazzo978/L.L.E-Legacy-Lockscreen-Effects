@@ -116,6 +116,11 @@ La cache e caricata da:
 La UI contiene il pulsante `View colormap screenshot`, utile per controllare
 se la bitmap usata dal native e luminosa, aggiornata e allineata.
 
+N5 usa la cache solo come warm start: l'effetto puo partire subito, ma la cache
+viene marcata stale e refreshata appena la lockscreen e stabile. Questo e
+necessario perche l'interno della goccia e opaco come nel native Samsung; se
+`uBG` e vecchia, dentro la goccia si vede una lockscreen vecchia.
+
 ## Asset aggiunti al package
 
 - `charging-touch-test-apk/res/drawable-nodpi/n5_colour_droplet_normal.png`
@@ -149,8 +154,8 @@ Log utili:
 
 ## Gap noto
 
-Il port usa ormai il native Note5 reale e l'effetto e funzionante su overlay
-trasparente, ma la rifrazione non e ancora perfettamente 1:1. La parte da
-verificare e il mapping tra `vTexUV` e `vTabScaledUV`: se il background passato
-come `uBG` ha crop/scala diversi da quelli attesi dal renderer Samsung, la
-goccia rifrange un punto leggermente diverso della lockscreen.
+Il port usa il native Note5 reale e l'effetto e funzionante su overlay
+trasparente. La differenza residua rispetto a SystemUI e il layer sorgente:
+Samsung passa il wallpaper tramite `getCurrentWallpaper`, mentre l'app passa
+uno screenshot lockscreen per poter lavorare fuori da SystemUI. Per questo la
+rifrazione puo includere clock/testi se sono presenti nello screenshot.

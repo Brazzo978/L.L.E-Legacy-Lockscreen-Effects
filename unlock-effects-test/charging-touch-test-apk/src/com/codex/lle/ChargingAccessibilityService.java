@@ -1402,11 +1402,20 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             backgroundRenderer.setBackgroundSourceBitmap(bitmap, "cached_effect_background");
             unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
-            unlockEffectBackgroundEffect = effect;
-            colorScreenshotAttemptedThisSession = true;
+            if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+                // N5 replaces the droplet interior with uBG, so a stale lockscreen cache is
+                // visibly wrong. Use the cache to start instantly, then refresh it on wake.
+                unlockEffectBackgroundEffect = -1;
+                colorScreenshotAttemptedThisSession = false;
+            } else {
+                unlockEffectBackgroundEffect = effect;
+                colorScreenshotAttemptedThisSession = true;
+            }
             Log.i(TAG, "unlock effect background cache loaded size="
                     + bitmap.getWidth() + "x" + bitmap.getHeight()
-                    + " effect=" + effect);
+                    + " effect=" + effect
+                    + " refreshPending="
+                    + (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET));
         } catch (Throwable t) {
             Log.d(TAG, "unlock effect background cache load failed", t);
         } finally {
@@ -1422,6 +1431,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && effectUsesCachedScreenshotBackground(unlockEffectBackgroundEffect)
                 && unlockEffectRenderer instanceof BackgroundSourceRenderer
                 && ((BackgroundSourceRenderer) unlockEffectRenderer).hasBackgroundSourceBitmap()) {
+            if (unlockEffectBackgroundEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+                unlockEffectBackgroundCapturedAt = 0L;
+                unlockEffectBackgroundEffect = -1;
+            }
             return;
         }
         unlockEffectBackgroundCapturedAt = 0L;
