@@ -20,6 +20,10 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    static final String ROOT_DEBUG_ENABLED = "root_debug_enabled";
+    static final String ROOT_SCREENSHOT_TEST_ENABLED = "root_screenshot_test_enabled";
+    static final String ROOT_TOUCH_CAPTURE_TEST_ENABLED = "root_touch_capture_test_enabled";
+    static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
     static final String POPPING_COLOR_REFRESH_TOKEN = "popping_color_refresh_token";

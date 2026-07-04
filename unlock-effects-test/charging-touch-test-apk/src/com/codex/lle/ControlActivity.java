@@ -16,6 +16,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -326,6 +327,7 @@ public class ControlActivity extends Activity {
         } else {
             tabContent.addView(effectSelector());
             tabContent.addView(lockscreenTouchControls());
+            tabContent.addView(rootDebugControls());
         }
     }
 
@@ -914,6 +916,147 @@ public class ControlActivity extends Activity {
             }
         }));
         return section;
+    }
+
+    private View rootDebugControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(12));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(sectionTitle("Root debug"));
+
+        section.addView(toggle("Enable root debug tools", OverlayPrefs.ROOT_DEBUG_ENABLED, false));
+        section.addView(toggle("Root screenshot test", OverlayPrefs.ROOT_SCREENSHOT_TEST_ENABLED, false));
+        section.addView(toggle("Root touch capture test", OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false));
+        section.addView(toggle("Root keepalive plan", OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED, false));
+        section.addView(outlineButton("Root: check su", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootDebugEnabled()) {
+                    return;
+                }
+                runRootDebugAction("Checking root", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.checkRoot();
+                    }
+                });
+            }
+        }));
+        section.addView(outlineButton("Root: capture screenshot", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootFeature(OverlayPrefs.ROOT_SCREENSHOT_TEST_ENABLED,
+                        "Enable root screenshot test first")) {
+                    return;
+                }
+                runRootDebugAction("Capturing root screenshot", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.captureScreenshot(ControlActivity.this);
+                    }
+                });
+            }
+        }));
+        section.addView(outlineButton("Root: capture touch 3s", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootFeature(OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED,
+                        "Enable root touch capture test first")) {
+                    return;
+                }
+                runRootDebugAction("Capturing root touch events", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.captureTouchEvents(ControlActivity.this, 3000);
+                    }
+                });
+            }
+        }));
+        section.addView(outlineButton("Root: write debug report", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootDebugEnabled()) {
+                    return;
+                }
+                runRootDebugAction("Writing root debug report", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.writeDebugReport(ControlActivity.this);
+                    }
+                });
+            }
+        }));
+        section.addView(outlineButton("Root: write keepalive plan", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootFeature(OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED,
+                        "Enable root keepalive plan first")) {
+                    return;
+                }
+                runRootDebugAction("Writing root keepalive plan", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.writeKeepAlivePlan(ControlActivity.this);
+                    }
+                });
+            }
+        }));
+        return section;
+    }
+
+    private boolean requireRootDebugEnabled() {
+        if (prefs.getBoolean(OverlayPrefs.ROOT_DEBUG_ENABLED, false)) {
+            return true;
+        }
+        Toast.makeText(this, "Enable root debug tools first", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private boolean requireRootFeature(String key, String message) {
+        if (!requireRootDebugEnabled()) {
+            return false;
+        }
+        if (prefs.getBoolean(key, false)) {
+            return true;
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private void runRootDebugAction(String runningMessage, final RootTask task) {
+        Toast.makeText(this, runningMessage, Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                RootDebugTools.Result result;
+                try {
+                    result = task.run();
+                } catch (RuntimeException e) {
+                    result = RootDebugTools.Result.error(
+                            "Root action failed: " + e.getMessage(), null);
+                }
+                final RootDebugTools.Result finalResult = result;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        String prefix = finalResult.success ? "Root OK: " : "Root failed: ";
+                        Log.i("LleRootDebug", prefix + finalResult.message);
+                        Toast.makeText(ControlActivity.this,
+                                finalResult.message,
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        }, "LLE-root-debug").start();
+    }
+
+    private interface RootTask {
+        RootDebugTools.Result run();
     }
 
     private void updateTouchBoxSummary() {
