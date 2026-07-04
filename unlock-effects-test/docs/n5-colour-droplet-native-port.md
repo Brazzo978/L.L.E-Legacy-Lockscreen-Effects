@@ -116,10 +116,14 @@ La cache e caricata da:
 La UI contiene il pulsante `View colormap screenshot`, utile per controllare
 se la bitmap usata dal native e luminosa, aggiornata e allineata.
 
-N5 usa la cache solo come warm start: l'effetto puo partire subito, ma la cache
-viene marcata stale e refreshata appena la lockscreen e stabile. Questo e
-necessario perche l'interno della goccia e opaco come nel native Samsung; se
-`uBG` e vecchia, dentro la goccia si vede una lockscreen vecchia.
+N5 usa la cache come sorgente stabile. Il refresh automatico a ogni wake e stato
+evitato perche su device reali il costo degli screenshot periodici e troppo
+alto; quando serve aggiornare `uBG`, si usa il refresh manuale/debug della
+colormap.
+
+Quando una cattura N5 e necessaria o gia in volo, l'hint dell'effetto resta
+pendente fino a quando la bitmap e pronta. Questo evita che lo screenshot
+includa l'hint stesso e poi lo trasformi in una zona bianca dentro la goccia.
 
 ## Asset aggiunti al package
 

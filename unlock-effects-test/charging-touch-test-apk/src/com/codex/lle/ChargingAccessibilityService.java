@@ -1079,9 +1079,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
+        if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+            if (colorScreenshotInFlight) {
+                Log.i(TAG, "colour droplet affordance waiting for screenshot reason="
+                        + reason);
+                return true;
+            }
+            if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
+                refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
+                Log.i(TAG, "colour droplet affordance waiting for background reason="
+                        + reason
+                        + " attempted=" + colorScreenshotAttemptedThisSession);
+                return true;
+            }
+            return false;
+        }
         if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
                 refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
             }
@@ -1136,6 +1150,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         final int captureEffect = effect;
         colorScreenshotAttemptedThisSession = true;
         colorScreenshotInFlight = true;
+        if (captureEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                && unlockEffectRenderer != null) {
+            unlockEffectRenderer.resetEffect();
+        }
         Log.i(TAG, "unlock effect background screenshot requested reason=" + reason
                 + " sinceScreenOnMs=" + elapsedSinceScreenOn()
                 + " displayState=" + displayStateName(currentDisplayState())
@@ -1402,20 +1420,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             backgroundRenderer.setBackgroundSourceBitmap(bitmap, "cached_effect_background");
             unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
-            if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
-                // N5 replaces the droplet interior with uBG, so a stale lockscreen cache is
-                // visibly wrong. Use the cache to start instantly, then refresh it on wake.
-                unlockEffectBackgroundEffect = -1;
-                colorScreenshotAttemptedThisSession = false;
-            } else {
-                unlockEffectBackgroundEffect = effect;
-                colorScreenshotAttemptedThisSession = true;
-            }
+            unlockEffectBackgroundEffect = effect;
+            colorScreenshotAttemptedThisSession = true;
             Log.i(TAG, "unlock effect background cache loaded size="
                     + bitmap.getWidth() + "x" + bitmap.getHeight()
-                    + " effect=" + effect
-                    + " refreshPending="
-                    + (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET));
+                    + " effect=" + effect);
         } catch (Throwable t) {
             Log.d(TAG, "unlock effect background cache load failed", t);
         } finally {
@@ -1431,10 +1440,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && effectUsesCachedScreenshotBackground(unlockEffectBackgroundEffect)
                 && unlockEffectRenderer instanceof BackgroundSourceRenderer
                 && ((BackgroundSourceRenderer) unlockEffectRenderer).hasBackgroundSourceBitmap()) {
-            if (unlockEffectBackgroundEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
-                unlockEffectBackgroundCapturedAt = 0L;
-                unlockEffectBackgroundEffect = -1;
-            }
             return;
         }
         unlockEffectBackgroundCapturedAt = 0L;
