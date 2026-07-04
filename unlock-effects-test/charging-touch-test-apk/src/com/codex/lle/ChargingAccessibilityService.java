@@ -45,6 +45,8 @@ import java.util.concurrent.Executor;
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG = "ChargingA11y";
+    private static final String ACTION_BENCHMARK_TOUCH =
+            "com.codex.lle.BENCHMARK_TOUCH";
     private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_MS = 400L;
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 200L;
@@ -272,6 +274,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean colorScreenshotInFlight;
     private boolean colorScreenshotAttemptedThisSession;
     private boolean skipCachedEffectBackgroundLoad;
+    private boolean rootTouchBenchmarkRunning;
     private boolean touchBoxScreenshotScheduled;
     private boolean touchBoxScreenshotInFlight;
 
@@ -333,6 +336,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
             evaluateVisibility("broadcast:" + action);
+        }
+    };
+
+    private final BroadcastReceiver benchmarkReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent != null && ACTION_BENCHMARK_TOUCH.equals(intent.getAction())) {
+                startRootTouchBenchmark();
+            }
         }
     };
 
@@ -525,6 +537,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         } catch (RuntimeException ignored) {
             // Receiver may not be registered if the service never fully connected.
         }
+        try {
+            unregisterReceiver(benchmarkReceiver);
+        } catch (RuntimeException ignored) {
+            // Receiver may not be registered if the service never fully connected.
+        }
         removeOverlay();
     }
 
@@ -537,6 +554,41 @@ public class ChargingAccessibilityService extends AccessibilityService
         filter.addAction(Intent.ACTION_POWER_CONNECTED);
         filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
         registerReceiver(screenReceiver, filter);
+
+        IntentFilter benchmarkFilter = new IntentFilter();
+        benchmarkFilter.addAction(ACTION_BENCHMARK_TOUCH);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(benchmarkReceiver, benchmarkFilter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(benchmarkReceiver, benchmarkFilter);
+        }
+    }
+
+    private void startRootTouchBenchmark() {
+        if (prefs == null
+                || !prefs.getBoolean(OverlayPrefs.ROOT_DEBUG_ENABLED, false)
+                || !prefs.getBoolean(OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false)) {
+            Log.i(TAG, "root touch benchmark ignored; root debug/touch test disabled");
+            return;
+        }
+        if (rootTouchBenchmarkRunning) {
+            Log.i(TAG, "root touch benchmark already running");
+            return;
+        }
+        rootTouchBenchmarkRunning = true;
+        Log.i(TAG, "root touch benchmark start durationMs=8000");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                RootDebugTools.Result result =
+                        RootDebugTools.captureTouchEvents(
+                                ChargingAccessibilityService.this,
+                                8000);
+                rootTouchBenchmarkRunning = false;
+                Log.i(TAG, "root touch benchmark done success=" + result.success
+                        + " message=" + result.message);
+            }
+        }, "LLE-root-touch-benchmark").start();
     }
 
     private void scheduleScreenOnRefreshes() {

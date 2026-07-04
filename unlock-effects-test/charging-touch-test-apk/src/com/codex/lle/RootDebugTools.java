@@ -14,7 +14,6 @@ final class RootDebugTools {
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final int MAX_TEXT_BYTES = 256 * 1024;
     private static final int MAX_REPORT_COMMAND_BYTES = 128 * 1024;
-    private static final int MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024;
     private static final long DEFAULT_TIMEOUT_MS = 12000L;
 
     private RootDebugTools() {
@@ -30,30 +29,11 @@ final class RootDebugTools {
         return Result.error("Root unavailable: " + commandSummary(result, out, err), null);
     }
 
-    static Result captureScreenshot(Context context) {
-        CommandResult result = runSuCommand("screencap -p", MAX_SCREENSHOT_BYTES, DEFAULT_TIMEOUT_MS);
-        if (!result.succeeded()) {
-            return Result.error("Root screenshot failed: "
-                    + commandSummary(result, text(result.stdout), text(result.stderr)), null);
-        }
-        if (!looksLikePng(result.stdout)) {
-            return Result.error("Root screenshot did not return PNG data", null);
-        }
-
-        File file = new File(context.getFilesDir(), "root_screenshot.png");
-        try {
-            writeBytes(file, result.stdout);
-        } catch (IOException e) {
-            return Result.error("Root screenshot save failed: " + e.getMessage(), file);
-        }
-        return Result.ok("Root screenshot saved: " + file.getAbsolutePath()
-                + " (" + Math.max(1L, file.length() / 1024L) + " KB)", file);
-    }
-
     static Result captureTouchEvents(Context context, int durationMs) {
-        int seconds = Math.max(1, Math.min(5, (durationMs + 999) / 1000));
+        int seconds = Math.max(1, Math.min(10, (durationMs + 999) / 1000));
         String command = "getevent -lt & pid=$!; sleep " + seconds
                 + "; kill $pid 2>/dev/null; wait $pid 2>/dev/null";
+        long startedUptimeMs = SystemClock.uptimeMillis();
         CommandResult result = runSuCommand(command, MAX_TEXT_BYTES, seconds * 1000L + 8000L);
         String out = text(result.stdout);
         String err = text(result.stderr);
@@ -65,10 +45,17 @@ final class RootDebugTools {
         }
 
         File file = new File(context.getFilesDir(), "root_touch_events.txt");
+        TouchCaptureStats stats = analyzeTouchCapture(out, startedUptimeMs);
         StringBuilder body = new StringBuilder();
         body.append("LLE root touch capture\n");
         body.append("duration_seconds=").append(seconds).append('\n');
         body.append("exit_code=").append(result.exitCode).append('\n');
+        body.append("event_lines=").append(stats.eventLines).append('\n');
+        body.append("touch_lines=").append(stats.touchLines).append('\n');
+        body.append("position_lines=").append(stats.positionLines).append('\n');
+        body.append("syn_reports=").append(stats.synReports).append('\n');
+        body.append("first_touch_delay_ms=").append(stats.firstTouchDelayMs).append('\n');
+        body.append("touch_device=").append(stats.touchDevice == null ? "-" : stats.touchDevice).append('\n');
         if (result.stdoutTruncated) {
             body.append("stdout_truncated=true\n");
         }
@@ -92,7 +79,10 @@ final class RootDebugTools {
         } catch (IOException e) {
             return Result.error("Root touch capture save failed: " + e.getMessage(), file);
         }
-        return Result.ok("Root touch capture saved: " + file.getAbsolutePath(), file);
+        return Result.ok("Root touch capture saved: " + file.getAbsolutePath()
+                + " touchLines=" + stats.touchLines
+                + " posLines=" + stats.positionLines
+                + " firstDelayMs=" + stats.firstTouchDelayMs, file);
     }
 
     static Result writeDebugReport(Context context) {
@@ -173,6 +163,90 @@ final class RootDebugTools {
         report.append('\n');
     }
 
+    private static TouchCaptureStats analyzeTouchCapture(String output, long startedUptimeMs) {
+        TouchCaptureStats stats = new TouchCaptureStats();
+        if (output == null || output.isEmpty()) {
+            return stats;
+        }
+        String[] lines = output.split("\\r?\\n");
+        String pendingDevice = null;
+        for (String line : lines) {
+            if (line == null) {
+                continue;
+            }
+            int deviceIndex = line.indexOf("/dev/input/event");
+            if (line.startsWith("add device") && deviceIndex >= 0) {
+                pendingDevice = readDevicePath(line, deviceIndex);
+                continue;
+            }
+            String lower = line.toLowerCase();
+            if (pendingDevice != null
+                    && lower.indexOf("name:") >= 0
+                    && lower.indexOf("touchscreen") >= 0) {
+                stats.touchDevice = pendingDevice;
+                break;
+            }
+        }
+        for (String line : lines) {
+            if (line == null) {
+                continue;
+            }
+            boolean eventLine = stats.touchDevice == null
+                    ? line.indexOf("/dev/input/event") >= 0
+                    : line.indexOf(stats.touchDevice) >= 0;
+            if (!eventLine) {
+                continue;
+            }
+            stats.eventLines++;
+            String upper = line.toUpperCase();
+            boolean touchLine = upper.indexOf("ABS_MT") >= 0
+                    || upper.indexOf("BTN_TOUCH") >= 0
+                    || upper.indexOf("ABS_X") >= 0
+                    || upper.indexOf("ABS_Y") >= 0
+                    || upper.indexOf("SYN_REPORT") >= 0;
+            if (touchLine) {
+                stats.touchLines++;
+                if (stats.firstTouchDelayMs < 0L) {
+                    long eventTimeMs = parseGeteventTimeMs(line);
+                    if (eventTimeMs >= 0L) {
+                        stats.firstTouchDelayMs = eventTimeMs - startedUptimeMs;
+                    }
+                }
+            }
+            if (upper.indexOf("ABS_MT_POSITION") >= 0
+                    || upper.indexOf("ABS_X") >= 0
+                    || upper.indexOf("ABS_Y") >= 0) {
+                stats.positionLines++;
+            }
+            if (upper.indexOf("SYN_REPORT") >= 0) {
+                stats.synReports++;
+            }
+        }
+        return stats;
+    }
+
+    private static String readDevicePath(String line, int deviceIndex) {
+        int end = line.indexOf(' ', deviceIndex);
+        if (end < 0) {
+            end = line.length();
+        }
+        return line.substring(deviceIndex, end).trim();
+    }
+
+    private static long parseGeteventTimeMs(String line) {
+        int start = line.indexOf('[');
+        int end = line.indexOf(']', start + 1);
+        if (start < 0 || end <= start) {
+            return -1L;
+        }
+        try {
+            double seconds = Double.parseDouble(line.substring(start + 1, end).trim());
+            return Math.round(seconds * 1000.0);
+        } catch (NumberFormatException e) {
+            return -1L;
+        }
+    }
+
     private static CommandResult runSuCommand(String command, int maxStdoutBytes, long timeoutMs) {
         Process process = null;
         StreamCollector stdout = null;
@@ -207,6 +281,15 @@ final class RootDebugTools {
         }
     }
 
+    private static final class TouchCaptureStats {
+        int eventLines;
+        int touchLines;
+        int positionLines;
+        int synReports;
+        long firstTouchDelayMs = -1L;
+        String touchDevice;
+    }
+
     private static int waitFor(Process process, long timeoutMs) {
         long deadline = SystemClock.uptimeMillis() + timeoutMs;
         while (SystemClock.uptimeMillis() < deadline) {
@@ -225,18 +308,6 @@ final class RootDebugTools {
         } catch (IllegalThreadStateException e) {
             return fallback;
         }
-    }
-
-    private static boolean looksLikePng(byte[] data) {
-        return data.length > 8
-                && (data[0] & 0xff) == 0x89
-                && data[1] == 0x50
-                && data[2] == 0x4e
-                && data[3] == 0x47
-                && data[4] == 0x0d
-                && data[5] == 0x0a
-                && data[6] == 0x1a
-                && data[7] == 0x0a;
     }
 
     private static String commandSummary(CommandResult result, String out, String err) {

@@ -11,8 +11,7 @@ The `Root debug` section in the lockscreen tab is disabled by default. It adds:
 | Tool | Behavior |
 | --- | --- |
 | `Root: check su` | Runs `su -c id` and checks for `uid=0`. |
-| `Root: capture screenshot` | Runs `su -c screencap -p`, reads PNG bytes from stdout, and saves `root_screenshot.png` in app private files. |
-| `Root: capture touch 3s` | Runs a 3 second `getevent -lt` capture and saves `root_touch_events.txt` in app private files. |
+| `Root: benchmark touch 8s` | Runs an 8 second `getevent -lt` capture, filters the Samsung touchscreen device, and saves `root_touch_events.txt`. |
 | `Root: write debug report` | Runs read-only `dumpsys`/`getprop`/`appops` diagnostics and saves `root_debug_report.txt`. |
 | `Root: write keepalive plan` | Writes reversible commands to `root_keepalive_plan.txt`; it does not apply them. |
 
@@ -30,8 +29,6 @@ Safety constraints:
 
 ```sh
 adb shell su -c id
-adb shell su -c 'screencap -p > /data/local/tmp/lle_root_screen.png'
-adb pull /data/local/tmp/lle_root_screen.png
 adb shell su -c 'timeout 5 getevent -lt'
 adb shell su -c 'dumpsys input'
 adb shell su -c 'dumpsys window'
@@ -41,12 +38,37 @@ adb shell su -c 'dumpsys gfxinfo com.codex.lle framestats'
 adb shell su -c 'cmd appops get com.codex.lle'
 ```
 
+Root touch benchmark can also be launched from ADB:
+
+```sh
+adb shell am broadcast -a com.codex.lle.BENCHMARK_TOUCH
+adb exec-out run-as com.codex.lle cat files/root_touch_events.txt > root_touch_events.txt
+```
+
+The broadcast is ignored unless `Enable root debug tools` and
+`Root touch capture test` are both enabled in the app.
+
+Measured on SM-S918B / Android 16:
+
+| Input path | Result |
+| --- | --- |
+| Root `getevent -lt` | Works and identifies `sec_touchscreen` as `/dev/input/event10`; captured hundreds of raw touch events. |
+| Existing overlay touch box | Also captured the same physical touches immediately; gesture begin stayed around 0-3 ms after DOWN. |
+
+Conclusion: root input is useful as a diagnostic trace, but it does not currently
+beat the existing overlay touch box enough to justify a live root input path.
+Keeping the live service on the non-root touch box avoids a persistent root
+reader, raw event parsing, coordinate mapping, and extra failure modes.
+
+The root keepalive item stays as a future-only option: it writes a reversible
+plan for battery/optimization experiments, but the app does not apply those
+commands automatically.
+
 Files written by the app-side buttons can be pulled from the debuggable app
 private directory:
 
 ```sh
 adb shell run-as com.codex.lle ls files
-adb exec-out run-as com.codex.lle cat files/root_screenshot.png > root_screenshot.png
 adb exec-out run-as com.codex.lle cat files/root_touch_events.txt > root_touch_events.txt
 adb exec-out run-as com.codex.lle cat files/root_debug_report.txt > root_debug_report.txt
 adb exec-out run-as com.codex.lle cat files/root_keepalive_plan.txt > root_keepalive_plan.txt

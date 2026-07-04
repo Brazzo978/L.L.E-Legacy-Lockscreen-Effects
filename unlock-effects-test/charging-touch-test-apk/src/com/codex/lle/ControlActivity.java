@@ -930,7 +930,6 @@ public class ControlActivity extends Activity {
         section.addView(sectionTitle("Root debug"));
 
         section.addView(toggle("Enable root debug tools", OverlayPrefs.ROOT_DEBUG_ENABLED, false));
-        section.addView(toggle("Root screenshot test", OverlayPrefs.ROOT_SCREENSHOT_TEST_ENABLED, false));
         section.addView(toggle("Root touch capture test", OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false));
         section.addView(toggle("Root keepalive plan", OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED, false));
         section.addView(outlineButton("Root: check su", new View.OnClickListener() {
@@ -947,22 +946,7 @@ public class ControlActivity extends Activity {
                 });
             }
         }));
-        section.addView(outlineButton("Root: capture screenshot", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootFeature(OverlayPrefs.ROOT_SCREENSHOT_TEST_ENABLED,
-                        "Enable root screenshot test first")) {
-                    return;
-                }
-                runRootDebugAction("Capturing root screenshot", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.captureScreenshot(ControlActivity.this);
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: capture touch 3s", new View.OnClickListener() {
+        section.addView(outlineButton("Root: benchmark touch 8s", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (!requireRootFeature(OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED,
@@ -972,7 +956,7 @@ public class ControlActivity extends Activity {
                 runRootDebugAction("Capturing root touch events", new RootTask() {
                     @Override
                     public RootDebugTools.Result run() {
-                        return RootDebugTools.captureTouchEvents(ControlActivity.this, 3000);
+                        return RootDebugTools.captureTouchEvents(ControlActivity.this, 8000);
                     }
                 });
             }
