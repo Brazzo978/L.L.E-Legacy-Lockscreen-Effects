@@ -76,8 +76,7 @@ Lo shader principale delle bolle scrive alpha da:
 `texture2D(uMaskMap, gl_PointCoord.xy).a * vPointAlpha`
 
 e fa `discard` quando l'alpha e sotto `0.005`. Non e stata applicata una patch
-shader nativa iniziale, perche non c'e lo stesso fullscreen opaco evidente del
-droplet.
+shader nativa alle particelle: le bolle originali hanno gia alpha corretta.
 
 La trasparenza Android e gestita sul child Samsung:
 
@@ -88,9 +87,50 @@ if (view instanceof TextureView) {
 }
 ```
 
-Se a test visuale l'effetto dovesse comunque scurire l'intero schermo, il punto
-successivo da verificare e il clear/compositing GL native, non la mask delle
-bolle.
+Il nero fullscreen era causato dal clear GL native, non dalla `TextureView`.
+`SPhysics::SPISceneComponent::clearGLBuffer()` puliva il framebuffer con alpha
+1.0. La patch rende il clear trasparente:
+
+```text
+0x48084: fe 35 a0 e3 -> 00 30 a0 e3
+```
+
+Significato:
+
+```text
+mov r3, #1065353216  ; float 1.0 alpha
+mov r3, #0           ; float 0.0 alpha
+```
+
+In piu `SPSparklingBubblesApp::drawApp()` disegnava il background Samsung
+fullscreen tramite il renderer a `[this + 0x28]`. Quelle draw-call sono state
+sostituite con NOP ARM (`00 f0 20 e3`), lasciando intatto il caricamento della
+texture `PortraitBG` / `LandscapeBG` usata dallo shader delle bolle:
+
+```text
+0x4bba8: e5940028 -> e320f000
+0x4bbac: ee111a90 -> e320f000
+0x4bbb0: ebff334f -> e320f000
+0x4bbb4: e5940028 -> e320f000
+0x4bbb8: ebff3350 -> e320f000
+
+0x4bc3c: e5940028 -> e320f000
+0x4bc40: ee101a90 -> e320f000
+0x4bc44: ebff332a -> e320f000
+0x4bc48: e5940028 -> e320f000
+0x4bc4c: ebff332b -> e320f000
+```
+
+Nota importante: non patchare `SPDrawBackground::drawRender()` con `bx lr`.
+Quella prova manda in crash il GLThread, perche `SPIRenderer::draw()` continua
+e prova a disegnare una mesh non inizializzata:
+
+```text
+SPhysics::SPMesh::getNumOfVertex()
+SPhysics::SPIRenderer::runMeshDraw()
+SPhysics::SPIRenderer::draw()
+SPhysics::SPSparklingBubblesApp::drawApp()
+```
 
 ## Screenshot background
 
@@ -100,13 +140,23 @@ Sparkling Bubbles e registrato tra gli effetti che usano screenshot cached:
 - refresh manuale: pulsante `Refresh effect background map`
 - debug: pulsante `View colormap screenshot`
 
-Come per Colour Droplet, l'hint viene tenuto in attesa se manca la bitmap
-background o se una cattura e in volo. Questo evita che lo screenshot catturi
-l'hint stesso e lo trasformi in artefatti nella colormap.
+Sparkling Bubbles riusa il cached screenshot come S3/S5/Colour Droplet, senza
+forzare una nuova cattura a ogni wake. Il refresh continuo non reggeva bene sul
+device e poteva catturare l'hint stesso.
 
 Il wrapper invalida `lastSentBackgroundBitmap` su attach/detach, cosi la bitmap
 cached viene rimandata al renderer quando il `TextureView` Samsung ricrea il
 contesto native.
+
+Il wrapper non passa piu una bitmap fullscreen "vera" da visualizzare: crea una
+color map dal cached screenshot e la invia tramite il path Samsung standard
+`handleCustomEvent(0, { Bitmap, Mode })`. La lib la usa come `uBGTexMap`.
+
+La color map attuale:
+
+- campiona lo screenshot con long edge 48 px;
+- riscalala alla dimensione render;
+- non applica blend bianco (`COLOR_MAP_WHITE_BLEND = 0`).
 
 ## Asset aggiunti al package
 
@@ -138,12 +188,11 @@ Log confermati:
 - `SparklingBubblesEffect_TV` e `SparklingBubblesRenderer_TV` istanziati
 - `BlurMask` passato al native tramite `setResourcesBitmap1()`
 - background cached applicato tramite `changeBackground Mode = 0`
+- `sparkling bubbles background sent source=cached_effect_background_colour_map`
 - hint inviato e native `affordanceEffect(EVENT_AFFORDANCE)` chiamato
 
-## Gap noto
+## Stato visuale
 
-Il port e agganciato e il native parte. La verifica visuale manuale resta
-necessaria per confermare che il compositing sia perfettamente trasparente e
-che le bolle siano colorate come sul Note5. Se il rendering dovesse apparire
-troppo scuro, la prima ipotesi e il background screenshot o il clear GL native;
-la mask `BlurMask` invece e quella originale Note5.
+Build installata e testata su `RFCW30S277B`: overlay trasparente, niente
+fullscreen nero, effetto Sparkling Bubbles visibile sopra la lockscreen e color
+map cached agganciata. La verifica visuale dell'utente e "quasi perfetto".

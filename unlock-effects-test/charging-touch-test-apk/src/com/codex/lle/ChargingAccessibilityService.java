@@ -917,15 +917,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + " cached=" + unlockTouchCachedWhileScreenOff);
             }
             refreshUnlockEffectBackgroundSourceIfNeeded("showFx:" + reason);
-            if (unlockEffectOverlayWaitingForBackground("showFx:" + reason)) {
-                syncTouchDebugOverlay(true, true);
-                syncDebugLensLoop();
-            } else {
-                syncUnlockEffectOverlay();
-                showPendingUnlockAffordance(reason);
-                syncTouchDebugOverlay(true, true);
-                syncDebugLensLoop();
-            }
+            syncUnlockEffectOverlay();
+            showPendingUnlockAffordance(reason);
+            syncTouchDebugOverlay(true, true);
+            syncDebugLensLoop();
         } else {
             unlockFxVisible = false;
             stopDebugLensLoop();
@@ -1157,19 +1152,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                 (BackgroundSourceRenderer) unlockEffectRenderer;
         if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-            boolean hasUsableBackground = backgroundRenderer.hasBackgroundSourceBitmap();
-            if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-                hasUsableBackground =
-                        hasUsableBackground && currentUnlockEffectHasFreshBackground(
-                                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES);
-            }
             if (colorScreenshotInFlight) {
                 Log.i(TAG, "native N5 affordance waiting for screenshot reason="
                         + reason
                         + " effect=" + unlockEffectRendererType);
                 return true;
             }
-            if (!hasUsableBackground) {
+            if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
                 refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
                 Log.i(TAG, "native N5 affordance waiting for background reason="
                         + reason
@@ -1201,22 +1190,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         return false;
     }
 
-    private boolean unlockEffectOverlayWaitingForBackground(String reason) {
-        int effect = OverlayPrefs.unlockEffect(this);
-        if (effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
-            return false;
-        }
-        if (currentUnlockEffectHasFreshBackground(effect)) {
-            return false;
-        }
-        refreshUnlockEffectBackgroundSourceIfNeeded(reason);
-        Log.i(TAG, "sparkling overlay waiting for background reason=" + reason
-                + " inFlight=" + colorScreenshotInFlight
-                + " attempted=" + colorScreenshotAttemptedThisSession);
-        return true;
-    }
-
     private void refreshUnlockEffectBackgroundSourceIfNeeded(final String reason) {
         int effect = OverlayPrefs.unlockEffect(this);
         if (!effectUsesScreenshotBackground(effect)
@@ -1232,9 +1205,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 (BackgroundSourceRenderer) unlockEffectRenderer;
         boolean hasBackground = backgroundRenderer.hasBackgroundSourceBitmap();
         if (colorScreenshotAttemptedThisSession
-                && hasBackground
-                && (effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                || currentUnlockEffectHasFreshBackground(effect))) {
+                && hasBackground) {
             return;
         }
         if (!shouldRefreshUnlockEffectBackground(effect, hasBackground)) {
@@ -1309,9 +1280,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                             + " effect=" + captureEffect
                             + " pkg=" + lastWindowPackage);
                     bitmap.recycle();
-                    if (captureEffect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-                        syncUnlockEffectOverlay();
-                    }
                     showPendingUnlockAffordance("background:" + reason);
                 }
 
@@ -1339,11 +1307,6 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean shouldRefreshUnlockEffectBackground(int effect, boolean hasBackground) {
-        if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-            return !hasBackground
-                    || unlockEffectBackgroundEffect != effect
-                    || (lastScreenOnAt > 0L && unlockEffectBackgroundCapturedAt < lastScreenOnAt);
-        }
         if (!hasBackground || unlockEffectBackgroundEffect != effect) {
             return true;
         }
@@ -1382,11 +1345,9 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void scheduleUnlockEffectBackgroundRetry(String reason) {
         int effect = OverlayPrefs.unlockEffect(this);
-        boolean hasUsableBackground = effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                ? currentUnlockEffectHasFreshBackground(effect)
-                : currentUnlockEffectHasBackground(effect);
         if (colorScreenshotInFlight
-                || (colorScreenshotAttemptedThisSession && hasUsableBackground)) {
+                || (colorScreenshotAttemptedThisSession
+                && currentUnlockEffectHasBackground(effect))) {
             return;
         }
         handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
@@ -1421,12 +1382,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         return unlockEffectRendererType == effect
                 && unlockEffectRenderer instanceof BackgroundSourceRenderer
                 && ((BackgroundSourceRenderer) unlockEffectRenderer).hasBackgroundSourceBitmap();
-    }
-
-    private boolean currentUnlockEffectHasFreshBackground(int effect) {
-        return currentUnlockEffectHasBackground(effect)
-                && unlockEffectBackgroundEffect == effect
-                && (lastScreenOnAt <= 0L || unlockEffectBackgroundCapturedAt >= lastScreenOnAt);
     }
 
     private int currentDisplayState() {
@@ -1573,7 +1528,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean effectUsesCachedScreenshotBackground(int effect) {
         return effect == OverlayPrefs.EFFECT_S3_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET;
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     private void syncTouchBoxScreenshotCapture(String reason, boolean interactive,
