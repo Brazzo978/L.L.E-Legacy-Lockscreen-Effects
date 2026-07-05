@@ -34,8 +34,6 @@ public class SparklingBubblesEffectView extends FrameLayout
     private static final int BACKGROUND_MODE_NORMAL = 0;
     private static final long DRAG_SOUND_MIN_TIME_MS = 1100L;
     private static final float DRAG_SOUND_DISTANCE_PX = 120f;
-    private static final int COLOR_MAP_LONG_EDGE = 48;
-    private static final int COLOR_MAP_WHITE_BLEND = 192;
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -260,10 +258,10 @@ public class SparklingBubblesEffectView extends FrameLayout
                 Log.d(TAG, "removeEffect ignored", t);
             }
         }
-        recycle(backgroundBitmap);
         recycle(blurMaskBitmap);
-        backgroundBitmap = null;
+        recycle(backgroundBitmap);
         blurMaskBitmap = null;
+        backgroundBitmap = null;
     }
 
     @Override
@@ -380,12 +378,15 @@ public class SparklingBubblesEffectView extends FrameLayout
         if (!ready || handleCustomEvent == null || effectView == null) {
             return;
         }
-        long startedAt = SystemClock.uptimeMillis();
         Bitmap bitmap = getBackgroundBitmap();
+        if (bitmap == null) {
+            return;
+        }
         if (bitmap == lastSentBackgroundBitmap
                 && backgroundSource.equals(lastSentBackgroundSource)) {
             return;
         }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
             params.put("Bitmap", bitmap);
@@ -414,42 +415,29 @@ public class SparklingBubblesEffectView extends FrameLayout
                 && backgroundBitmap.getHeight() == height) {
             return backgroundBitmap;
         }
-        recycle(backgroundBitmap);
-        backgroundBitmap = createWhiteBitmap(width, height);
-        backgroundSource = "white_fallback";
-        externalColorSource = false;
-        backgroundBitmap.prepareToDraw();
-        Log.i(TAG, "sparkling bubbles fallback background prepared size="
-                + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
-        return backgroundBitmap;
+        return null;
     }
 
     private void replaceBackgroundBitmap(Bitmap source, String sourceName) {
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        Bitmap next = createColorMapBitmap(source, width, height);
+        Bitmap next = createCenterCropBitmap(source, width, height);
         next.prepareToDraw();
         recycle(backgroundBitmap);
         backgroundBitmap = next;
-        backgroundSource = (sourceName == null ? "external" : sourceName) + "_colour_map";
+        backgroundSource = sourceName == null ? "external" : sourceName;
         externalColorSource = true;
-        Log.i(TAG, "sparkling bubbles colour map replaced source=" + backgroundSource
+        invalidateSentBackground();
+        Log.i(TAG, "sparkling bubbles background replaced source=" + backgroundSource
                 + " size=" + backgroundBitmap.getWidth()
                 + "x" + backgroundBitmap.getHeight());
     }
 
-    private Bitmap createColorMapBitmap(Bitmap source, int width, int height) {
-        int sampleWidth;
-        int sampleHeight;
-        if (width >= height) {
-            sampleWidth = COLOR_MAP_LONG_EDGE;
-            sampleHeight = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
-                    * (height / (float) width)));
-        } else {
-            sampleHeight = COLOR_MAP_LONG_EDGE;
-            sampleWidth = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
-                    * (width / (float) height)));
+    private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
+        if (source.getWidth() == width && source.getHeight() == height) {
+            return source.copy(Bitmap.Config.ARGB_8888, false);
         }
+        Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         float srcRatio = source.getWidth() / (float) source.getHeight();
         float dstRatio = width / (float) height;
         Rect src;
@@ -464,48 +452,12 @@ public class SparklingBubblesEffectView extends FrameLayout
             src = new Rect(0, top, source.getWidth(),
                     Math.min(source.getHeight(), top + srcHeight));
         }
-        Bitmap sampled = Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
                 | Paint.FILTER_BITMAP_FLAG
                 | Paint.DITHER_FLAG);
-        Canvas sampleCanvas = new Canvas(sampled);
-        sampleCanvas.drawBitmap(source, src, new Rect(0, 0, sampleWidth, sampleHeight), paint);
-
-        Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(out);
-        canvas.drawBitmap(sampled, new Rect(0, 0, sampleWidth, sampleHeight),
-                new Rect(0, 0, width, height), paint);
-        recycle(sampled);
-        liftColorMapLuminance(out);
+        canvas.drawBitmap(source, src, new Rect(0, 0, width, height), paint);
         return out;
-    }
-
-    private void liftColorMapLuminance(Bitmap bitmap) {
-        if (bitmap == null || bitmap.isRecycled()) {
-            return;
-        }
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-        int[] pixels = new int[width * height];
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
-        int sourceWeight = 255 - COLOR_MAP_WHITE_BLEND;
-        for (int i = 0; i < pixels.length; i++) {
-            int color = pixels[i];
-            int r = (color >> 16) & 0xff;
-            int g = (color >> 8) & 0xff;
-            int b = color & 0xff;
-            r = (r * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            g = (g * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            b = (b * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            pixels[i] = 0xff000000 | (r << 16) | (g << 8) | b;
-        }
-        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
-    }
-
-    private Bitmap createWhiteBitmap(int width, int height) {
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        bitmap.eraseColor(Color.WHITE);
-        return bitmap;
     }
 
     private void forwardTouch(int action, float screenX, float screenY) {
