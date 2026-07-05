@@ -56,6 +56,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     private boolean ready;
     private boolean destroyed;
     private boolean gestureActive;
+    private boolean nativeScreenOn;
     private long downTime;
     private float lastX;
     private float lastY;
@@ -170,6 +171,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     public void resetEffect() {
         gestureActive = false;
         stopDragSound();
+        sendScreenTurnedOffCommand();
         if (!ready || clearScreen == null || effectView == null) {
             return;
         }
@@ -187,7 +189,6 @@ public class SparklingBubblesEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        sendScreenTurnedOnCommand();
         Log.i(TAG, "sparkling bubbles warmed elapsedMs="
                 + (SystemClock.uptimeMillis() - startedAt));
     }
@@ -279,6 +280,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     protected void onDetachedFromWindow() {
         gestureActive = false;
         stopDragSound();
+        sendScreenTurnedOffCommand();
         invalidateSentBackground();
         super.onDetachedFromWindow();
     }
@@ -479,11 +481,18 @@ public class SparklingBubblesEffectView extends FrameLayout
                 screenX,
                 screenY,
                 0);
+        long startedAt = SystemClock.uptimeMillis();
         try {
             handleTouchEvent.invoke(effectView, event, effectViewAsView);
         } catch (Throwable t) {
             Log.e(TAG, "touch forwarding failed", t);
         } finally {
+            long elapsedMs = SystemClock.uptimeMillis() - startedAt;
+            if (elapsedMs > 16L) {
+                Log.w(TAG, "sparkling bubbles touch slow action="
+                        + actionName(action)
+                        + " elapsedMs=" + elapsedMs);
+            }
             event.recycle();
         }
     }
@@ -503,20 +512,33 @@ public class SparklingBubblesEffectView extends FrameLayout
         if (!canRender() || handleCustomEvent == null) {
             return;
         }
+        if (nativeScreenOn) {
+            return;
+        }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             handleCustomEvent.invoke(effectView, CMD_SCREEN_ON, new HashMap<String, Object>());
+            nativeScreenOn = true;
+            Log.i(TAG, "sparkling bubbles screen-on sent elapsedMs="
+                    + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             Log.d(TAG, "screen-on command ignored", t);
         }
     }
 
-    @SuppressWarnings("unused")
     private void sendScreenTurnedOffCommand() {
         if (!canRender() || handleCustomEvent == null) {
             return;
         }
+        if (!nativeScreenOn) {
+            return;
+        }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             handleCustomEvent.invoke(effectView, CMD_SCREEN_OFF, new HashMap<String, Object>());
+            nativeScreenOn = false;
+            Log.i(TAG, "sparkling bubbles screen-off sent elapsedMs="
+                    + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             Log.d(TAG, "screen-off command ignored", t);
         }
@@ -555,6 +577,21 @@ public class SparklingBubblesEffectView extends FrameLayout
 
     private boolean canRender() {
         return !destroyed && ready && effectView != null;
+    }
+
+    private String actionName(int action) {
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                return "DOWN";
+            case MotionEvent.ACTION_MOVE:
+                return "MOVE";
+            case MotionEvent.ACTION_UP:
+                return "UP";
+            case MotionEvent.ACTION_CANCEL:
+                return "CANCEL";
+            default:
+                return String.valueOf(action);
+        }
     }
 
     private void makeTransparent(View view) {

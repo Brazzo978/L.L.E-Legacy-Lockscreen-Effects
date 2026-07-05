@@ -675,9 +675,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectRenderer.resetEffect();
         }
         if (unlockTouchCachedWhileScreenOff) {
-            syncUnlockEffectOverlay();
-            if (unlockEffectRenderer != null) {
-                unlockEffectRenderer.warmUp();
+            if (shouldKeepUnlockEffectOverlayDuringScreenOff()) {
+                syncUnlockEffectOverlay();
+                if (unlockEffectRenderer != null) {
+                    unlockEffectRenderer.warmUp();
+                }
+            } else {
+                removeUnlockEffectOverlay();
             }
             syncTouchDebugOverlay(true, false);
             Log.i(TAG, "unlock effect and touch box cached for screen off"
@@ -694,9 +698,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (interactive || !shouldPrearmUnlockEffectForScreenOff()) {
             return;
         }
-        syncUnlockEffectOverlay();
-        if (unlockEffectRenderer != null) {
-            unlockEffectRenderer.warmUp();
+        if (shouldKeepUnlockEffectOverlayDuringScreenOff()) {
+            syncUnlockEffectOverlay();
+            if (unlockEffectRenderer != null) {
+                unlockEffectRenderer.warmUp();
+            }
+        } else {
+            removeUnlockEffectOverlay();
         }
         syncTouchDebugOverlay(true, false);
         unlockTouchCachedWhileScreenOff = touchDebugView != null;
@@ -722,6 +730,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && !isCallSurfaceActive()
                 && OverlayPrefs.unlockEffectEnabled(this)
                 && OverlayPrefs.debugTouchArea(this);
+    }
+
+    private boolean shouldKeepUnlockEffectOverlayDuringScreenOff() {
+        return unlockEffectRendererType != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     private void clearBlockedSurfaceState() {
@@ -807,6 +819,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockTouchCachedWhileScreenOff = false;
             } else {
                 removeDoodleOverlay();
+                if (!shouldKeepUnlockEffectOverlayDuringScreenOff()) {
+                    removeUnlockEffectOverlay();
+                }
                 syncTouchDebugOverlay(true, false);
             }
             Log.i(TAG, "visibility reason=" + reason
