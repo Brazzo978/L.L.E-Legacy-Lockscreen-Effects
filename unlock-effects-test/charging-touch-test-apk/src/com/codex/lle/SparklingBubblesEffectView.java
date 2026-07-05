@@ -35,7 +35,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     private static final long DRAG_SOUND_MIN_TIME_MS = 1100L;
     private static final float DRAG_SOUND_DISTANCE_PX = 120f;
     private static final int COLOR_MAP_LONG_EDGE = 48;
-    private static final int COLOR_MAP_ALPHA = 24;
+    private static final int COLOR_MAP_WHITE_BLEND = 192;
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -476,21 +476,28 @@ public class SparklingBubblesEffectView extends FrameLayout
         canvas.drawBitmap(sampled, new Rect(0, 0, sampleWidth, sampleHeight),
                 new Rect(0, 0, width, height), paint);
         recycle(sampled);
-        applyColorMapAlpha(out);
+        liftColorMapLuminance(out);
         return out;
     }
 
-    private void applyColorMapAlpha(Bitmap bitmap) {
-        if (COLOR_MAP_ALPHA >= 255 || bitmap == null || bitmap.isRecycled()) {
+    private void liftColorMapLuminance(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
             return;
         }
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
         int[] pixels = new int[width * height];
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
-        int alpha = (COLOR_MAP_ALPHA & 0xff) << 24;
+        int sourceWeight = 255 - COLOR_MAP_WHITE_BLEND;
         for (int i = 0; i < pixels.length; i++) {
-            pixels[i] = alpha | (pixels[i] & 0x00ffffff);
+            int color = pixels[i];
+            int r = (color >> 16) & 0xff;
+            int g = (color >> 8) & 0xff;
+            int b = color & 0xff;
+            r = (r * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
+            g = (g * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
+            b = (b * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
+            pixels[i] = 0xff000000 | (r << 16) | (g << 8) | b;
         }
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
     }
