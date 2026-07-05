@@ -34,6 +34,8 @@ public class SparklingBubblesEffectView extends FrameLayout
     private static final int BACKGROUND_MODE_NORMAL = 0;
     private static final long DRAG_SOUND_MIN_TIME_MS = 1100L;
     private static final float DRAG_SOUND_DISTANCE_PX = 120f;
+    private static final int COLOR_MAP_LONG_EDGE = 48;
+    private static final int COLOR_MAP_ALPHA = 24;
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -425,22 +427,29 @@ public class SparklingBubblesEffectView extends FrameLayout
     private void replaceBackgroundBitmap(Bitmap source, String sourceName) {
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        Bitmap next = createCenterCropBitmap(source, width, height);
+        Bitmap next = createColorMapBitmap(source, width, height);
         next.prepareToDraw();
         recycle(backgroundBitmap);
         backgroundBitmap = next;
-        backgroundSource = sourceName;
+        backgroundSource = (sourceName == null ? "external" : sourceName) + "_colour_map";
         externalColorSource = true;
-        Log.i(TAG, "sparkling bubbles background replaced source=" + backgroundSource
+        Log.i(TAG, "sparkling bubbles colour map replaced source=" + backgroundSource
                 + " size=" + backgroundBitmap.getWidth()
                 + "x" + backgroundBitmap.getHeight());
     }
 
-    private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
-        if (source.getWidth() == width && source.getHeight() == height) {
-            return source.copy(Bitmap.Config.ARGB_8888, false);
+    private Bitmap createColorMapBitmap(Bitmap source, int width, int height) {
+        int sampleWidth;
+        int sampleHeight;
+        if (width >= height) {
+            sampleWidth = COLOR_MAP_LONG_EDGE;
+            sampleHeight = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
+                    * (height / (float) width)));
+        } else {
+            sampleHeight = COLOR_MAP_LONG_EDGE;
+            sampleWidth = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
+                    * (width / (float) height)));
         }
-        Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         float srcRatio = source.getWidth() / (float) source.getHeight();
         float dstRatio = width / (float) height;
         Rect src;
@@ -455,12 +464,35 @@ public class SparklingBubblesEffectView extends FrameLayout
             src = new Rect(0, top, source.getWidth(),
                     Math.min(source.getHeight(), top + srcHeight));
         }
-        Canvas canvas = new Canvas(out);
+        Bitmap sampled = Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
                 | Paint.FILTER_BITMAP_FLAG
                 | Paint.DITHER_FLAG);
-        canvas.drawBitmap(source, src, new Rect(0, 0, width, height), paint);
+        Canvas sampleCanvas = new Canvas(sampled);
+        sampleCanvas.drawBitmap(source, src, new Rect(0, 0, sampleWidth, sampleHeight), paint);
+
+        Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        canvas.drawBitmap(sampled, new Rect(0, 0, sampleWidth, sampleHeight),
+                new Rect(0, 0, width, height), paint);
+        recycle(sampled);
+        applyColorMapAlpha(out);
         return out;
+    }
+
+    private void applyColorMapAlpha(Bitmap bitmap) {
+        if (COLOR_MAP_ALPHA >= 255 || bitmap == null || bitmap.isRecycled()) {
+            return;
+        }
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int[] pixels = new int[width * height];
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+        int alpha = (COLOR_MAP_ALPHA & 0xff) << 24;
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = alpha | (pixels[i] & 0x00ffffff);
+        }
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
     }
 
     private Bitmap createWhiteBitmap(int width, int height) {
