@@ -16,7 +16,9 @@ $signed = Join-Path $out "LLE-debug.apk"
 $keystore = Join-Path $root "..\demo-apk\debug.keystore"
 $keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
-$samsungVisualEffectDex = Join-Path $root "..\extracted\secvisualeffect_hybrid_dex\classes.dex"
+$patchedSamsungVisualEffectDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
+$stockSamsungVisualEffectDex = Join-Path $root "..\extracted\secvisualeffect_hybrid_dex\classes.dex"
+$samsungVisualEffectDex = if (Test-Path $patchedSamsungVisualEffectDex) { $patchedSamsungVisualEffectDex } else { $stockSamsungVisualEffectDex }
 $nativeLibs = Join-Path $root "native-libs"
 
 function Run($exe, $arguments) {

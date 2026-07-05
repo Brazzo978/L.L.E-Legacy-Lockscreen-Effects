@@ -490,6 +490,16 @@ public class ControlActivity extends Activity {
         return label;
     }
 
+    private TextView sectionLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(COLOR_MUTED);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setPadding(0, dp(10), 0, dp(2));
+        return label;
+    }
+
     private Switch toggle(String label, final String key, boolean defaultValue) {
         Switch toggle = new Switch(this);
         toggle.setText(label);
@@ -620,11 +630,7 @@ public class ControlActivity extends Activity {
         section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
 
         int current = OverlayPrefs.unlockEffect(this);
-        section.addView(effectOption(
-                "S3 ripple WIP",
-                "Reverse-backed, overlay-safe port. Not millimeter-exact because Samsung fullscreen refraction is disabled.",
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                current));
+        section.addView(sectionLabel("Stabili"));
         section.addView(effectOption(
                 "S4 Lens Flare",
                 "Original-style lens flare path for the S4 unlock gesture.",
@@ -636,9 +642,14 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
         section.addView(effectOption(
-                "N5 Colored Droplet",
-                "Ghidra-backed transparent droplet renderer with screenshot color sampling.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                "XX Abstract Tiles",
+                "Samsung native LockBG tile renderer with transparent screenshot composition.",
+                OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                current));
+        section.addView(effectOption(
+                "XX Geometric Mosaic",
+                "Samsung native LockBG mosaic renderer with transparent screenshot composition.",
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current));
         section.addView(effectOption(
                 "N5 Sparkling Bubbles",
@@ -646,11 +657,33 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current));
         section.addView(effectOption(
+                "N5 Colored Droplet",
+                "Ghidra-backed transparent droplet renderer with screenshot color sampling.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                current));
+
+        section.addView(sectionLabel("WIP"));
+        section.addView(effectOption(
+                "S3 ripple WIP",
+                "Reverse-backed, overlay-safe port. Background refraction is still incomplete.",
+                OverlayPrefs.EFFECT_S3_RIPPLE,
+                current));
+        section.addView(effectOption(
+                "S4 Ripple native WIP",
+                "Samsung RippleInk native path kept side-by-side for future refraction work.",
+                OverlayPrefs.EFFECT_S4_RIPPLE,
+                current));
+        section.addView(effectOption(
                 "N4 Watercolor WIP",
                 "Transparent app-owned watercolor renderer, still a WIP slot.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current));
 
+        addEffectBackgroundActions(section);
+        return section;
+    }
+
+    private void addEffectBackgroundActions(LinearLayout section) {
         section.addView(outlineButton("Refresh effect background map", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -669,7 +702,6 @@ public class ControlActivity extends Activity {
                 showEffectBackgroundScreenshot();
             }
         }));
-        return section;
     }
 
     private void showEffectBackgroundScreenshot() {
@@ -771,7 +803,7 @@ public class ControlActivity extends Activity {
             @Override
             public void onClick(View view) {
                 prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, value).apply();
-                showTab(TAB_LOCKSCREEN_EFFECT);
+                showTab(selectedTab);
             }
         });
 
