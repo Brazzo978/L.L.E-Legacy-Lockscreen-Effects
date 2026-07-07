@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.os.SystemClock;
@@ -13,6 +12,7 @@ import android.view.View;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Calendar;
+import java.util.Random;
 
 public class SeasonalDoodleView extends View {
     static final int SEASON_AUTO = -1;
@@ -25,7 +25,7 @@ public class SeasonalDoodleView extends View {
     private static final long SEASONAL_CHARGE_PERCENT_STEP_MS = 200L;
     private static final float STOCK_CHARGE_BASE_WIDTH = 360f;
     private static final float STOCK_CHARGE_BASE_HEIGHT = 640f;
-    private static final float STOCK_CHARGE_ASSET_SCALE = 4f;
+    private static final float STOCK_CHARGE_ASSET_SCALE = 3f;
     private static final float STOCK_TALL_SCREEN_VERTICAL_BIAS = 0.24f;
     private static final long STOCK_CHARGE_MOVE_DURATION_MS = 3300L;
     private static final long STOCK_CHARGE_ROTATE_DURATION_MS = 20010L;
@@ -34,6 +34,9 @@ public class SeasonalDoodleView extends View {
     private static final int[] SPRING_PARTICLE_SPRITE_INDEX = {
             5, 5, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8
     };
+    private static final int[] WINTER_PARTICLE_RANDOM_SLOT_TO_SPRITE_ID = {
+            0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3
+    };
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
     private final Matrix matrix = new Matrix();
@@ -41,12 +44,18 @@ public class SeasonalDoodleView extends View {
     private final Bitmap[] summerSprites;
     private final Bitmap[] autumnSprites;
     private final Bitmap[] winterSprites;
+    private final Random particleRandom = new Random();
+    private final ParticleSpec[] particleSpecs = new ParticleSpec[SPRING_PARTICLE_SPRITE_INDEX.length];
+    private final int[] winterParticleRandomSlots = new int[12];
     private long chargeStartedAt = SystemClock.uptimeMillis();
+    private int particleSpecTheme = Integer.MIN_VALUE;
     private int seasonMode = SEASON_AUTO;
     private int positionOffsetX;
     private int positionOffsetY;
     private int batteryPercent;
     private boolean debugRollingCharge;
+    private boolean particleSpecFull;
+    private boolean winterParticleSlotsReady;
 
     public SeasonalDoodleView(Context context) {
         super(context);
@@ -67,6 +76,7 @@ public class SeasonalDoodleView extends View {
 
     void resetChargeCycle() {
         chargeStartedAt = SystemClock.uptimeMillis();
+        invalidateParticleSpecs();
         invalidate();
     }
 
@@ -136,23 +146,11 @@ public class SeasonalDoodleView extends View {
         float scale = stockChargeScale();
         float left = stockChargeLeft(scale);
         float top = stockChargeTop(scale);
-        drawChargeStatus(canvas, percent, scale, left, top);
         if (theme == SEASON_SPRING) {
             drawSamsungSpringCharge(canvas, elapsed, percent, scale, left, top, sprites);
             return;
         }
         drawSamsungSeasonCharge(canvas, theme, elapsed, percent, scale, left, top, sprites);
-    }
-
-    private void drawChargeStatus(Canvas canvas, int percent, float scale, float left, float top) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setShader(null);
-        paint.setFakeBoldText(false);
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(14f * scale);
-        paint.setColor(Color.argb(230, 250, 255, 255));
-        canvas.drawText(seasonalChargeStatus(percent), stockX(180f, scale, left), stockY(238f, scale, top), paint);
-        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private void drawSamsungSpringCharge(Canvas canvas, long elapsed, int percent, float scale, float left, float top, Bitmap[] sprites) {
@@ -169,10 +167,11 @@ public class SeasonalDoodleView extends View {
     }
 
     private void drawSamsungSpringParticles(Canvas canvas, long elapsed, int frameIndex, float scale, float left, float top, Bitmap[] sprites) {
+        ensureParticleSpecs(SEASON_SPRING, frameIndex == 4);
         int count = frameIndex == 4 ? SPRING_PARTICLE_SPRITE_INDEX.length - 1 : SPRING_PARTICLE_SPRITE_INDEX.length;
         for (int i = 0; i < count; i++) {
-            int spriteIndex = SPRING_PARTICLE_SPRITE_INDEX[i];
-            if (spriteIndex >= sprites.length || sprites[spriteIndex] == null) {
+            ParticleSpec spec = particleSpecs[i];
+            if (spec == null || spec.spriteIndex >= sprites.length || sprites[spec.spriteIndex] == null) {
                 continue;
             }
             long local = elapsed - i * SPRING_PARTICLE_DELAY_MS;
@@ -181,26 +180,9 @@ public class SeasonalDoodleView extends View {
             }
             float raw = (local % SPRING_PARTICLE_DURATION_MS) / (float) SPRING_PARTICLE_DURATION_MS;
             float eased = accelerateDecelerate(raw);
-            float startX;
-            float startY;
-            float endX;
-            float endY;
-            if (frameIndex == 4) {
-                float angleX = stableInt(i, 11, 359) * (float) Math.PI / 180f;
-                float angleY = stableInt(i, 12, 359) * (float) Math.PI / 180f;
-                startX = 170f;
-                startY = 350f;
-                endX = 170f + 113f * (float) Math.sin(angleX);
-                endY = 350f - 113f * (float) Math.cos(angleY);
-            } else {
-                startX = 108f + stableInt(i, 1, 144);
-                startY = 888f;
-                endX = 170f;
-                endY = 334f;
-            }
-            drawStockBitmapTopLeft(canvas, sprites[spriteIndex], scale, left, top,
-                    lerp(startX, endX, eased), lerp(startY, endY, eased),
-                    1f - raw, 359f * eased, springParticleScale(i, eased));
+            drawStockBitmapTopLeft(canvas, sprites[spec.spriteIndex], scale, left, top,
+                    lerp(spec.startX, spec.endX, eased), lerp(spec.startY, spec.endY, eased),
+                    1f - raw, 359f * eased, lerp(1f, spec.targetScale, eased));
         }
     }
 
@@ -211,13 +193,15 @@ public class SeasonalDoodleView extends View {
         float baseX = seasonChargeTopLeftX(theme);
         float baseFrameY = lerp(300f, 267f, accelerateDecelerate(reverseRepeatPhase(elapsed, STOCK_CHARGE_MOVE_DURATION_MS)));
         float frameY = lerp(300f, 266f, accelerateDecelerate(reverseRepeatPhase(elapsed, STOCK_CHARGE_MOVE_DURATION_MS)));
-        Bitmap base = theme == SEASON_WINTER && winterSprites != null && winterSprites.length > 0 ? winterSprites[0] : null;
-        if (theme == SEASON_WINTER && base != null) {
-            drawStockBitmapTopLeft(canvas, base, scale, left, top, baseX, baseFrameY, 1f,
-                    seasonChargeRotation(theme, elapsed, true), 1f);
-        }
         if (theme == SEASON_AUTUMN && frameIndex == 4) {
             drawAutumnChargeCircles(canvas, elapsed, scale, left, top, sprites);
+        }
+        Bitmap base = theme == SEASON_WINTER && winterSprites != null && winterSprites.length > 0
+                ? winterSprites[0]
+                : null;
+        if (base != null) {
+            drawStockBitmapTopLeft(canvas, base, scale, left, top, baseX, baseFrameY, 1f,
+                    seasonChargeRotation(theme, elapsed, true), 1f);
         }
 
         Bitmap frame = seasonalChargeFrameBitmap(theme, sprites, frameIndex);
@@ -228,10 +212,11 @@ public class SeasonalDoodleView extends View {
     }
 
     private void drawSamsungSeasonParticles(Canvas canvas, int theme, long elapsed, int frameIndex, float scale, float left, float top, Bitmap[] sprites) {
+        ensureParticleSpecs(theme, frameIndex == 4);
         int count = seasonParticleCount(theme, frameIndex);
         for (int i = 0; i < count; i++) {
-            int spriteIndex = seasonParticleSpriteIndex(theme, i);
-            if (spriteIndex < 0 || sprites == null || spriteIndex >= sprites.length || sprites[spriteIndex] == null) {
+            ParticleSpec spec = particleSpecs[i];
+            if (spec == null || spec.spriteIndex < 0 || sprites == null || spec.spriteIndex >= sprites.length || sprites[spec.spriteIndex] == null) {
                 continue;
             }
             long local = elapsed - i * SPRING_PARTICLE_DELAY_MS;
@@ -240,36 +225,12 @@ public class SeasonalDoodleView extends View {
             }
             float raw = (local % SPRING_PARTICLE_DURATION_MS) / (float) SPRING_PARTICLE_DURATION_MS;
             float eased = accelerateDecelerate(raw);
-            float startX;
-            float startY;
-            float endX;
-            float endY;
-            if (frameIndex == 4 && theme != SEASON_AUTUMN) {
-                startX = 170f;
-                startY = 350f;
-                if (theme == SEASON_SUMMER) {
-                    float angleX = (90f - stableInt(i, 21, 180)) * (float) Math.PI / 180f;
-                    float angleY = (90f - stableInt(i, 22, 180)) * (float) Math.PI / 180f;
-                    endX = 170f + 113f * (float) Math.sin(angleX);
-                    endY = 350f - 113f * (float) Math.cos(angleY);
-                } else {
-                    float angleX = stableInt(i, 23, 359) * (float) Math.PI / 180f;
-                    float angleY = stableInt(i, 24, 359) * (float) Math.PI / 180f;
-                    endX = 170f + 113f * (float) Math.sin(angleX);
-                    endY = 350f - 113f * (float) Math.cos(angleY);
-                }
-            } else {
-                startX = 170f;
-                startY = 888f;
-                endX = 108f + stableInt(i, 25 + theme, 144);
-                endY = 334f;
-            }
-            float rotation = seasonParticleRotates(theme, i)
-                    ? 359f * accelerateDecelerate((local % seasonParticleRotateDuration(theme)) / (float) seasonParticleRotateDuration(theme))
+            float rotation = spec.rotate
+                    ? 359f * accelerateDecelerate((local % spec.rotateDuration) / (float) spec.rotateDuration)
                     : 0f;
-            drawStockBitmapTopLeft(canvas, sprites[spriteIndex], scale, left, top,
-                    lerp(startX, endX, eased), lerp(startY, endY, eased),
-                    1f - raw, rotation, seasonParticleScale(theme, i, eased));
+            drawStockBitmapTopLeft(canvas, sprites[spec.spriteIndex], scale, left, top,
+                    lerp(spec.startX, spec.endX, eased), lerp(spec.startY, spec.endY, eased),
+                    1f - raw, rotation, lerp(1f, spec.targetScale, eased));
         }
     }
 
@@ -329,7 +290,87 @@ public class SeasonalDoodleView extends View {
         return 0;
     }
 
-    private int seasonParticleSpriteIndex(int theme, int index) {
+    private void invalidateParticleSpecs() {
+        particleSpecTheme = Integer.MIN_VALUE;
+        winterParticleSlotsReady = false;
+    }
+
+    private void ensureParticleSpecs(int theme, boolean full) {
+        if (particleSpecTheme == theme && particleSpecFull == full) {
+            return;
+        }
+        boolean themeChanged = particleSpecTheme != theme;
+        for (int i = 0; i < particleSpecs.length; i++) {
+            particleSpecs[i] = null;
+        }
+        if (themeChanged && theme == SEASON_WINTER) {
+            winterParticleSlotsReady = false;
+        }
+        if (theme == SEASON_WINTER) {
+            ensureWinterParticleSlots();
+        }
+        int count = theme == SEASON_SPRING
+                ? full ? SPRING_PARTICLE_SPRITE_INDEX.length - 1 : SPRING_PARTICLE_SPRITE_INDEX.length
+                : seasonParticleCount(theme, full ? 4 : 0);
+        for (int i = 0; i < count; i++) {
+            particleSpecs[i] = createParticleSpec(theme, i, full);
+        }
+        particleSpecTheme = theme;
+        particleSpecFull = full;
+    }
+
+    private void ensureWinterParticleSlots() {
+        if (winterParticleSlotsReady) {
+            return;
+        }
+        for (int i = 0; i < winterParticleRandomSlots.length; i++) {
+            winterParticleRandomSlots[i] = particleRandom.nextInt(WINTER_PARTICLE_RANDOM_SLOT_TO_SPRITE_ID.length);
+        }
+        winterParticleSlotsReady = true;
+    }
+
+    private ParticleSpec createParticleSpec(int theme, int index, boolean full) {
+        ParticleSpec spec = new ParticleSpec();
+        spec.spriteIndex = particleSpriteIndex(theme, index);
+        spec.rotate = theme != SEASON_WINTER || winterParticleRandomSlots[index] < 11;
+        spec.rotateDuration = theme == SEASON_WINTER ? 1000L : SPRING_PARTICLE_DURATION_MS;
+        spec.targetScale = particleTargetScale(theme, index);
+        if (full && theme != SEASON_AUTUMN) {
+            spec.startX = 170f;
+            spec.startY = 350f;
+            if (theme == SEASON_SUMMER) {
+                float angleX = (90f - particleRandom.nextInt(180)) * (float) Math.PI / 180f;
+                float angleY = (90f - particleRandom.nextInt(180)) * (float) Math.PI / 180f;
+                spec.endX = 170f + 113f * (float) Math.sin(angleX);
+                spec.endY = 350f - 113f * (float) Math.cos(angleY);
+            } else {
+                float angleX = particleRandom.nextInt(359) * (float) Math.PI / 180f;
+                float angleY = particleRandom.nextInt(359) * (float) Math.PI / 180f;
+                spec.endX = 170f + 113f * (float) Math.sin(angleX);
+                spec.endY = 350f - 113f * (float) Math.cos(angleY);
+            }
+        } else if (theme == SEASON_SPRING) {
+            spec.startX = randomStockParticleX();
+            spec.startY = 888f;
+            spec.endX = 170f;
+            spec.endY = 334f;
+        } else {
+            spec.startX = 170f;
+            spec.startY = 888f;
+            spec.endX = randomStockParticleX();
+            spec.endY = 334f;
+        }
+        return spec;
+    }
+
+    private float randomStockParticleX() {
+        return 108f + 144f * particleRandom.nextFloat();
+    }
+
+    private int particleSpriteIndex(int theme, int index) {
+        if (theme == SEASON_SPRING) {
+            return SPRING_PARTICLE_SPRITE_INDEX[index];
+        }
         if (theme == SEASON_SUMMER) {
             return index < 8 ? 5 : index == 8 ? 6 : 7;
         }
@@ -337,43 +378,42 @@ public class SeasonalDoodleView extends View {
             return index < 3 ? 6 : index == 3 ? 7 : index == 4 ? 8 : 9;
         }
         if (theme == SEASON_WINTER) {
-            int[] ids = {0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3};
-            return 5 + ids[stableInt(index, 31, ids.length)];
+            return 5 + WINTER_PARTICLE_RANDOM_SLOT_TO_SPRITE_ID[winterParticleRandomSlots[index]];
         }
         return -1;
     }
 
-    private float seasonParticleScale(int theme, int index, float eased) {
-        float random = stableUnit(index, 41 + theme);
-        float target = 1f;
+    private float particleTargetScale(int theme, int index) {
+        float random = particleRandom.nextFloat();
         if (theme == SEASON_SUMMER) {
-            target = index < 8 ? 0.5f + 0.5f * random : index == 8 ? 0.8f + 0.2f * random : 1f + 0.2f * random;
-        } else if (theme == SEASON_AUTUMN) {
-            target = index < 3 ? 0.6f + 0.4f * random : 0.8f + 0.2f * random;
-        } else if (theme == SEASON_WINTER) {
-            int[] ids = {0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3};
-            int id = ids[stableInt(index, 31, ids.length)];
-            if (id == 0) {
-                target = 0.6f + 0.8f * random;
-            } else if (id == 1) {
-                target = 0.5f + 0.7f * random;
-            } else if (id == 2) {
-                target = 1f + 1.6f * random;
-            }
+            return index < 8 ? 0.5f + 0.5f * random : index == 8 ? 0.8f + 0.2f * random : 1f + 0.2f * random;
         }
-        return lerp(1f, target, eased);
-    }
-
-    private boolean seasonParticleRotates(int theme, int index) {
+        if (theme == SEASON_AUTUMN) {
+            return index < 3 ? 0.6f + 0.4f * random : 0.8f + 0.2f * random;
+        }
         if (theme == SEASON_WINTER) {
-            int[] ids = {0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3};
-            return ids[stableInt(index, 31, ids.length)] < 3;
+            int slot = winterParticleRandomSlots[index];
+            if (slot < 3) {
+                return 0.6f + 0.8f * random;
+            }
+            if (slot < 6) {
+                return 0.5f + 0.7f * random;
+            }
+            if (slot < 11) {
+                return 1f + 1.6f * random;
+            }
+            return 1f;
         }
-        return true;
-    }
-
-    private long seasonParticleRotateDuration(int theme) {
-        return theme == SEASON_WINTER ? 1000L : SPRING_PARTICLE_DURATION_MS;
+        if (index < 6) {
+            return 0.5f + 0.3f * random;
+        }
+        if (index < 8) {
+            return 0.7f + 0.3f * random;
+        }
+        if (index < 12) {
+            return 0.4f + 0.2f * random;
+        }
+        return 0.5f + 0.7f * random;
     }
 
     private int seasonalChargeFrameIndex(int percent) {
@@ -417,35 +457,6 @@ public class SeasonalDoodleView extends View {
 
     private float stockY(float y, float scale, float top) {
         return top + y * scale;
-    }
-
-    private float springParticleScale(int index, float eased) {
-        float random = stableUnit(index, 2);
-        float target;
-        if (index < 6) {
-            target = 0.5f + 0.3f * random;
-        } else if (index < 8) {
-            target = 0.7f + 0.3f * random;
-        } else if (index < 12) {
-            target = 0.4f + 0.2f * random;
-        } else {
-            target = 0.5f + 0.7f * random;
-        }
-        return lerp(1f, target, eased);
-    }
-
-    private float stableUnit(int index, int salt) {
-        int value = 0x45d9f3b ^ (index * 0x1f123bb5) ^ (salt * 0x6c8e9cf5);
-        value ^= value >>> 16;
-        value *= 0x7feb352d;
-        value ^= value >>> 15;
-        value *= 0x846ca68b;
-        value ^= value >>> 16;
-        return (value & 0x00ffffff) / (float) 0x01000000;
-    }
-
-    private int stableInt(int index, int salt, int bound) {
-        return Math.max(0, Math.min(bound - 1, (int) (stableUnit(index, salt) * bound)));
     }
 
     private float accelerateDecelerate(float input) {
@@ -497,8 +508,15 @@ public class SeasonalDoodleView extends View {
         }
     }
 
-    private String seasonalChargeStatus(int percent) {
-        return percent >= 100 ? "Charged" : "Charging, " + percent + "%";
+    private static final class ParticleSpec {
+        int spriteIndex;
+        float startX;
+        float startY;
+        float endX;
+        float endY;
+        float targetScale;
+        boolean rotate;
+        long rotateDuration;
     }
 
     private Bitmap[] loadSprites(String[] names) {
@@ -538,12 +556,7 @@ public class SeasonalDoodleView extends View {
                         "note4seasonal/charging/spring_charging_99p.png",
                         "note4seasonal/charging/spring_charging_100p.png"
                 },
-                numberedAssetNames("note4seasonal/charging/spring_particle_", 1, 4, 2, ".png"),
-                new String[] {
-                        "note4seasonal/charging/flower_01.png",
-                        "note4seasonal/charging/flower_02.png",
-                        "note4seasonal/charging/flower_03.png"
-                });
+                numberedAssetNames("note4seasonal/charging/spring_particle_", 1, 4, 2, ".png"));
     }
 
     private static String[] note4ChargeSummerNames() {
@@ -566,13 +579,7 @@ public class SeasonalDoodleView extends View {
                         "note4seasonal/charging/autumn_charging_05.png",
                         "note4seasonal/charging/autumn_charging_circle.png"
                 },
-                numberedAssetNames("note4seasonal/charging/autumn_particle_", 1, 4, 2, ".png"),
-                new String[] {
-                        "note4seasonal/charging/leaf_01.png",
-                        "note4seasonal/charging/leaf_02.png",
-                        "note4seasonal/charging/leaf_03.png",
-                        "note4seasonal/charging/leaf_04.png"
-                });
+                numberedAssetNames("note4seasonal/charging/autumn_particle_", 1, 4, 2, ".png"));
     }
 
     private static String[] note4ChargeWinterNames() {
