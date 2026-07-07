@@ -31,7 +31,9 @@ public class SparklingBubblesEffectView extends FrameLayout
     private static final int CMD_UNLOCK = 2;
     private static final int CMD_SCREEN_OFF = 3;
     private static final int CMD_SCREEN_ON = 4;
+    private static final int CMD_CUSTOM = 99;
     private static final int BACKGROUND_MODE_NORMAL = 0;
+    private static final String CUSTOM_EVENT_FORCE_DIRTY = "ForceDirty";
     private static final long DRAG_SOUND_MIN_TIME_MS = 1100L;
     private static final float DRAG_SOUND_DISTANCE_PX = 120f;
     private static final int COLOR_MAP_LONG_EDGE = 48;
@@ -65,6 +67,12 @@ public class SparklingBubblesEffectView extends FrameLayout
     private float lastDragSoundX;
     private float lastDragSoundY;
     private int dragStreamId;
+    private final Runnable forceDirtyRunnable = new Runnable() {
+        @Override
+        public void run() {
+            sendForceDirtyCommand();
+        }
+    };
 
     public SparklingBubblesEffectView(Context context) {
         super(context);
@@ -94,6 +102,7 @@ public class SparklingBubblesEffectView extends FrameLayout
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
+            cleanupSamsungState();
             Log.e(TAG, "Note5 sparkling bubbles native renderer unavailable", t);
         }
     }
@@ -113,6 +122,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         if (!canRender()) {
             return;
         }
+        removeCallbacks(forceDirtyRunnable);
         sendBackgroundBitmap();
         sendScreenTurnedOnCommand();
         downTime = SystemClock.uptimeMillis();
@@ -173,12 +183,12 @@ public class SparklingBubblesEffectView extends FrameLayout
     public void resetEffect() {
         gestureActive = false;
         stopDragSound();
-        sendScreenTurnedOffCommand();
         if (!ready || clearScreen == null || effectView == null) {
             return;
         }
         try {
             clearScreen.invoke(effectView);
+            scheduleForceDirty(120L);
         } catch (Throwable t) {
             Log.d(TAG, "clearScreen ignored", t);
         }
@@ -195,11 +205,19 @@ public class SparklingBubblesEffectView extends FrameLayout
                 + (SystemClock.uptimeMillis() - startedAt));
     }
 
+    void parkForReuse() {
+        resetEffect();
+        stopDragSound();
+        sendScreenTurnedOffCommand();
+        scheduleForceDirty(80L);
+    }
+
     @Override
     public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
         if (!canRender()) {
             return;
         }
+        removeCallbacks(forceDirtyRunnable);
         sendBackgroundBitmap();
         Rect rect = safeRect(screenRect);
         sendScreenTurnedOnCommand();
@@ -242,7 +260,9 @@ public class SparklingBubblesEffectView extends FrameLayout
         invalidateSentBackground();
         recycle(backgroundBitmap);
         backgroundBitmap = null;
-        sendBackgroundBitmap();
+        if (!destroyed) {
+            sendBackgroundBitmap();
+        }
     }
 
     @Override
@@ -251,19 +271,29 @@ public class SparklingBubblesEffectView extends FrameLayout
             return;
         }
         resetEffect();
+        removeCallbacks(forceDirtyRunnable);
+        sendScreenTurnedOffCommand();
         destroyed = true;
         soundPool.release();
+        SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
             try {
                 removeEffect.invoke(effectView);
+                Log.i(TAG, "sparkling bubbles removeEffect sent after GL shutdown");
             } catch (Throwable t) {
                 Log.d(TAG, "removeEffect ignored", t);
             }
         }
+        removeAllViews();
         recycle(backgroundBitmap);
         recycle(blurMaskBitmap);
         backgroundBitmap = null;
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
+        backgroundSource = "none";
+        externalColorSource = false;
         blurMaskBitmap = null;
+        cleanupSamsungState();
     }
 
     @Override
@@ -283,6 +313,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         gestureActive = false;
         stopDragSound();
         sendScreenTurnedOffCommand();
+        scheduleForceDirty(80L);
         invalidateSentBackground();
         super.onDetachedFromWindow();
     }
@@ -377,7 +408,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     }
 
     private void sendBackgroundBitmap() {
-        if (!ready || handleCustomEvent == null || effectView == null) {
+        if (destroyed || !ready || handleCustomEvent == null || effectView == null) {
             return;
         }
         long startedAt = SystemClock.uptimeMillis();
@@ -581,6 +612,42 @@ public class SparklingBubblesEffectView extends FrameLayout
         } catch (Throwable t) {
             Log.d(TAG, "screen-off command ignored", t);
         }
+    }
+
+    private void scheduleForceDirty(long delayMs) {
+        if (!canRender()) {
+            return;
+        }
+        removeCallbacks(forceDirtyRunnable);
+        postDelayed(forceDirtyRunnable, Math.max(0L, delayMs));
+    }
+
+    private void sendForceDirtyCommand() {
+        if (!canRender() || handleCustomEvent == null) {
+            return;
+        }
+        try {
+            HashMap<String, Object> params = new HashMap<String, Object>();
+            params.put("CustomEvent", CUSTOM_EVENT_FORCE_DIRTY);
+            handleCustomEvent.invoke(effectView, CMD_CUSTOM, params);
+            Log.i(TAG, "sparkling bubbles force-dirty sent");
+        } catch (Throwable t) {
+            Log.d(TAG, "force-dirty command ignored", t);
+        }
+    }
+
+    private void cleanupSamsungState() {
+        ready = false;
+        nativeScreenOn = false;
+        gestureActive = false;
+        stopDragSound();
+        removeCallbacks(forceDirtyRunnable);
+        effectView = null;
+        effectViewAsView = null;
+        handleTouchEvent = null;
+        handleCustomEvent = null;
+        clearScreen = null;
+        removeEffect = null;
     }
 
     private void maybeStartDragSound(float screenX, float screenY) {

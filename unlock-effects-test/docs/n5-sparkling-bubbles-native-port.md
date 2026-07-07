@@ -196,3 +196,27 @@ Log confermati:
 Build installata e testata su `RFCW30S277B`: overlay trasparente, niente
 fullscreen nero, effetto Sparkling Bubbles visibile sopra la lockscreen e color
 map cached agganciata. La verifica visuale dell'utente e "quasi perfetto".
+
+## Stabilita 2026-07-06
+
+I crash residui osservati non venivano dal touch/render, ma dal teardown native:
+`libSparklingBubblesEffect.so -> PhysicsEngineJNI::DeInit_JNI` durante
+`SPhysicsRenderer_TV.onDestroy()`. La soluzione attiva evita il teardown nei
+passaggi transitori lock/AOD/PIN tenendo l'overlay native physics montato e
+mandando il comando originale Samsung `handleCustomEvent(99, {"CustomEvent":
+"ForceDirty"})` dopo reset/clear. In idle il processo e stato campionato a
+`0.0%` CPU con l'effetto caldo; resta un costo memoria/graphics, ma e preferibile
+al crash da DeInit.
+
+La correzione finale non usa piu una cache doppia di sessione. Sul cambio
+effetto il wrapper spegne ordinatamente le `GLTextureView` Samsung chiamando
+`onPause()` e `surfaceDestroyed()` prima di `removeEffect()`. Il crash era dovuto
+al `GLThread` Samsung che durante lo shutdown poteva leggere una weak reference
+null; con questa sequenza il destroy reale regge e non serve tenere Droplet e
+Sparkling entrambi in RAM. Nei passaggi transitori lock/AOD/PIN Sparkling resta
+montato invisibile e viene solo mandato in `SCREEN_OFF`/`ForceDirty`, cosi non si
+ricostruisce nel normale ciclo lockscreen. Dopo il destroy di un N5 il servizio
+richiede una GC ritardata per liberare rapidamente le bitmap temporanee create
+durante gli switch manuali/debug. Non patchare `native_DeInit_JNI` nel dex vendor
+salvo nuovo test mirato: ridurrebbe i crash al costo di leak nativi a ogni cambio
+effetto.

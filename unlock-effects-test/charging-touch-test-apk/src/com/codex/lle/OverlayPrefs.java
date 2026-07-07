@@ -25,7 +25,30 @@ final class OverlayPrefs {
     static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    static final String EFFECT_PROFILE_LAST_SUMMARY = "effect_profile_last_summary";
+    static final String EFFECT_PROFILE_DIAGNOSTIC_SUMMARY =
+            "effect_profile_diagnostic_summary";
+    static final String EFFECT_PROFILE_LAST_CSV = "effect_profile_last_csv";
+    static final String EFFECT_PROFILE_RUNNING = "effect_profile_running";
+    static final String EFFECT_PROFILE_SAMPLE_TOKEN = "effect_profile_sample_token";
+    private static final String EFFECT_PROFILE_SAMPLED_TOKEN_PREFIX =
+            "effect_profile_sampled_token_";
+    static final String EFFECT_BACKGROUND_REFRESH_TOKEN = "effect_background_refresh_token";
     static final String POPPING_COLOR_REFRESH_TOKEN = "popping_color_refresh_token";
+    static final String EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED =
+            "effect_background_auto_refresh_enabled";
+    static final String EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS =
+            "effect_background_refresh_interval_hours";
+    static final String EFFECT_BACKGROUND_SKIP_NIGHT =
+            "effect_background_skip_night";
+    static final String EFFECT_BACKGROUND_FORCE_RECAPTURE =
+            "effect_background_force_recapture";
+    static final String EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE =
+            "effect_background_wake_capture_active";
+    static final String EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX =
+            "effect_background_last_capture_";
+    static final String EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX =
+            "effect_background_handled_refresh_token_";
     static final String PERF_DEFAULTS_APPLIED = "perf_defaults_20260701";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
     static final String TOUCH_BOX_LEFT = "touch_box_left";
@@ -62,6 +85,9 @@ final class OverlayPrefs {
     static final int TOUCH_BOX_ROUNDING_PX = 10;
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
+    static final int DEFAULT_EFFECT_BACKGROUND_REFRESH_HOURS = 24;
+    static final int MIN_EFFECT_BACKGROUND_REFRESH_HOURS = 1;
+    static final int MAX_EFFECT_BACKGROUND_REFRESH_HOURS = 168;
 
     private OverlayPrefs() {
     }
@@ -140,6 +166,100 @@ final class OverlayPrefs {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
+    }
+
+    static String effectLabel(int effect) {
+        switch (effect) {
+            case EFFECT_S4_LENS_FLARE:
+                return "S4 Lens Flare";
+            case EFFECT_S3_RIPPLE:
+                return "S3 Ripple WIP";
+            case EFFECT_S5_POPPING_COLOURS:
+                return "S5 Popping Colours";
+            case EFFECT_WATERCOLOUR:
+                return "N4 Watercolor WIP";
+            case EFFECT_N5_COLOUR_DROPLET:
+                return "N5 Colored Droplet";
+            case EFFECT_N5_SPARKLING_BUBBLES:
+                return "N5 Sparkling Bubbles";
+            case EFFECT_S4_RIPPLE:
+                return "S4 Ripple native WIP";
+            case EFFECT_S4_ABSTRACT_TILES:
+                return "N4 Abstract Tiles";
+            case EFFECT_S4_GEOMETRIC_MOSAIC:
+                return "NE Geometric Mosaic";
+            default:
+                return "Unknown effect " + effect;
+        }
+    }
+
+    static boolean effectBackgroundAutoRefreshEnabled(Context context) {
+        return get(context).getBoolean(EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false);
+    }
+
+    static int effectBackgroundRefreshIntervalHours(Context context) {
+        int hours = get(context).getInt(EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS,
+                DEFAULT_EFFECT_BACKGROUND_REFRESH_HOURS);
+        return Math.max(MIN_EFFECT_BACKGROUND_REFRESH_HOURS,
+                Math.min(MAX_EFFECT_BACKGROUND_REFRESH_HOURS, hours));
+    }
+
+    static boolean effectBackgroundSkipNight(Context context) {
+        return get(context).getBoolean(EFFECT_BACKGROUND_SKIP_NIGHT, true);
+    }
+
+    static boolean effectBackgroundForceRecapture(Context context) {
+        return get(context).getBoolean(EFFECT_BACKGROUND_FORCE_RECAPTURE, false);
+    }
+
+    static boolean effectBackgroundWakeCaptureActive(Context context) {
+        return get(context).getBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, false);
+    }
+
+    static long effectBackgroundLastCapturedAt(Context context, int effect) {
+        return get(context).getLong(EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect, 0L);
+    }
+
+    static void saveEffectBackgroundLastCapturedAt(Context context, int effect, long timestamp) {
+        get(context).edit()
+                .putLong(EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect, Math.max(0L, timestamp))
+                .apply();
+    }
+
+    static int effectBackgroundRefreshToken(Context context) {
+        SharedPreferences prefs = get(context);
+        int token = prefs.getInt(EFFECT_BACKGROUND_REFRESH_TOKEN, 0);
+        int legacyToken = prefs.getInt(POPPING_COLOR_REFRESH_TOKEN, 0);
+        return Math.max(token, legacyToken);
+    }
+
+    static void requestEffectBackgroundRefresh(Context context) {
+        get(context).edit()
+                .putInt(EFFECT_BACKGROUND_REFRESH_TOKEN,
+                        effectBackgroundRefreshToken(context) + 1)
+                .apply();
+    }
+
+    static int effectBackgroundHandledRefreshToken(Context context, int effect) {
+        return get(context).getInt(EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect, 0);
+    }
+
+    static void saveEffectBackgroundHandledRefreshToken(Context context, int effect, int token) {
+        get(context).edit()
+                .putInt(EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect, Math.max(0, token))
+                .apply();
+    }
+
+    static File effectBenchmarkFile(Context context) {
+        return new File(context.getFilesDir(), "effect_profile_benchmark.csv");
+    }
+
+    static int effectProfileSampleToken(Context context) {
+        return get(context).getInt(EFFECT_PROFILE_SAMPLE_TOKEN, 0);
+    }
+
+    static String effectProfileSampledTokenKey(int effect) {
+        return EFFECT_PROFILE_SAMPLED_TOKEN_PREFIX + effect;
     }
 
     static boolean touchBoxConfigured(Context context) {
@@ -245,6 +365,14 @@ final class OverlayPrefs {
 
     static File touchBoxScreenshotFile(Context context) {
         return new File(context.getFilesDir(), "touch_box_lockscreen.png");
+    }
+
+    static File effectBackgroundFile(Context context, int effect) {
+        return new File(context.getFilesDir(), "unlock_effect_background.png");
+    }
+
+    static File legacyEffectBackgroundFile(Context context, int effect) {
+        return new File(context.getFilesDir(), "unlock_effect_background_" + effect + ".png");
     }
 }
 

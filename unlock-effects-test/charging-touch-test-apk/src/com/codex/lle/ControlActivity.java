@@ -15,6 +15,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -36,6 +38,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 
 public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
@@ -54,7 +58,15 @@ public class ControlActivity extends Activity {
     private static final int TAB_SWIPE_MIN_DISTANCE_DP = 72;
     private static final long TAB_ANIMATION_DURATION_MS = 180L;
     private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
+    private static final long EFFECT_SELECTION_APPLY_DELAY_MS = 2000L;
 
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable applyPendingUnlockEffectRunnable = new Runnable() {
+        @Override
+        public void run() {
+            applyPendingUnlockEffect();
+        }
+    };
     private SharedPreferences prefs;
     private TextView accessibilityStatus;
     private Switch serviceSwitch;
@@ -62,7 +74,9 @@ public class ControlActivity extends Activity {
     private Button lockscreenEffectTabButton;
     private LinearLayout tabContent;
     private TextView touchBoxSummary;
+    private TextView effectProfilerSummary;
     private int selectedTab = TAB_CHARGING_DOODLE;
+    private int pendingUnlockEffect = -1;
     private boolean updatingServiceSwitch;
     private float tabSwipeDownX;
     private float tabSwipeDownY;
@@ -129,6 +143,13 @@ public class ControlActivity extends Activity {
         super.onResume();
         updateAccessibilityStatus();
         updateTouchBoxSummary();
+        updateEffectProfilerSummary();
+    }
+
+    @Override
+    protected void onDestroy() {
+        uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        super.onDestroy();
     }
 
     @Override
@@ -326,6 +347,7 @@ public class ControlActivity extends Activity {
             tabContent.addView(chargingDoodleControls());
         } else {
             tabContent.addView(effectSelector());
+            tabContent.addView(effectProfilerControls());
             tabContent.addView(lockscreenTouchControls());
             tabContent.addView(rootDebugControls());
         }
@@ -480,6 +502,23 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private void styleProfilerCard(LinearLayout section) {
+        section.setPadding(dp(16), dp(14), dp(16), dp(16));
+        GradientDrawable background = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {
+                        Color.rgb(255, 255, 255),
+                        Color.rgb(232, 244, 255),
+                        Color.rgb(250, 252, 255)
+                });
+        background.setCornerRadius(dp(8));
+        background.setStroke(dp(1), Color.rgb(202, 226, 246));
+        section.setBackground(background);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            section.setElevation(dp(2));
+        }
+    }
+
     private TextView sectionTitle(String text) {
         TextView label = new TextView(this);
         label.setText(text);
@@ -555,8 +594,6 @@ public class ControlActivity extends Activity {
 
         section.addView(toggle("Enable charging doodle", OverlayPrefs.SHOW_DOODLE, true));
         section.addView(toggle("Doodle on lockscreen", OverlayPrefs.SHOW_LOCK, true));
-        section.addView(toggle("Doodle on AOD", OverlayPrefs.SHOW_AOD, false));
-        section.addView(toggle("Doodle on Home", OverlayPrefs.SHOW_HOME, false));
         section.addView(seasonSelector());
         section.addView(positionControls());
         section.addView(doodleDebugControls());
@@ -629,7 +666,7 @@ public class ControlActivity extends Activity {
         section.addView(sectionTitle("Unlock effect"));
         section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
 
-        int current = OverlayPrefs.unlockEffect(this);
+        int current = pendingUnlockEffect >= 0 ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
         section.addView(sectionLabel("Stabili"));
         section.addView(effectOption(
                 "S4 Lens Flare",
@@ -642,12 +679,12 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
         section.addView(effectOption(
-                "XX Abstract Tiles",
+                "N4 Abstract Tiles",
                 "Samsung native LockBG tile renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 current));
         section.addView(effectOption(
-                "XX Geometric Mosaic",
+                "NE Geometric Mosaic",
                 "Samsung native LockBG mosaic renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current));
@@ -679,33 +716,231 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current));
 
-        addEffectBackgroundActions(section);
+        addEffectBackgroundActions(section, current);
         return section;
     }
 
-    private void addEffectBackgroundActions(LinearLayout section) {
-        section.addView(outlineButton("Refresh effect background map", new View.OnClickListener() {
+    private void addEffectBackgroundActions(LinearLayout section, int currentEffect) {
+        section.addView(infoText(effectBackgroundStatus(currentEffect)));
+        section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                int token = prefs.getInt(OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN, 0);
-                prefs.edit()
-                        .putInt(OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN, token + 1)
-                        .apply();
+                applyPendingUnlockEffect();
+                OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
                 Toast.makeText(ControlActivity.this,
-                        "Effect background refresh queued",
+                        "Screenshot recapture queued",
                         Toast.LENGTH_SHORT).show();
             }
         }));
+        section.addView(toggle("Auto recapture expired cache",
+                OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
+        section.addView(effectBackgroundIntervalSelector());
+        section.addView(toggle("Pause auto recapture 23-07",
+                OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
+        section.addView(toggle("Wake lockscreen for hard recapture",
+                OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
         section.addView(outlineButton("View colormap screenshot", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                applyPendingUnlockEffect();
                 showEffectBackgroundScreenshot();
             }
         }));
     }
 
+    private void queueUnlockEffectSelection(int value) {
+        pendingUnlockEffect = value;
+        uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        uiHandler.postDelayed(applyPendingUnlockEffectRunnable,
+                EFFECT_SELECTION_APPLY_DELAY_MS);
+        Toast.makeText(this, "Effect will apply in 2s", Toast.LENGTH_SHORT).show();
+    }
+
+    private void applyPendingUnlockEffect() {
+        if (pendingUnlockEffect < 0) {
+            return;
+        }
+        int effect = pendingUnlockEffect;
+        pendingUnlockEffect = -1;
+        prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, effect).apply();
+        showTab(TAB_LOCKSCREEN_EFFECT);
+    }
+
+    private String effectBackgroundStatus(int effect) {
+        if (!effectUsesColormapCache(effect)) {
+            return "Screenshot cache: not used by this effect.";
+        }
+        File file = colormapScreenshotFileForPreview(effect);
+        long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect);
+        if (capturedAt <= 0L && file.exists()) {
+            capturedAt = file.lastModified();
+        }
+        if (!file.exists() || file.length() <= 0L || capturedAt <= 0L) {
+            return "Screenshot cache: empty. The old map is kept until a valid recapture is saved.";
+        }
+        long ageMs = Math.max(0L, System.currentTimeMillis() - capturedAt);
+        return "Screenshot cache: ready, age " + ageLabel(ageMs)
+                + ". Expired cache stays active until a validated capture replaces it.";
+    }
+
+    private boolean effectUsesColormapCache(int effect) {
+        return effect == OverlayPrefs.EFFECT_S3_RIPPLE
+                || effect == OverlayPrefs.EFFECT_S4_RIPPLE
+                || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
+                || effect == OverlayPrefs.EFFECT_WATERCOLOUR
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
+                || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
+    }
+
+    private String ageLabel(long ageMs) {
+        long minutes = ageMs / 60000L;
+        if (minutes < 1L) {
+            return "now";
+        }
+        if (minutes < 60L) {
+            return minutes + "m";
+        }
+        long hours = minutes / 60L;
+        if (hours < 48L) {
+            return hours + "h";
+        }
+        return (hours / 24L) + "d";
+    }
+
+    private View effectBackgroundIntervalSelector() {
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.HORIZONTAL);
+        group.setPadding(0, dp(4), 0, dp(4));
+        int current = OverlayPrefs.effectBackgroundRefreshIntervalHours(this);
+        addIntervalOption(group, "8h", 8, current);
+        addIntervalOption(group, "24h", 24, current);
+        addIntervalOption(group, "7d", 168, current);
+        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
+                View checked = radioGroup.findViewById(checkedId);
+                Object tag = checked == null ? null : checked.getTag();
+                if (tag instanceof Integer) {
+                    prefs.edit()
+                            .putInt(OverlayPrefs.EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS,
+                                    ((Integer) tag).intValue())
+                            .apply();
+                }
+            }
+        });
+        return group;
+    }
+
+    private void addIntervalOption(RadioGroup group, String label, int hours, int current) {
+        RadioButton button = new RadioButton(this);
+        button.setText(label);
+        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(15f);
+        button.setTag(Integer.valueOf(hours));
+        button.setId(View.generateViewId());
+        button.setChecked(hours == current);
+        group.addView(button, new RadioGroup.LayoutParams(
+                0,
+                dp(44),
+                1f));
+    }
+
+    private View effectProfilerControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(12));
+        section.setLayoutParams(params);
+        styleProfilerCard(section);
+
+        TextView eyebrow = sectionLabel("Automatic runtime sample");
+        eyebrow.setPadding(0, 0, 0, dp(2));
+        section.addView(eyebrow);
+
+        TextView title = sectionTitle("Effect memory");
+        title.setPadding(0, 0, 0, dp(4));
+        section.addView(title);
+
+        effectProfilerSummary = new TextView(this);
+        effectProfilerSummary.setTextColor(COLOR_TEXT);
+        effectProfilerSummary.setTextSize(14f);
+        effectProfilerSummary.setLineSpacing(dp(3), 1.0f);
+        effectProfilerSummary.setPadding(0, dp(6), 0, dp(10));
+        section.addView(effectProfilerSummary);
+        updateEffectProfilerSummary();
+
+        section.addView(outlineButton("Sample next run", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestEffectProfileResample();
+            }
+        }));
+        return section;
+    }
+
+    private void requestEffectProfileResample() {
+        int effect = OverlayPrefs.unlockEffect(this);
+        String effectName = OverlayPrefs.effectLabel(effect);
+        prefs.edit()
+                .remove(OverlayPrefs.effectProfileSampledTokenKey(effect))
+                .putBoolean(OverlayPrefs.EFFECT_PROFILE_RUNNING, false)
+                .putString(OverlayPrefs.EFFECT_PROFILE_LAST_SUMMARY,
+                        "Next " + effectName + " run will be sampled."
+                                + "\nLock the phone and trigger the effect once.")
+                .apply();
+        updateEffectProfilerSummary();
+        Toast.makeText(this, "Next effect run will be sampled", Toast.LENGTH_SHORT).show();
+    }
+
+    private void updateEffectProfilerSummary() {
+        if (effectProfilerSummary == null || prefs == null) {
+            return;
+        }
+        int effect = OverlayPrefs.unlockEffect(this);
+        int token = OverlayPrefs.effectProfileSampleToken(this);
+        int sampledToken = prefs.getInt(
+                OverlayPrefs.effectProfileSampledTokenKey(effect),
+                Integer.MIN_VALUE);
+        String effectName = OverlayPrefs.effectLabel(effect);
+        String summary = prefs.getString(OverlayPrefs.EFFECT_PROFILE_LAST_SUMMARY, "");
+        boolean running = prefs.getBoolean(OverlayPrefs.EFFECT_PROFILE_RUNNING, false);
+        if (!isEffectProfileCardSummary(summary)) {
+            if (summary != null && !summary.trim().isEmpty()) {
+                prefs.edit().remove(OverlayPrefs.EFFECT_PROFILE_LAST_SUMMARY).apply();
+            }
+            summary = "";
+        }
+        if (summary == null || summary.trim().isEmpty()) {
+            summary = effectName
+                    + "\nNo real-run sample yet."
+                    + "\nThe first lockscreen gesture will be sampled automatically.";
+        }
+        if (sampledToken != token) {
+            summary += "\nPending sample: next " + effectName + " run.";
+        } else {
+            summary += "\nSampling is idle. Use the button to refresh on the next run.";
+        }
+        if (running) {
+            summary = "ADB diagnostic benchmark running...\n" + summary;
+        }
+        effectProfilerSummary.setText(summary);
+    }
+
+    private boolean isEffectProfileCardSummary(String summary) {
+        if (summary == null || summary.trim().isEmpty()) {
+            return true;
+        }
+        return summary.contains("Sampled on unlock effect run")
+                || summary.startsWith("Next ");
+    }
+
     private void showEffectBackgroundScreenshot() {
-        File screenshot = OverlayPrefs.touchBoxScreenshotFile(this);
+        int effect = OverlayPrefs.unlockEffect(this);
+        File screenshot = colormapScreenshotFileForPreview(effect);
         if (!screenshot.exists() || screenshot.length() <= 0L) {
             Toast.makeText(this, "No colormap screenshot yet", Toast.LENGTH_SHORT).show();
             return;
@@ -725,7 +960,8 @@ public class ControlActivity extends Activity {
         TextView title = sectionTitle("Colormap screenshot");
         root.addView(title);
 
-        TextView meta = infoText(bitmap.getWidth() + " x " + bitmap.getHeight()
+        TextView meta = infoText("service shared | "
+                + bitmap.getWidth() + " x " + bitmap.getHeight()
                 + " | " + Math.max(1L, screenshot.length() / 1024L) + " KB");
         root.addView(meta);
 
@@ -768,6 +1004,89 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private File colormapScreenshotFileForPreview(int effect) {
+        File shared = OverlayPrefs.effectBackgroundFile(this, effect);
+        if (shared.exists() && shared.length() > 0L) {
+            return shared;
+        }
+        File legacy = latestLegacyColormapScreenshotFile();
+        if (legacy != null && copyColormapScreenshotFile(legacy, shared)) {
+            return shared;
+        }
+        return shared;
+    }
+
+    private File latestLegacyColormapScreenshotFile() {
+        File best = null;
+        int[] effects = {
+                OverlayPrefs.EFFECT_S3_RIPPLE,
+                OverlayPrefs.EFFECT_S4_RIPPLE,
+                OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
+                OverlayPrefs.EFFECT_WATERCOLOUR,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+        };
+        for (int candidate : effects) {
+            File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
+            if (!file.exists() || file.length() <= 0L) {
+                continue;
+            }
+            if (best == null || file.lastModified() > best.lastModified()) {
+                best = file;
+            }
+        }
+        return best;
+    }
+
+    private boolean copyColormapScreenshotFile(File source, File target) {
+        if (source == null || target == null || !source.exists() || source.length() <= 0L) {
+            return false;
+        }
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            return false;
+        }
+        File temp = new File(parent, target.getName() + ".tmp");
+        FileInputStream input = null;
+        FileOutputStream output = null;
+        try {
+            input = new FileInputStream(source);
+            output = new FileOutputStream(temp);
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            output.flush();
+            if (target.exists() && !target.delete()) {
+                return false;
+            }
+            return temp.renameTo(target);
+        } catch (Throwable t) {
+            Log.d("LLEControl", "colormap screenshot migration failed", t);
+            return false;
+        } finally {
+            if (input != null) {
+                try {
+                    input.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (output != null) {
+                try {
+                    output.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (temp.exists() && !target.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                temp.delete();
+            }
+        }
+    }
+
     private Bitmap decodePreviewBitmap(File file) {
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
@@ -802,7 +1121,7 @@ public class ControlActivity extends Activity {
         row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, value).apply();
+                queueUnlockEffectSelection(value);
                 showTab(selectedTab);
             }
         });

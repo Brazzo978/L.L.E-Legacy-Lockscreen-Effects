@@ -4,6 +4,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
@@ -28,9 +30,12 @@ public class SamsungLockBgEffectView extends FrameLayout
     private static final int CMD_UNLOCK = 2;
     private static final int SAMSUNG_ABSTRACT_TILES = 0;
     private static final int SAMSUNG_GEOMETRIC_MOSAIC = 1;
+    private static final float ABSTRACT_BACKGROUND_GAIN = 0.25f;
+    private static final float GEOMETRIC_BACKGROUND_GAIN = 1.0f;
 
     private final int samsungEffectId;
     private final String effectName;
+    private final float backgroundGain;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int dragSound;
@@ -63,21 +68,25 @@ public class SamsungLockBgEffectView extends FrameLayout
         return new SamsungLockBgEffectView(
                 context,
                 SAMSUNG_ABSTRACT_TILES,
-                "S4 Abstract Tiles");
+                "N4 Abstract Tiles",
+                ABSTRACT_BACKGROUND_GAIN);
     }
 
     public static SamsungLockBgEffectView geometricMosaic(Context context) {
         return new SamsungLockBgEffectView(
                 context,
                 SAMSUNG_GEOMETRIC_MOSAIC,
-                "S4 Geometric Mosaic");
+                "NE Geometric Mosaic",
+                GEOMETRIC_BACKGROUND_GAIN);
     }
 
-    private SamsungLockBgEffectView(Context context, int effectId, String name) {
+    private SamsungLockBgEffectView(Context context, int effectId, String name,
+            float bgGain) {
         super(context);
         long startedAt = SystemClock.uptimeMillis();
         samsungEffectId = effectId;
         effectName = name;
+        backgroundGain = bgGain;
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
@@ -209,23 +218,7 @@ public class SamsungLockBgEffectView extends FrameLayout
 
     @Override
     public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
-        if (!canRender()) {
-            return;
-        }
-        sendBackgroundBitmap();
-        Rect rect = safeRect(screenRect);
-        try {
-            HashMap<String, Object> params = new HashMap<String, Object>();
-            params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
-            params.put("Rect", rect);
-            handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
-            Log.i(TAG, effectName + " affordance sent delayMs="
-                    + Math.max(0L, startDelayMs)
-                    + " rect=" + rect.left + "," + rect.top + ","
-                    + rect.right + "," + rect.bottom);
-        } catch (Throwable t) {
-            Log.d(TAG, "affordance command ignored", t);
-        }
+        Log.i(TAG, effectName + " affordance skipped");
     }
 
     @Override
@@ -264,15 +257,23 @@ public class SamsungLockBgEffectView extends FrameLayout
         resetEffect();
         destroyed = true;
         soundPool.release();
+        SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
             try {
                 removeEffect.invoke(effectView);
+                Log.i(TAG, effectName + " removeEffect sent after GL shutdown");
             } catch (Throwable t) {
                 Log.d(TAG, "removeEffect ignored", t);
             }
         }
         recycle(backgroundBitmap);
         backgroundBitmap = null;
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
+        backgroundSource = "none";
+        externalColorSource = false;
+        removeAllViews();
+        cleanupSamsungState();
     }
 
     @Override
@@ -406,6 +407,17 @@ public class SamsungLockBgEffectView extends FrameLayout
         lastSentBackgroundSource = "";
     }
 
+    private void cleanupSamsungState() {
+        ready = false;
+        gestureActive = false;
+        effectView = null;
+        effectViewAsView = null;
+        handleTouchEvent = null;
+        handleCustomEvent = null;
+        clearScreen = null;
+        removeEffect = null;
+    }
+
     private Bitmap getBackgroundBitmap() {
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
@@ -416,8 +428,8 @@ public class SamsungLockBgEffectView extends FrameLayout
             return backgroundBitmap;
         }
         recycle(backgroundBitmap);
-        backgroundBitmap = createWhiteBitmap(width, height);
-        backgroundSource = "white_fallback";
+        backgroundBitmap = createTransparentBitmap(width, height);
+        backgroundSource = "transparent_fallback";
         externalColorSource = false;
         backgroundBitmap.prepareToDraw();
         Log.i(TAG, effectName + " fallback background prepared size="
@@ -443,15 +455,13 @@ public class SamsungLockBgEffectView extends FrameLayout
         Log.i(TAG, effectName + " background replaced source=" + backgroundSource
                 + " size=" + backgroundBitmap.getWidth()
                 + "x" + backgroundBitmap.getHeight()
+                + " gain=" + backgroundGain
                 + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
                 + " cropMs=" + cropMs
                 + " prepareMs=" + prepareMs);
     }
 
     private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
-        if (source.getWidth() == width && source.getHeight() == height) {
-            return source.copy(Bitmap.Config.ARGB_8888, false);
-        }
         Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         float srcRatio = source.getWidth() / (float) source.getHeight();
         float dstRatio = width / (float) height;
@@ -471,13 +481,19 @@ public class SamsungLockBgEffectView extends FrameLayout
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
                 | Paint.FILTER_BITMAP_FLAG
                 | Paint.DITHER_FLAG);
+        paint.setColorFilter(new ColorMatrixColorFilter(new ColorMatrix(new float[] {
+                backgroundGain, 0f, 0f, 0f, 0f,
+                0f, backgroundGain, 0f, 0f, 0f,
+                0f, 0f, backgroundGain, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+        })));
         canvas.drawBitmap(source, src, new Rect(0, 0, width, height), paint);
         return out;
     }
 
-    private Bitmap createWhiteBitmap(int width, int height) {
+    private Bitmap createTransparentBitmap(int width, int height) {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        bitmap.eraseColor(Color.WHITE);
+        bitmap.eraseColor(Color.TRANSPARENT);
         return bitmap;
     }
 

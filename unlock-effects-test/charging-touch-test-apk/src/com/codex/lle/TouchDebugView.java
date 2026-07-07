@@ -5,12 +5,14 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
 public class TouchDebugView extends View {
     private static final String TAG = "LLEDebug";
+    private static final long MOVE_LOG_INTERVAL_MS = 250L;
 
     interface TouchTriggerListener {
         boolean onTouchStarted(float screenX, float screenY);
@@ -24,6 +26,7 @@ public class TouchDebugView extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
+    private final int[] locationOnScreen = new int[2];
     private TouchTriggerListener touchTriggerListener;
     private String lastAction = "waiting";
     private float lastX = -1f;
@@ -38,6 +41,9 @@ public class TouchDebugView extends View {
     private boolean transparentMode = true;
     private boolean gestureActive;
     private boolean listeningEnabled = true;
+    private int windowLeft;
+    private int windowTop;
+    private long lastMoveLogAt;
 
     public TouchDebugView(Context context) {
         super(context);
@@ -76,24 +82,30 @@ public class TouchDebugView extends View {
         if (!listeningEnabled) {
             return false;
         }
-        lastAction = actionName(event.getActionMasked());
+        int action = event.getActionMasked();
+        lastAction = actionName(action);
         lastX = event.getX();
         lastY = event.getY();
         lastRawX = event.getRawX();
         lastRawY = event.getRawY();
-        int[] locationOnScreen = new int[2];
-        getLocationOnScreen(locationOnScreen);
-        lastScreenX = locationOnScreen[0] + lastX;
-        lastScreenY = locationOnScreen[1] + lastY;
+        if (action == MotionEvent.ACTION_DOWN || !gestureActive) {
+            getLocationOnScreen(locationOnScreen);
+            windowLeft = locationOnScreen[0];
+            windowTop = locationOnScreen[1];
+        }
+        lastScreenX = windowLeft + lastX;
+        lastScreenY = windowTop + lastY;
         pointerCount = event.getPointerCount();
-        Log.i(TAG, "action=" + lastAction
-                + " local=" + Math.round(lastX) + "," + Math.round(lastY)
-                + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
-                + " screen=" + Math.round(lastScreenX) + "," + Math.round(lastScreenY)
-                + " window=" + locationOnScreen[0] + "," + locationOnScreen[1]
-                + " pointers=" + pointerCount);
+        if (shouldLogTouch(action)) {
+            Log.i(TAG, "action=" + lastAction
+                    + " local=" + Math.round(lastX) + "," + Math.round(lastY)
+                    + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
+                    + " screen=" + Math.round(lastScreenX) + "," + Math.round(lastScreenY)
+                    + " window=" + windowLeft + "," + windowTop
+                    + " pointers=" + pointerCount);
+        }
 
-        switch (event.getActionMasked()) {
+        switch (action) {
             case MotionEvent.ACTION_DOWN:
                 gestureStartScreenX = lastScreenX;
                 gestureStartScreenY = lastScreenY;
@@ -231,6 +243,18 @@ public class TouchDebugView extends View {
             default:
                 return String.valueOf(action);
         }
+    }
+
+    private boolean shouldLogTouch(int action) {
+        if (action != MotionEvent.ACTION_MOVE) {
+            return true;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (now - lastMoveLogAt < MOVE_LOG_INTERVAL_MS) {
+            return false;
+        }
+        lastMoveLogAt = now;
+        return true;
     }
 
     private int dp(int value) {

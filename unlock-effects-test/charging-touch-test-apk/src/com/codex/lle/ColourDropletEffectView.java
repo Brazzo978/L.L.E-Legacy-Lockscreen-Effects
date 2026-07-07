@@ -31,7 +31,9 @@ public class ColourDropletEffectView extends FrameLayout
     private static final int CMD_UNLOCK = 2;
     private static final int CMD_SCREEN_OFF = 3;
     private static final int CMD_SCREEN_ON = 4;
+    private static final int CMD_CUSTOM = 99;
     private static final int BACKGROUND_MODE_NORMAL = 0;
+    private static final String CUSTOM_EVENT_FORCE_DIRTY = "ForceDirty";
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -54,9 +56,16 @@ public class ColourDropletEffectView extends FrameLayout
     private boolean ready;
     private boolean destroyed;
     private boolean gestureActive;
+    private boolean nativeScreenOn;
     private long downTime;
     private float lastX;
     private float lastY;
+    private final Runnable forceDirtyRunnable = new Runnable() {
+        @Override
+        public void run() {
+            sendForceDirtyCommand();
+        }
+    };
 
     public ColourDropletEffectView(Context context) {
         super(context);
@@ -85,6 +94,7 @@ public class ColourDropletEffectView extends FrameLayout
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
+            cleanupSamsungState();
             Log.e(TAG, "Note5 colour droplet native renderer unavailable", t);
         }
     }
@@ -104,6 +114,7 @@ public class ColourDropletEffectView extends FrameLayout
         if (!canRender()) {
             return;
         }
+        removeCallbacks(forceDirtyRunnable);
         sendBackgroundBitmap();
         sendScreenTurnedOnCommand();
         downTime = SystemClock.uptimeMillis();
@@ -162,6 +173,7 @@ public class ColourDropletEffectView extends FrameLayout
         }
         try {
             clearScreen.invoke(effectView);
+            scheduleForceDirty(120L);
         } catch (Throwable t) {
             Log.d(TAG, "clearScreen ignored", t);
         }
@@ -174,9 +186,14 @@ public class ColourDropletEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        sendScreenTurnedOnCommand();
         Log.i(TAG, "colour droplet warmed elapsedMs="
                 + (SystemClock.uptimeMillis() - startedAt));
+    }
+
+    void parkForReuse() {
+        resetEffect();
+        sendScreenTurnedOffCommand();
+        scheduleForceDirty(80L);
     }
 
     @Override
@@ -184,6 +201,7 @@ public class ColourDropletEffectView extends FrameLayout
         if (!canRender()) {
             return;
         }
+        removeCallbacks(forceDirtyRunnable);
         sendBackgroundBitmap();
         Rect rect = safeRect(screenRect);
         sendScreenTurnedOnCommand();
@@ -226,7 +244,9 @@ public class ColourDropletEffectView extends FrameLayout
         lastSentBackgroundSource = "";
         recycle(backgroundBitmap);
         backgroundBitmap = null;
-        sendBackgroundBitmap();
+        if (!destroyed) {
+            sendBackgroundBitmap();
+        }
     }
 
     @Override
@@ -235,20 +255,31 @@ public class ColourDropletEffectView extends FrameLayout
             return;
         }
         resetEffect();
+        removeCallbacks(forceDirtyRunnable);
+        sendScreenTurnedOffCommand();
         destroyed = true;
         soundPool.release();
+        SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
             try {
                 removeEffect.invoke(effectView);
+                Log.i(TAG, "colour droplet removeEffect sent after GL shutdown");
             } catch (Throwable t) {
                 Log.d(TAG, "removeEffect ignored", t);
             }
         }
-        clearBackgroundSourceBitmap();
+        removeAllViews();
+        externalColorSource = false;
+        backgroundSource = "none";
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
+        recycle(backgroundBitmap);
+        backgroundBitmap = null;
         recycle(normalResourceBitmap);
         recycle(edgeDensityResourceBitmap);
         normalResourceBitmap = null;
         edgeDensityResourceBitmap = null;
+        cleanupSamsungState();
     }
 
     @Override
@@ -266,6 +297,8 @@ public class ColourDropletEffectView extends FrameLayout
     @Override
     protected void onDetachedFromWindow() {
         gestureActive = false;
+        sendScreenTurnedOffCommand();
+        scheduleForceDirty(80L);
         invalidateSentBackground();
         super.onDetachedFromWindow();
     }
@@ -322,6 +355,12 @@ public class ColourDropletEffectView extends FrameLayout
         setEffect.invoke(effectView, SAMSUNG_EFFECT_ID);
         makeTransparent(effectViewAsView);
         init.invoke(effectView, data);
+        post(new Runnable() {
+            @Override
+            public void run() {
+                makeTransparent(effectViewAsView);
+            }
+        });
     }
 
     private Object getOrCreate(Class<?> owner, Object target, String fieldName,
@@ -358,7 +397,7 @@ public class ColourDropletEffectView extends FrameLayout
     }
 
     private void sendBackgroundBitmap() {
-        if (!ready || handleCustomEvent == null || effectView == null) {
+        if (destroyed || !ready || handleCustomEvent == null || effectView == null) {
             return;
         }
         long startedAt = SystemClock.uptimeMillis();
@@ -488,23 +527,71 @@ public class ColourDropletEffectView extends FrameLayout
         if (!canRender() || handleCustomEvent == null) {
             return;
         }
+        if (nativeScreenOn) {
+            return;
+        }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             handleCustomEvent.invoke(effectView, CMD_SCREEN_ON, new HashMap<String, Object>());
+            nativeScreenOn = true;
+            Log.i(TAG, "colour droplet screen-on sent elapsedMs="
+                    + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             Log.d(TAG, "screen-on command ignored", t);
         }
     }
 
-    @SuppressWarnings("unused")
     private void sendScreenTurnedOffCommand() {
         if (!canRender() || handleCustomEvent == null) {
             return;
         }
+        if (!nativeScreenOn) {
+            return;
+        }
+        long startedAt = SystemClock.uptimeMillis();
         try {
             handleCustomEvent.invoke(effectView, CMD_SCREEN_OFF, new HashMap<String, Object>());
+            nativeScreenOn = false;
+            Log.i(TAG, "colour droplet screen-off sent elapsedMs="
+                    + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             Log.d(TAG, "screen-off command ignored", t);
         }
+    }
+
+    private void scheduleForceDirty(long delayMs) {
+        if (!canRender()) {
+            return;
+        }
+        removeCallbacks(forceDirtyRunnable);
+        postDelayed(forceDirtyRunnable, Math.max(0L, delayMs));
+    }
+
+    private void sendForceDirtyCommand() {
+        if (!canRender() || handleCustomEvent == null) {
+            return;
+        }
+        try {
+            HashMap<String, Object> params = new HashMap<String, Object>();
+            params.put("CustomEvent", CUSTOM_EVENT_FORCE_DIRTY);
+            handleCustomEvent.invoke(effectView, CMD_CUSTOM, params);
+            Log.i(TAG, "colour droplet force-dirty sent");
+        } catch (Throwable t) {
+            Log.d(TAG, "force-dirty command ignored", t);
+        }
+    }
+
+    private void cleanupSamsungState() {
+        ready = false;
+        nativeScreenOn = false;
+        gestureActive = false;
+        removeCallbacks(forceDirtyRunnable);
+        effectView = null;
+        effectViewAsView = null;
+        handleTouchEvent = null;
+        handleCustomEvent = null;
+        clearScreen = null;
+        removeEffect = null;
     }
 
     private Rect safeRect(Rect rect) {

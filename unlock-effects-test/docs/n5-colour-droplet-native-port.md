@@ -168,3 +168,25 @@ trasparente. La differenza residua rispetto a SystemUI e il layer sorgente:
 Samsung passa il wallpaper tramite `getCurrentWallpaper`, mentre l'app passa
 uno screenshot lockscreen per poter lavorare fuori da SystemUI. Per questo la
 rifrazione puo includere clock/testi se sono presenti nello screenshot.
+
+## Stabilita 2026-07-06
+
+Come Sparkling Bubbles, Colour Droplet usa `SPhysicsEffect_TV` e puo cadere se il
+teardown native entra in `PhysicsEngineJNI::DeInit_JNI` mentre il `GLTextureView`
+si sta chiudendo. Il wrapper ora tiene l'overlay native physics montato nei
+passaggi transitori e usa il comando Samsung `ForceDirty` dopo reset/clear per
+portare il renderer in dirty mode. Inoltre `warmUp()` prepara solo la bitmap
+background e non manda piu `SCREEN_ON`: il motore viene riattivato solo su hint o
+touch reale. Test ADB: `colour droplet force-dirty sent`, nessun crash buffer
+fresco nel cambio immediato.
+
+La correzione definitiva non e un retain temporizzato: nel cambio effetto il
+wrapper spegne ordinatamente le `GLTextureView` Samsung chiamando prima
+`onPause()` e `surfaceDestroyed()`, poi invoca `removeEffect()`. Il vecchio crash
+era causato dal `GLThread` Samsung che leggeva una weak reference null durante lo
+shutdown; tenendo vivo il view object fino alla pausa/surface destroy, il destroy
+reale diventa stabile. Nei passaggi transitori lock/AOD/PIN invece il renderer
+resta montato invisibile e viene solo portato in `SCREEN_OFF`/`ForceDirty`, cosi
+il normale uso lockscreen non paga ricostruzioni continue. Dopo il destroy di un
+N5 il servizio richiede una GC ritardata per liberare rapidamente le bitmap
+temporanee create durante gli switch manuali/debug.
