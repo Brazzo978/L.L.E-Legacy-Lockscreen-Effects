@@ -18,7 +18,7 @@ final class LockSoundPlayer {
     private static final int SEASONAL_WINTER = 3;
 
     private final Context context;
-    private final int[] effectSounds = new int[9];
+    private final int[] effectSounds = new int[OverlayPrefs.EFFECT_COUNT];
     private final int[] seasonalSounds = new int[4];
 
     private SoundPool soundPool;
@@ -85,6 +85,8 @@ final class LockSoundPlayer {
                 load(R.raw.ve_watercolour_lock);
         effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET] =
                 load(R.raw.ve_colourdroplet_lock);
+        effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO] =
+                effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
         effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES] =
                 load(R.raw.ve_sparklingbubbles_lock);
         effectSounds[OverlayPrefs.EFFECT_S4_RIPPLE] =

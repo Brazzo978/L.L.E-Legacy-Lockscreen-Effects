@@ -1275,8 +1275,13 @@ public class ControlActivity extends Activity {
                 current));
         section.addView(effectOption(
                 "N5 Colored Droplet",
-                "Ghidra-backed transparent droplet renderer with screenshot color sampling.",
+                "Ghidra-backed droplet renderer without motion sensor input.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                current));
+        section.addView(effectOption(
+                "N5 Colored Droplet + Gyro",
+                "Native droplet physics with accelerometer-driven gravity and drift.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current));
 
         section.addView(sectionLabel("WIP"));
@@ -1417,6 +1422,7 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
@@ -1870,6 +1876,7 @@ public class ControlActivity extends Activity {
                 drawPreviewWatercolor(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 drawPreviewDroplets(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
@@ -2301,6 +2308,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
@@ -3121,6 +3129,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return Color.rgb(125, 113, 230);
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return Color.rgb(235, 111, 102);
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
                 return Color.rgb(94, 210, 209);
@@ -3500,6 +3509,7 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx + unit * 0.23f, cy + unit * 0.25f, unit * 0.07f, paint);
                 break;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 paint.setStyle(Paint.Style.FILL);
                 Path drop = new Path();
                 drop.moveTo(cx, rect.top);

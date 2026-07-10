@@ -7,15 +7,23 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
@@ -23,7 +31,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 
 public class ColourDropletEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, SensorEventListener {
     private static final String TAG = "ChargingColourDroplet";
     private static final int SAMSUNG_EFFECT_ID = 0x11;
     private static final int CMD_SET_BACKGROUND = 0;
@@ -34,7 +42,14 @@ public class ColourDropletEffectView extends FrameLayout
     private static final int CMD_CUSTOM = 99;
     private static final int BACKGROUND_MODE_NORMAL = 0;
     private static final String CUSTOM_EVENT_FORCE_DIRTY = "ForceDirty";
+    private static final long SENSOR_REGISTER_DELAY_MS = 10L;
+    private static final long SENSOR_LOG_INTERVAL_MS = 1000L;
 
+    private final Context context;
+    private final boolean gyroEnabled;
+    private final AudioManager audioManager;
+    private final SensorManager sensorManager;
+    private final Sensor accelerometer;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int lockSound;
@@ -46,6 +61,8 @@ public class ColourDropletEffectView extends FrameLayout
     private Method handleCustomEvent;
     private Method clearScreen;
     private Method removeEffect;
+    private Object sensorJniRenderer;
+    private Method nativeOnSensorEvent;
     private Bitmap normalResourceBitmap;
     private Bitmap edgeDensityResourceBitmap;
     private Bitmap backgroundBitmap;
@@ -57,7 +74,9 @@ public class ColourDropletEffectView extends FrameLayout
     private boolean destroyed;
     private boolean gestureActive;
     private boolean nativeScreenOn;
+    private boolean accelerometerRegistered;
     private long downTime;
+    private long lastSensorLogAt;
     private float lastX;
     private float lastY;
     private final Runnable forceDirtyRunnable = new Runnable() {
@@ -66,9 +85,28 @@ public class ColourDropletEffectView extends FrameLayout
             sendForceDirtyCommand();
         }
     };
+    private final Runnable registerAccelerometerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            registerAccelerometer();
+        }
+    };
 
     public ColourDropletEffectView(Context context) {
+        this(context, false);
+    }
+
+    public ColourDropletEffectView(Context context, boolean gyroEnabled) {
         super(context);
+        this.context = context.getApplicationContext();
+        this.gyroEnabled = gyroEnabled;
+        audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
+        sensorManager = gyroEnabled
+                ? (SensorManager) this.context.getSystemService(Context.SENSOR_SERVICE)
+                : null;
+        accelerometer = !gyroEnabled || sensorManager == null
+                ? null
+                : sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         long startedAt = SystemClock.uptimeMillis();
         setWillNotDraw(false);
         setClipChildren(false);
@@ -77,7 +115,7 @@ public class ColourDropletEffectView extends FrameLayout
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         soundPool = new SoundPool.Builder()
-                .setMaxStreams(3)
+                .setMaxStreams(10)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -90,7 +128,8 @@ public class ColourDropletEffectView extends FrameLayout
         try {
             createSamsungEffect(context);
             ready = true;
-            Log.i(TAG, "Note5 colour droplet native renderer loaded elapsedMs="
+            Log.i(TAG, "Note5 colour droplet native renderer loaded gyro=" + gyroEnabled
+                    + " elapsedMs="
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
@@ -106,7 +145,9 @@ public class ColourDropletEffectView extends FrameLayout
 
     @Override
     public String effectName() {
-        return "N5 Colored Droplet";
+        return gyroEnabled
+                ? "N5 Colored Droplet + Gyro"
+                : "N5 Colored Droplet";
     }
 
     @Override
@@ -366,6 +407,7 @@ public class ColourDropletEffectView extends FrameLayout
         setEffect.invoke(effectView, SAMSUNG_EFFECT_ID);
         makeTransparent(effectViewAsView);
         init.invoke(effectView, data);
+        resolveNativeSensorBridge();
         post(new Runnable() {
             @Override
             public void run() {
@@ -383,6 +425,29 @@ public class ColourDropletEffectView extends FrameLayout
             field.set(target, value);
         }
         return value;
+    }
+
+    private void resolveNativeSensorBridge() {
+        if (!gyroEnabled || effectView == null) {
+            return;
+        }
+        try {
+            Object samsungEffect = getField(effectView.getClass(), "mView").get(effectView);
+            Object renderer = getField(samsungEffect.getClass(), "mIRenderer").get(samsungEffect);
+            sensorJniRenderer = getField(renderer.getClass(), "mIJniRenderer").get(renderer);
+            nativeOnSensorEvent = sensorJniRenderer.getClass().getMethod(
+                    "onSensorEvent",
+                    int.class,
+                    float.class,
+                    float.class,
+                    float.class);
+            Log.i(TAG, "colour droplet gyro JNI bridge ready renderer="
+                    + renderer.getClass().getSimpleName());
+        } catch (Throwable t) {
+            sensorJniRenderer = null;
+            nativeOnSensorEvent = null;
+            Log.w(TAG, "colour droplet gyro bridge unavailable", t);
+        }
     }
 
     private Field getField(Class<?> owner, String fieldName) throws Exception {
@@ -545,6 +610,10 @@ public class ColourDropletEffectView extends FrameLayout
         try {
             handleCustomEvent.invoke(effectView, CMD_SCREEN_ON, new HashMap<String, Object>());
             nativeScreenOn = true;
+            if (gyroEnabled) {
+                removeCallbacks(registerAccelerometerRunnable);
+                postDelayed(registerAccelerometerRunnable, SENSOR_REGISTER_DELAY_MS);
+            }
             Log.i(TAG, "colour droplet screen-on sent elapsedMs="
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
@@ -553,6 +622,8 @@ public class ColourDropletEffectView extends FrameLayout
     }
 
     private void sendScreenTurnedOffCommand() {
+        removeCallbacks(registerAccelerometerRunnable);
+        unregisterAccelerometer();
         if (!canRender() || handleCustomEvent == null) {
             return;
         }
@@ -593,6 +664,8 @@ public class ColourDropletEffectView extends FrameLayout
     }
 
     private void cleanupSamsungState() {
+        removeCallbacks(registerAccelerometerRunnable);
+        unregisterAccelerometer();
         ready = false;
         nativeScreenOn = false;
         gestureActive = false;
@@ -603,6 +676,100 @@ public class ColourDropletEffectView extends FrameLayout
         handleCustomEvent = null;
         clearScreen = null;
         removeEffect = null;
+        sensorJniRenderer = null;
+        nativeOnSensorEvent = null;
+    }
+
+    private void registerAccelerometer() {
+        if (!gyroEnabled
+                || destroyed
+                || !nativeScreenOn
+                || accelerometerRegistered
+                || sensorManager == null
+                || accelerometer == null
+                || sensorJniRenderer == null
+                || nativeOnSensorEvent == null) {
+            return;
+        }
+        accelerometerRegistered = sensorManager.registerListener(
+                this,
+                accelerometer,
+                SensorManager.SENSOR_DELAY_GAME);
+        Log.i(TAG, "colour droplet gyro registered="
+                + accelerometerRegistered);
+    }
+
+    private void unregisterAccelerometer() {
+        if (!accelerometerRegistered || sensorManager == null) {
+            return;
+        }
+        sensorManager.unregisterListener(this);
+        accelerometerRegistered = false;
+        Log.i(TAG, "colour droplet gyro unregistered");
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (!accelerometerRegistered
+                || event == null
+                || event.sensor == null
+                || event.values == null
+                || event.values.length < 3
+                || sensorJniRenderer == null
+                || nativeOnSensorEvent == null) {
+            return;
+        }
+        float x = clampSensor(event.values[0]);
+        float y = clampSensor(event.values[1]);
+        float z = event.values[2];
+        float rotatedX = x;
+        float rotatedY = y;
+        WindowManager windowManager =
+                (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        int rotation = windowManager == null
+                ? Surface.ROTATION_0
+                : windowManager.getDefaultDisplay().getRotation();
+        if (rotation == Surface.ROTATION_90) {
+            rotatedX = -y;
+            rotatedY = x;
+        } else if (rotation == Surface.ROTATION_180) {
+            rotatedX = -x;
+            rotatedY = -y;
+        } else if (rotation == Surface.ROTATION_270) {
+            rotatedX = y;
+            rotatedY = -x;
+        }
+        try {
+            nativeOnSensorEvent.invoke(
+                    sensorJniRenderer,
+                    event.sensor.getType(),
+                    rotatedX,
+                    rotatedY,
+                    z);
+            long now = SystemClock.uptimeMillis();
+            if (now - lastSensorLogAt >= SENSOR_LOG_INTERVAL_MS) {
+                lastSensorLogAt = now;
+                Log.i(TAG, "colour droplet gyro sample x="
+                        + roundSensor(rotatedX)
+                        + " y=" + roundSensor(rotatedY)
+                        + " z=" + roundSensor(z));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "colour droplet gyro forwarding failed", t);
+            unregisterAccelerometer();
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+    }
+
+    private float clampSensor(float value) {
+        return Math.max(-10f, Math.min(10f, value));
+    }
+
+    private float roundSensor(float value) {
+        return Math.round(value * 100f) / 100f;
     }
 
     private Rect safeRect(Rect rect) {
@@ -653,9 +820,22 @@ public class ColourDropletEffectView extends FrameLayout
     }
 
     private void play(int soundId) {
-        if (!destroyed && soundId != 0) {
+        if (!destroyed && soundId != 0 && canPlayEffectSound()) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
+    }
+
+    private boolean canPlayEffectSound() {
+        try {
+            if (Settings.System.getInt(context.getContentResolver(),
+                    "lockscreen_sounds_enabled", 1) == 0) {
+                return false;
+            }
+        } catch (RuntimeException ignored) {
+            // Match Samsung's permissive behavior when the setting cannot be queried.
+        }
+        return audioManager != null
+                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
     }
 
     private void recycle(Bitmap bitmap) {

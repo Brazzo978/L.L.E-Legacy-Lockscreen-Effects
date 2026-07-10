@@ -169,6 +169,26 @@ Samsung passa il wallpaper tramite `getCurrentWallpaper`, mentre l'app passa
 uno screenshot lockscreen per poter lavorare fuori da SystemUI. Per questo la
 rifrazione puo includere clock/testi se sono presenti nello screenshot.
 
+Il wrapper audio replica i parametri SystemUI originali: `SoundPool` da 10
+stream e riproduzione subordinata a `lockscreen_sounds_enabled` e al volume
+dello stream di sistema. L'handoff verso il PIN conserva i 400 ms Samsung
+includendo i 60 ms necessari a rimuovere l'overlay prima del gesto di
+accessibilita.
+
+## Variante accelerometro
+
+Il native conserva una funzione non collegata dal renderer TV Samsung:
+`SPColourDropletApp::onEventSensor`. La funzione converte l'inclinazione nei
+campi di accelerazione SPH con fattori `-x * 0.01` e `-y * 0.015`; il flag
+interno che abilita questo calcolo e gia attivo nel costruttore originale.
+
+Il picker espone il bridge come effetto separato `N5 Colored Droplet + Gyro`,
+mentre `N5 Colored Droplet` non registra alcun sensore. La variante usa un bridge
+riflessivo verso `JniColourDropletRenderer.onSensorEvent()`. Registra
+l'accelerometro con `SENSOR_DELAY_GAME`, applica clamp `[-10, 10]` e rotazione
+display identici a `SPhysicsRenderer_TV`, e si disiscrive allo screen-off. Il
+dex Samsung e la libreria nativa non vengono modificati.
+
 ## Stabilita 2026-07-06
 
 Come Sparkling Bubbles, Colour Droplet usa `SPhysicsEffect_TV` e puo cadere se il

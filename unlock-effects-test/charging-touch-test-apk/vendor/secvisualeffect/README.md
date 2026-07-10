@@ -15,5 +15,13 @@ The hybrid wrapper is retained instead of copying the full S5 `ParticleSpaceEffe
 because the latter owns and draws an opaque wallpaper `ImageView`; LLE must use the
 bitmap only as an invisible colour map over the real lockscreen.
 
+Transparent LockBG lifecycle patches:
+
+- clear the GLES colour buffer to transparent before every native LockBG frame;
+- when the native animation reports completion, clear once more before switching to
+  `RENDERMODE_WHEN_DIRTY`. Samsung's opaque wallpaper pass used to overwrite that
+  final frame; without the extra clear, released Abstract Tiles could remain frozen
+  on LLE's transparent Surface until the next gesture.
+
 Patched dex SHA-256:
-`954337D39687E982D7647CB84F0589186B0B7637733D15BBEC816142AD239E41`
+`206265D2719C5223E57412871B2B778DC56A088300B52B1FEDEB548BFB7EEDB0`

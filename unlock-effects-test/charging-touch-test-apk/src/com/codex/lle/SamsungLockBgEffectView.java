@@ -4,13 +4,13 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -30,12 +30,17 @@ public class SamsungLockBgEffectView extends FrameLayout
     private static final int CMD_UNLOCK = 2;
     private static final int SAMSUNG_ABSTRACT_TILES = 0;
     private static final int SAMSUNG_GEOMETRIC_MOSAIC = 1;
-    private static final float ABSTRACT_BACKGROUND_GAIN = 0.25f;
+    private static final float ABSTRACT_BACKGROUND_GAIN = 1.0f;
     private static final float GEOMETRIC_BACKGROUND_GAIN = 1.0f;
+    private static final long DRAG_SOUND_LONG_PRESS_MS = 411L;
+    private static final long DRAG_SOUND_FADE_STEP_MS = 10L;
+    private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
+    private static final float DRAG_SOUND_UNLOCK_FADE_STEP = 0.059f;
 
     private final int samsungEffectId;
     private final String effectName;
     private final float backgroundGain;
+    private final AudioManager audioManager;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int dragSound;
@@ -60,9 +65,16 @@ public class SamsungLockBgEffectView extends FrameLayout
     private float downY;
     private float lastX;
     private float lastY;
-    private float lastDragSoundX;
-    private float lastDragSoundY;
-    private float dragSoundDistance;
+    private int dragSoundStreamId;
+    private float dragSoundVolume = 1f;
+    private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
+    private boolean dragSoundFading;
+    private final Runnable dragSoundFadeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            stepDragSoundFade();
+        }
+    };
 
     public static SamsungLockBgEffectView abstractTiles(Context context) {
         return new SamsungLockBgEffectView(
@@ -87,6 +99,8 @@ public class SamsungLockBgEffectView extends FrameLayout
         samsungEffectId = effectId;
         effectName = name;
         backgroundGain = bgGain;
+        audioManager = (AudioManager) context.getApplicationContext()
+                .getSystemService(Context.AUDIO_SERVICE);
         setWillNotDraw(false);
         setClipChildren(false);
         setClipToPadding(false);
@@ -95,7 +109,7 @@ public class SamsungLockBgEffectView extends FrameLayout
 
         long soundStartedAt = SystemClock.uptimeMillis();
         soundPool = new SoundPool.Builder()
-                .setMaxStreams(3)
+                .setMaxStreams(10)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -143,10 +157,10 @@ public class SamsungLockBgEffectView extends FrameLayout
         downY = screenY;
         lastX = screenX;
         lastY = screenY;
-        lastDragSoundX = screenX;
-        lastDragSoundY = screenY;
-        dragSoundDistance = 0f;
-        play(tapSound);
+        stopDragSoundImmediately();
+        dragSoundVolume = 1f;
+        dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
+        playOneShot(tapSound);
         forwardTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
         Log.i(TAG, effectName + " begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY)
@@ -159,7 +173,7 @@ public class SamsungLockBgEffectView extends FrameLayout
             beginGesture(screenX, screenY);
             return;
         }
-        maybePlayDragSound(screenX, screenY);
+        maybeStartDragSound();
         lastX = screenX;
         lastY = screenY;
         forwardTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
@@ -172,9 +186,12 @@ public class SamsungLockBgEffectView extends FrameLayout
         }
         gestureActive = false;
         forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
+        fadeOutDragSound(completed
+                ? DRAG_SOUND_UNLOCK_FADE_STEP
+                : DRAG_SOUND_RELEASE_FADE_STEP);
         if (completed) {
             sendUnlockCommand();
-            play(unlockSound);
+            playOneShot(unlockSound);
         }
         Log.i(TAG, effectName + " finish completed=" + completed
                 + " from=" + Math.round(downX) + "," + Math.round(downY)
@@ -188,6 +205,7 @@ public class SamsungLockBgEffectView extends FrameLayout
         }
         gestureActive = false;
         forwardTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
+        fadeOutDragSound(DRAG_SOUND_RELEASE_FADE_STEP);
         Log.i(TAG, effectName + " cancel");
     }
 
@@ -220,7 +238,23 @@ public class SamsungLockBgEffectView extends FrameLayout
 
     @Override
     public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
-        Log.i(TAG, effectName + " affordance skipped");
+        if (!canRender()) {
+            return;
+        }
+        sendBackgroundBitmap();
+        Rect rect = safeRect(screenRect);
+        try {
+            HashMap<String, Object> params = new HashMap<String, Object>();
+            params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
+            params.put("Rect", rect);
+            handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
+            Log.i(TAG, effectName + " affordance sent delayMs="
+                    + Math.max(0L, startDelayMs)
+                    + " rect=" + rect.left + "," + rect.top + ","
+                    + rect.right + "," + rect.bottom);
+        } catch (Throwable t) {
+            Log.d(TAG, "affordance command ignored", t);
+        }
     }
 
     @Override
@@ -258,6 +292,8 @@ public class SamsungLockBgEffectView extends FrameLayout
         }
         resetEffect();
         destroyed = true;
+        removeCallbacks(dragSoundFadeRunnable);
+        stopDragSoundImmediately();
         soundPool.release();
         SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
@@ -464,6 +500,11 @@ public class SamsungLockBgEffectView extends FrameLayout
     }
 
     private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
+        if (source.getWidth() == width
+                && source.getHeight() == height
+                && backgroundGain == 1f) {
+            return source.copy(Bitmap.Config.ARGB_8888, false);
+        }
         Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         float srcRatio = source.getWidth() / (float) source.getHeight();
         float dstRatio = width / (float) height;
@@ -483,12 +524,6 @@ public class SamsungLockBgEffectView extends FrameLayout
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
                 | Paint.FILTER_BITMAP_FLAG
                 | Paint.DITHER_FLAG);
-        paint.setColorFilter(new ColorMatrixColorFilter(new ColorMatrix(new float[] {
-                backgroundGain, 0f, 0f, 0f, 0f,
-                0f, backgroundGain, 0f, 0f, 0f,
-                0f, 0f, backgroundGain, 0f, 0f,
-                0f, 0f, 0f, 1f, 0f
-        })));
         canvas.drawBitmap(source, src, new Rect(0, 0, width, height), paint);
         return out;
     }
@@ -527,21 +562,56 @@ public class SamsungLockBgEffectView extends FrameLayout
         }
     }
 
-    private void maybePlayDragSound(float screenX, float screenY) {
-        float dx = screenX - lastDragSoundX;
-        float dy = screenY - lastDragSoundY;
-        dragSoundDistance += (float) Math.sqrt(dx * dx + dy * dy);
-        lastDragSoundX = screenX;
-        lastDragSoundY = screenY;
-        if (dragSoundDistance >= dragSoundThreshold()) {
-            play(dragSound);
-            dragSoundDistance = 0f;
+    private void maybeStartDragSound() {
+        if (dragSoundStreamId != 0
+                || downTime <= 0L
+                || SystemClock.uptimeMillis() - downTime <= DRAG_SOUND_LONG_PRESS_MS
+                || !canPlaySound()) {
+            return;
         }
+        dragSoundVolume = 1f;
+        dragSoundFading = false;
+        removeCallbacks(dragSoundFadeRunnable);
+        dragSoundStreamId = soundPool.play(
+                dragSound,
+                dragSoundVolume,
+                dragSoundVolume,
+                0,
+                -1,
+                1f);
+        Log.i(TAG, effectName + " drag sound loop started stream=" + dragSoundStreamId);
     }
 
-    private float dragSoundThreshold() {
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
-        return Math.max(dp(72), Math.min(metrics.widthPixels, metrics.heightPixels) * 0.2f);
+    private void fadeOutDragSound(float fadeStep) {
+        if (dragSoundStreamId == 0) {
+            return;
+        }
+        dragSoundFadeStep = fadeStep;
+        dragSoundFading = true;
+        removeCallbacks(dragSoundFadeRunnable);
+        post(dragSoundFadeRunnable);
+    }
+
+    private void stepDragSoundFade() {
+        if (!dragSoundFading || dragSoundStreamId == 0 || destroyed) {
+            return;
+        }
+        dragSoundVolume = Math.max(0f, dragSoundVolume - dragSoundFadeStep);
+        soundPool.setVolume(dragSoundStreamId, dragSoundVolume, dragSoundVolume);
+        if (dragSoundVolume > 0f) {
+            postDelayed(dragSoundFadeRunnable, DRAG_SOUND_FADE_STEP_MS);
+            return;
+        }
+        stopDragSoundImmediately();
+    }
+
+    private void stopDragSoundImmediately() {
+        removeCallbacks(dragSoundFadeRunnable);
+        dragSoundFading = false;
+        if (dragSoundStreamId != 0) {
+            soundPool.stop(dragSoundStreamId);
+            dragSoundStreamId = 0;
+        }
     }
 
     private Rect safeRect(Rect rect) {
@@ -606,14 +676,19 @@ public class SamsungLockBgEffectView extends FrameLayout
         return Math.max(1, metrics.heightPixels);
     }
 
-    private void play(int soundId) {
-        if (!destroyed && soundId != 0) {
+    private void playOneShot(int soundId) {
+        if (!destroyed && soundId != 0 && canPlaySound()) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    private boolean canPlaySound() {
+        if (Settings.System.getInt(getContext().getContentResolver(),
+                "lockscreen_sounds_enabled", 1) == 0) {
+            return false;
+        }
+        return audioManager == null
+                || audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
     }
 
     private void recycle(Bitmap bitmap) {

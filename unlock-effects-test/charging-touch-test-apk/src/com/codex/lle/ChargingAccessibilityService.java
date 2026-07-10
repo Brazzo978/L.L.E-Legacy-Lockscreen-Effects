@@ -65,7 +65,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_MS = 400L;
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 300L;
     private static final long PIN_ENTRY_DELAY_WATERCOLOUR_MS = 250L;
-    private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 60L;
+    // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
+    private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 340L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
     private static final long PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS = 340L;
     private static final long PIN_ENTRY_DELAY_SEASONAL_UNLOCK_MS = 300L;
@@ -440,6 +441,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + " locked=" + isLockscreenLocked(false));
                 unlockAffordancePending = false;
                 unlockAffordanceShownThisWake = false;
+                handler.removeCallbacks(unlockEffectIdleHideRunnable);
                 lastScreenOnAt = 0L;
                 stopLockscreenSessionPolling();
                 clearBlockedSurfaceState();
@@ -452,6 +454,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 interactiveSessionWasUnlocked = true;
                 unlockAffordancePending = false;
                 unlockAffordanceShownThisWake = false;
+                handler.removeCallbacks(unlockEffectIdleHideRunnable);
                 seasonalUnlockSurfaceHoldUntil = 0L;
                 suppressUnlockFxAfterDoodleDisconnect = false;
                 stopLockscreenSessionPolling();
@@ -856,7 +859,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
         };
         unlockEffectBenchmarkCsv = new StringBuilder(RuntimeMemoryStats.csvHeader());
         OverlayPrefs.get(this).edit()
@@ -998,6 +1002,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
@@ -1251,7 +1256,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         long startedAt = SystemClock.uptimeMillis();
         unlockTouchCachedWhileScreenOff = shouldPrearmUnlockEffectForScreenOff();
         unlockAffordanceShownThisWake = false;
-        if (unlockEffectRenderer != null) {
+        if (unlockEffectRenderer != null && unlockEffectOverlayAttached) {
             unlockEffectRenderer.resetEffect();
         }
         if (unlockTouchCachedWhileScreenOff) {
@@ -1323,6 +1328,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         return effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
     }
 
@@ -1370,9 +1376,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean shouldParkUnlockEffectOverlayWhenIdle() {
-        return !unlockEffectGestureActive
-                && (isSamsungLockBgEffect(OverlayPrefs.unlockEffect(this))
-                || isSamsungLockBgEffect(unlockEffectRendererType));
+        // The patched LockBG renderer has no fullscreen background pass and naturally
+        // switches itself to RENDERMODE_WHEN_DIRTY. Keeping its Surface visible while the
+        // lockscreen is active avoids first-touch cold starts and matches Samsung SystemUI.
+        return false;
     }
 
     private void markUnlockEffectRendererStale(String reason) {
@@ -1645,7 +1652,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockAffordanceShownThisWake = false;
             }
             boolean parkFxIdle = shouldParkUnlockEffectOverlayWhenIdle();
-            if (!parkFxIdle && !unlockAffordancePending && !unlockAffordanceShownThisWake) {
+            if (!unlockAffordancePending && !unlockAffordanceShownThisWake) {
                 unlockAffordancePending = true;
                 Log.i(TAG, "unlock affordance armed from visible lockscreen reason=" + reason
                         + " cached=" + unlockTouchCachedWhileScreenOff);
@@ -2049,7 +2056,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
                 unlockEffectRenderer = new WatercolorEffectView(this);
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
-                unlockEffectRenderer = new ColourDropletEffectView(this);
+                unlockEffectRenderer = new ColourDropletEffectView(this, false);
+            } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO) {
+                unlockEffectRenderer = new ColourDropletEffectView(this, true);
             } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
                 unlockEffectRenderer = new SparklingBubblesEffectView(this);
             } else {
@@ -2144,15 +2153,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " effect=" + OverlayPrefs.unlockEffect(this));
             return;
         }
-        if (shouldParkUnlockEffectOverlayWhenIdle()) {
-            unlockAffordancePending = false;
-            unlockAffordanceShownThisWake = true;
-            parkUnlockEffectOverlayForIdle();
-            Log.i(TAG, "unlock affordance skipped for idle-hidden lockbg effect="
-                    + OverlayPrefs.unlockEffect(this)
-                    + " reason=" + reason);
-            return;
-        }
         if (unlockEffectRenderer == null
                 || unlockEffectView == null
                 || !unlockEffectOverlayAttached
@@ -2190,7 +2190,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
-        if (unlockEffectRendererType == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+        if (OverlayPrefs.isColourDropletEffect(unlockEffectRendererType)
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
@@ -2283,7 +2283,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         colorScreenshotAttemptedThisSession = true;
         colorScreenshotInFlight = true;
         unlockEffectBackgroundCaptureAttempts++;
-        if ((captureEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+        if ((OverlayPrefs.isColourDropletEffect(captureEffect)
                 || captureEffect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES)
                 && unlockEffectRenderer != null) {
             unlockEffectRenderer.resetEffect();
@@ -2730,7 +2730,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
             minScreenOnMs = S4_LOCKBG_SCREENSHOT_MIN_SCREEN_ON_MS;
-        } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+        } else if (OverlayPrefs.isColourDropletEffect(effect)) {
             minScreenOnMs = COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS;
         } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
             minScreenOnMs = SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS;
@@ -2866,6 +2866,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             long decodeStartedAt = SystemClock.uptimeMillis();
             if (memoryCacheHit) {
                 bitmap = cachedUnlockEffectBackgroundBitmap;
+                cachedUnlockEffectBackgroundEffect = effect;
             } else {
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inPreferredConfig = Bitmap.Config.ARGB_8888;
@@ -2930,6 +2931,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
@@ -2959,6 +2961,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
@@ -3027,7 +3030,6 @@ public class ChargingAccessibilityService extends AccessibilityService
             long fileModified) {
         return cachedUnlockEffectBackgroundBitmap != null
                 && !cachedUnlockEffectBackgroundBitmap.isRecycled()
-                && cachedUnlockEffectBackgroundEffect == effect
                 && cachedUnlockEffectBackgroundFileLength == fileLength
                 && cachedUnlockEffectBackgroundFileModified == fileModified;
     }
@@ -3391,6 +3393,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
@@ -3450,6 +3453,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
@@ -3705,18 +3709,20 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void removeUnlockEffectOverlay(boolean destroyingRenderer) {
         stopDebugLensLoop();
-        if (unlockEffectRenderer != null) {
-            unlockEffectRenderer.resetEffect();
-        }
         boolean removed = false;
         int removedType = unlockEffectRendererType;
         if (!destroyingRenderer
                 && unlockEffectOverlayAttached
                 && shouldKeepNativePhysicsOverlayAttachedDuringHide(removedType)) {
-            parkNativePhysicsRendererState(unlockEffectRenderer);
-            hideUnlockEffectView(unlockEffectView);
+            if (!unlockEffectOverlayParked) {
+                parkNativePhysicsRendererState(unlockEffectRenderer);
+                hideUnlockEffectView(unlockEffectView);
+            }
             Log.i(TAG, "native physics overlay kept attached while hidden type=" + removedType);
             return;
+        }
+        if (unlockEffectRenderer != null && unlockEffectOverlayAttached) {
+            unlockEffectRenderer.resetEffect();
         }
         if (unlockEffectOverlayAttached && unlockEffectView != null) {
             try {
@@ -4541,7 +4547,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
             return PIN_ENTRY_DELAY_WATERCOLOUR_MS;
         }
-        if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+        if (OverlayPrefs.isColourDropletEffect(effect)) {
             return PIN_ENTRY_DELAY_COLOUR_DROPLET_MS;
         }
         if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
@@ -4610,7 +4616,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
             return PIN_ENTRY_EFFECT_CLEANUP_DELAY_LOCKBG_MS;
         }
-        if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+        if (OverlayPrefs.isColourDropletEffect(effect)) {
             return PIN_ENTRY_EFFECT_CLEANUP_DELAY_COLOUR_DROPLET_MS;
         }
         if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {

@@ -79,6 +79,8 @@ final class OverlayPrefs {
     static final int EFFECT_S4_RIPPLE = 6;
     static final int EFFECT_S4_ABSTRACT_TILES = 7;
     static final int EFFECT_S4_GEOMETRIC_MOSAIC = 8;
+    static final int EFFECT_N5_COLOUR_DROPLET_GYRO = 9;
+    static final int EFFECT_COUNT = 10;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -183,7 +185,8 @@ final class OverlayPrefs {
                 && effect != EFFECT_N5_SPARKLING_BUBBLES
                 && effect != EFFECT_S4_RIPPLE
                 && effect != EFFECT_S4_ABSTRACT_TILES
-                && effect != EFFECT_S4_GEOMETRIC_MOSAIC) {
+                && effect != EFFECT_S4_GEOMETRIC_MOSAIC
+                && effect != EFFECT_N5_COLOUR_DROPLET_GYRO) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
@@ -201,6 +204,8 @@ final class OverlayPrefs {
                 return "N4 Watercolor WIP";
             case EFFECT_N5_COLOUR_DROPLET:
                 return "N5 Colored Droplet";
+            case EFFECT_N5_COLOUR_DROPLET_GYRO:
+                return "N5 Colored Droplet + Gyro";
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return "N5 Sparkling Bubbles";
             case EFFECT_S4_RIPPLE:
@@ -212,6 +217,11 @@ final class OverlayPrefs {
             default:
                 return "Unknown effect " + effect;
         }
+    }
+
+    static boolean isColourDropletEffect(int effect) {
+        return effect == EFFECT_N5_COLOUR_DROPLET
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO;
     }
 
     static boolean effectBackgroundAutoRefreshEnabled(Context context) {
