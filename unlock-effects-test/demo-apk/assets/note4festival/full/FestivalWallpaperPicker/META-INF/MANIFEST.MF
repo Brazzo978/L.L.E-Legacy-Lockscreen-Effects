@@ -1,0 +1,68 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: res/drawable/ic_drawer.png
+SHA1-Digest: i5kg+QsxeyuVW4uAr5R4Spk38uU=
+
+Name: res/drawable-xxxhdpi-v4/leaf_01.qmg
+SHA1-Digest: fk0iduNxh04ycuVH5Ha9Qir3PF0=
+
+Name: res/drawable-xxxhdpi-v4/leaf_02.qmg
+SHA1-Digest: iEAa+LmlVSNaHLJQ0HU16STQUgo=
+
+Name: res/drawable-xxxhdpi-v4/rainline.qmg
+SHA1-Digest: dA4fIWmATLXxpzqST4UChMZdwDU=
+
+Name: res/drawable-xxxhdpi-v4/flower_01.qmg
+SHA1-Digest: TAjbgxUz1B7VvUClFXcRLhugXIQ=
+
+Name: resources.arsc
+SHA1-Digest: 8QfQxA+gOBeXHg8AoHbXxJW7QjM=
+
+Name: res/layout/festival_wallpaper_list.xml
+SHA1-Digest: yz2g6b1wOKHymvdk4dHLfAXwYNc=
+
+Name: res/drawable/action_bar_icon_drawer.png
+SHA1-Digest: XlaKZ+3ymxwaNdQKlimo5i9EWYo=
+
+Name: res/drawable-xxxhdpi-v4/leaf_03.png
+SHA1-Digest: DJE10Q/RuagPg2BxLOpRY0rKNpE=
+
+Name: res/layout/activity_xml_preview_main.xml
+SHA1-Digest: XsBY7R2KgAFI00mMZsTyhpc/9/I=
+
+Name: res/drawable-xxxhdpi-v4/flower_03.qmg
+SHA1-Digest: gC/p4bFs7ubAsLNg5DdXMVNuQf4=
+
+Name: res/menu/main.xml
+SHA1-Digest: vYxQL7UdBmHO6nHAmgPBlCCX4YA=
+
+Name: res/drawable/gridview_selector.xml
+SHA1-Digest: AqiXoCzk/OHqochGN5oed1+dRaU=
+
+Name: AndroidManifest.xml
+SHA1-Digest: 94NtVeTkeoB/Hto/cJ+eK//foFA=
+
+Name: res/drawable-xxxhdpi-v4/flower_02.qmg
+SHA1-Digest: jkrqAQwlzVGLr72JeGRcag6cl5w=
+
+Name: res/drawable/ic_launcher.png
+SHA1-Digest: GVIfdEOBv4gEny2T1jDhGGsZOBo=
+
+Name: res/drawable-xxxhdpi-v4/leaf_04.qmg
+SHA1-Digest: v+h1aIVe1Ju6oOax8zGQNNQwD4o=
+
+Name: res/drawable/drawer_shadow.9.png
+SHA1-Digest: EsKSLercRrtXafxDH8shTAW5WIA=
+
+Name: res/drawable-xxxhdpi-v4/action_bar_icon_drawer.png
+SHA1-Digest: XlaKZ+3ymxwaNdQKlimo5i9EWYo=
+
+Name: res/layout/activity_main.xml
+SHA1-Digest: TmZ15jLQuwZONA63TSTKOQ77tOQ=
+
+Name: res/drawable/gallery_actionbar_selected_bg.9.png
+SHA1-Digest: xKVkMk8xYy76eX8IAztqMHE3SH8=
+
+Name: res/drawable-xxxhdpi-v4/tw_drawer_bg_holo_light.9.png
+SHA1-Digest: Z0UZupSxR0/tm5c8p7MKMzlx8lo=

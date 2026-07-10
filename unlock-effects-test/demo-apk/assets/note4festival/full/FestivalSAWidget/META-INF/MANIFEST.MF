@@ -1,0 +1,59 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: res/drawable/fw_service_icon_rastaurant.qmg
+SHA1-Digest: WwSNPv5+S9KSsF3udp0KUZcTnRA=
+
+Name: res/drawable/widget_image.qmg
+SHA1-Digest: wJYHfHMsfP2Dk2c1kATNpIAMRzM=
+
+Name: res/layout/festival_sa_widget.xml
+SHA1-Digest: NyQr+qDXDWEDVlXRIR7J56DB6Lw=
+
+Name: res/drawable/fw_service_icon_travel.qmg
+SHA1-Digest: GKaUaIMc6HCECVWII2DFPRlGXt0=
+
+Name: res/drawable/gradient.xml
+SHA1-Digest: kDeNT+74oB0p34wdnhkcwtZPojs=
+
+Name: resources.arsc
+SHA1-Digest: jFutk5unc1W0z0ba41exY55Hm0g=
+
+Name: res/drawable/fw_service_icon_movies.qmg
+SHA1-Digest: ecF+Clf2Ue2+6F50bSxLPCSDCus=
+
+Name: res/drawable/fw_service_icon_shopping.qmg
+SHA1-Digest: C3qZBo35POKtegYfsAp0M9cvE10=
+
+Name: res/menu/main.xml
+SHA1-Digest: XSxGp8aZSv1RF13x7DIpkA2S82I=
+
+Name: res/menu/festival_dialog.xml
+SHA1-Digest: XSxGp8aZSv1RF13x7DIpkA2S82I=
+
+Name: AndroidManifest.xml
+SHA1-Digest: sLIQgY5LqIrLBJsuqbb0EwuJ9Rg=
+
+Name: res/drawable/fw_service_bg.9.png
+SHA1-Digest: zWeCk5YcrkNHy+XAq4cuT+2Yfwo=
+
+Name: res/drawable/fw_service_bg_click.xml
+SHA1-Digest: jl8DGT9Mjtckin+IwHQUwzjE/c0=
+
+Name: res/drawable/sa_icon.qmg
+SHA1-Digest: jTRadgkkVnocZAslRJyzah9VAYM=
+
+Name: res/xml/festival_sa_widget_info.xml
+SHA1-Digest: elc6pXgQ2BiJOF9Jirfv+0Mci8E=
+
+Name: res/drawable-xhdpi-v4/ic_launcher.png
+SHA1-Digest: UCzYT6RE8m1+z99KNVBkhnl38jY=
+
+Name: res/drawable/fw_service_icon_event.qmg
+SHA1-Digest: IyH8YCASgmQUL2h9S/Dz/9cl+BE=
+
+Name: res/menu/festival_sadialog.xml
+SHA1-Digest: XSxGp8aZSv1RF13x7DIpkA2S82I=
+
+Name: res/layout/activity_festival_sadialog.xml
+SHA1-Digest: d7tArmXR2A3c7F3N8Qn/nPefimY=

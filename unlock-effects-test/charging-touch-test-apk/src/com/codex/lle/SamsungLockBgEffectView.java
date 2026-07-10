@@ -76,7 +76,7 @@ public class SamsungLockBgEffectView extends FrameLayout
         return new SamsungLockBgEffectView(
                 context,
                 SAMSUNG_GEOMETRIC_MOSAIC,
-                "NE Geometric Mosaic",
+                "N4 Geometric Mosaic",
                 GEOMETRIC_BACKGROUND_GAIN);
     }
 
@@ -212,8 +212,10 @@ public class SamsungLockBgEffectView extends FrameLayout
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
         makeTransparent(effectViewAsView);
-        Log.i(TAG, effectName + " warmed elapsedMs="
-                + (SystemClock.uptimeMillis() - startedAt));
+        long elapsedMs = SystemClock.uptimeMillis() - startedAt;
+        if (elapsedMs >= 4L) {
+            Log.i(TAG, effectName + " warmed elapsedMs=" + elapsedMs);
+        }
     }
 
     @Override

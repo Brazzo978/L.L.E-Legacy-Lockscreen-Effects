@@ -3,20 +3,30 @@ package com.codex.lle;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
+import android.graphics.RenderEffect;
+import android.graphics.RuntimeShader;
+import android.graphics.Shader;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import java.util.Random;
 
-public class LensFlareEffectView extends View implements UnlockEffectRenderer {
+public class LensFlareEffectView extends FrameLayout
+        implements UnlockEffectRenderer, BackgroundSourceRenderer {
     private static final String TAG = "ChargingS4LensFlare";
     private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
     private static final long FOG_ON_DURATION_MS = 100L;
@@ -34,8 +44,29 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private static final float BASE_SCREEN_WIDTH_PX = 1080f;
     private static final int TAP_HEXAGON_TOTAL = 5;
     private static final int DRAG_HEXAGON_TOTAL = 6;
+    private static final String ADDITIVE_COMPOSITE_SHADER =
+            "uniform shader flare;"
+            + "uniform shader background;"
+            + "uniform shader vignette;"
+            + "uniform float vignetteAlpha;"
+            + "half4 main(float2 p) {"
+            + "  half4 f = flare.eval(p);"
+            + "  half4 b = background.eval(p);"
+            + "  half mask = clamp(vignette.eval(p).a * vignetteAlpha, 0.0, 1.0);"
+            + "  half3 base = b.rgb * (1.0 - mask);"
+            + "  half3 target = min(base + f.rgb, half3(1.0));"
+            + "  half3 delta = max(target - base, half3(0.0));"
+            + "  half3 room = max(half3(0.0001), half3(1.0) - base);"
+            + "  half a = clamp(max(max(delta.r / room.r, delta.g / room.g),"
+            + "      delta.b / room.b), 0.0, 1.0);"
+            + "  half3 premul = min(half3(a), delta + base * a);"
+            + "  return half4(premul, a);"
+            + "}";
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
+            | Paint.FILTER_BITMAP_FLAG
+            | Paint.DITHER_FLAG);
+    private final Paint additivePaint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG
             | Paint.DITHER_FLAG);
     private final Matrix matrix = new Matrix();
@@ -52,12 +83,19 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private final float[] tapHexagonRotations = new float[TAP_HEXAGON_TOTAL];
     private final float[] dragHexagonDistance = new float[DRAG_HEXAGON_TOTAL];
     private final float[] dragHexagonScale = new float[DRAG_HEXAGON_TOTAL];
+    private final float[] dragHexagonRotations = new float[DRAG_HEXAGON_TOTAL];
     private final float fingerYOffsetPx;
     private final float maxAlphaDistancePx;
     private final float tapAreaRadiusPx;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
+    private final FlareContentView flareContentView;
+    private Bitmap backgroundBitmap;
+    private String backgroundSource = "none";
+    private RuntimeShader additiveCompositeShader;
+    private BitmapShader backgroundShader;
+    private BitmapShader vignetteShader;
 
     private boolean destroyed;
     private boolean warmUpPending;
@@ -72,6 +110,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     private float fadeY;
     private long gestureStartedAt;
     private long fadeStartedAt;
+    private float fadeFogAnimationValue;
     private float randomRotation;
     private TapAnimation tapAnimation;
     private UnlockAnimation unlockAnimation;
@@ -89,6 +128,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         super(context);
         setWillNotDraw(false);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        additivePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
 
         flareLight = loadDrawable("keyguard_flare_light_00040");
         flareRing = loadDrawable("keyguard_flare_ring");
@@ -113,9 +153,16 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
                 hexagonGreen,
                 hexagonGreen
         };
+        flareContentView = new FlareContentView(context);
+        addView(flareContentView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
         prepareBitmapsForDraw();
         for (int i = 0; i < tapHexagonRotations.length; i++) {
             tapHexagonRotations[i] = random.nextInt(360);
+        }
+        for (int i = 0; i < dragHexagonRotations.length; i++) {
+            dragHexagonRotations[i] = random.nextFloat() * 20f;
         }
 
         float ratio = screenScaleRatio();
@@ -163,6 +210,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         currentX = startX;
         currentY = startY;
         fadeStartedAt = 0L;
+        fadeFogAnimationValue = 0f;
         gestureStartedAt = now;
         randomRotation = random.nextInt(360);
         setHexagonRandomTarget();
@@ -171,7 +219,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         play(tapSound);
         Log.i(TAG, "canvas lens flare begin x=" + Math.round(startX)
                 + " y=" + Math.round(startY));
-        invalidate();
+        invalidateEffect();
     }
 
     @Override
@@ -182,7 +230,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         }
         currentX = screenX;
         currentY = visualY(screenY);
-        invalidate();
+        invalidateEffect();
     }
 
     @Override
@@ -195,7 +243,8 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         fadeX = currentX;
         fadeY = currentY;
         fadeStartedAt = now;
-        fading = !completed;
+        fadeFogAnimationValue = currentFogAnimationValue(now);
+        fading = true;
         if (completed) {
             unlockAnimation = new UnlockAnimation(
                     startX,
@@ -209,7 +258,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         Log.i(TAG, "canvas lens flare finish completed=" + completed
                 + " x=" + Math.round(currentX)
                 + " y=" + Math.round(currentY));
-        invalidate();
+        invalidateEffect();
     }
 
     @Override
@@ -222,8 +271,9 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         fadeX = currentX;
         fadeY = currentY;
         fadeStartedAt = SystemClock.uptimeMillis();
+        fadeFogAnimationValue = currentFogAnimationValue(fadeStartedAt);
         Log.i(TAG, "canvas lens flare cancel");
-        invalidate();
+        invalidateEffect();
     }
 
     @Override
@@ -233,7 +283,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         fading = false;
         tapAnimation = null;
         unlockAnimation = null;
-        invalidate();
+        invalidateEffect();
     }
 
     @Override
@@ -243,7 +293,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         }
         warmUpPending = true;
         if (getWidth() > 0 && getHeight() > 0) {
-            invalidate();
+            invalidateEffect();
         }
     }
 
@@ -263,12 +313,43 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     }
 
     @Override
+    public boolean hasBackgroundSourceBitmap() {
+        return backgroundBitmap != null && !backgroundBitmap.isRecycled();
+    }
+
+    @Override
+    public void setBackgroundSourceBitmap(Bitmap source, String sourceName) {
+        if (destroyed || source == null || source.isRecycled()) {
+            return;
+        }
+        Bitmap next = createCenterCropBitmap(source, getRenderWidth(), getRenderHeight());
+        next.prepareToDraw();
+        recycleBackgroundBitmap();
+        backgroundBitmap = next;
+        backgroundSource = sourceName == null ? "external" : sourceName;
+        configureAdditiveComposite();
+        Log.i(TAG, "lens flare additive background ready source=" + backgroundSource
+                + " size=" + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight()
+                + " shader=" + (additiveCompositeShader != null));
+        invalidateEffect();
+    }
+
+    @Override
+    public void clearBackgroundSourceBitmap() {
+        recycleBackgroundBitmap();
+        backgroundSource = "none";
+        clearAdditiveComposite();
+        invalidateEffect();
+    }
+
+    @Override
     public void destroy() {
         if (destroyed) {
             return;
         }
         resetEffect();
         destroyed = true;
+        clearBackgroundSourceBitmap();
         soundPool.release();
     }
 
@@ -294,13 +375,34 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
+        if (width > 0 && height > 0 && backgroundBitmap != null
+                && !backgroundBitmap.isRecycled()
+                && (backgroundBitmap.getWidth() != width
+                || backgroundBitmap.getHeight() != height)) {
+            Bitmap resized = createCenterCropBitmap(backgroundBitmap, width, height);
+            recycleBackgroundBitmap();
+            backgroundBitmap = resized;
+            backgroundBitmap.prepareToDraw();
+        }
+        configureAdditiveComposite();
         if (warmUpPending && width > 0 && height > 0) {
-            invalidate();
+            invalidateEffect();
         }
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        float vignettingAlpha = currentVignettingAlpha(SystemClock.uptimeMillis());
+        if (vignettingAlpha > 0f) {
+            drawBitmapFitXY(canvas, flareVignetting, vignettingAlpha);
+        }
+        if (additiveCompositeShader != null) {
+            additiveCompositeShader.setFloatUniform("vignetteAlpha", vignettingAlpha);
+        }
+    }
+
+    private void drawFlareFrame(Canvas canvas) {
         long now = SystemClock.uptimeMillis();
         boolean keepAnimating = false;
 
@@ -312,11 +414,13 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         }
 
         if (gestureActive) {
-            drawDragFlare(canvas, now, currentX, currentY, 1f);
+            drawDragFlare(canvas, now, currentX, currentY, 1f,
+                    currentFogAnimationValue(now));
             keepAnimating = true;
         } else if (fading) {
             float t = clamp01((now - fadeStartedAt) / (float) FADE_OUT_DURATION_MS);
-            drawDragFlare(canvas, now, fadeX, fadeY, 1f - t);
+            drawDragFlare(canvas, now, fadeX, fadeY, 1f - t,
+                    fadeFogAnimationValue);
             keepAnimating = t < 1f;
             if (!keepAnimating) {
                 fading = false;
@@ -353,48 +457,42 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         }
 
         if (keepAnimating) {
-            postInvalidateOnAnimation();
+            flareContentView.postInvalidateOnAnimation();
+            LensFlareEffectView.this.postInvalidateOnAnimation();
         }
     }
 
     private void drawWarmUpFrame(Canvas canvas) {
-        drawBitmapCentered(canvas, flareLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareRing, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareParticle, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareLong, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareRainbow, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareHoverLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
-        drawBitmapCentered(canvas, flareVignetting, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareRing, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareParticle, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareLong, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareRainbow, 0.5f, 0.5f, 1f, 0.004f, 0f);
+        drawAdditiveBitmapCentered(canvas, flareHoverLight, 0.5f, 0.5f, 1f, 0.004f, 0f);
         for (int i = 0; i < tapHexagons.length; i++) {
-            drawBitmapCentered(canvas, tapHexagons[i], 0.5f, 0.5f, 1f, 0.004f, 0f);
+            drawAdditiveBitmapCentered(canvas, tapHexagons[i],
+                    0.5f, 0.5f, 1f, 0.004f, 0f);
         }
         for (int i = 0; i < dragHexagons.length; i++) {
-            drawBitmapCentered(canvas, dragHexagons[i], 0.5f, 0.5f, 1f, 0.004f, 0f);
+            drawAdditiveBitmapCentered(canvas, dragHexagons[i],
+                    0.5f, 0.5f, 1f, 0.004f, 0f);
         }
     }
 
-    private void drawDragFlare(Canvas canvas, long now, float x, float y, float fadeAlpha) {
+    private void drawDragFlare(Canvas canvas, long now, float x, float y, float fadeAlpha,
+            float fogAnimationValue) {
         float objValue = quintOut(clamp01((now - gestureStartedAt)
                 / (float) SHOW_ANIMATION_DURATION_MS));
-        float fogValue = quintOut(clamp01((now - gestureStartedAt)
-                / (float) FOG_ON_DURATION_MS));
         float distance = (float) Math.hypot(x - startX, y - startY);
         float distanceAlpha = clamp01(distance / maxAlphaDistancePx);
-        float fogAlpha = clamp01(fogValue * (1f - distanceAlpha)) * GLOBAL_ALPHA * fadeAlpha;
-        float objAlpha = clamp01(distanceAlpha * 3f) * GLOBAL_ALPHA * fadeAlpha;
-        float vignettingAlpha = clamp01(distanceAlpha * 1.3f) * 0.18f * fadeAlpha;
+        float fogAlpha = clamp01(fogAnimationValue * (1f - distanceAlpha))
+                * GLOBAL_ALPHA * fadeAlpha;
+        float objAlpha = clamp01(distanceAlpha * 3f) * fadeAlpha;
         float rotation = -objValue * 30f - distanceAlpha * 160f;
         float lightScale = 1f + distanceAlpha;
 
-        if (vignettingAlpha > 0f) {
-            drawBitmapCentered(canvas, flareVignetting, getWidth() * 0.5f, getHeight() * 0.5f,
-                    Math.max(getWidth(), getHeight()) * 1.2f, vignettingAlpha, 0f);
-        }
-        drawBitmapCentered(canvas, flareLight, x, y,
+        drawAdditiveBitmapCentered(canvas, flareLight, x, y,
                 bitmapSize(flareLight, lightScale), fogAlpha, rotation);
-        drawBitmapCentered(canvas, flareHoverLight, x, y,
-                bitmapSize(flareHoverLight, 1f + distanceAlpha * 0.4f),
-                fogAlpha * 0.5f, rotation - 8f);
 
         if (objAlpha <= 0f) {
             return;
@@ -408,8 +506,8 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
             float pathScale = dragHexagonDistance[i] * animationScale;
             float tx = startX + (x - startX) * pathScale;
             float ty = startY + (y - startY) * pathScale;
-            drawBitmapCentered(canvas, hexagon, tx, ty,
-                    bitmapSize(hexagon, scale), objAlpha * 0.65f, rotation);
+            drawAdditiveBitmapCentered(canvas, hexagon, tx, ty,
+                    bitmapSize(hexagon, scale), objAlpha, dragHexagonRotations[i]);
         }
     }
 
@@ -423,21 +521,21 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
             float scale = hexagon.scale * (value * 0.8f + 0.7f);
             float x = animation.x + hexagon.dx * distanceScale;
             float y = animation.y + hexagon.dy * distanceScale;
-            drawBitmapCentered(canvas, hexagon.bitmap, x, y,
+            drawAdditiveBitmapCentered(canvas, hexagon.bitmap, x, y,
                     bitmapSize(hexagon.bitmap, scale), alpha, hexagon.rotation);
         }
 
         float particleValue = value * 1.8f;
-        float particleAlpha = pulseAlpha(particleValue) * GLOBAL_ALPHA;
-        drawBitmapCentered(canvas, flareParticle, animation.x, animation.y,
+        float particleAlpha = pulseAlpha(particleValue);
+        drawAdditiveBitmapCentered(canvas, flareParticle, animation.x, animation.y,
                 bitmapSize(flareParticle, value * 1.2f), particleAlpha,
-                animation.rotation + value * 40f);
+                animation.rotation);
 
         float ringValue = value * 1.4f;
-        float ringAlpha = pulseAlpha(ringValue) * GLOBAL_ALPHA;
-        drawBitmapCentered(canvas, flareRing, animation.x, animation.y,
-                bitmapSize(flareRing, 0.5f + value), ringAlpha, animation.rotation);
-        drawBitmapCentered(canvas, flareLong, animation.x, animation.y,
+        float ringAlpha = pulseAlpha(ringValue);
+        drawAdditiveBitmapCentered(canvas, flareRing, animation.x, animation.y,
+                bitmapSize(flareRing, 0.5f + value), ringAlpha, 0f);
+        drawAdditiveBitmapCentered(canvas, flareLong, animation.x, animation.y,
                 bitmapSize(flareLong, 1.5f + value * 2f), ringAlpha,
                 animation.rotation + 30f * value);
     }
@@ -455,7 +553,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         } else {
             return false;
         }
-        drawBitmapCentered(canvas, flareLight, animation.x, animation.y,
+        drawAdditiveBitmapCentered(canvas, flareLight, animation.x, animation.y,
                 bitmapSize(flareLight, 1f), alpha, 0f);
         return true;
     }
@@ -464,9 +562,9 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         float alpha = value < 0.5f ? value * 2f : 1f - (value - 0.5f) * 2f;
         float x = animation.startX + (animation.endX - animation.startX) * 0.4f;
         float y = animation.startY + (animation.endY - animation.startY) * 0.4f;
-        drawBitmapCentered(canvas, flareRainbow, x, y,
+        drawAdditiveBitmapCentered(canvas, flareRainbow, x, y,
                 bitmapSize(flareRainbow, 1f + value * 1.3f),
-                clamp01(alpha) * GLOBAL_ALPHA, animation.rotation);
+                clamp01(alpha), animation.rotation);
     }
 
     private TapAnimation createTapAnimation(float x, float y, long now) {
@@ -498,7 +596,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         long now = SystemClock.uptimeMillis();
         tapAnimation = createTapAnimation(x, y, now);
         affordanceAnimation = new AffordanceAnimation(x, y, now);
-        invalidate();
+        invalidateEffect();
         Log.i(TAG, "lens flare affordance play center="
                 + Math.round(x) + "," + Math.round(y));
     }
@@ -523,7 +621,7 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
             float distance = startDistance + i * distanceGap
                     + (random.nextFloat() - 0.5f) * 0.4f;
-            dragHexagonDistance[i] = Math.max(0.05f, distance);
+            dragHexagonDistance[i] = distance;
             dragHexagonScale[i] = dragHexagonDistance[i] + 0.1f;
         }
         for (int i = DRAG_HEXAGON_TOTAL - 1; i > 0; i--) {
@@ -548,6 +646,16 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
 
     private void drawBitmapCentered(Canvas canvas, Bitmap bitmap, float cx, float cy,
             float targetSize, float alpha, float rotation) {
+        drawBitmapCentered(canvas, bitmap, cx, cy, targetSize, alpha, rotation, paint);
+    }
+
+    private void drawAdditiveBitmapCentered(Canvas canvas, Bitmap bitmap, float cx, float cy,
+            float targetSize, float alpha, float rotation) {
+        drawBitmapCentered(canvas, bitmap, cx, cy, targetSize, alpha, rotation, additivePaint);
+    }
+
+    private void drawBitmapCentered(Canvas canvas, Bitmap bitmap, float cx, float cy,
+            float targetSize, float alpha, float rotation, Paint drawPaint) {
         if (bitmap == null || alpha <= 0f || targetSize <= 0f) {
             return;
         }
@@ -557,6 +665,18 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
         matrix.postScale(scale, scale);
         matrix.postRotate(rotation);
         matrix.postTranslate(cx, cy);
+        drawPaint.setAlpha(Math.max(0, Math.min(255, (int) (alpha * 255f))));
+        canvas.drawBitmap(bitmap, matrix, drawPaint);
+        drawPaint.setAlpha(255);
+    }
+
+    private void drawBitmapFitXY(Canvas canvas, Bitmap bitmap, float alpha) {
+        if (bitmap == null || alpha <= 0f || getWidth() <= 0 || getHeight() <= 0) {
+            return;
+        }
+        matrix.reset();
+        matrix.setScale(getWidth() / (float) bitmap.getWidth(),
+                getHeight() / (float) bitmap.getHeight());
         paint.setAlpha(Math.max(0, Math.min(255, (int) (alpha * 255f))));
         canvas.drawBitmap(bitmap, matrix, paint);
         paint.setAlpha(255);
@@ -612,6 +732,121 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
 
     private float visualY(float screenY) {
         return screenY + fingerYOffsetPx;
+    }
+
+    private float currentVignettingAlpha(long now) {
+        float x;
+        float y;
+        float fadeAlpha;
+        if (gestureActive) {
+            x = currentX;
+            y = currentY;
+            fadeAlpha = 1f;
+        } else if (fading) {
+            x = fadeX;
+            y = fadeY;
+            fadeAlpha = 1f - clamp01((now - fadeStartedAt)
+                    / (float) FADE_OUT_DURATION_MS);
+        } else {
+            return 0f;
+        }
+        float distance = (float) Math.hypot(x - startX, y - startY);
+        return clamp01((distance / maxAlphaDistancePx) * 1.3f) * fadeAlpha;
+    }
+
+    private void invalidateEffect() {
+        super.invalidate();
+        if (flareContentView != null) {
+            flareContentView.invalidate();
+        }
+    }
+
+    private int getRenderWidth() {
+        int width = getWidth();
+        return width > 0 ? width : Math.max(1, getResources().getDisplayMetrics().widthPixels);
+    }
+
+    private int getRenderHeight() {
+        int height = getHeight();
+        return height > 0 ? height : Math.max(1, getResources().getDisplayMetrics().heightPixels);
+    }
+
+    private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
+        int safeWidth = Math.max(1, width);
+        int safeHeight = Math.max(1, height);
+        if (source.getWidth() == safeWidth && source.getHeight() == safeHeight) {
+            return source.copy(Bitmap.Config.ARGB_8888, false);
+        }
+        Bitmap out = Bitmap.createBitmap(safeWidth, safeHeight, Bitmap.Config.ARGB_8888);
+        float srcRatio = source.getWidth() / (float) source.getHeight();
+        float dstRatio = safeWidth / (float) safeHeight;
+        Rect srcRect;
+        if (srcRatio > dstRatio) {
+            int srcWidth = Math.max(1, Math.round(source.getHeight() * dstRatio));
+            int left = Math.max(0, (source.getWidth() - srcWidth) / 2);
+            srcRect = new Rect(left, 0,
+                    Math.min(source.getWidth(), left + srcWidth), source.getHeight());
+        } else {
+            int srcHeight = Math.max(1, Math.round(source.getWidth() / dstRatio));
+            int top = Math.max(0, (source.getHeight() - srcHeight) / 2);
+            srcRect = new Rect(0, top, source.getWidth(),
+                    Math.min(source.getHeight(), top + srcHeight));
+        }
+        Canvas canvas = new Canvas(out);
+        Paint copyPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
+                | Paint.DITHER_FLAG);
+        canvas.drawBitmap(source, srcRect, new Rect(0, 0, safeWidth, safeHeight), copyPaint);
+        return out;
+    }
+
+    private void configureAdditiveComposite() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || backgroundBitmap == null || backgroundBitmap.isRecycled()
+                || flareVignetting == null || flareVignetting.isRecycled()
+                || flareContentView == null) {
+            clearAdditiveComposite();
+            return;
+        }
+        try {
+            backgroundShader = new BitmapShader(backgroundBitmap,
+                    Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            vignetteShader = new BitmapShader(flareVignetting,
+                    Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            Matrix vignetteMatrix = new Matrix();
+            vignetteMatrix.setScale(getRenderWidth() / (float) flareVignetting.getWidth(),
+                    getRenderHeight() / (float) flareVignetting.getHeight());
+            vignetteShader.setLocalMatrix(vignetteMatrix);
+            additiveCompositeShader = new RuntimeShader(ADDITIVE_COMPOSITE_SHADER);
+            additiveCompositeShader.setInputShader("background", backgroundShader);
+            additiveCompositeShader.setInputShader("vignette", vignetteShader);
+            additiveCompositeShader.setFloatUniform("vignetteAlpha", 0f);
+            flareContentView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(
+                    additiveCompositeShader, "flare"));
+        } catch (Throwable t) {
+            Log.w(TAG, "lens flare additive background shader unavailable; using ADD fallback", t);
+            clearAdditiveComposite();
+        }
+    }
+
+    private void clearAdditiveComposite() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && flareContentView != null) {
+            flareContentView.setRenderEffect(null);
+        }
+        additiveCompositeShader = null;
+        backgroundShader = null;
+        vignetteShader = null;
+    }
+
+    private void recycleBackgroundBitmap() {
+        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
+            backgroundBitmap.recycle();
+        }
+        backgroundBitmap = null;
+    }
+
+    private float currentFogAnimationValue(long now) {
+        return FOG_MAX_ALPHA * quintOut(clamp01((now - gestureStartedAt)
+                / (float) FOG_ON_DURATION_MS));
     }
 
     private float screenScaleRatio() {
@@ -704,6 +939,20 @@ public class LensFlareEffectView extends View implements UnlockEffectRenderer {
             this.endY = endY;
             this.startedAt = startedAt;
             this.rotation = rotation;
+        }
+    }
+
+    private final class FlareContentView extends View {
+        FlareContentView(Context context) {
+            super(context);
+            setWillNotDraw(false);
+            setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            drawFlareFrame(canvas);
         }
     }
 }

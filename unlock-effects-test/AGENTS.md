@@ -1,18 +1,19 @@
 # Project Notes For Agents
 
-## Charging Lock Test
-
-- Path: `charging-lock-test-apk`
-- Package: `com.codex.charginglocktest`
-- This is the stable APK the user tested and called "FUNZIONA PERFETTA".
-- Do not modify it while iterating on unlock effects. It uses `ChargingAccessibilityService` with a fullscreen `TYPE_ACCESSIBILITY_OVERLAY`, transparent and `FLAG_NOT_TOUCHABLE`, so it does not block unlock/touch.
-
-## Charging Touch Test
+## LLE
 
 - Path: `charging-touch-test-apk`
-- Package: `com.codex.chargingtouchtest`
-- This is the active experimental app for lockscreen touch input and S4 unlock effects.
+- Package: `com.codex.lle`
+- This is the active app for lockscreen touch input, charging doodle preview, and Samsung legacy lockscreen effects.
+- Old legacy app modules were removed from the active repo. Do not target or recreate legacy charging-only modules; port any useful doodle logic into LLE manually.
 - Charging doodles and unlock effects are separate concerns. Unlock FX must not require charging; charging remains relevant only to doodle visibility.
+
+## LSE
+
+- Path: `demo-apk`
+- Package: `com.codex.s4unlockfx`
+- Launcher label: `L.S.E`
+- This is the Legacy Samsung Effect demo/reference app and should remain in the repo alongside LLE.
 - The touch listen box is a small touchable `TYPE_ACCESSIBILITY_OVERLAY`; the doodle and FX overlays stay pass-through.
 - The listen box is calibrated from the app with `TouchBoxSetupActivity` and stored in `overlay_prefs` as `touch_box_*`.
 - Default listen box on SM-S918B 1080x2316: `left=0`, `top=730`, `right=1080`, `bottom=2100`. This replaced the earlier rounded `60,710,1030,1900` box by extending to screen edges, extending downward, and trimming 20 px from the top. Touch box coordinates are rounded to 10 px on save/read; old defaultish prefs migrate to the new default automatically.
@@ -75,9 +76,9 @@
 
 - S5 Popping Colours / Particle Space is implemented in the touch APK as effect picker value `2`.
 - S5 Popping Colours uses its own quicker PIN handoff delay: `200ms` after completed swipe, then the shared `60ms` before the synthetic swipe.
-- Main touch APK files:
-  - `src/com/codex/chargingtouchtest/UnlockEffectRenderer.java`
-  - `src/com/codex/chargingtouchtest/PoppingColoursEffectView.java`
+- Main LLE files:
+  - `src/com/codex/lle/UnlockEffectRenderer.java`
+  - `src/com/codex/lle/PoppingColoursEffectView.java`
   - generic mount/gesture flow in `ChargingAccessibilityService`
 - The implementation uses the original Samsung visual-effect dex path already packaged as `classes2.dex` from `extracted/secvisualeffect_hybrid_dex/classes.dex`.
 - Original Samsung identity:
@@ -162,8 +163,8 @@
   - The native wrapper path for Droplets/Bubbles covered/blackened the lockscreen and was removed from the app instead of carrying a broken option forward.
   - `effectUsesScreenshotBackground()` currently returns true for S5 Popping Colours and Watercolor.
 - Verification state:
-  - Local build succeeded and produced `charging-touch-test-apk/build/ChargingTouchTest-debug.apk`.
-  - Recovery build was installed on SM-S918B and `dumpsys package com.codex.chargingtouchtest` reported `primaryCpuAbi=armeabi-v7a`.
+  - Local build succeeded and produced `charging-touch-test-apk/build/LLE-debug.apk`.
+  - Recovery build was installed on SM-S918B and `dumpsys package com.codex.lle` reported `primaryCpuAbi=armeabi-v7a`.
   - S4 Lens Flare recovery log showed touch input, Canvas effect begin/finish, and accepted PIN-entry synthetic swipe again.
   - Do not reintroduce partial arm64 packaging in the main test APK unless it is isolated from the working S4/Popping path or all required native dependencies are available.
 

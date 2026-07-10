@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates>
+    <template type="元旦">
+        <image name = "greetingcard_new_years" type = "animation"/>
+        <textbox x = "12" y= "448" width = "336" height = "108" fontcolor = "#FF05394F" />
+    </template>
+
+    <template type="春节">
+        <image name = "greetingcard_chinese_new_years" type = "animation"/>
+        <textbox x = "12" y= "396" width = "336" height = "108" fontcolor = "#FFFAA36A" />
+    </template>
+
+    <template type="元宵节">
+        <image name = "greetingcard_lantern" type = "animation"/>
+        <textbox x = "12" y= "374" width = "336" height = "192" fontcolor = "#FFFFFFFF" />
+    </template>
+
+    <template type="情人节">
+        <image name = "greetingcard_valentines" type = "animation"/>
+        <textbox x = "12" y= "80" width = "336" height = "136" fontcolor = "#FFF49CE8" />
+    </template>
+
+    <template type="端午节">
+        <image name = "greetingcard_dragon_boat" type = "animation"/>
+        <textbox x = "12" y= "131" width = "336" height = "136" fontcolor = "#FFFFFFFF" />
+    </template>
+
+    <template type="七夕节">
+        <image name = "greetingcard_double_seventh" type = "animation"/>
+        <textbox x = "12" y= "80" width = "336" height = "136" fontcolor = "#FFFFCC00" />
+    </template>
+
+    <template type="中秋节">
+        <image name = "greetingcard_mid_autumn" type = "animation"/>
+        <textbox x = "12" y= "80" width = "336" height = "136" fontcolor = "#FFFFFFFF" />
+    </template>
+
+    <template type="圣诞节">
+        <image name = "greetingcard_christmas" type = "animation"/>
+        <textbox x = "12" y= "80" width = "336" height = "136" fontcolor = "#FFFFFFFF" />
+    </template>
+
+    <template type="Congratulations">
+        <image name = "greetingcard_congratulation" type = "animation"/>
+        <textbox x = "12" y= "80" width = "267" height = "192" fontcolor = "#FFFFEFB0" />
+    </template>
+
+    <template type="Thank you">
+        <image name = "greetingcard_thank_you" type = "animation"/>
+        <textbox x = "12" y= "80" width = "267" height = "192" fontcolor = "#FFFFEFB0" />
+    </template>
+
+    <template type="Birthday">
+        <image name = "greetingcard_birthday" type = "animation"/>
+        <textbox x = "12" y= "80" width = "298" height = "136" fontcolor = "#FFFFFFFF" />
+    </template>
+
+</templates>

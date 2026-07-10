@@ -16,6 +16,7 @@ public class EffectBackgroundRefreshReceiver extends BroadcastReceiver {
         }
         OverlayPrefs.get(context).edit()
                 .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, true)
+                .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, true)
                 .apply();
         Intent wake = new Intent(context, EffectBackgroundWakeActivity.class);
         wake.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
@@ -27,6 +28,7 @@ public class EffectBackgroundRefreshReceiver extends BroadcastReceiver {
         } catch (Throwable t) {
             OverlayPrefs.get(context).edit()
                     .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, false)
+                    .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, false)
                     .apply();
             Log.d(TAG, "effect background refresh wake failed", t);
         }

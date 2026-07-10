@@ -22,6 +22,7 @@ public class EffectBackgroundWakeActivity extends Activity {
         }
         OverlayPrefs.get(this).edit()
                 .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, true)
+                .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, true)
                 .apply();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);

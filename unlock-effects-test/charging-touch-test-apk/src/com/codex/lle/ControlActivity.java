@@ -8,15 +8,28 @@ import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.Shader;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -25,10 +38,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.animation.Interpolator;
+import android.view.animation.PathInterpolator;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
@@ -40,24 +57,33 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.util.Calendar;
 
 public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
-    private static final int TAB_CHARGING_DOODLE = 0;
-    private static final int TAB_LOCKSCREEN_EFFECT = 1;
-    private static final int COLOR_BACKGROUND = Color.rgb(244, 246, 249);
+    private static final int TAB_LOCKSCREEN_EFFECT = 0;
+    private static final int TAB_CHARGING_DOODLE = 1;
+    private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
     private static final int COLOR_SURFACE = Color.WHITE;
-    private static final int COLOR_TEXT = Color.rgb(33, 40, 48);
-    private static final int COLOR_MUTED = Color.rgb(102, 114, 128);
-    private static final int COLOR_DIVIDER = Color.rgb(214, 222, 232);
-    private static final int COLOR_ACCENT = Color.rgb(24, 124, 235);
-    private static final int COLOR_ACCENT_SOFT = Color.rgb(228, 240, 255);
-    private static final int COLOR_WARNING = Color.rgb(202, 126, 38);
-    private static final int COLOR_OK = Color.rgb(24, 150, 82);
-    private static final int COLOR_ERROR = Color.rgb(210, 70, 70);
+    private static final int COLOR_TEXT = Color.rgb(33, 33, 33);
+    private static final int COLOR_MUTED = Color.rgb(117, 117, 117);
+    private static final int COLOR_DIVIDER = Color.rgb(230, 230, 230);
+    private static final int COLOR_ACCENT = Color.rgb(64, 152, 160);
+    private static final int COLOR_ACCENT_DEEP = Color.rgb(0, 132, 142);
+    private static final int COLOR_ACCENT_SOFT = Color.rgb(231, 247, 248);
+    private static final int COLOR_OK = Color.rgb(22, 160, 98);
+    private static final int COLOR_ERROR = Color.rgb(207, 67, 72);
+    private static final int COLOR_HEADER_TOP = Color.rgb(244, 249, 252);
+    private static final int COLOR_HEADER_BOTTOM = Color.WHITE;
+    private static final int COLOR_GRACE_NAVY = Color.rgb(39, 55, 111);
+    private static final int COLOR_GRACE_BLUE = Color.rgb(61, 111, 169);
+    private static final int COLOR_GRACE_AQUA = Color.rgb(91, 199, 194);
+    private static final int COLOR_GRACE_LILAC = Color.rgb(106, 79, 176);
     private static final int TAB_SWIPE_MIN_DISTANCE_DP = 72;
-    private static final long TAB_ANIMATION_DURATION_MS = 180L;
+    private static final int TAB_DRAG_START_DISTANCE_DP = 12;
+    private static final long TAB_ANIMATION_DURATION_MS = 270L;
     private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
+    private static final float TAB_DRAG_AXIS_RATIO = 1.18f;
     private static final long EFFECT_SELECTION_APPLY_DELAY_MS = 2000L;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -72,16 +98,29 @@ public class ControlActivity extends Activity {
     private Switch serviceSwitch;
     private Button chargingDoodleTabButton;
     private Button lockscreenEffectTabButton;
+    private FrameLayout tabPager;
     private LinearLayout tabContent;
+    private LinearLayout tabAdjacentContent;
     private TextView touchBoxSummary;
     private TextView effectProfilerSummary;
-    private int selectedTab = TAB_CHARGING_DOODLE;
+    private int selectedTab = TAB_LOCKSCREEN_EFFECT;
     private int pendingUnlockEffect = -1;
     private boolean updatingServiceSwitch;
     private float tabSwipeDownX;
     private float tabSwipeDownY;
     private boolean tabSwipeStartedOnSlider;
+    private boolean tabSwipeDragging;
+    private int tabSwipeTarget = -1;
+    private int tabSwipeDirection;
+    private int tabAdjacentTab = -1;
+    private int tabAdjacentDirection;
     private boolean tabAnimationRunning;
+    private boolean doodleDebugExpanded;
+    private boolean lockscreenDebugExpanded;
+    private Typeface appFontRegular;
+    private Typeface appFontBold;
+    private PopupWindow effectPreviewPopup;
+    private Bitmap effectPreviewPopupBitmap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,36 +130,46 @@ public class ControlActivity extends Activity {
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         ensureTouchAreaEnabled();
         if (savedInstanceState != null) {
-            selectedTab = savedInstanceState.getInt(STATE_SELECTED_TAB, TAB_CHARGING_DOODLE);
+            selectedTab = savedInstanceState.getInt(STATE_SELECTED_TAB, TAB_LOCKSCREEN_EFFECT);
         }
+
+        FrameLayout scene = new FrameLayout(this);
+        scene.addView(new GraceBackdropView(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
 
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setBackgroundColor(COLOR_BACKGROUND);
-        outer.setPadding(0, statusBarHeight(), 0, 0);
+        outer.setBackgroundColor(Color.TRANSPARENT);
+        outer.setPadding(0, 0, 0, 0);
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        outer.addView(appHeader(), headerParams);
+        final View headerView = appHeader();
+        outer.addView(headerView, headerParams);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.TOP);
-        root.setPadding(dp(16), dp(16), dp(16), dp(24));
-        root.setBackgroundColor(COLOR_BACKGROUND);
+        root.setPadding(0, dp(8), 0, dp(24));
+        root.setBackgroundColor(Color.TRANSPARENT);
 
-        root.addView(tabSelector());
+        final View tabsView = tabSelector();
+        root.addView(tabsView);
 
-        tabContent = new LinearLayout(this);
-        tabContent.setOrientation(LinearLayout.VERTICAL);
-        root.addView(tabContent, new LinearLayout.LayoutParams(
+        tabPager = new FrameLayout(this);
+        tabPager.setClipChildren(true);
+        tabPager.setClipToPadding(true);
+        root.addView(tabPager, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabContent = createTabPage();
+        tabPager.addView(tabContent);
         showTab(selectedTab, false, 0);
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(COLOR_BACKGROUND);
+        scrollView.setBackgroundColor(Color.TRANSPARENT);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
@@ -128,8 +177,13 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
                 1f));
-        setContentView(outer);
+        scene.addView(outer, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(scene);
+        forceSansSerif(outer);
         updateAccessibilityStatus();
+        playGraceEntrance(headerView, tabsView, tabPager);
     }
 
     @Override
@@ -149,6 +203,7 @@ public class ControlActivity extends Activity {
     @Override
     protected void onDestroy() {
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        hideEffectPreviewBubble();
         super.onDestroy();
     }
 
@@ -164,21 +219,51 @@ public class ControlActivity extends Activity {
         Window window = getWindow();
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            window.setStatusBarColor(COLOR_BACKGROUND);
-            window.setNavigationBarColor(COLOR_SURFACE);
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.rgb(232, 241, 246));
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            window.getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         }
+    }
+
+    private void playGraceEntrance(final View header, final View tabs, final View content) {
+        if (header == null || tabs == null || content == null) {
+            return;
+        }
+        header.setAlpha(0f);
+        header.setTranslationY(-dp(18));
+        tabs.setAlpha(0f);
+        tabs.setTranslationY(dp(14));
+        content.setAlpha(0f);
+        content.setTranslationY(dp(28));
+        content.setScaleX(0.985f);
+        content.setScaleY(0.985f);
+        header.post(new Runnable() {
+            @Override
+            public void run() {
+                header.animate().alpha(1f).translationY(0f)
+                        .setDuration(420L).setInterpolator(tabEnterInterpolator()).start();
+                tabs.animate().alpha(1f).translationY(0f)
+                        .setStartDelay(80L).setDuration(420L)
+                        .setInterpolator(tabEnterInterpolator()).start();
+                content.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                        .setStartDelay(150L).setDuration(520L)
+                        .setInterpolator(tabEnterInterpolator()).start();
+            }
+        });
     }
 
     private View appHeader() {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(16), dp(8), dp(16), dp(8));
-        header.setBackgroundColor(COLOR_SURFACE);
+        header.setPadding(dp(22), statusBarHeight() + dp(15), dp(16), dp(16));
+        header.setBackground(headerBackground());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            header.setElevation(dp(3));
+            header.setElevation(dp(7));
         }
 
         LinearLayout row = new LinearLayout(this);
@@ -188,16 +273,34 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView title = new TextView(this);
-        title.setText("L.L.E");
-        title.setTextColor(COLOR_TEXT);
-        title.setTextSize(20f);
-        title.setSingleLine(true);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        row.addView(title, new LinearLayout.LayoutParams(
+        LinearLayout titleStack = new LinearLayout(this);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        titleStack.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(titleStack, new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f));
+
+        TextView title = new TextView(this);
+        title.setText("L.L.E");
+        title.setTextColor(COLOR_GRACE_NAVY);
+        title.setTextSize(29f);
+        title.setSingleLine(true);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            title.setLetterSpacing(0.10f);
+        }
+        titleStack.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("Legacy Lockscreen effect");
+        subtitle.setTextColor(Color.rgb(65, 75, 104));
+        subtitle.setTextSize(11f);
+        subtitle.setSingleLine(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            subtitle.setLetterSpacing(0.06f);
+        }
+        titleStack.addView(subtitle);
 
         serviceSwitch = new Switch(this);
         serviceSwitch.setText("");
@@ -208,6 +311,7 @@ public class ControlActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             serviceSwitch.setShowText(false);
         }
+        styleHeaderSwitch(serviceSwitch);
         serviceSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -227,13 +331,15 @@ public class ControlActivity extends Activity {
             }
         });
         row.addView(serviceSwitch, new LinearLayout.LayoutParams(
-                dp(62),
-                dp(48)));
+                dp(58),
+                dp(44)));
 
         accessibilityStatus = new TextView(this);
         accessibilityStatus.setGravity(Gravity.CENTER);
-        accessibilityStatus.setTextSize(22f);
+        accessibilityStatus.setTextSize(18f);
         accessibilityStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        accessibilityStatus.setBackground(statusBadgeBackground(
+                Color.argb(120, 72, 89, 115), Color.argb(45, 255, 255, 255)));
         accessibilityStatus.setClickable(true);
         accessibilityStatus.setFocusable(true);
         accessibilityStatus.setOnClickListener(new View.OnClickListener() {
@@ -243,9 +349,9 @@ public class ControlActivity extends Activity {
             }
         });
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
-                dp(30),
-                dp(44));
-        statusParams.setMargins(dp(4), 0, 0, 0);
+                dp(36),
+                dp(36));
+        statusParams.setMargins(dp(7), 0, 0, 0);
         row.addView(accessibilityStatus, statusParams);
         return header;
     }
@@ -257,32 +363,33 @@ public class ControlActivity extends Activity {
     private View tabSelector() {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(12));
-        background.setColor(Color.rgb(232, 237, 244));
-        tabs.setBackground(background);
+        tabs.setPadding(dp(5), dp(5), dp(5), dp(5));
+        tabs.setBackground(solidDrawable(Color.argb(242, 255, 255, 255), dp(22),
+                Color.argb(90, 177, 198, 210), dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            tabs.setElevation(dp(4));
+        }
         LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(52));
-        tabsParams.setMargins(0, 0, 0, dp(14));
+                dp(60));
+        tabsParams.setMargins(dp(14), dp(12), dp(14), dp(10));
         tabs.setLayoutParams(tabsParams);
 
-        chargingDoodleTabButton = tabButton("Charging doodle", TAB_CHARGING_DOODLE);
-        lockscreenEffectTabButton = tabButton("Lockscreen effect", TAB_LOCKSCREEN_EFFECT);
+        lockscreenEffectTabButton = tabButton("LOCKSCREEN", TAB_LOCKSCREEN_EFFECT);
+        chargingDoodleTabButton = tabButton("CHARGING", TAB_CHARGING_DOODLE);
 
         LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 1f);
-        tabs.addView(chargingDoodleTabButton, firstParams);
+        tabs.addView(lockscreenEffectTabButton, firstParams);
 
         LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 1f);
-        secondParams.setMargins(dp(8), 0, 0, 0);
-        tabs.addView(lockscreenEffectTabButton, secondParams);
+        secondParams.setMargins(dp(4), 0, 0, 0);
+        tabs.addView(chargingDoodleTabButton, secondParams);
         return tabs;
     }
 
@@ -322,7 +429,7 @@ public class ControlActivity extends Activity {
                 && !sameTab
                 && !tabAnimationRunning
                 && tabContent.getChildCount() > 0
-                && tabContent.getWidth() > 0;
+                && tabPagerWidth() > 0f;
 
         selectedTab = targetTab;
         updateTabStyles();
@@ -332,68 +439,195 @@ public class ControlActivity extends Activity {
             populateTabContent(targetTab);
             tabContent.setAlpha(1f);
             tabContent.setTranslationX(0f);
+            tabContent.setTranslationY(0f);
+            tabContent.setScaleX(1f);
+            tabContent.setScaleY(1f);
             return;
         }
         animateTabContentChange(targetTab, direction);
     }
 
     private int normalizeTab(int tab) {
-        return tab == TAB_LOCKSCREEN_EFFECT ? TAB_LOCKSCREEN_EFFECT : TAB_CHARGING_DOODLE;
+        return tab == TAB_CHARGING_DOODLE ? TAB_CHARGING_DOODLE : TAB_LOCKSCREEN_EFFECT;
+    }
+
+    private LinearLayout createTabPage() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(12), dp(2), dp(12), dp(28));
+        page.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        return page;
     }
 
     private void populateTabContent(int tab) {
-        tabContent.removeAllViews();
+        hideEffectPreviewBubble();
+        clearAdjacentTabContent();
+        if (tabContent == null) {
+            tabContent = createTabPage();
+        }
+        if (tabPager != null && tabContent.getParent() != tabPager) {
+            tabPager.addView(tabContent);
+        }
+        populateTabPage(tabContent, tab);
+        resetTabPageTransform(tabContent);
+    }
+
+    private void populateTabPage(LinearLayout page, int tab) {
+        if (page == null) {
+            return;
+        }
+        page.removeAllViews();
         if (tab == TAB_CHARGING_DOODLE) {
-            tabContent.addView(chargingDoodleControls());
+            page.addView(chargingDoodleControls());
         } else {
-            tabContent.addView(effectSelector());
-            tabContent.addView(effectProfilerControls());
-            tabContent.addView(lockscreenTouchControls());
-            tabContent.addView(rootDebugControls());
+            page.addView(effectSelector());
+            page.addView(lockscreenTouchControls());
+            page.addView(lockscreenDebugMenu());
+        }
+        forceSansSerif(page);
+    }
+
+    private float tabPagerWidth() {
+        if (tabPager != null && tabPager.getWidth() > 0) {
+            return tabPager.getWidth();
+        }
+        if (tabContent != null && tabContent.getWidth() > 0) {
+            return tabContent.getWidth();
+        }
+        return Math.max(dp(120), getResources().getDisplayMetrics().widthPixels);
+    }
+
+    private void resetTabPageTransform(View page) {
+        if (page == null) {
+            return;
+        }
+        page.animate().setListener(null).cancel();
+        page.setAlpha(1f);
+        page.setTranslationX(0f);
+        page.setTranslationY(0f);
+        page.setScaleX(1f);
+        page.setScaleY(1f);
+    }
+
+    private LinearLayout prepareAdjacentTabContent(int targetTab, int direction) {
+        int target = normalizeTab(targetTab);
+        int tabDirection = direction == 0 ? 1 : direction;
+        float width = tabPagerWidth();
+        if (tabAdjacentContent != null
+                && tabAdjacentTab == target
+                && tabAdjacentDirection == tabDirection) {
+            tabAdjacentContent.setTranslationX(tabDirection * width);
+            tabAdjacentContent.setAlpha(1f);
+            return tabAdjacentContent;
+        }
+        clearAdjacentTabContent();
+        tabAdjacentContent = createTabPage();
+        tabAdjacentTab = target;
+        tabAdjacentDirection = tabDirection;
+        populateTabPage(tabAdjacentContent, target);
+        tabAdjacentContent.setTranslationX(tabDirection * width);
+        tabAdjacentContent.setAlpha(1f);
+        if (tabPager != null) {
+            tabPager.addView(tabAdjacentContent);
+        }
+        return tabAdjacentContent;
+    }
+
+    private void clearAdjacentTabContent() {
+        if (tabAdjacentContent != null) {
+            tabAdjacentContent.animate().setListener(null).cancel();
+            if (tabPager != null) {
+                tabPager.removeView(tabAdjacentContent);
+            }
+        }
+        tabAdjacentContent = null;
+        tabAdjacentTab = -1;
+        tabAdjacentDirection = 0;
+    }
+
+    private void promoteAdjacentTabContent() {
+        if (tabAdjacentContent == null) {
+            populateTabContent(selectedTab);
+            return;
+        }
+        LinearLayout oldContent = tabContent;
+        tabContent = tabAdjacentContent;
+        tabAdjacentContent = null;
+        tabAdjacentTab = -1;
+        tabAdjacentDirection = 0;
+        resetTabPageTransform(tabContent);
+        if (oldContent != null && tabPager != null) {
+            oldContent.animate().setListener(null).cancel();
+            tabPager.removeView(oldContent);
+        }
+        if (tabPager != null && tabContent.getParent() != tabPager) {
+            tabPager.addView(tabContent);
         }
     }
 
     private void animateTabContentChange(final int targetTab, final int direction) {
+        animatePagerTabSwitch(targetTab, direction);
+    }
+
+    private void animatePagerTabSwitch(final int targetTab, final int direction) {
+        if (tabContent == null) {
+            selectedTab = normalizeTab(targetTab);
+            updateTabStyles();
+            return;
+        }
+        final int target = normalizeTab(targetTab);
+        final int tabDirection = direction == 0 ? 1 : direction;
+        final float width = tabPagerWidth();
+        final LinearLayout adjacent = prepareAdjacentTabContent(target, tabDirection);
+        if (adjacent == null) {
+            populateTabContent(target);
+            finishTabAnimation();
+            return;
+        }
         tabAnimationRunning = true;
-        final float width = Math.max(dp(120), tabContent.getWidth());
+        tabContent.animate().setListener(null).cancel();
+        adjacent.animate().setListener(null).cancel();
         tabContent.animate()
-                .cancel();
-        tabContent.animate()
-                .alpha(0f)
-                .translationX(-direction * width * 0.28f)
-                .setDuration(TAB_ANIMATION_DURATION_MS / 2L)
+                .translationX(-tabDirection * width)
+                .alpha(1f)
+                .setDuration(TAB_ANIMATION_DURATION_MS)
+                .setInterpolator(tabEnterInterpolator())
+                .start();
+        adjacent.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(TAB_ANIMATION_DURATION_MS)
+                .setInterpolator(tabEnterInterpolator())
                 .setListener(new AnimatorListenerAdapter() {
                     @Override
                     public void onAnimationEnd(Animator animation) {
-                        populateTabContent(targetTab);
-                        tabContent.setTranslationX(direction * width * 0.42f);
-                        tabContent.setAlpha(0f);
-                        tabContent.animate()
-                                .alpha(1f)
-                                .translationX(0f)
-                                .setDuration(TAB_ANIMATION_DURATION_MS)
-                                .setListener(new AnimatorListenerAdapter() {
-                                    @Override
-                                    public void onAnimationEnd(Animator animation) {
-                                        tabContent.setAlpha(1f);
-                                        tabContent.setTranslationX(0f);
-                                        tabAnimationRunning = false;
-                                    }
-
-                                    @Override
-                                    public void onAnimationCancel(Animator animation) {
-                                        tabAnimationRunning = false;
-                                    }
-                                })
-                                .start();
+                        promoteAdjacentTabContent();
+                        finishTabAnimation();
                     }
 
                     @Override
                     public void onAnimationCancel(Animator animation) {
-                        tabAnimationRunning = false;
+                        finishTabAnimation();
                     }
                 })
                 .start();
+    }
+
+    private void finishTabAnimation() {
+        if (tabContent != null) {
+            resetTabPageTransform(tabContent);
+        }
+        tabAnimationRunning = false;
+    }
+
+    private Interpolator tabExitInterpolator() {
+        return new PathInterpolator(0.40f, 0.00f, 1.00f, 1.00f);
+    }
+
+    private Interpolator tabEnterInterpolator() {
+        return new PathInterpolator(0.00f, 0.00f, 0.20f, 1.00f);
     }
 
     private boolean trackTabSwipe(MotionEvent event) {
@@ -404,6 +638,7 @@ public class ControlActivity extends Activity {
         if (action == MotionEvent.ACTION_DOWN) {
             tabSwipeDownX = event.getRawX();
             tabSwipeDownY = event.getRawY();
+            tabSwipeDragging = false;
             tabSwipeStartedOnSlider = isPointInsideViewType(
                     getWindow().getDecorView(),
                     tabSwipeDownX,
@@ -411,15 +646,186 @@ public class ControlActivity extends Activity {
                     SeekBar.class);
             return false;
         }
+        if (action == MotionEvent.ACTION_MOVE) {
+            return handleTabSwipeMove(event);
+        }
         if (action == MotionEvent.ACTION_UP) {
+            if (tabSwipeDragging) {
+                finishInteractiveTabSwipe(event, false);
+                return true;
+            }
             boolean handled = maybeSwitchTabBySwipe(event);
-            tabSwipeStartedOnSlider = false;
+            resetTabSwipeState();
             return handled;
         }
         if (action == MotionEvent.ACTION_CANCEL) {
-            tabSwipeStartedOnSlider = false;
+            if (tabSwipeDragging) {
+                finishInteractiveTabSwipe(event, true);
+                return true;
+            }
+            resetTabSwipeState();
         }
         return false;
+    }
+
+    private boolean handleTabSwipeMove(MotionEvent event) {
+        if (tabSwipeStartedOnSlider || tabAnimationRunning || tabContent == null) {
+            return false;
+        }
+        float dx = event.getRawX() - tabSwipeDownX;
+        float dy = event.getRawY() - tabSwipeDownY;
+        float absX = Math.abs(dx);
+        float absY = Math.abs(dy);
+        if (!tabSwipeDragging) {
+            int target = swipeTargetForDx(dx);
+            if (absX < dp(TAB_DRAG_START_DISTANCE_DP)
+                    || absX < absY * TAB_DRAG_AXIS_RATIO
+                    || target < 0) {
+                return false;
+            }
+            hideEffectPreviewBubble();
+            tabSwipeDragging = true;
+            tabSwipeTarget = target;
+            tabSwipeDirection = target >= selectedTab ? 1 : -1;
+            tabContent.animate().setListener(null).cancel();
+            prepareAdjacentTabContent(tabSwipeTarget, tabSwipeDirection);
+        }
+        applyInteractiveTabDrag(dx);
+        return true;
+    }
+
+    private void applyInteractiveTabDrag(float dx) {
+        float width = tabPagerWidth();
+        float maxOffset = width;
+        float directionalDx = tabSwipeDirection > 0 ? Math.min(0f, dx) : Math.max(0f, dx);
+        float clamped = Math.max(-maxOffset, Math.min(maxOffset, directionalDx));
+        tabContent.setTranslationX(clamped);
+        tabContent.setAlpha(1f);
+        if (tabAdjacentContent != null) {
+            tabAdjacentContent.setTranslationX(tabSwipeDirection * width + clamped);
+            tabAdjacentContent.setAlpha(1f);
+        }
+    }
+
+    private void finishInteractiveTabSwipe(MotionEvent event, boolean cancelled) {
+        float dx = event == null ? 0f : event.getRawX() - tabSwipeDownX;
+        int targetTab = cancelled ? -1 : tabSwipeTarget;
+        float width = tabPagerWidth();
+        float offset = tabContent == null ? 0f : tabContent.getTranslationX();
+        float threshold = Math.min(dp(TAB_SWIPE_MIN_DISTANCE_DP), width * 0.22f);
+        boolean shouldSwitch = targetTab >= 0 && Math.abs(offset) >= threshold;
+        int direction = tabSwipeDirection;
+        resetTabSwipeState();
+        if (shouldSwitch) {
+            animateInteractiveTabSwitch(targetTab, direction);
+        } else {
+            animateTabDragBack();
+        }
+    }
+
+    private void animateTabDragBack() {
+        if (tabContent == null) {
+            return;
+        }
+        tabAnimationRunning = true;
+        tabContent.animate().setListener(null).cancel();
+        if (tabAdjacentContent != null) {
+            final float width = tabPagerWidth();
+            tabAdjacentContent.animate().setListener(null).cancel();
+            tabAdjacentContent.animate()
+                    .translationX(tabAdjacentDirection * width)
+                    .alpha(1f)
+                    .setDuration(180L)
+                    .setInterpolator(tabEnterInterpolator())
+                    .start();
+        }
+        tabContent.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setDuration(180L)
+                .setInterpolator(tabEnterInterpolator())
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        clearAdjacentTabContent();
+                        finishTabAnimation();
+                    }
+
+                    @Override
+                    public void onAnimationCancel(Animator animation) {
+                        clearAdjacentTabContent();
+                        finishTabAnimation();
+                    }
+                })
+                .start();
+    }
+
+    private void animateInteractiveTabSwitch(final int targetTab, final int direction) {
+        if (tabContent == null) {
+            selectedTab = normalizeTab(targetTab);
+            updateTabStyles();
+            return;
+        }
+        final int target = normalizeTab(targetTab);
+        final int tabDirection = direction == 0 ? 1 : direction;
+        final float width = tabPagerWidth();
+        final LinearLayout adjacent = tabAdjacentContent != null
+                && tabAdjacentTab == target
+                ? tabAdjacentContent
+                : prepareAdjacentTabContent(target, tabDirection);
+        if (adjacent == null) {
+            selectedTab = target;
+            updateTabStyles();
+            populateTabContent(target);
+            finishTabAnimation();
+            return;
+        }
+        tabAnimationRunning = true;
+        selectedTab = target;
+        updateTabStyles();
+        tabContent.animate().setListener(null).cancel();
+        adjacent.animate().setListener(null).cancel();
+        tabContent.animate()
+                .translationX(-tabDirection * width)
+                .alpha(1f)
+                .setDuration(TAB_ANIMATION_DURATION_MS)
+                .setInterpolator(tabEnterInterpolator())
+                .start();
+        adjacent.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(TAB_ANIMATION_DURATION_MS)
+                .setInterpolator(tabEnterInterpolator())
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        promoteAdjacentTabContent();
+                        finishTabAnimation();
+                    }
+
+                    @Override
+                    public void onAnimationCancel(Animator animation) {
+                        finishTabAnimation();
+                    }
+                })
+                .start();
+    }
+
+    private int swipeTargetForDx(float dx) {
+        if (dx < 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
+            return TAB_CHARGING_DOODLE;
+        }
+        if (dx > 0f && selectedTab == TAB_CHARGING_DOODLE) {
+            return TAB_LOCKSCREEN_EFFECT;
+        }
+        return -1;
+    }
+
+    private void resetTabSwipeState() {
+        tabSwipeStartedOnSlider = false;
+        tabSwipeDragging = false;
+        tabSwipeTarget = -1;
+        tabSwipeDirection = 0;
     }
 
     private boolean maybeSwitchTabBySwipe(MotionEvent event) {
@@ -433,12 +839,12 @@ public class ControlActivity extends Activity {
         if (absX < dp(TAB_SWIPE_MIN_DISTANCE_DP) || absX < absY * TAB_SWIPE_AXIS_RATIO) {
             return false;
         }
-        if (dx < 0f && selectedTab == TAB_CHARGING_DOODLE) {
-            showTab(TAB_LOCKSCREEN_EFFECT, true, 1);
+        if (dx < 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
+            showTab(TAB_CHARGING_DOODLE, true, 1);
             return true;
         }
-        if (dx > 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
-            showTab(TAB_CHARGING_DOODLE, true, -1);
+        if (dx > 0f && selectedTab == TAB_CHARGING_DOODLE) {
+            showTab(TAB_LOCKSCREEN_EFFECT, true, -1);
             return true;
         }
         return false;
@@ -480,42 +886,44 @@ public class ControlActivity extends Activity {
         if (button == null) {
             return;
         }
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(9));
-        background.setColor(selected ? COLOR_SURFACE : Color.TRANSPARENT);
-        background.setStroke(dp(1),
-                selected ? COLOR_DIVIDER : Color.TRANSPARENT);
-        button.setBackground(background);
-        button.setTextColor(selected ? COLOR_ACCENT : COLOR_MUTED);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed},
+                solidDrawable(Color.rgb(225, 244, 244), dp(17), Color.TRANSPARENT, 0));
+        states.addState(new int[] {}, selected
+                ? gradient(GradientDrawable.Orientation.TL_BR,
+                        new int[] {Color.WHITE, Color.rgb(225, 248, 247)},
+                        dp(17), Color.argb(100, 68, 177, 181), dp(1))
+                : solidDrawable(Color.TRANSPARENT, dp(17), Color.TRANSPARENT, 0));
+        button.setBackground(states);
+        button.setTextColor(selected ? COLOR_ACCENT_DEEP : COLOR_MUTED);
         button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setElevation(selected ? dp(3) : 0f);
+            button.setLetterSpacing(0.08f);
+        }
     }
 
     private void styleCard(LinearLayout section) {
-        section.setPadding(dp(16), dp(14), dp(16), dp(16));
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(8));
-        background.setColor(COLOR_SURFACE);
-        background.setStroke(dp(1), Color.rgb(232, 237, 244));
-        section.setBackground(background);
+        section.setPadding(dp(18), dp(18), dp(18), dp(22));
+        section.setBackground(cardBackground(false));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            section.setElevation(dp(1));
+            section.setElevation(dp(3));
         }
     }
 
     private void styleProfilerCard(LinearLayout section) {
-        section.setPadding(dp(16), dp(14), dp(16), dp(16));
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[] {
-                        Color.rgb(255, 255, 255),
-                        Color.rgb(232, 244, 255),
-                        Color.rgb(250, 252, 255)
-                });
-        background.setCornerRadius(dp(8));
-        background.setStroke(dp(1), Color.rgb(202, 226, 246));
-        section.setBackground(background);
+        section.setPadding(dp(24), dp(20), dp(24), dp(20));
+        section.setBackground(cardBackground(true));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            section.setElevation(dp(2));
+            section.setElevation(0f);
+        }
+    }
+
+    private void styleInsetPanel(LinearLayout section) {
+        section.setPadding(0, dp(6), 0, dp(2));
+        section.setBackground(insetPanelBackground());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            section.setElevation(0f);
         }
     }
 
@@ -523,19 +931,20 @@ public class ControlActivity extends Activity {
         TextView label = new TextView(this);
         label.setText(text);
         label.setTextColor(COLOR_TEXT);
-        label.setTextSize(18f);
+        label.setTextSize(24f);
         label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        label.setPadding(0, 0, 0, dp(8));
+        label.setPadding(dp(4), dp(2), 0, dp(14));
         return label;
     }
 
     private TextView sectionLabel(String text) {
         TextView label = new TextView(this);
         label.setText(text);
-        label.setTextColor(COLOR_MUTED);
+        label.setTextColor(COLOR_ACCENT_DEEP);
         label.setTextSize(12f);
         label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        label.setPadding(0, dp(10), 0, dp(2));
+        label.setAllCaps(true);
+        label.setPadding(0, dp(14), 0, dp(6));
         return label;
     }
 
@@ -545,17 +954,24 @@ public class ControlActivity extends Activity {
         toggle.setTextColor(COLOR_TEXT);
         toggle.setTextSize(16f);
         toggle.setChecked(prefs.getBoolean(key, defaultValue));
-        toggle.setPadding(0, dp(8), 0, dp(8));
+        toggle.setGravity(Gravity.CENTER_VERTICAL);
+        toggle.setIncludeFontPadding(false);
+        toggle.setPadding(dp(14), 0, dp(8), 0);
+        toggle.setBackground(controlRowBackground(false));
+        tintSwitch(toggle);
         toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 prefs.edit().putBoolean(key, isChecked).apply();
+                if (OverlayPrefs.SHOW_DOODLE.equals(key)) {
+                    showTab(selectedTab);
+                }
             }
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(56));
-        params.setMargins(0, dp(4), 0, dp(4));
+                dp(60));
+        params.setMargins(0, dp(3), 0, dp(3));
         toggle.setLayoutParams(params);
         return toggle;
     }
@@ -566,7 +982,11 @@ public class ControlActivity extends Activity {
         toggle.setTextColor(COLOR_TEXT);
         toggle.setTextSize(16f);
         toggle.setChecked(!prefs.getBoolean(key, defaultStoredValue));
-        toggle.setPadding(0, dp(8), 0, dp(8));
+        toggle.setGravity(Gravity.CENTER_VERTICAL);
+        toggle.setIncludeFontPadding(false);
+        toggle.setPadding(dp(14), 0, dp(8), 0);
+        toggle.setBackground(controlRowBackground(false));
+        tintSwitch(toggle);
         toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -575,8 +995,8 @@ public class ControlActivity extends Activity {
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(56));
-        params.setMargins(0, dp(4), 0, dp(4));
+                dp(60));
+        params.setMargins(0, dp(3), 0, dp(3));
         toggle.setLayoutParams(params);
         return toggle;
     }
@@ -587,17 +1007,124 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, 0, 0, dp(12));
+        sectionParams.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(sectionParams);
         styleCard(section);
         section.addView(sectionTitle("Charging doodle"));
+        section.addView(chargingDoodleHero());
 
         section.addView(toggle("Enable charging doodle", OverlayPrefs.SHOW_DOODLE, true));
         section.addView(toggle("Doodle on lockscreen", OverlayPrefs.SHOW_LOCK, true));
+        section.addView(toggle("Seasonal unlock partner",
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER, true));
+        if (OverlayPrefs.showDoodle(this)) {
+            section.addView(doodlePreviewPanel());
+        }
         section.addView(seasonSelector());
         section.addView(positionControls());
-        section.addView(doodleDebugControls());
+        section.addView(doodleDebugMenu());
         return section;
+    }
+
+    private View chargingDoodleHero() {
+        FrameLayout hero = new FrameLayout(this);
+        hero.setBackground(gradient(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {
+                        Color.rgb(255, 225, 139),
+                        Color.rgb(246, 194, 229),
+                        Color.rgb(154, 231, 220)
+                },
+                dp(22),
+                Color.argb(100, 255, 255, 255),
+                dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            hero.setElevation(dp(5));
+            hero.setClipToOutline(true);
+        }
+        hero.addView(new GraceDoodleArtView(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setGravity(Gravity.CENTER_VERTICAL);
+        copy.setPadding(dp(20), dp(14), dp(112), dp(14));
+
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("CHARGING COMPANION");
+        eyebrow.setTextColor(Color.rgb(150, 90, 23));
+        eyebrow.setTextSize(10f);
+        eyebrow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            eyebrow.setLetterSpacing(0.13f);
+        }
+        copy.addView(eyebrow);
+
+        TextView title = new TextView(this);
+        title.setText("Seasons come alive");
+        title.setTextColor(COLOR_GRACE_NAVY);
+        title.setTextSize(22f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.setMargins(0, dp(3), 0, 0);
+        copy.addView(title, titleParams);
+
+        TextView caption = new TextView(this);
+        caption.setText("Spring  /  Summer  /  Autumn  /  Winter");
+        caption.setTextColor(Color.rgb(72, 77, 105));
+        caption.setTextSize(11f);
+        LinearLayout.LayoutParams captionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        captionParams.setMargins(0, dp(5), 0, 0);
+        copy.addView(caption, captionParams);
+
+        hero.addView(copy, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(138));
+        params.setMargins(0, 0, 0, dp(13));
+        hero.setLayoutParams(params);
+        return hero;
+    }
+
+    private View doodlePreviewPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(0, dp(8), 0, dp(10));
+        LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        panelParams.setMargins(0, dp(2), 0, dp(8));
+        panel.setLayoutParams(panelParams);
+        styleInsetPanel(panel);
+
+        final Bitmap bitmap = createDoodlePreviewBitmap(720, 320);
+        ImageView preview = new ImageView(this) {
+            @Override
+            protected void onDetachedFromWindow() {
+                super.onDetachedFromWindow();
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        };
+        preview.setImageBitmap(bitmap);
+        preview.setAdjustViewBounds(false);
+        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        preview.setBackground(solidDrawable(Color.rgb(22, 48, 72), dp(12),
+                Color.argb(70, 255, 255, 255), dp(1)));
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(150));
+        previewParams.setMargins(0, 0, 0, 0);
+        panel.addView(preview, previewParams);
+        return panel;
     }
 
     private View seasonSelector() {
@@ -606,9 +1133,9 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, dp(10), 0, dp(12));
+        sectionParams.setMargins(0, dp(6), 0, dp(8));
         section.setLayoutParams(sectionParams);
-        styleCard(section);
+        styleInsetPanel(section);
         section.addView(sectionTitle("Seasonal doodle"));
 
         final RadioGroup group = new RadioGroup(this);
@@ -635,6 +1162,9 @@ public class ControlActivity extends Activity {
                 Object tag = checkedView == null ? null : checkedView.getTag();
                 if (tag instanceof Integer) {
                     prefs.edit().putInt(OverlayPrefs.SEASON_MODE, ((Integer) tag).intValue()).apply();
+                    if (OverlayPrefs.showDoodle(ControlActivity.this)) {
+                        showTab(selectedTab);
+                    }
                 }
             }
         });
@@ -646,12 +1176,59 @@ public class ControlActivity extends Activity {
         RadioButton button = new RadioButton(this);
         button.setText(label);
         button.setTextColor(COLOR_TEXT);
-        button.setTextSize(17f);
+        button.setTextSize(16f);
         button.setTag(Integer.valueOf(value));
-        button.setPadding(0, dp(5), 0, dp(5));
-        group.addView(button, new RadioGroup.LayoutParams(
+        button.setPadding(0, 0, 0, 0);
+        button.setBackground(controlRowBackground(false));
+        tintRadio(button);
+        RadioGroup.LayoutParams params = new RadioGroup.LayoutParams(
                 RadioGroup.LayoutParams.MATCH_PARENT,
-            dp(44)));
+                dp(44));
+        params.setMargins(0, 0, 0, 0);
+        group.addView(button, params);
+    }
+
+    private View doodleDebugMenu() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(6), 0, dp(8));
+        section.setLayoutParams(params);
+        styleInsetPanel(section);
+
+        section.addView(collapsibleHeader("Debug", doodleDebugExpanded,
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                doodleDebugExpanded = !doodleDebugExpanded;
+                showTab(selectedTab);
+            }
+        }));
+
+        if (doodleDebugExpanded) {
+            section.addView(doodleDebugControls());
+        }
+        return section;
+    }
+
+    private TextView collapsibleHeader(String label, boolean expanded,
+            View.OnClickListener listener) {
+        TextView header = new TextView(this);
+        header.setText(expanded ? label + "   -" : label + "   +");
+        header.setTextColor(COLOR_ACCENT_DEEP);
+        header.setTextSize(16f);
+        header.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setIncludeFontPadding(false);
+        header.setPadding(dp(14), 0, dp(14), 0);
+        header.setBackground(controlRowBackground(false));
+        header.setOnClickListener(listener);
+        header.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)));
+        return header;
     }
 
     private View effectSelector() {
@@ -664,9 +1241,12 @@ public class ControlActivity extends Activity {
         section.setLayoutParams(sectionParams);
         styleCard(section);
         section.addView(sectionTitle("Unlock effect"));
-        section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
 
         int current = pendingUnlockEffect >= 0 ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
+        section.addView(effectPreviewHint());
+        section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
+        section.addView(toggle("Lock effect sound", OverlayPrefs.LOCK_SOUND_ENABLED, true));
+
         section.addView(sectionLabel("Stabili"));
         section.addView(effectOption(
                 "S4 Lens Flare",
@@ -684,7 +1264,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 current));
         section.addView(effectOption(
-                "NE Geometric Mosaic",
+                "N4 Geometric Mosaic",
                 "Samsung native LockBG mosaic renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current));
@@ -716,11 +1296,45 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current));
 
-        addEffectBackgroundActions(section, current);
+        section.addView(screenshotServiceControls(current));
         return section;
     }
 
-    private void addEffectBackgroundActions(LinearLayout section, int currentEffect) {
+    private View effectPreviewHint() {
+        TextView hint = new TextView(this);
+        hint.setText("Hold an effect icon for preview");
+        hint.setTextColor(Color.rgb(69, 83, 103));
+        hint.setTextSize(12f);
+        hint.setGravity(Gravity.CENTER_VERTICAL);
+        hint.setPadding(dp(14), 0, dp(14), 0);
+        hint.setBackground(gradient(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] {
+                        Color.argb(175, 221, 248, 244),
+                        Color.argb(130, 241, 225, 249),
+                        Color.argb(105, 255, 236, 197)
+                },
+                dp(15),
+                Color.argb(80, 105, 181, 183),
+                dp(1)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44));
+        params.setMargins(0, 0, 0, dp(10));
+        hint.setLayoutParams(params);
+        return hint;
+    }
+
+    private View screenshotServiceControls(final int currentEffect) {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(10), 0, 0);
+        section.setLayoutParams(params);
+        styleInsetPanel(section);
+        section.addView(sectionLabel("Screenshot service"));
         section.addView(infoText(effectBackgroundStatus(currentEffect)));
         section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
             @Override
@@ -732,13 +1346,6 @@ public class ControlActivity extends Activity {
                         Toast.LENGTH_SHORT).show();
             }
         }));
-        section.addView(toggle("Auto recapture expired cache",
-                OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
-        section.addView(effectBackgroundIntervalSelector());
-        section.addView(toggle("Pause auto recapture 23-07",
-                OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
-        section.addView(toggle("Wake lockscreen for hard recapture",
-                OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
         section.addView(outlineButton("View colormap screenshot", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -746,6 +1353,27 @@ public class ControlActivity extends Activity {
                 showEffectBackgroundScreenshot();
             }
         }));
+        return section;
+    }
+
+    private View screenshotServiceDebugControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, dp(8));
+        section.setLayoutParams(params);
+        styleInsetPanel(section);
+        section.addView(sectionLabel("Screenshot service"));
+        section.addView(toggle("Auto recapture expired cache",
+                OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
+        section.addView(effectBackgroundIntervalSelector());
+        section.addView(toggle("Pause auto recapture 23-07",
+                OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
+        section.addView(toggle("Wake lockscreen for hard recapture",
+                OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
+        return section;
     }
 
     private void queueUnlockEffectSelection(int value) {
@@ -828,6 +1456,12 @@ public class ControlActivity extends Activity {
                                     ((Integer) tag).intValue())
                             .apply();
                 }
+                for (int i = 0; i < radioGroup.getChildCount(); i++) {
+                    View child = radioGroup.getChildAt(i);
+                    if (child instanceof RadioButton) {
+                        child.setBackground(controlRowBackground(((RadioButton) child).isChecked()));
+                    }
+                }
             }
         });
         return group;
@@ -841,10 +1475,17 @@ public class ControlActivity extends Activity {
         button.setTag(Integer.valueOf(hours));
         button.setId(View.generateViewId());
         button.setChecked(hours == current);
-        group.addView(button, new RadioGroup.LayoutParams(
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setPadding(dp(4), 0, dp(4), 0);
+        button.setBackground(controlRowBackground(hours == current));
+        tintRadio(button);
+        RadioGroup.LayoutParams params = new RadioGroup.LayoutParams(
                 0,
                 dp(44),
-                1f));
+                1f);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        group.addView(button, params);
     }
 
     private View effectProfilerControls() {
@@ -853,9 +1494,9 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(12));
+        params.setMargins(0, dp(8), 0, dp(8));
         section.setLayoutParams(params);
-        styleProfilerCard(section);
+        styleInsetPanel(section);
 
         TextView eyebrow = sectionLabel("Automatic runtime sample");
         eyebrow.setPadding(0, 0, 0, dp(2));
@@ -869,7 +1510,9 @@ public class ControlActivity extends Activity {
         effectProfilerSummary.setTextColor(COLOR_TEXT);
         effectProfilerSummary.setTextSize(14f);
         effectProfilerSummary.setLineSpacing(dp(3), 1.0f);
-        effectProfilerSummary.setPadding(0, dp(6), 0, dp(10));
+        effectProfilerSummary.setIncludeFontPadding(false);
+        effectProfilerSummary.setPadding(dp(12), dp(10), dp(12), dp(10));
+        effectProfilerSummary.setBackground(infoBackground());
         section.addView(effectProfilerSummary);
         updateEffectProfilerSummary();
 
@@ -955,7 +1598,7 @@ public class ControlActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
-        root.setBackgroundColor(COLOR_BACKGROUND);
+        root.setBackground(pageBackground());
 
         TextView title = sectionTitle("Colormap screenshot");
         root.addView(title);
@@ -1002,6 +1645,640 @@ public class ControlActivity extends Activity {
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT);
         }
+    }
+
+    private void showEffectPreviewBubble(View anchor, int effect, String title,
+            float rawX, float rawY) {
+        if (anchor == null || isFinishing()) {
+            return;
+        }
+        hideEffectPreviewBubble();
+
+        effectPreviewPopupBitmap = createEffectPreviewBitmap(effect, 420, 720);
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int popupWidth = Math.min(Math.max(dp(260), screenWidth - dp(64)), dp(300));
+        int imageHeight = dp(240);
+        int estimatedHeight = dp(312);
+
+        int[] anchorLocation = new int[2];
+        anchor.getLocationOnScreen(anchorLocation);
+        int anchorCenterX = Math.round(rawX > 0f
+                ? rawX
+                : anchorLocation[0] + anchor.getWidth() * 0.5f);
+        int anchorTop = anchorLocation[1];
+        int anchorBottom = anchorLocation[1] + anchor.getHeight();
+        boolean showAbove = anchorTop > estimatedHeight + dp(22);
+
+        int left = clampInt(anchorCenterX - popupWidth / 2,
+                dp(12),
+                Math.max(dp(12), screenWidth - popupWidth - dp(12)));
+        int top = showAbove
+                ? anchorTop - estimatedHeight + dp(6)
+                : anchorBottom - dp(6);
+        top = clampInt(top, dp(8), Math.max(dp(8), screenHeight - estimatedHeight - dp(8)));
+        int tailLeft = clampInt(anchorCenterX - left - dp(18), dp(22), popupWidth - dp(56));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(2), 0, dp(2), 0);
+        root.setClipToPadding(false);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(10), dp(12), dp(12));
+        card.setBackground(solidDrawable(COLOR_SURFACE, dp(20),
+                Color.argb(110, 0, 132, 142), dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(dp(10));
+        }
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setSingleLine(true);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        titleView.setPadding(0, 0, 0, dp(8));
+        card.addView(titleView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ImageView image = new ImageView(this);
+        image.setImageBitmap(effectPreviewPopupBitmap);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setBackground(solidDrawable(Color.rgb(245, 248, 250), dp(14),
+                Color.TRANSPARENT, 0));
+        card.addView(image, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                imageHeight));
+
+        View tail = previewBubbleTail(showAbove);
+        LinearLayout.LayoutParams tailParams = new LinearLayout.LayoutParams(dp(36), dp(17));
+        tailParams.setMargins(tailLeft, 0, 0, 0);
+
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        if (showAbove) {
+            root.addView(card, cardParams);
+            root.addView(tail, tailParams);
+        } else {
+            root.addView(tail, tailParams);
+            root.addView(card, cardParams);
+        }
+
+        forceSansSerif(root);
+        root.setAlpha(0f);
+        root.setScaleX(0.96f);
+        root.setScaleY(0.96f);
+        root.setPivotX(anchorCenterX - left);
+        root.setPivotY(showAbove ? estimatedHeight : 0f);
+
+        effectPreviewPopup = new PopupWindow(root,
+                popupWidth,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                false);
+        effectPreviewPopup.setTouchable(false);
+        effectPreviewPopup.setOutsideTouchable(false);
+        effectPreviewPopup.setClippingEnabled(false);
+        effectPreviewPopup.setBackgroundDrawable(
+                solidDrawable(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0));
+        effectPreviewPopup.showAtLocation(getWindow().getDecorView(),
+                Gravity.NO_GRAVITY,
+                left,
+                top);
+        root.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(140L)
+                .setInterpolator(tabEnterInterpolator())
+                .start();
+    }
+
+    private void hideEffectPreviewBubble() {
+        if (effectPreviewPopup != null) {
+            effectPreviewPopup.dismiss();
+            effectPreviewPopup = null;
+        }
+        if (effectPreviewPopupBitmap != null && !effectPreviewPopupBitmap.isRecycled()) {
+            effectPreviewPopupBitmap.recycle();
+        }
+        effectPreviewPopupBitmap = null;
+    }
+
+    private View previewBubbleTail(final boolean pointsDown) {
+        View tail = new View(this) {
+            private final Paint tailPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                float width = getWidth();
+                float height = getHeight();
+                Path path = new Path();
+                if (pointsDown) {
+                    path.moveTo(0f, 0f);
+                    path.lineTo(width, 0f);
+                    path.lineTo(width * 0.5f, height);
+                } else {
+                    path.moveTo(0f, height);
+                    path.lineTo(width, height);
+                    path.lineTo(width * 0.5f, 0f);
+                }
+                path.close();
+                tailPaint.setStyle(Paint.Style.FILL);
+                tailPaint.setColor(COLOR_SURFACE);
+                canvas.drawPath(path, tailPaint);
+                strokePaint.setStyle(Paint.Style.STROKE);
+                strokePaint.setStrokeWidth(dp(1));
+                strokePaint.setColor(Color.argb(90, 0, 132, 142));
+                canvas.drawPath(path, strokePaint);
+            }
+        };
+        tail.setWillNotDraw(false);
+        return tail;
+    }
+
+    private Bitmap createDoodlePreviewBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        drawGracePreviewBackground(canvas, paint, width, height, true);
+
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(68, 0, 0, 0));
+        canvas.drawRoundRect(width * 0.06f, height * 0.12f,
+                width * 0.94f, height * 0.88f, dp(18), dp(18), paint);
+
+        drawDoodleSeasonalParticles(canvas, paint, width, height, resolveDoodlePreviewSeason());
+        drawDoodleChargingMark(canvas, paint, width, height);
+
+        paint.setShader(null);
+        paint.setColor(Color.WHITE);
+        paint.setTypeface(appTypeface(Typeface.NORMAL));
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(height * 0.22f);
+        canvas.drawText("10:54", width * 0.5f, height * 0.45f, paint);
+
+        paint.setTextSize(height * 0.055f);
+        paint.setColor(Color.argb(210, 255, 255, 255));
+        canvas.drawText("Charging doodle", width * 0.5f, height * 0.70f, paint);
+
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTextSize(height * 0.055f);
+        canvas.drawText("97%", width * 0.73f, height * 0.20f, paint);
+        drawBatteryGlyph(canvas, paint, width * 0.84f, height * 0.155f,
+                width * 0.095f, height * 0.045f);
+        paint.setTextAlign(Paint.Align.LEFT);
+        return bitmap;
+    }
+
+    private Bitmap createEffectPreviewBitmap(int effect, int width, int height) {
+        Bitmap stockPreview = decodeStockEffectPreview(effect);
+        if (stockPreview != null) {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
+            drawStockEffectPreview(canvas, paint, stockPreview, width, height);
+            if (!stockPreview.isRecycled()) {
+                stockPreview.recycle();
+            }
+            return bitmap;
+        }
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        drawGracePreviewBackground(canvas, paint, width, height, false);
+
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                drawPreviewLensFlare(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_S3_RIPPLE:
+            case OverlayPrefs.EFFECT_S4_RIPPLE:
+                drawPreviewRipple(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                drawPreviewPoppingColours(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                drawPreviewWatercolor(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+                drawPreviewDroplets(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                drawPreviewBubbles(canvas, paint, width, height);
+                break;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                drawPreviewTiles(canvas, paint, width, height, false);
+                break;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                drawPreviewTiles(canvas, paint, width, height, true);
+                break;
+            default:
+                drawPreviewLensFlare(canvas, paint, width, height);
+                break;
+        }
+        drawPreviewVignette(canvas, paint, width, height);
+        return bitmap;
+    }
+
+    private Bitmap decodeStockEffectPreview(int effect) {
+        int resId = stockEffectPreviewResId(effect);
+        if (resId == 0) {
+            return null;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = false;
+        return BitmapFactory.decodeResource(getResources(), resId, options);
+    }
+
+    private int stockEffectPreviewResId(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return R.drawable.preview_unlock_poppingcolor_s5;
+            case OverlayPrefs.EFFECT_S3_RIPPLE:
+            case OverlayPrefs.EFFECT_S4_RIPPLE:
+                return R.drawable.preview_unlock_ripple_s5;
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                return R.drawable.preview_unlock_watercolor_s5;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return R.drawable.preview_unlock_abstract_tiles_note4;
+            default:
+                return 0;
+        }
+    }
+
+    private void drawStockEffectPreview(Canvas canvas, Paint paint, Bitmap source,
+            int width, int height) {
+        float scale = Math.max(width / (float) source.getWidth(),
+                height / (float) source.getHeight());
+        int drawWidth = Math.round(source.getWidth() * scale);
+        int drawHeight = Math.round(source.getHeight() * scale);
+        int left = (width - drawWidth) / 2;
+        int top = (height - drawHeight) / 2;
+        Rect dst = new Rect(left, top, left + drawWidth, top + drawHeight);
+        canvas.drawBitmap(source, null, dst, paint);
+    }
+
+    private void drawGracePreviewBackground(Canvas canvas, Paint paint, int width, int height,
+            boolean darker) {
+        paint.setStyle(Paint.Style.FILL);
+        paint.setShader(new LinearGradient(
+                0f,
+                0f,
+                width,
+                height,
+                new int[] {
+                        Color.rgb(82, 69, 165),
+                        Color.rgb(42, 144, 197),
+                        Color.rgb(139, 207, 181)
+                },
+                new float[] {0f, 0.52f, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, width, height, paint);
+        paint.setShader(null);
+
+        Path plane = new Path();
+        plane.moveTo(width * 0.34f, 0f);
+        plane.lineTo(width, 0f);
+        plane.lineTo(width, height * 0.46f);
+        plane.lineTo(width * 0.48f, height * 0.75f);
+        plane.close();
+        paint.setColor(Color.argb(142, 226, 245, 226));
+        canvas.drawPath(plane, paint);
+
+        plane.reset();
+        plane.moveTo(0f, height * 0.38f);
+        plane.lineTo(width * 0.47f, height * 0.76f);
+        plane.lineTo(width, height * 0.48f);
+        plane.lineTo(width, height);
+        plane.lineTo(0f, height);
+        plane.close();
+        paint.setColor(Color.argb(126, 21, 54, 92));
+        canvas.drawPath(plane, paint);
+
+        plane.reset();
+        plane.moveTo(0f, 0f);
+        plane.lineTo(width * 0.39f, 0f);
+        plane.lineTo(width * 0.22f, height * 0.58f);
+        plane.lineTo(0f, height * 0.42f);
+        plane.close();
+        paint.setColor(Color.argb(122, 164, 58, 236));
+        canvas.drawPath(plane, paint);
+
+        if (darker) {
+            paint.setColor(Color.argb(72, 0, 0, 0));
+            canvas.drawRect(0, 0, width, height, paint);
+        }
+    }
+
+    private void drawPreviewLensFlare(Canvas canvas, Paint paint, int width, int height) {
+        float cx = width * 0.55f;
+        float cy = height * 0.52f;
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.STROKE);
+        for (int i = 6; i >= 1; i--) {
+            paint.setStrokeWidth(dp(1) + i);
+            paint.setColor(Color.argb(18 + i * 18, 255, 228, 120));
+            float radius = width * (0.055f + i * 0.036f);
+            canvas.drawCircle(cx, cy, radius, paint);
+        }
+
+        paint.setStrokeWidth(dp(3));
+        paint.setColor(Color.argb(148, 255, 246, 190));
+        canvas.drawLine(cx - width * 0.32f, cy, cx + width * 0.32f, cy, paint);
+        canvas.drawLine(cx, cy - height * 0.34f, cx, cy + height * 0.34f, paint);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(Color.argb(118, 255, 184, 92));
+        canvas.drawLine(cx - width * 0.23f, cy + height * 0.18f,
+                cx + width * 0.22f, cy - height * 0.18f, paint);
+
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 5; i++) {
+            paint.setColor(Color.argb(120 - i * 14, 255, 230, 120));
+            canvas.drawCircle(width * (0.20f + i * 0.13f),
+                    height * (0.68f - i * 0.06f),
+                    width * (0.018f + i * 0.004f),
+                    paint);
+        }
+        paint.setColor(Color.WHITE);
+        canvas.drawCircle(cx, cy, width * 0.032f, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawPreviewRipple(Canvas canvas, Paint paint, int width, int height) {
+        float cx = width * 0.48f;
+        float cy = height * 0.58f;
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.STROKE);
+        for (int i = 0; i < 8; i++) {
+            paint.setStrokeWidth(dp(2) + i * 0.9f);
+            paint.setColor(Color.argb(160 - i * 15, 170, 235, 255));
+            canvas.drawCircle(cx, cy, width * (0.06f + i * 0.052f), paint);
+        }
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(Color.argb(90, 255, 255, 255));
+        canvas.drawLine(width * 0.18f, height * 0.62f,
+                width * 0.82f, height * 0.43f, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(210, 230, 252, 255));
+        canvas.drawCircle(cx, cy, width * 0.025f, paint);
+    }
+
+    private void drawPreviewPoppingColours(Canvas canvas, Paint paint, int width, int height) {
+        int[] colors = {
+                Color.rgb(255, 111, 92),
+                Color.rgb(255, 195, 72),
+                Color.rgb(96, 212, 108),
+                Color.rgb(84, 186, 246),
+                Color.rgb(172, 102, 230),
+                Color.rgb(246, 105, 172)
+        };
+        float[] xs = {0.27f, 0.42f, 0.58f, 0.70f, 0.36f, 0.53f, 0.66f};
+        float[] ys = {0.62f, 0.44f, 0.59f, 0.39f, 0.72f, 0.72f, 0.66f};
+        float[] rs = {0.10f, 0.075f, 0.13f, 0.085f, 0.055f, 0.065f, 0.045f};
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < xs.length; i++) {
+            paint.setColor(Color.argb(210, Color.red(colors[i % colors.length]),
+                    Color.green(colors[i % colors.length]), Color.blue(colors[i % colors.length])));
+            canvas.drawCircle(width * xs[i], height * ys[i], width * rs[i], paint);
+            paint.setColor(Color.argb(78, 255, 255, 255));
+            canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
+                    width * rs[i] * 0.28f, paint);
+        }
+    }
+
+    private void drawPreviewWatercolor(Canvas canvas, Paint paint, int width, int height) {
+        int[] colors = {
+                Color.argb(120, 99, 220, 211),
+                Color.argb(132, 130, 111, 238),
+                Color.argb(118, 255, 135, 166),
+                Color.argb(108, 255, 213, 95)
+        };
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 9; i++) {
+            paint.setColor(colors[i % colors.length]);
+            float cx = width * (0.22f + (i % 4) * 0.16f);
+            float cy = height * (0.39f + (i / 4) * 0.16f + (i % 2) * 0.05f);
+            canvas.drawCircle(cx, cy, width * (0.075f + (i % 3) * 0.018f), paint);
+        }
+        Path wash = new Path();
+        wash.moveTo(width * 0.30f, height * 0.62f);
+        wash.cubicTo(width * 0.38f, height * 0.38f, width * 0.72f, height * 0.38f,
+                width * 0.78f, height * 0.58f);
+        wash.cubicTo(width * 0.70f, height * 0.78f, width * 0.42f, height * 0.80f,
+                width * 0.30f, height * 0.62f);
+        paint.setColor(Color.argb(98, 255, 255, 255));
+        canvas.drawPath(wash, paint);
+    }
+
+    private void drawPreviewDroplets(Canvas canvas, Paint paint, int width, int height) {
+        drawDroplet(canvas, paint, width * 0.36f, height * 0.52f,
+                width * 0.0021f, Color.argb(210, 255, 96, 103));
+        drawDroplet(canvas, paint, width * 0.52f, height * 0.45f,
+                width * 0.0017f, Color.argb(210, 92, 219, 201));
+        drawDroplet(canvas, paint, width * 0.64f, height * 0.60f,
+                width * 0.00195f, Color.argb(210, 255, 206, 88));
+    }
+
+    private void drawDroplet(Canvas canvas, Paint paint, float cx, float cy, float scale,
+            int color) {
+        float s = scale;
+        Path droplet = new Path();
+        droplet.moveTo(cx, cy - 58f * s);
+        droplet.cubicTo(cx + 60f * s, cy - 8f * s, cx + 52f * s, cy + 70f * s,
+                cx, cy + 84f * s);
+        droplet.cubicTo(cx - 52f * s, cy + 70f * s, cx - 60f * s, cy - 8f * s,
+                cx, cy - 58f * s);
+        droplet.close();
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        canvas.drawPath(droplet, paint);
+        paint.setColor(Color.argb(92, 255, 255, 255));
+        canvas.drawCircle(cx - 16f * s, cy - 6f * s, 12f * s, paint);
+    }
+
+    private void drawPreviewBubbles(Canvas canvas, Paint paint, int width, int height) {
+        float[] xs = {0.25f, 0.38f, 0.50f, 0.62f, 0.73f, 0.31f, 0.56f};
+        float[] ys = {0.62f, 0.43f, 0.70f, 0.50f, 0.64f, 0.78f, 0.32f};
+        float[] rs = {0.060f, 0.045f, 0.075f, 0.052f, 0.042f, 0.034f, 0.030f};
+        paint.setShader(null);
+        for (int i = 0; i < xs.length; i++) {
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.argb(45, 255, 255, 255));
+            canvas.drawCircle(width * xs[i], height * ys[i], width * rs[i], paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2));
+            paint.setColor(Color.argb(150, 206, 255, 255));
+            canvas.drawCircle(width * xs[i], height * ys[i], width * rs[i], paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawPreviewTiles(Canvas canvas, Paint paint, int width, int height,
+            boolean geometric) {
+        int[] colors = {
+                Color.argb(190, 255, 188, 80),
+                Color.argb(190, 94, 207, 226),
+                Color.argb(190, 173, 103, 225),
+                Color.argb(190, 106, 210, 116)
+        };
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 6; col++) {
+                float left = width * (0.16f + col * 0.115f);
+                float top = height * (0.26f + row * 0.13f);
+                float size = width * 0.08f;
+                paint.setColor(colors[(row + col) % colors.length]);
+                if (geometric) {
+                    Path piece = new Path();
+                    piece.moveTo(left + size * 0.5f, top);
+                    piece.lineTo(left + size, top + size * 0.45f);
+                    piece.lineTo(left + size * 0.56f, top + size);
+                    piece.lineTo(left, top + size * 0.52f);
+                    piece.close();
+                    canvas.drawPath(piece, paint);
+                } else {
+                    canvas.save();
+                    canvas.rotate(-8f + (row + col) * 3f, left + size * 0.5f,
+                            top + size * 0.5f);
+                    canvas.drawRoundRect(left, top, left + size, top + size,
+                            dp(8), dp(8), paint);
+                    canvas.restore();
+                }
+            }
+        }
+    }
+
+    private void drawPreviewVignette(Canvas canvas, Paint paint, int width, int height) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(36, 0, 0, 0));
+        canvas.drawRect(0, 0, width, height, paint);
+        paint.setColor(Color.argb(58, 255, 255, 255));
+        canvas.drawRoundRect(width * 0.035f, height * 0.055f,
+                width * 0.965f, height * 0.945f, dp(22), dp(22), paint);
+        paint.setColor(Color.argb(32, 0, 0, 0));
+        canvas.drawRoundRect(width * 0.055f, height * 0.075f,
+                width * 0.945f, height * 0.925f, dp(18), dp(18), paint);
+    }
+
+    private int resolveDoodlePreviewSeason() {
+        int mode = OverlayPrefs.seasonMode(this);
+        if (mode >= SeasonalDoodleView.SEASON_SPRING
+                && mode <= SeasonalDoodleView.SEASON_WINTER) {
+            return mode;
+        }
+        int month = Calendar.getInstance().get(Calendar.MONTH);
+        if (month >= Calendar.MARCH && month <= Calendar.MAY) {
+            return SeasonalDoodleView.SEASON_SPRING;
+        }
+        if (month >= Calendar.JUNE && month <= Calendar.AUGUST) {
+            return SeasonalDoodleView.SEASON_SUMMER;
+        }
+        if (month >= Calendar.SEPTEMBER && month <= Calendar.NOVEMBER) {
+            return SeasonalDoodleView.SEASON_AUTUMN;
+        }
+        return SeasonalDoodleView.SEASON_WINTER;
+    }
+
+    private void drawDoodleSeasonalParticles(Canvas canvas, Paint paint, int width, int height,
+            int season) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 16; i++) {
+            float x = width * (0.13f + (i * 0.061f) % 0.73f);
+            float y = height * (0.18f + ((i * 37) % 62) / 100f);
+            float r = width * (0.008f + (i % 3) * 0.003f);
+            if (season == SeasonalDoodleView.SEASON_SPRING) {
+                paint.setColor(i % 2 == 0
+                        ? Color.argb(170, 255, 180, 210)
+                        : Color.argb(160, 180, 245, 168));
+                canvas.drawCircle(x, y, r, paint);
+                canvas.drawCircle(x + r * 1.3f, y, r * 0.8f, paint);
+            } else if (season == SeasonalDoodleView.SEASON_SUMMER) {
+                paint.setColor(i % 2 == 0
+                        ? Color.argb(178, 255, 214, 82)
+                        : Color.argb(160, 255, 126, 78));
+                drawSmallSpark(canvas, paint, x, y, r * 2.3f);
+            } else if (season == SeasonalDoodleView.SEASON_AUTUMN) {
+                paint.setColor(i % 2 == 0
+                        ? Color.argb(180, 229, 132, 62)
+                        : Color.argb(165, 244, 185, 77));
+                Path leaf = new Path();
+                leaf.moveTo(x, y - r * 1.8f);
+                leaf.cubicTo(x + r * 2.1f, y - r * 0.5f, x + r * 1.2f,
+                        y + r * 2.0f, x, y + r * 2.2f);
+                leaf.cubicTo(x - r * 1.2f, y + r * 2.0f, x - r * 2.1f,
+                        y - r * 0.5f, x, y - r * 1.8f);
+                canvas.drawPath(leaf, paint);
+            } else {
+                paint.setColor(Color.argb(180, 235, 252, 255));
+                paint.setStrokeWidth(dp(1));
+                paint.setStyle(Paint.Style.STROKE);
+                canvas.drawCircle(x, y, r * 1.6f, paint);
+                canvas.drawLine(x - r * 2.1f, y, x + r * 2.1f, y, paint);
+                canvas.drawLine(x, y - r * 2.1f, x, y + r * 2.1f, paint);
+                paint.setStyle(Paint.Style.FILL);
+            }
+        }
+    }
+
+    private void drawDoodleChargingMark(Canvas canvas, Paint paint, int width, int height) {
+        float cx = width * 0.50f;
+        float cy = height * 0.78f;
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(4));
+        paint.setColor(Color.argb(200, 255, 255, 255));
+        canvas.drawLine(cx - width * 0.07f, cy, cx + width * 0.07f, cy, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(230, 77, 215, 218));
+        Path bolt = new Path();
+        bolt.moveTo(cx - width * 0.012f, cy - height * 0.055f);
+        bolt.lineTo(cx + width * 0.026f, cy - height * 0.006f);
+        bolt.lineTo(cx + width * 0.004f, cy - height * 0.006f);
+        bolt.lineTo(cx + width * 0.018f, cy + height * 0.052f);
+        bolt.lineTo(cx - width * 0.030f, cy - height * 0.018f);
+        bolt.lineTo(cx - width * 0.006f, cy - height * 0.018f);
+        bolt.close();
+        canvas.drawPath(bolt, paint);
+    }
+
+    private void drawBatteryGlyph(Canvas canvas, Paint paint, float left, float top,
+            float width, float height) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(Color.argb(218, 255, 255, 255));
+        canvas.drawRoundRect(left, top, left + width, top + height,
+                dp(3), dp(3), paint);
+        canvas.drawRoundRect(left + width + dp(2), top + height * 0.28f,
+                left + width + dp(6), top + height * 0.72f, dp(2), dp(2), paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(210, 95, 235, 150));
+        canvas.drawRoundRect(left + dp(3), top + dp(3),
+                left + width - dp(3), top + height - dp(3), dp(2), dp(2), paint);
+    }
+
+    private void drawSmallSpark(Canvas canvas, Paint paint, float cx, float cy, float radius) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        canvas.drawLine(cx - radius, cy, cx + radius, cy, paint);
+        canvas.drawLine(cx, cy - radius, cx, cy + radius, paint);
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(cx, cy, radius * 0.28f, paint);
     }
 
     private File colormapScreenshotFileForPreview(int effect) {
@@ -1060,9 +2337,6 @@ public class ControlActivity extends Activity {
                 output.write(buffer, 0, read);
             }
             output.flush();
-            if (target.exists() && !target.delete()) {
-                return false;
-            }
             return temp.renameTo(target);
         } catch (Throwable t) {
             Log.d("LLEControl", "colormap screenshot migration failed", t);
@@ -1080,7 +2354,7 @@ public class ControlActivity extends Activity {
                 } catch (Throwable ignored) {
                 }
             }
-            if (temp.exists() && !target.exists()) {
+            if (temp.exists()) {
                 //noinspection ResultOfMethodCallIgnored
                 temp.delete();
             }
@@ -1113,33 +2387,71 @@ public class ControlActivity extends Activity {
 
     private View effectOption(String title, String subtitle, final int value, int current) {
         final boolean selected = value == current;
-        LinearLayout row = new LinearLayout(this);
+        final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
-        row.setMinimumHeight(dp(68));
+        row.setPadding(dp(12), dp(11), dp(12), dp(11));
+        row.setMinimumHeight(dp(82));
+        final boolean[] previewOpened = new boolean[] {false};
+        final float[] previewDown = new float[] {0f, 0f};
+        final Runnable previewRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (tabSwipeDragging || tabAnimationRunning) {
+                    return;
+                }
+                previewOpened[0] = true;
+                row.setPressed(false);
+                showEffectPreviewBubble(row, value, title, previewDown[0], previewDown[1]);
+            }
+        };
+        row.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    previewOpened[0] = false;
+                    previewDown[0] = event.getRawX();
+                    previewDown[1] = event.getRawY();
+                    uiHandler.removeCallbacks(previewRunnable);
+                    uiHandler.postDelayed(previewRunnable, 430L);
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_MOVE) {
+                    float dx = Math.abs(event.getRawX() - previewDown[0]);
+                    float dy = Math.abs(event.getRawY() - previewDown[1]);
+                    if (dx > dp(14) || dy > dp(14)) {
+                        uiHandler.removeCallbacks(previewRunnable);
+                    }
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    uiHandler.removeCallbacks(previewRunnable);
+                    hideEffectPreviewBubble();
+                }
+                return false;
+            }
+        });
         row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if (previewOpened[0]) {
+                    previewOpened[0] = false;
+                    return;
+                }
                 queueUnlockEffectSelection(value);
                 showTab(selectedTab);
             }
         });
 
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(8));
-        background.setColor(selected ? COLOR_ACCENT_SOFT : Color.rgb(249, 251, 253));
-        background.setStroke(dp(1), selected ? COLOR_ACCENT : COLOR_DIVIDER);
-        row.setBackground(background);
+        row.setBackground(optionBackground(selected));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            row.setElevation(selected ? dp(4) : dp(1));
+        }
 
-        View marker = new View(this);
-        GradientDrawable markerBackground = new GradientDrawable();
-        markerBackground.setShape(GradientDrawable.OVAL);
-        markerBackground.setColor(selected ? COLOR_ACCENT : Color.TRANSPARENT);
-        markerBackground.setStroke(dp(2), selected ? COLOR_ACCENT : Color.rgb(154, 166, 180));
-        marker.setBackground(markerBackground);
-        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(16), dp(16));
-        markerParams.setMargins(0, 0, dp(12), 0);
+        View marker = new GraceEffectIconView(value, selected);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        markerParams.setMargins(0, 0, dp(14), 0);
         row.addView(marker, markerParams);
 
         LinearLayout copy = new LinearLayout(this);
@@ -1172,7 +2484,7 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, dp(6), 0, 0);
+        rowParams.setMargins(0, dp(4), 0, dp(4));
         row.setLayoutParams(rowParams);
         return row;
     }
@@ -1195,7 +2507,8 @@ public class ControlActivity extends Activity {
         view.setTextColor(COLOR_MUTED);
         view.setTextSize(13f);
         view.setLineSpacing(dp(2), 1.0f);
-        view.setPadding(0, dp(8), 0, dp(10));
+        view.setPadding(0, dp(8), 0, dp(12));
+        view.setBackground(infoBackground());
         return view;
     }
 
@@ -1205,11 +2518,12 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(10), 0, dp(12));
+        params.setMargins(0, dp(6), 0, dp(8));
         section.setLayoutParams(params);
-        styleCard(section);
-        section.addView(sectionTitle("Position offset"));
+        styleInsetPanel(section);
+        section.addView(sectionTitle("Size and position"));
 
+        section.addView(doodleSizeSlider());
         section.addView(positionSlider("Horizontal", OverlayPrefs.POSITION_OFFSET_X, 0));
         section.addView(positionSlider("Vertical", OverlayPrefs.POSITION_OFFSET_Y, 0));
         return section;
@@ -1221,10 +2535,9 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(10), 0, dp(12));
+        params.setMargins(0, 0, 0, 0);
         section.setLayoutParams(params);
-        styleCard(section);
-        section.addView(sectionTitle("Debug"));
+        styleInsetPanel(section);
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         return section;
     }
@@ -1235,7 +2548,7 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(12));
+        params.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(params);
         styleCard(section);
         section.addView(sectionTitle("Touch box"));
@@ -1243,7 +2556,10 @@ public class ControlActivity extends Activity {
         touchBoxSummary = new TextView(this);
         touchBoxSummary.setTextColor(COLOR_MUTED);
         touchBoxSummary.setTextSize(14f);
-        touchBoxSummary.setPadding(0, dp(8), 0, dp(8));
+        touchBoxSummary.setLineSpacing(dp(2), 1.0f);
+        touchBoxSummary.setIncludeFontPadding(false);
+        touchBoxSummary.setPadding(0, dp(8), 0, dp(12));
+        touchBoxSummary.setBackground(infoBackground());
         section.addView(touchBoxSummary, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1269,17 +2585,55 @@ public class ControlActivity extends Activity {
         return section;
     }
 
+    private View lockscreenDebugMenu() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(collapsibleHeader("Debug", lockscreenDebugExpanded,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        lockscreenDebugExpanded = !lockscreenDebugExpanded;
+                        showTab(selectedTab);
+                    }
+        }));
+        if (lockscreenDebugExpanded) {
+            section.addView(screenshotServiceDebugControls());
+            section.addView(effectProfilerControls());
+            section.addView(rootDebugControls());
+        }
+        return section;
+    }
+
     private View rootDebugControls() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(12));
+        params.setMargins(0, dp(8), 0, 0);
         section.setLayoutParams(params);
-        styleCard(section);
+        styleInsetPanel(section);
         section.addView(sectionTitle("Root debug"));
 
+        section.addView(infoText(batteryOptimizationStatus()));
+        section.addView(outlineButton("Request battery unrestricted", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestBatteryOptimizationExemption();
+            }
+        }));
+        section.addView(outlineButton("Open Samsung battery settings", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBatteryOptimizationSettings();
+            }
+        }));
         section.addView(toggle("Enable root debug tools", OverlayPrefs.ROOT_DEBUG_ENABLED, false));
         section.addView(toggle("Root touch capture test", OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false));
         section.addView(toggle("Root keepalive plan", OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED, false));
@@ -1341,7 +2695,70 @@ public class ControlActivity extends Activity {
                 });
             }
         }));
+        section.addView(outlineButton("Root: apply keepalive", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootFeature(OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED,
+                        "Enable root keepalive plan first")) {
+                    return;
+                }
+                runRootDebugAction("Applying root keepalive", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.applyKeepAlivePlan();
+                    }
+                });
+            }
+        }));
+        section.addView(outlineButton("Root: revert keepalive", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!requireRootDebugEnabled()) {
+                    return;
+                }
+                runRootDebugAction("Reverting root keepalive", new RootTask() {
+                    @Override
+                    public RootDebugTools.Result run() {
+                        return RootDebugTools.revertKeepAlivePlan();
+                    }
+                });
+            }
+        }));
         return section;
+    }
+
+    private String batteryOptimizationStatus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return "Battery optimization: not applicable on this Android version.";
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        boolean ignored = powerManager != null
+                && powerManager.isIgnoringBatteryOptimizations(getPackageName());
+        return ignored
+                ? "Battery optimization: unrestricted for LLE."
+                : "Battery optimization: LLE is not unrestricted. This can delay warm wake rendering.";
+    }
+
+    private void requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            openBatteryOptimizationSettings();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (RuntimeException e) {
+            openBatteryOptimizationSettings();
+        }
+    }
+
+    private void openBatteryOptimizationSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (RuntimeException e) {
+            startActivity(new Intent(Settings.ACTION_SETTINGS));
+        }
     }
 
     private boolean requireRootDebugEnabled() {
@@ -1419,12 +2836,15 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, dp(8), 0, dp(4));
+        rowParams.setMargins(0, 0, 0, 0);
         row.setLayoutParams(rowParams);
+        row.setPadding(0, dp(8), 0, dp(8));
+        row.setBackground(controlRowBackground(false));
 
         final TextView valueLabel = new TextView(this);
-        valueLabel.setTextColor(COLOR_MUTED);
+        valueLabel.setTextColor(COLOR_ACCENT_DEEP);
         valueLabel.setTextSize(15f);
+        valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         row.addView(valueLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1434,6 +2854,7 @@ public class ControlActivity extends Activity {
         int current = OverlayPrefs.clampPositionOffset(prefs.getInt(key, defaultValue));
         slider.setMax(range);
         slider.setProgress(current - OverlayPrefs.POSITION_OFFSET_MIN);
+        tintSeekBar(slider);
         updatePositionLabel(valueLabel, label, current);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -1457,8 +2878,65 @@ public class ControlActivity extends Activity {
         });
         row.addView(slider, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(44)));
+                dp(42)));
         return row;
+    }
+
+    private View doodleSizeSlider() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, 0, 0, 0);
+        row.setLayoutParams(rowParams);
+        row.setPadding(0, dp(8), 0, dp(8));
+        row.setBackground(controlRowBackground(false));
+
+        final TextView valueLabel = new TextView(this);
+        valueLabel.setTextColor(COLOR_ACCENT_DEEP);
+        valueLabel.setTextSize(15f);
+        valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        row.addView(valueLabel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        SeekBar slider = new SeekBar(this);
+        int min = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT;
+        int max = OverlayPrefs.DOODLE_SIZE_MAX_PERCENT;
+        int current = OverlayPrefs.doodleSizePercent(this);
+        slider.setMax(max - min);
+        slider.setProgress(current - min);
+        tintSeekBar(slider);
+        updateDoodleSizeLabel(valueLabel, current);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int value = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT + progress;
+                updateDoodleSizeLabel(valueLabel, value);
+                if (fromUser) {
+                    prefs.edit().putInt(OverlayPrefs.DOODLE_SIZE_PERCENT, value).apply();
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int value = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT + seekBar.getProgress();
+                prefs.edit().putInt(OverlayPrefs.DOODLE_SIZE_PERCENT, value).apply();
+            }
+        });
+        row.addView(slider, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(42)));
+        return row;
+    }
+
+    private void updateDoodleSizeLabel(TextView valueLabel, int value) {
+        valueLabel.setText("Size: " + value + "%");
     }
 
     private void updatePositionLabel(TextView valueLabel, String label, int value) {
@@ -1467,6 +2945,13 @@ public class ControlActivity extends Activity {
 
     private String signedValue(int value) {
         return value > 0 ? "+" + value : String.valueOf(value);
+    }
+
+    private int clampInt(int value, int min, int max) {
+        if (max < min) {
+            return min;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     private void ensureTouchAreaEnabled() {
@@ -1483,21 +2968,23 @@ public class ControlActivity extends Activity {
         Button button = new Button(this);
         button.setText(text);
         button.setAllCaps(false);
-        button.setTextSize(14f);
-        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(15f);
+        button.setTextColor(COLOR_ACCENT_DEEP);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
-        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setPadding(dp(14), 0, dp(14), 0);
         button.setOnClickListener(listener);
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(8));
-        background.setColor(COLOR_SURFACE);
-        background.setStroke(dp(1), COLOR_DIVIDER);
-        button.setBackground(background);
+        button.setBackground(buttonBackground());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setElevation(0f);
+        }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(48));
-        params.setMargins(0, dp(8), 0, 0);
+        params.setMargins(0, dp(4), 0, 0);
         button.setLayoutParams(params);
         return button;
     }
@@ -1516,10 +3003,14 @@ public class ControlActivity extends Activity {
         if (accessibilityEnabled) {
             accessibilityStatus.setText("\u2713");
             accessibilityStatus.setTextColor(COLOR_OK);
+            accessibilityStatus.setBackground(statusBadgeBackground(
+                    Color.argb(185, 22, 160, 98), Color.argb(42, 255, 255, 255)));
             accessibilityStatus.setContentDescription("Accessibility enabled. Tap to open settings.");
         } else {
             accessibilityStatus.setText("\u00d7");
             accessibilityStatus.setTextColor(COLOR_ERROR);
+            accessibilityStatus.setBackground(statusBadgeBackground(
+                    Color.argb(185, 207, 67, 72), Color.argb(42, 255, 255, 255)));
             accessibilityStatus.setContentDescription("Accessibility disabled. Tap to enable.");
         }
     }
@@ -1541,8 +3032,558 @@ public class ControlActivity extends Activity {
         return false;
     }
 
+    private GradientDrawable pageBackground() {
+        return gradient(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] {Color.rgb(235, 245, 249), Color.rgb(224, 238, 244)},
+                0,
+                Color.TRANSPARENT,
+                0);
+    }
+
+    private GradientDrawable headerBackground() {
+        return gradient(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {
+                        Color.rgb(165, 236, 228),
+                        Color.rgb(221, 197, 249),
+                        Color.rgb(255, 216, 136)
+                },
+                0,
+                Color.TRANSPARENT,
+                0);
+    }
+
+    private GradientDrawable cardBackground(boolean accent) {
+        return gradient(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] {Color.argb(252, 255, 255, 255), Color.rgb(249, 252, 253)},
+                dp(22),
+                accent ? Color.rgb(198, 224, 226) : Color.argb(105, 170, 192, 204),
+                dp(1));
+    }
+
+    private GradientDrawable insetPanelBackground() {
+        return solidDrawable(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0);
+    }
+
+    private GradientDrawable infoBackground() {
+        return solidDrawable(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0);
+    }
+
+    private StateListDrawable buttonBackground() {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed},
+                solidDrawable(COLOR_ACCENT_SOFT, 0, Color.TRANSPARENT, 0));
+        states.addState(new int[] {},
+                solidDrawable(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0));
+        return states;
+    }
+
+    private StateListDrawable controlRowBackground(boolean selected) {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed},
+                solidDrawable(Color.rgb(225, 244, 244), dp(16),
+                        Color.argb(80, 80, 170, 175), dp(1)));
+        states.addState(new int[] {},
+                solidDrawable(selected ? COLOR_ACCENT_SOFT : Color.rgb(248, 251, 252),
+                        dp(16),
+                        Color.argb(75, 174, 195, 205),
+                        dp(1)));
+        return states;
+    }
+
+    private StateListDrawable optionBackground(boolean selected) {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed},
+                gradient(GradientDrawable.Orientation.TL_BR,
+                        new int[] {Color.rgb(225, 244, 244), Color.WHITE},
+                        dp(18), Color.argb(100, 63, 164, 171), dp(1)));
+        states.addState(new int[] {},
+                selected
+                        ? gradient(GradientDrawable.Orientation.TL_BR,
+                                new int[] {Color.WHITE, Color.rgb(224, 247, 246)},
+                                dp(18), Color.argb(150, 33, 158, 166), dp(1))
+                        : solidDrawable(Color.WHITE, dp(18),
+                                Color.argb(65, 167, 190, 201), dp(1)));
+        return states;
+    }
+
+    private int effectAccentColor(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                return Color.rgb(255, 194, 78);
+            case OverlayPrefs.EFFECT_S3_RIPPLE:
+            case OverlayPrefs.EFFECT_S4_RIPPLE:
+                return Color.rgb(66, 169, 232);
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return Color.rgb(123, 206, 92);
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                return Color.rgb(125, 113, 230);
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+                return Color.rgb(235, 111, 102);
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                return Color.rgb(94, 210, 209);
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return Color.rgb(239, 157, 64);
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                return Color.rgb(174, 111, 204);
+            default:
+                return COLOR_ACCENT;
+        }
+    }
+
+    private GradientDrawable statusBadgeBackground(int strokeColor, int fillColor) {
+        return solidDrawable(fillColor, dp(18), strokeColor, dp(1));
+    }
+
+    private GradientDrawable gradient(GradientDrawable.Orientation orientation, int[] colors,
+            int radius, int strokeColor, int strokeWidth) {
+        GradientDrawable drawable = new GradientDrawable(orientation, colors);
+        drawable.setCornerRadius(radius);
+        if (strokeWidth > 0) {
+            drawable.setStroke(strokeWidth, strokeColor);
+        }
+        return drawable;
+    }
+
+    private GradientDrawable solidDrawable(int color, int radius, int strokeColor,
+            int strokeWidth) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        if (strokeWidth > 0) {
+            drawable.setStroke(strokeWidth, strokeColor);
+        }
+        return drawable;
+    }
+
+    private int blendColor(int first, int second, float secondWeight) {
+        float amount = Math.max(0f, Math.min(1f, secondWeight));
+        float inverse = 1f - amount;
+        return Color.rgb(
+                Math.round(Color.red(first) * inverse + Color.red(second) * amount),
+                Math.round(Color.green(first) * inverse + Color.green(second) * amount),
+                Math.round(Color.blue(first) * inverse + Color.blue(second) * amount));
+    }
+
+    private ColorStateList accentTint() {
+        return new ColorStateList(
+                new int[][] {
+                        new int[] {android.R.attr.state_checked},
+                        new int[] {}
+                },
+                new int[] {
+                        COLOR_ACCENT,
+                        Color.rgb(143, 159, 181)
+                });
+    }
+
+    private ColorStateList switchTrackTint() {
+        return new ColorStateList(
+                new int[][] {
+                        new int[] {android.R.attr.state_checked},
+                        new int[] {}
+                },
+                new int[] {
+                        Color.argb(120, 44, 205, 213),
+                        Color.rgb(198, 208, 221)
+                });
+    }
+
+    private void tintSwitch(Switch toggle) {
+        if (toggle == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return;
+        }
+        toggle.setThumbTintList(accentTint());
+        toggle.setTrackTintList(switchTrackTint());
+    }
+
+    private void styleHeaderSwitch(Switch toggle) {
+        if (toggle == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            tintSwitch(toggle);
+            return;
+        }
+        StateListDrawable track = new StateListDrawable();
+        track.addState(new int[] {android.R.attr.state_checked},
+                headerSwitchTrack(Color.argb(76, 0, 158, 166),
+                        Color.argb(155, 0, 132, 142)));
+        track.addState(new int[] {},
+                headerSwitchTrack(Color.argb(28, 255, 255, 255),
+                        Color.argb(120, 69, 88, 112)));
+
+        StateListDrawable thumb = new StateListDrawable();
+        thumb.addState(new int[] {android.R.attr.state_checked},
+                headerSwitchThumb(Color.argb(238, 255, 255, 255), COLOR_ACCENT_DEEP));
+        thumb.addState(new int[] {},
+                headerSwitchThumb(Color.argb(205, 255, 255, 255),
+                        Color.argb(150, 69, 88, 112)));
+
+        toggle.setTrackDrawable(track);
+        toggle.setThumbDrawable(thumb);
+        toggle.setSplitTrack(false);
+        toggle.setSwitchMinWidth(dp(50));
+    }
+
+    private GradientDrawable headerSwitchTrack(int fillColor, int strokeColor) {
+        GradientDrawable drawable = solidDrawable(fillColor, dp(14), strokeColor, dp(1));
+        drawable.setSize(dp(48), dp(26));
+        return drawable;
+    }
+
+    private GradientDrawable headerSwitchThumb(int fillColor, int strokeColor) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.OVAL);
+        drawable.setColor(fillColor);
+        drawable.setStroke(dp(1), strokeColor);
+        drawable.setSize(dp(24), dp(24));
+        return drawable;
+    }
+
+    private void tintRadio(RadioButton button) {
+        if (button == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return;
+        }
+        button.setButtonTintList(accentTint());
+    }
+
+    private void tintSeekBar(SeekBar slider) {
+        if (slider == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return;
+        }
+        slider.setProgressTintList(new ColorStateList(
+                new int[][] {new int[] {}},
+                new int[] {COLOR_ACCENT}));
+        slider.setThumbTintList(new ColorStateList(
+                new int[][] {new int[] {}},
+                new int[] {COLOR_ACCENT_DEEP}));
+        slider.setProgressBackgroundTintList(new ColorStateList(
+                new int[][] {new int[] {}},
+                new int[] {Color.rgb(198, 211, 227)}));
+    }
+
+    private final class GraceBackdropView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path shape = new Path();
+
+        GraceBackdropView() {
+            super(ControlActivity.this);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int width = getWidth();
+            int height = getHeight();
+            paint.setShader(new LinearGradient(0f, 0f, 0f, height,
+                    new int[] {
+                            Color.rgb(228, 241, 247),
+                            Color.rgb(242, 248, 250),
+                            Color.rgb(222, 237, 243)
+                    },
+                    new float[] {0f, 0.46f, 1f},
+                    Shader.TileMode.CLAMP));
+            canvas.drawRect(0f, 0f, width, height, paint);
+            paint.setShader(null);
+
+            shape.reset();
+            shape.moveTo(width * 0.62f, 0f);
+            shape.lineTo(width, 0f);
+            shape.lineTo(width, height * 0.28f);
+            shape.lineTo(width * 0.84f, height * 0.20f);
+            shape.close();
+            paint.setColor(Color.argb(58, 111, 82, 214));
+            canvas.drawPath(shape, paint);
+
+            shape.reset();
+            shape.moveTo(0f, height * 0.60f);
+            shape.lineTo(width * 0.34f, height * 0.50f);
+            shape.lineTo(width * 0.53f, height);
+            shape.lineTo(0f, height);
+            shape.close();
+            paint.setColor(Color.argb(52, 54, 203, 158));
+            canvas.drawPath(shape, paint);
+
+            shape.reset();
+            shape.moveTo(0f, height * 0.23f);
+            shape.lineTo(width * 0.22f, height * 0.18f);
+            shape.lineTo(width * 0.40f, height * 0.42f);
+            shape.lineTo(0f, height * 0.48f);
+            shape.close();
+            paint.setColor(Color.argb(42, 255, 176, 54));
+            canvas.drawPath(shape, paint);
+
+            paint.setShader(new RadialGradient(width * 0.18f, height * 0.72f,
+                    width * 0.32f,
+                    new int[] {Color.argb(48, 255, 92, 166), Color.TRANSPARENT},
+                    null,
+                    Shader.TileMode.CLAMP));
+            canvas.drawCircle(width * 0.18f, height * 0.72f, width * 0.32f, paint);
+            paint.setShader(null);
+
+            paint.setShader(new RadialGradient(width * 0.82f, height * 0.42f,
+                    width * 0.52f,
+                    new int[] {Color.argb(55, 67, 191, 204), Color.TRANSPARENT},
+                    null,
+                    Shader.TileMode.CLAMP));
+            canvas.drawCircle(width * 0.82f, height * 0.42f, width * 0.52f, paint);
+            paint.setShader(null);
+        }
+    }
+
+    private final class GraceEffectIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int effect;
+        private final boolean selected;
+
+        GraceEffectIconView(int effect, boolean selected) {
+            super(ControlActivity.this);
+            this.effect = effect;
+            this.selected = selected;
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = dp(1.5f);
+            RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            float radius = Math.min(getWidth(), getHeight()) * 0.27f;
+            int accent = effectAccentColor(effect);
+            int deep = blendColor(COLOR_GRACE_NAVY, accent, 0.54f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
+                    new int[] {blendColor(Color.WHITE, accent, 0.22f), accent, deep},
+                    new float[] {0f, 0.52f, 1f},
+                    Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setShader(null);
+
+            paint.setColor(Color.argb(62, 255, 255, 255));
+            canvas.drawRoundRect(new RectF(bounds.left + dp(3), bounds.top + dp(3),
+                    bounds.right - dp(3), bounds.centerY()), radius * 0.78f, radius * 0.78f, paint);
+            drawEffectMotif(canvas, paint, effect,
+                    new RectF(bounds.left + dp(10), bounds.top + dp(10),
+                            bounds.right - dp(10), bounds.bottom - dp(10)),
+                    Color.WHITE,
+                    selected ? 1f : 0.90f);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(selected ? 2f : 1f));
+            paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class GraceDoodleArtView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private long animationStartedAt;
+
+        GraceDoodleArtView() {
+            super(ControlActivity.this);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            animationStartedAt = SystemClock.uptimeMillis();
+            postInvalidateOnAnimation();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            long elapsed = Math.max(0L, SystemClock.uptimeMillis() - animationStartedAt);
+            float reveal = Math.min(1f, elapsed / 800f);
+            float unit = Math.min(getWidth(), getHeight());
+            float cx = getWidth() - unit * 0.48f;
+            float cy = getHeight() * 0.50f;
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new RadialGradient(cx, cy, unit * 0.48f,
+                    new int[] {Color.argb(Math.round(130 * reveal), 255, 255, 255), Color.TRANSPARENT},
+                    null,
+                    Shader.TileMode.CLAMP));
+            canvas.drawCircle(cx, cy, unit * 0.48f, paint);
+            paint.setShader(null);
+
+            float orbit = unit * 0.25f;
+            int[] colors = {
+                    Color.rgb(255, 106, 157),
+                    Color.rgb(255, 178, 47),
+                    Color.rgb(73, 197, 145),
+                    Color.rgb(104, 122, 225)
+            };
+            for (int i = 0; i < colors.length; i++) {
+                double angle = -Math.PI * 0.5 + i * Math.PI * 0.5;
+                paint.setColor(colors[i]);
+                canvas.drawCircle(
+                        cx + (float) Math.cos(angle) * orbit,
+                        cy + (float) Math.sin(angle) * orbit,
+                        unit * 0.075f * reveal,
+                        paint);
+            }
+            paint.setColor(Color.WHITE);
+            canvas.drawCircle(cx, cy, unit * 0.115f * reveal, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2));
+            paint.setColor(Color.argb(Math.round(180 * reveal), 62, 76, 122));
+            canvas.drawCircle(cx, cy, unit * 0.115f * reveal, paint);
+            paint.setStyle(Paint.Style.FILL);
+
+            if (elapsed < 1250L) {
+                postInvalidateOnAnimation();
+            }
+        }
+    }
+
+    private void drawEffectMotif(Canvas canvas, Paint paint, int effect, RectF rect,
+            int color, float alpha) {
+        int resolvedAlpha = Math.max(0, Math.min(255, Math.round(255f * alpha)));
+        paint.setShader(null);
+        paint.setColor(Color.argb(resolvedAlpha,
+                Color.red(color), Color.green(color), Color.blue(color)));
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        float cx = rect.centerX();
+        float cy = rect.centerY();
+        float unit = Math.min(rect.width(), rect.height());
+
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.075f));
+                canvas.drawCircle(cx, cy, unit * 0.24f, paint);
+                canvas.drawLine(rect.left, cy, rect.right, cy, paint);
+                canvas.drawLine(cx, rect.top, cx, rect.bottom, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx, cy, unit * 0.095f, paint);
+                break;
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx - unit * 0.18f, cy + unit * 0.12f, unit * 0.19f, paint);
+                canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.15f, unit * 0.16f, paint);
+                canvas.drawCircle(cx + unit * 0.19f, cy + unit * 0.23f, unit * 0.10f, paint);
+                break;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.075f));
+                canvas.drawRect(rect.left + unit * 0.04f, rect.top + unit * 0.06f,
+                        cx - unit * 0.03f, cy - unit * 0.02f, paint);
+                canvas.drawRect(cx + unit * 0.04f, cy + unit * 0.02f,
+                        rect.right - unit * 0.02f, rect.bottom - unit * 0.06f, paint);
+                canvas.drawLine(cx + unit * 0.06f, rect.top + unit * 0.04f,
+                        rect.right - unit * 0.02f, cy - unit * 0.08f, paint);
+                break;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.07f));
+                Path mosaic = new Path();
+                mosaic.moveTo(cx, rect.top);
+                mosaic.lineTo(rect.right, cy);
+                mosaic.lineTo(cx, rect.bottom);
+                mosaic.lineTo(rect.left, cy);
+                mosaic.close();
+                mosaic.moveTo(cx, rect.top);
+                mosaic.lineTo(cx, rect.bottom);
+                mosaic.moveTo(rect.left, cy);
+                mosaic.lineTo(rect.right, cy);
+                canvas.drawPath(mosaic, paint);
+                break;
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.065f));
+                canvas.drawCircle(cx - unit * 0.16f, cy + unit * 0.12f, unit * 0.20f, paint);
+                canvas.drawCircle(cx + unit * 0.18f, cy - unit * 0.14f, unit * 0.14f, paint);
+                canvas.drawCircle(cx + unit * 0.23f, cy + unit * 0.25f, unit * 0.07f, paint);
+                break;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+                paint.setStyle(Paint.Style.FILL);
+                Path drop = new Path();
+                drop.moveTo(cx, rect.top);
+                drop.cubicTo(cx + unit * 0.08f, cy - unit * 0.18f,
+                        rect.right - unit * 0.08f, cy + unit * 0.02f, cx, rect.bottom);
+                drop.cubicTo(rect.left + unit * 0.08f, cy + unit * 0.02f,
+                        cx - unit * 0.08f, cy - unit * 0.18f, cx, rect.top);
+                drop.close();
+                canvas.drawPath(drop, paint);
+                break;
+            case OverlayPrefs.EFFECT_S3_RIPPLE:
+            case OverlayPrefs.EFFECT_S4_RIPPLE:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.065f));
+                canvas.drawOval(new RectF(cx - unit * 0.42f, cy - unit * 0.18f,
+                        cx + unit * 0.42f, cy + unit * 0.18f), paint);
+                canvas.drawOval(new RectF(cx - unit * 0.25f, cy - unit * 0.10f,
+                        cx + unit * 0.25f, cy + unit * 0.10f), paint);
+                break;
+            default:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(2), unit * 0.12f));
+                canvas.drawArc(new RectF(rect.left, cy - unit * 0.25f,
+                        rect.right, cy + unit * 0.25f), 200f, 235f, false, paint);
+                break;
+        }
+        paint.setStyle(Paint.Style.FILL);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+    }
+
+    private void forceSansSerif(View view) {
+        if (view == null) {
+            return;
+        }
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            Typeface current = textView.getTypeface();
+            int style = current == null ? Typeface.NORMAL : current.getStyle();
+            textView.setTypeface(appTypeface(style));
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                forceSansSerif(group.getChildAt(i));
+            }
+        }
+    }
+
+    private Typeface appTypeface(int style) {
+        if ((style & Typeface.BOLD) != 0) {
+            if (appFontBold == null) {
+                appFontBold = loadPreferredTypeface(Typeface.BOLD);
+            }
+            return appFontBold;
+        }
+        if (appFontRegular == null) {
+            appFontRegular = loadPreferredTypeface(Typeface.NORMAL);
+        }
+        return appFontRegular;
+    }
+
+    private Typeface loadPreferredTypeface(int fallbackStyle) {
+        try {
+            String path = fallbackStyle == Typeface.BOLD
+                    ? "/system/fonts/SourceSansPro-SemiBold.ttf"
+                    : "/system/fonts/SourceSansPro-Regular.ttf";
+            Typeface samsungEraSans = Typeface.createFromFile(path);
+            if (samsungEraSans != null) {
+                return samsungEraSans;
+            }
+        } catch (RuntimeException ignored) {
+            // Fall back to the platform family on ROMs without Samsung's system font set.
+        }
+        String family = fallbackStyle == Typeface.BOLD ? "sans-serif-medium" : "sans-serif";
+        Typeface typeface = Typeface.create(family, fallbackStyle);
+        return typeface == null ? Typeface.defaultFromStyle(fallbackStyle) : typeface;
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private float dp(float value) {
+        return value * getResources().getDisplayMetrics().density;
     }
 
     private int statusBarHeight() {

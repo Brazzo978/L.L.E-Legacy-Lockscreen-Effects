@@ -2,7 +2,7 @@
 
 ## Goal
 Port the original Samsung Galaxy S3 Water Ripple / `CircleUnlockRippleRenderer`
-into `com.codex.chargingtouchtest` as faithfully as possible while keeping the
+into `com.codex.lle` as faithfully as possible while keeping the
 lockscreen visible through a transparent `TYPE_ACCESSIBILITY_OVERLAY`.
 
 ## Important Constraint

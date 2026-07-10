@@ -186,14 +186,25 @@ public class ColourDropletEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        Log.i(TAG, "colour droplet warmed elapsedMs="
-                + (SystemClock.uptimeMillis() - startedAt));
+        long elapsedMs = SystemClock.uptimeMillis() - startedAt;
+        if (elapsedMs >= 4L) {
+            Log.i(TAG, "colour droplet warmed elapsedMs=" + elapsedMs);
+        }
     }
 
     void parkForReuse() {
         resetEffect();
         sendScreenTurnedOffCommand();
         scheduleForceDirty(80L);
+    }
+
+    void resumeForReuse() {
+        if (nativeScreenOn) {
+            return;
+        }
+        removeCallbacks(forceDirtyRunnable);
+        sendBackgroundBitmap();
+        sendScreenTurnedOnCommand();
     }
 
     @Override

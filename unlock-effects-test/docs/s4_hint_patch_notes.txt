@@ -195,9 +195,9 @@ Commit:
 
 File principali:
 
-    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/ChargingAccessibilityService.java
-    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/LensFlareEffectView.java
-    unlock-effects-test/charging-touch-test-apk/src/com/codex/chargingtouchtest/UnlockEffectRenderer.java
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/lle/ChargingAccessibilityService.java
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/lle/LensFlareEffectView.java
+    unlock-effects-test/charging-touch-test-apk/src/com/codex/lle/UnlockEffectRenderer.java
 
 Per portarla sulla build piu recente, prendi solo la parte S4 Lens Flare da quei
 file. Evita di copiare la parte Popping Colours da questa build, perche qui non

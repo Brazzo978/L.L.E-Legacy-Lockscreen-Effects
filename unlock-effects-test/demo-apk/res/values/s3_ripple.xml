@@ -1,0 +1,9 @@
+<resources>
+    <bool name="s3_config_is_jbp_upgrade">false</bool>
+    <bool name="s3_config_is_water_ink_enabled">false</bool>
+    <bool name="s3_config_is_water_ink_lcd">true</bool>
+    <bool name="s3_restrict_cpu_clock_ripple">false</bool>
+    <bool name="s3_restrict_gpu_freq_ripple">false</bool>
+    <integer name="s3_cpu_clock_index_for_ripple">1574400</integer>
+    <integer name="s3_gpu_freq_index_for_ripple">389000000</integer>
+</resources>

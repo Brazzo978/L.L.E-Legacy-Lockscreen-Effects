@@ -1,0 +1,56 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: res/xml/normal_memory_widget_info.xml
+SHA1-Digest: 1zgJVqMaG7jCcyHMM0vsWtedB6o=
+
+Name: res/drawable-xhdpi-v4/count_circle_bg.png
+SHA1-Digest: givUB8Ts5Bf0xmjqIjg4SudZAAU=
+
+Name: res/drawable-xxxhdpi-v4/count_msg_icon.qmg
+SHA1-Digest: QKKH8O+k4MnzeFPzgjVN9TQjlvU=
+
+Name: res/drawable-xxxhdpi-v4/preview_memory.qmg
+SHA1-Digest: KeREFQIp5tkpJqlE+pp6oGGOOR8=
+
+Name: res/drawable-xhdpi-v4/count_photo_icon.png
+SHA1-Digest: Ot6BncqhWqawqnAyVShN8052GHI=
+
+Name: res/layout/festival_memory_widget.xml
+SHA1-Digest: JRKtFniTczv8Nfyv54cr0grXKco=
+
+Name: resources.arsc
+SHA1-Digest: ip3eAvdmta4gzL6QgwdXCFivIKg=
+
+Name: res/drawable/fw_memory_bg.qmg
+SHA1-Digest: lmso1VEfAQ3tMP6sNug+EQ33E+A=
+
+Name: res/drawable-xxxhdpi-v4/count_circle_bg.png
+SHA1-Digest: givUB8Ts5Bf0xmjqIjg4SudZAAU=
+
+Name: res/drawable/fw_widget_bg.9.png
+SHA1-Digest: 5EdfqNLXFEXWuHD3DExU5AWxRko=
+
+Name: AndroidManifest.xml
+SHA1-Digest: 9or3IbSj3DRwtFHeIgCoL+ySqgU=
+
+Name: res/drawable-xxxhdpi-v4/count_photo_icon.png
+SHA1-Digest: Ot6BncqhWqawqnAyVShN8052GHI=
+
+Name: res/drawable-xxxhdpi-v4/count_photo_icon_dim.png
+SHA1-Digest: uRnEN47f+DtxrSkD2tOGQwvBZP8=
+
+Name: res/xml/festival_memory_widget_info.xml
+SHA1-Digest: H1PxVLoqgreU/Mi0dvPtyYP4caA=
+
+Name: res/drawable-xhdpi-v4/count_msg_icon.qmg
+SHA1-Digest: QKKH8O+k4MnzeFPzgjVN9TQjlvU=
+
+Name: res/drawable-xhdpi-v4/count_msg_icon_dim.qmg
+SHA1-Digest: sj4JtVrS+5aqgiFwCeXyrS33jGI=
+
+Name: res/drawable-xhdpi-v4/count_photo_icon_dim.png
+SHA1-Digest: uRnEN47f+DtxrSkD2tOGQwvBZP8=
+
+Name: res/drawable-xxxhdpi-v4/count_msg_icon_dim.qmg
+SHA1-Digest: sj4JtVrS+5aqgiFwCeXyrS33jGI=

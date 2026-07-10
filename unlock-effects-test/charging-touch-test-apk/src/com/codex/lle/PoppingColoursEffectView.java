@@ -9,7 +9,6 @@ import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.os.SystemClock;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -26,7 +25,9 @@ public class PoppingColoursEffectView extends FrameLayout
     private static final int CMD_SET_BACKGROUND = 0;
     private static final int CMD_LOCK_AFFORDANCE = 1;
     private static final int CMD_UNLOCK = 2;
-    private static final int CMD_CUSTOM = 3;
+    private static final int DRAG_SOUND_COUNT_START_POINT = 40;
+    private static final int DRAG_SOUND_COUNT_INTERVAL = 60;
+    private static final float TOUCH_SOUND_VOLUME = 0.3f;
 
     private final SoundPool soundPool;
     private final int tapSound;
@@ -49,7 +50,7 @@ public class PoppingColoursEffectView extends FrameLayout
     private long downTime;
     private float lastDragSoundX;
     private float lastDragSoundY;
-    private float dragSoundDistance;
+    private int dragSoundCount;
 
     public PoppingColoursEffectView(Context context) {
         super(context);
@@ -60,7 +61,7 @@ public class PoppingColoursEffectView extends FrameLayout
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         soundPool = new SoundPool.Builder()
-                .setMaxStreams(4)
+                .setMaxStreams(10)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -100,8 +101,8 @@ public class PoppingColoursEffectView extends FrameLayout
         gestureActive = true;
         lastDragSoundX = screenX;
         lastDragSoundY = screenY;
-        dragSoundDistance = 0f;
-        play(tapSound);
+        dragSoundCount = DRAG_SOUND_COUNT_START_POINT;
+        play(tapSound, TOUCH_SOUND_VOLUME);
         forwardTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
         Log.i(TAG, "popping colours begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY));
@@ -113,14 +114,12 @@ public class PoppingColoursEffectView extends FrameLayout
             beginGesture(screenX, screenY);
             return;
         }
-        float dx = screenX - lastDragSoundX;
-        float dy = screenY - lastDragSoundY;
-        dragSoundDistance += (float) Math.sqrt(dx * dx + dy * dy);
         lastDragSoundX = screenX;
         lastDragSoundY = screenY;
-        if (dragSoundDistance >= dragSoundThreshold()) {
-            play(dragSound);
-            dragSoundDistance = 0f;
+        dragSoundCount++;
+        if (dragSoundCount >= DRAG_SOUND_COUNT_INTERVAL) {
+            play(dragSound, TOUCH_SOUND_VOLUME);
+            dragSoundCount = 0;
         }
         forwardTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
     }
@@ -134,7 +133,7 @@ public class PoppingColoursEffectView extends FrameLayout
         forwardTouch(MotionEvent.ACTION_UP, lastDragSoundX, lastDragSoundY);
         if (completed) {
             sendUnlockCommand();
-            play(unlockSound);
+            play(unlockSound, 1f);
         }
         Log.i(TAG, "popping colours finish completed=" + completed
                 + " x=" + Math.round(lastDragSoundX)
@@ -154,7 +153,7 @@ public class PoppingColoursEffectView extends FrameLayout
     @Override
     public void resetEffect() {
         gestureActive = false;
-        dragSoundDistance = 0f;
+        dragSoundCount = 0;
         if (!ready || clearScreen == null || effectView == null) {
             return;
         }
@@ -172,8 +171,10 @@ public class PoppingColoursEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        Log.i(TAG, "S5 popping colours warmed elapsedMs="
-                + (SystemClock.uptimeMillis() - startedAt));
+        long elapsedMs = SystemClock.uptimeMillis() - startedAt;
+        if (elapsedMs >= 4L) {
+            Log.i(TAG, "S5 popping colours warmed elapsedMs=" + elapsedMs);
+        }
     }
 
     @Override
@@ -182,7 +183,6 @@ public class PoppingColoursEffectView extends FrameLayout
             return;
         }
         sendBackgroundBitmap();
-        sendScreenTurnedOnCommand();
         Rect rect = safeRect(screenRect);
         try {
             HashMap<String, Object> params = new HashMap<String, Object>();
@@ -445,17 +445,6 @@ public class PoppingColoursEffectView extends FrameLayout
         }
     }
 
-    private void sendScreenTurnedOnCommand() {
-        if (!canRender() || handleCustomEvent == null) {
-            return;
-        }
-        try {
-            handleCustomEvent.invoke(effectView, CMD_CUSTOM, null);
-        } catch (Throwable t) {
-            Log.d(TAG, "screen-on command ignored", t);
-        }
-    }
-
     private Rect safeRect(Rect rect) {
         if (rect != null && rect.width() > 0 && rect.height() > 0) {
             return new Rect(rect);
@@ -465,12 +454,6 @@ public class PoppingColoursEffectView extends FrameLayout
 
     private boolean canRender() {
         return !destroyed && ready && effectView != null;
-    }
-
-    private float dragSoundThreshold() {
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
-        int smallest = Math.min(metrics.widthPixels, metrics.heightPixels);
-        return Math.max(dp(72), smallest * 0.2f);
     }
 
     private int getRenderWidth() {
@@ -489,13 +472,9 @@ public class PoppingColoursEffectView extends FrameLayout
         return Math.max(1, getResources().getDisplayMetrics().heightPixels);
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void play(int soundId) {
+    private void play(int soundId, float volume) {
         if (soundId != 0) {
-            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+            soundPool.play(soundId, volume, volume, 0, 0, 1f);
         }
     }
 

@@ -8,8 +8,10 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -36,9 +38,12 @@ public class SparklingBubblesEffectView extends FrameLayout
     private static final String CUSTOM_EVENT_FORCE_DIRTY = "ForceDirty";
     private static final long DRAG_SOUND_MIN_TIME_MS = 1100L;
     private static final float DRAG_SOUND_DISTANCE_PX = 120f;
-    private static final int COLOR_MAP_LONG_EDGE = 48;
-    private static final int COLOR_MAP_WHITE_BLEND = 0;
+    private static final long DRAG_SOUND_FADE_FRAME_MS = 10L;
+    private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
+    private static final float DRAG_SOUND_UNLOCK_FADE_STEP = 0.059f;
 
+    private final Context context;
+    private final AudioManager audioManager;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int dragSound;
@@ -67,6 +72,28 @@ public class SparklingBubblesEffectView extends FrameLayout
     private float lastDragSoundX;
     private float lastDragSoundY;
     private int dragStreamId;
+    private float dragSoundVolume = 1f;
+    private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
+    private boolean dragSoundFading;
+    private final Runnable dragSoundFadeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (destroyed || !dragSoundFading || dragStreamId == 0) {
+                return;
+            }
+            dragSoundVolume = Math.max(0f, dragSoundVolume);
+            soundPool.setVolume(dragStreamId, dragSoundVolume, dragSoundVolume);
+            if (dragSoundVolume > 0f) {
+                dragSoundVolume -= dragSoundFadeStep;
+                postDelayed(this, DRAG_SOUND_FADE_FRAME_MS);
+                return;
+            }
+            soundPool.stop(dragStreamId);
+            dragStreamId = 0;
+            dragSoundFading = false;
+            Log.d(TAG, "sparkling bubbles drag sound fade complete");
+        }
+    };
     private final Runnable forceDirtyRunnable = new Runnable() {
         @Override
         public void run() {
@@ -76,6 +103,8 @@ public class SparklingBubblesEffectView extends FrameLayout
 
     public SparklingBubblesEffectView(Context context) {
         super(context);
+        this.context = context.getApplicationContext();
+        audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
         long startedAt = SystemClock.uptimeMillis();
         setWillNotDraw(false);
         setClipChildren(false);
@@ -84,7 +113,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         soundPool = new SoundPool.Builder()
-                .setMaxStreams(4)
+                .setMaxStreams(10)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -131,7 +160,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         lastY = screenY;
         lastDragSoundX = screenX;
         lastDragSoundY = screenY;
-        stopDragSound();
+        stopDragSoundImmediately();
         play(tapSound);
         forwardTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
         Log.i(TAG, "sparkling bubbles begin x=" + Math.round(screenX)
@@ -158,9 +187,10 @@ public class SparklingBubblesEffectView extends FrameLayout
         }
         gestureActive = false;
         forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
-        stopDragSound();
+        startDragSoundFade(DRAG_SOUND_RELEASE_FADE_STEP);
         if (completed) {
             sendUnlockCommand();
+            dragSoundFadeStep = DRAG_SOUND_UNLOCK_FADE_STEP;
             play(unlockSound);
         }
         Log.i(TAG, "sparkling bubbles finish completed=" + completed
@@ -175,14 +205,14 @@ public class SparklingBubblesEffectView extends FrameLayout
         }
         gestureActive = false;
         forwardTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
-        stopDragSound();
+        startDragSoundFade(DRAG_SOUND_RELEASE_FADE_STEP);
         Log.i(TAG, "sparkling bubbles cancel");
     }
 
     @Override
     public void resetEffect() {
         gestureActive = false;
-        stopDragSound();
+        stopDragSoundImmediately();
         if (!ready || clearScreen == null || effectView == null) {
             return;
         }
@@ -201,15 +231,25 @@ public class SparklingBubblesEffectView extends FrameLayout
         }
         long startedAt = SystemClock.uptimeMillis();
         sendBackgroundBitmap();
-        Log.i(TAG, "sparkling bubbles warmed elapsedMs="
-                + (SystemClock.uptimeMillis() - startedAt));
+        long elapsedMs = SystemClock.uptimeMillis() - startedAt;
+        if (elapsedMs >= 4L) {
+            Log.i(TAG, "sparkling bubbles warmed elapsedMs=" + elapsedMs);
+        }
     }
 
     void parkForReuse() {
         resetEffect();
-        stopDragSound();
         sendScreenTurnedOffCommand();
         scheduleForceDirty(80L);
+    }
+
+    void resumeForReuse() {
+        if (nativeScreenOn) {
+            return;
+        }
+        removeCallbacks(forceDirtyRunnable);
+        sendBackgroundBitmap();
+        sendScreenTurnedOnCommand();
     }
 
     @Override
@@ -272,6 +312,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         }
         resetEffect();
         removeCallbacks(forceDirtyRunnable);
+        removeCallbacks(dragSoundFadeRunnable);
         sendScreenTurnedOffCommand();
         destroyed = true;
         soundPool.release();
@@ -311,7 +352,7 @@ public class SparklingBubblesEffectView extends FrameLayout
     @Override
     protected void onDetachedFromWindow() {
         gestureActive = false;
-        stopDragSound();
+        startDragSoundFade(DRAG_SOUND_RELEASE_FADE_STEP);
         sendScreenTurnedOffCommand();
         scheduleForceDirty(80L);
         invalidateSentBackground();
@@ -470,17 +511,6 @@ public class SparklingBubblesEffectView extends FrameLayout
     }
 
     private Bitmap createColorMapBitmap(Bitmap source, int width, int height) {
-        int sampleWidth;
-        int sampleHeight;
-        if (width >= height) {
-            sampleWidth = COLOR_MAP_LONG_EDGE;
-            sampleHeight = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
-                    * (height / (float) width)));
-        } else {
-            sampleHeight = COLOR_MAP_LONG_EDGE;
-            sampleWidth = Math.max(1, Math.round(COLOR_MAP_LONG_EDGE
-                    * (width / (float) height)));
-        }
         float srcRatio = source.getWidth() / (float) source.getHeight();
         float dstRatio = width / (float) height;
         Rect src;
@@ -495,42 +525,13 @@ public class SparklingBubblesEffectView extends FrameLayout
             src = new Rect(0, top, source.getWidth(),
                     Math.min(source.getHeight(), top + srcHeight));
         }
-        Bitmap sampled = Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
                 | Paint.FILTER_BITMAP_FLAG
                 | Paint.DITHER_FLAG);
-        Canvas sampleCanvas = new Canvas(sampled);
-        sampleCanvas.drawBitmap(source, src, new Rect(0, 0, sampleWidth, sampleHeight), paint);
-
         Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(out);
-        canvas.drawBitmap(sampled, new Rect(0, 0, sampleWidth, sampleHeight),
-                new Rect(0, 0, width, height), paint);
-        recycle(sampled);
-        liftColorMapLuminance(out);
+        canvas.drawBitmap(source, src, new Rect(0, 0, width, height), paint);
         return out;
-    }
-
-    private void liftColorMapLuminance(Bitmap bitmap) {
-        if (COLOR_MAP_WHITE_BLEND <= 0 || bitmap == null || bitmap.isRecycled()) {
-            return;
-        }
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-        int[] pixels = new int[width * height];
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
-        int sourceWeight = 255 - COLOR_MAP_WHITE_BLEND;
-        for (int i = 0; i < pixels.length; i++) {
-            int color = pixels[i];
-            int r = (color >> 16) & 0xff;
-            int g = (color >> 8) & 0xff;
-            int b = color & 0xff;
-            r = (r * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            g = (g * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            b = (b * sourceWeight + 255 * COLOR_MAP_WHITE_BLEND) / 255;
-            pixels[i] = 0xff000000 | (r << 16) | (g << 8) | b;
-        }
-        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
     }
 
     private Bitmap createWhiteBitmap(int width, int height) {
@@ -640,7 +641,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         ready = false;
         nativeScreenOn = false;
         gestureActive = false;
-        stopDragSound();
+        stopDragSoundImmediately();
         removeCallbacks(forceDirtyRunnable);
         effectView = null;
         effectViewAsView = null;
@@ -652,7 +653,8 @@ public class SparklingBubblesEffectView extends FrameLayout
 
     private void maybeStartDragSound(float screenX, float screenY) {
         if (dragStreamId != 0
-                || SystemClock.uptimeMillis() - downTime < DRAG_SOUND_MIN_TIME_MS) {
+                || SystemClock.uptimeMillis() - downTime < DRAG_SOUND_MIN_TIME_MS
+                || !canPlayEffectSound()) {
             return;
         }
         float dx = screenX - lastDragSoundX;
@@ -661,12 +663,29 @@ public class SparklingBubblesEffectView extends FrameLayout
             return;
         }
         dragStreamId = soundPool.play(dragSound, 1f, 1f, 1, -1, 1f);
+        dragSoundVolume = 1f;
+        dragSoundFading = false;
         lastDragSoundX = screenX;
         lastDragSoundY = screenY;
         Log.d(TAG, "sparkling bubbles drag loop started");
     }
 
-    private void stopDragSound() {
+    private void startDragSoundFade(float fadeStep) {
+        if (dragStreamId == 0) {
+            return;
+        }
+        dragSoundFadeStep = fadeStep;
+        if (dragSoundFading) {
+            return;
+        }
+        dragSoundFading = true;
+        dragSoundFadeRunnable.run();
+    }
+
+    private void stopDragSoundImmediately() {
+        removeCallbacks(dragSoundFadeRunnable);
+        dragSoundFading = false;
+        dragSoundVolume = 1f;
         if (dragStreamId == 0) {
             return;
         }
@@ -737,9 +756,22 @@ public class SparklingBubblesEffectView extends FrameLayout
     }
 
     private void play(int soundId) {
-        if (!destroyed && soundId != 0) {
+        if (!destroyed && soundId != 0 && canPlayEffectSound()) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
+    }
+
+    private boolean canPlayEffectSound() {
+        try {
+            if (Settings.System.getInt(context.getContentResolver(),
+                    "lockscreen_sounds_enabled", 1) == 0) {
+                return false;
+            }
+        } catch (RuntimeException ignored) {
+            // Match Samsung's permissive behavior when the setting cannot be queried.
+        }
+        return audioManager != null
+                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
     }
 
     private void recycle(Bitmap bitmap) {

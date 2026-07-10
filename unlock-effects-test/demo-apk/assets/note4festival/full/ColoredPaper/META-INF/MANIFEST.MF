@@ -1,0 +1,2241 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: res/drawable-xxxhdpi-v4/plant1_0033.png
+SHA1-Digest: TmqED/KgsIWSk6rdwbXDxzXTbNc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_035.qmg
+SHA1-Digest: RawYeImIjZa4nORhKa7xXXIySFU=
+
+Name: res/drawable-xxxhdpi-v4/reflection_02.qmg
+SHA1-Digest: dHq9RHNMgu3MVtAlixIaROspY/w=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0022.png
+SHA1-Digest: 2z/fLHpb1SPrtlF8uGEye7um0Tw=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0009.png
+SHA1-Digest: WK5hw+dj157Rzebc8QVbwC8p25s=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0043.png
+SHA1-Digest: P5f96peQdqcbyuP1Zg8dYFW+Ku0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0012.qmg
+SHA1-Digest: +VtmNeSO8d4TSkX1ulfcxaeWPYg=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0008.png
+SHA1-Digest: DU+Tiel+uKcrpAgVjcChaHGQwrk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_010.
+ png
+SHA1-Digest: 6wmjWy5xL3QSHHs0zYmdKZbgBRM=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_038.qmg
+SHA1-Digest: w95SH5KQNOpYiev+u4uiMkRVT9Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_028.
+ png
+SHA1-Digest: PGZqw3OrOP3IXu4k85MajZyGZnU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0045.qmg
+SHA1-Digest: XhLNBLcryGrZPN2qY/JbYczy4vE=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0048.png
+SHA1-Digest: 6JnL+kzqtYik1jf0Mb5URT9AmdI=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_double_seventh.gif
+SHA1-Digest: JoEJcQU24u+woLTzcOD6/vNj0G4=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0058.png
+SHA1-Digest: j02XJP8MpL+ZIfBy096OsFyaDgE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0016.qmg
+SHA1-Digest: YHErkSD4pvgkBoI9qJE6H2S0p38=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_main_lantern2.qmg
+SHA1-Digest: WXSnhJZZWbFWViH/ihLlu1Iohmo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_029.
+ png
+SHA1-Digest: N2Ds3eYTeLK5hnXV5UPH+N3Vh+Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0019.qmg
+SHA1-Digest: CtM1MsJtANPPP+AjtqzwvdxHLHo=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0020.png
+SHA1-Digest: mF1Rw2GKol4qX7pTRh6wkpyBM1A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0032.qmg
+SHA1-Digest: lKjI2u1+cubgtVVleJwy7Q+EDiU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0008.qmg
+SHA1-Digest: OYixtTuQ3lXV95ZOp0BwBX+n0RY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0008.qmg
+SHA1-Digest: hEh2aLsAPZ7egKFcYbH5WQtC070=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0012.qmg
+SHA1-Digest: LEaAZm2uL2+Xa5Q1k3KGj1VvxDg=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_001.qmg
+SHA1-Digest: hwrYm8ZvdEYqfLIF8PTAieNI3tQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0055.qmg
+SHA1-Digest: lDgs5+oOhSDJrK31/AmIKxnQARk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0015.qmg
+SHA1-Digest: Fo58lfZmuik2eeeyC7eC7AAl1Z4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0009.qmg
+SHA1-Digest: pcoOm6uDPmXYL4jhJdXc1Z5WUA4=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_010.qmg
+SHA1-Digest: C5ycVzcRjLqlrClTwO0hqXyL5nE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0016.qmg
+SHA1-Digest: 6n3tJ3qMW0N5F+aCNqxnLTLkEvQ=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0015.png
+SHA1-Digest: MSz71Tc6VVUAKf/64un+buoFLn8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_005.qmg
+SHA1-Digest: HvkmcitQQg5aFbW+h9EfJkDaNZY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0026.qmg
+SHA1-Digest: b1NOfIF9O3tHutLvURH114FWjvM=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_026.qmg
+SHA1-Digest: l9VgFViL3Eo/Tcz2alIX58Ep9Nw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0067.qmg
+SHA1-Digest: v8O8ppbtiXwZzMSgUZH52X3Pvwk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0038.qmg
+SHA1-Digest: Gqzh+hP/JXgznYhhp2WGRXK4kTA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0071.qmg
+SHA1-Digest: whwshe4nNEl01/FqGxSWbS7km48=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0051.qmg
+SHA1-Digest: taG/oRWGGLPDCLoY3JwT8lwlgLU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0024.qmg
+SHA1-Digest: BBnhDDg8W2jNttC8yN7YbUSY/3s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0032.qmg
+SHA1-Digest: 60NAhMu9NWpSopWi2o1XPMN7AFc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_020.
+ png
+SHA1-Digest: /3r/Cj6J1aewcpPsTz5B4sdOZXc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0039.qmg
+SHA1-Digest: jepPw2i5aldm1ZSfLrdpS/nclac=
+
+Name: res/raw/gc_template.xml
+SHA1-Digest: Zz93PE38h7xyTCJZwlNAS6a1fF0=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0007.png
+SHA1-Digest: 2DX2BqzoEQrggLe2+utakI6FghA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0046.qmg
+SHA1-Digest: J1N3P396A9xPLcmiKQ7qSfS+4Pg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0052.qmg
+SHA1-Digest: HJRk1H+ZXs2/usis9geuxc0uE0A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0029.qmg
+SHA1-Digest: JqrEvPxcsfvsa2+Vg5Wxi9iei/Q=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_027.qmg
+SHA1-Digest: bUCiSV9W7J3YGLW2Iaw6EZuLxd4=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_birthday.gif
+SHA1-Digest: U0PtYwfo7Sz3KRRDkLMsvFt6nfk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern4.qmg
+SHA1-Digest: osJ0bj+HRSRsaJN1u5UdSyygfAg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0020.qmg
+SHA1-Digest: GC+LS9GWEXZHttdNRKLc2US8IJc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0026.png
+SHA1-Digest: eICHcKnwMhHJK4dSF03tSl1Z7EE=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_013.qmg
+SHA1-Digest: Syp9pNPrnSAMKPlz8Fu5ySNWAH8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_030.qmg
+SHA1-Digest: n9YnM4Dm8tLNtXFl8DGKv9zYJoY=
+
+Name: res/drawable-xxxhdpi-v4/reflection_04.qmg
+SHA1-Digest: FOUCT7jHYXoAzRtSdzu0FMSsCmc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_015.qmg
+SHA1-Digest: x9O+biDoGBKomV8UTaUkKUSykBM=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0001.png
+SHA1-Digest: j5TRzBzGBA70THVeU2+VOh2pIw0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image03.qmg
+SHA1-Digest: dtAuFhK+h7XQpFAh9C99Jo0VdOM=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0035.png
+SHA1-Digest: PWpgzV1xe4HzgP4oJMofLnj47L8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_000.qmg
+SHA1-Digest: giifvPUH+RYELEodR1hT7bIMeec=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_003.
+ png
+SHA1-Digest: YIqNOYJMxYwRRNDA9FIKKRqTuhg=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_039.qmg
+SHA1-Digest: OhReFpiLyAcwZserG2Ongxz2X2A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_star_01.qmg
+SHA1-Digest: oSCML3i9WlE5rUUXZgmVgUfIojQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0023.qmg
+SHA1-Digest: DvEkKlwk8viLiZRoDys5dE19o7I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0030.qmg
+SHA1-Digest: Wi1weM3DjmWfA6kjHwCovf/U/Q8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0010.qmg
+SHA1-Digest: xtMSNIQZ3IB7cVIB5bFCu+corLU=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0049.png
+SHA1-Digest: BS7J00ScHk56K+0t90oDIAxbZSk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0028.qmg
+SHA1-Digest: 5pu5jmCtQe5poBWuC9Xt8BPDl3U=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0028.png
+SHA1-Digest: 4U3EyxDIkCbuYRXxmOpbbdWuDgo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image13.qmg
+SHA1-Digest: aTyOsLEQkKgwoM7F3qQLHM58sEA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0062.qmg
+SHA1-Digest: OE2bNGWKkWzyUazyz1t5nbpgrs8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0032.png
+SHA1-Digest: HeG9+dEM7vP+Uhc+nNU0Q/UmHqc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_010.qmg
+SHA1-Digest: giifvPUH+RYELEodR1hT7bIMeec=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_038.
+ png
+SHA1-Digest: //KuYvSwECgsXF1IIeoNMJMdP+w=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_bg.png
+SHA1-Digest: d5WE5tz2M9XW1hqnt35dWzPpPzM=
+
+Name: res/drawable-xxxhdpi-v4/reflection_20.qmg
+SHA1-Digest: C6BsTZaRR9XP7PekIfzYqMHFu/s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0017.qmg
+SHA1-Digest: 0MpNksJUHEApxPlajIBr1h/Aerw=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0039.png
+SHA1-Digest: nfJ6VI1428QPSLalvpHKovKR9xY=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0001.png
+SHA1-Digest: JOcSr+5jNujK8E46TpytCCTUwAM=
+
+Name: res/drawable-xxxhdpi-v4/reflection_10.qmg
+SHA1-Digest: aabFOMoaN3Hv54e0G/vsclq9WQg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0023.qmg
+SHA1-Digest: KNc9M0uQLn+tvQDu9nRZsmCxqd4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0061.qmg
+SHA1-Digest: JJtFO8XhmuZcqsiaG084B3tEBJE=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0008.png
+SHA1-Digest: M9wRIimvNavNrYA28i2eWbWweww=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image07.qmg
+SHA1-Digest: 4RUxT8xm9RdNNzgo2WYcIrYIxjA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_11.qmg
+SHA1-Digest: uWTLF7uKCjPFVKT3xekek7pr/DA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0041.qmg
+SHA1-Digest: sDeUm322AQ5oL1bg5k40vmuhafQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_bud_2.qmg
+SHA1-Digest: jwp82c7pT4/BpuwR1nBSWVPcIFI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0045.qmg
+SHA1-Digest: RbyEnkOJ6ILDMOoSUbL0lPZ9fI0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0076.qmg
+SHA1-Digest: ULvbfVZy8LqkV9W+XR1qbePVXeg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0010.qmg
+SHA1-Digest: uOYndyQbbFSKhsHA8x3PMVGWtjo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0003.qmg
+SHA1-Digest: IsmUPViC185JmnqVH47qGox7i38=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0025.qmg
+SHA1-Digest: wn/aMLBC6fDJycsoK7qgtYjVM7k=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_04
+ .png
+SHA1-Digest: btTWvTBItQmZMwVjjze0tGkMNFc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0002.png
+SHA1-Digest: 3bJq1E+ov0ujpWPUs8Iy0mNRb7E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0003.qmg
+SHA1-Digest: o4I8DY1OuOXpY87apusNaZHK3jY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0024.qmg
+SHA1-Digest: 06OaXK+v3G51y5khf84vF5Ncifw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0032.qmg
+SHA1-Digest: Dhz8oQXFi5QBEKBjVFCeY4/CfGk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0057.qmg
+SHA1-Digest: uz5QXLX42W/hilx91WFauNuLbTI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_04.qmg
+SHA1-Digest: hnszSTSZTHr00Uf4Z7Gb6SuvjxU=
+
+Name: res/drawable-xxxhdpi-v4/reflection_06.qmg
+SHA1-Digest: HeBFAeGerciXOU55AID5ak1Kfp4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0030.qmg
+SHA1-Digest: h/tGv+Y4OZgMDCnt6vWm6+2aonU=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0035.png
+SHA1-Digest: WAdAasY7ygH4uAe7as9v3zHB5ms=
+
+Name: res/drawable-xxxhdpi-v4/reflection_00.qmg
+SHA1-Digest: C6BsTZaRR9XP7PekIfzYqMHFu/s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_05.qmg
+SHA1-Digest: OyA8GLwBzP/iIaLNXjlBVmgouGQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0021.qmg
+SHA1-Digest: hwEUH9FkF3cR0TyQbfHLwMrKVMA=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_chn_valentine.wbp
+SHA1-Digest: O0pp/QgyLI/Vf/88BXugufoY5rs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0031.qmg
+SHA1-Digest: c7ec7+kDeVUsq2KiRuOO8YUjJA4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_03
+ .png
+SHA1-Digest: 1sGzZOI1lPhmB/suP/c0ztiKIkw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0002.qmg
+SHA1-Digest: 0L6H7SEhfEibF8Q4FcIH8q2p574=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0004.qmg
+SHA1-Digest: 1zfV6B3GwbRZWXkZkbDOCBjqpYI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_text_new_year.qmg
+SHA1-Digest: PVsMG79bV6esCZOSsep0zTXSxvs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0043.qmg
+SHA1-Digest: Hnj3pdC9IpE4yMEO6mJKdDu+weU=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0054.png
+SHA1-Digest: TvoqgZh6EVKdJmp7ZqllYh8H+5c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_011.
+ png
+SHA1-Digest: 70z5Rmh52Ip7h7oZLmGLCpaYy7A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0072.qmg
+SHA1-Digest: +9o9sGZT2iJDMADKw1ZJoLDBkiU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_01.qmg
+SHA1-Digest: snwmLakhGd19aCZ1QPYR+VS0sL4=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0042.png
+SHA1-Digest: C5nIMZZSz0RjkYPN2BKwt9XSdmk=
+
+Name: res/drawable-xxxhdpi-v4/reflection_03.qmg
+SHA1-Digest: hxosA8Gun8pYR0OmKDiZD2T8AfU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern5.qmg
+SHA1-Digest: 9FMJkLqKAjIqwWh1E27s1SSefkI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0049.qmg
+SHA1-Digest: zKvBrBJWiTXPzeUtA71o0xblbTI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0066.qmg
+SHA1-Digest: lcfe4iX3OaSmZGyRdZsYDwfU/kw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0028.qmg
+SHA1-Digest: h2oTWE6HOzqlVC00TdcoztJ1hvw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0022.qmg
+SHA1-Digest: uegIRwEWV0WlXnGt+srxgc0a0qQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_005.
+ png
+SHA1-Digest: 0cn0KVvrMa0jIfSoLOv48306s+8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_031.
+ png
+SHA1-Digest: wqq8k4l9xYDPABKlH2GdUUED1w4=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_new_year.wbp
+SHA1-Digest: egns6/EsCb/1wpMUMmWqNiG2VuU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0033.qmg
+SHA1-Digest: 50sD03PtcgvqHovX6zEszTFaObY=
+
+Name: res/drawable-xxxhdpi-v4/reflection_18.qmg
+SHA1-Digest: M50xuusI99DfjUt6MIIn+y/7Jxs=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_christmas.wbp
+SHA1-Digest: zwk6O8YrFSrb0YZqfWpN5dypz4g=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0005.qmg
+SHA1-Digest: +wnAzqTST8cd6ZHeMK1zDqSIMxw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0076.qmg
+SHA1-Digest: en3ceFi9p36BmGCCyLF2YqiE1Ms=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_07.qmg
+SHA1-Digest: JmTcHK6PGPt/28TAs0PhJTAbXA4=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0041.png
+SHA1-Digest: zbe9ynHiQHdhc8CacQLS5b2hg+0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_047.
+ png
+SHA1-Digest: tBqgthDOUAqzxzbuNGReJYIKYGc=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0057.png
+SHA1-Digest: 7pXHYMeHpo2K53hu2LYUP8YtMh8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0024.qmg
+SHA1-Digest: gshz3jdp8lTwuz85tlswRcC6RhU=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0012.png
+SHA1-Digest: NSXPipHfIVnoojnz5+m1Hup5O9o=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0058.qmg
+SHA1-Digest: p2dfzdmYcAwWZ9lcmdVHn+F7spk=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0003.png
+SHA1-Digest: G0jxmwXWMIjhWGdoOb8PeAvqkiE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_03.qmg
+SHA1-Digest: W+0gmzgnE4xz6LCKNPVT0XJTfos=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_bridge.qmg
+SHA1-Digest: c4KE9XwVgEl/tFffnywtNAixz/c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0039.qmg
+SHA1-Digest: TPnkpW5izYhCUptDnno9crdYPOA=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_012.qmg
+SHA1-Digest: 5XqjhyMhN6c1MC+9fVjrDB4uQF8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0059.png
+SHA1-Digest: h1lY7sobsYAUWWG2Cc3yru1hcRk=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0052.png
+SHA1-Digest: AlSckxlFgxdFoUoD72wY5/+1l5g=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0015.qmg
+SHA1-Digest: erHqDjsM80Be5oVn9cw52M//j0c=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_024.qmg
+SHA1-Digest: v2ujU9qrqFejIBUDBCBxc9vDZhI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0056.qmg
+SHA1-Digest: VGwDZBE+bXNdkJkBFn+lX/+f0dI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0029.qmg
+SHA1-Digest: Cf69fKvSFnNtE9CNzBrFIayXhNU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_042.
+ png
+SHA1-Digest: P3SHh/LC4K477/DkN3j9xSTJzlU=
+
+Name: res/drawable-xxxhdpi-v4/reflection_15.qmg
+SHA1-Digest: LcP1szVqL00qlSpecRplAMcnFAA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0027.qmg
+SHA1-Digest: ckIfEo2XHEhyxRNkGYVh7IBSGSI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0026.qmg
+SHA1-Digest: DkkXOjZ+gJEeCqDKfUwpPudEH9A=
+
+Name: res/drawable-xxxhdpi-v4/reflection_12.qmg
+SHA1-Digest: mx8cIT90wK0DZfONq8YXIbTj9CQ=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0013.png
+SHA1-Digest: e2iXmU49gUrnQsBGfKhovIu+6cc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0056.qmg
+SHA1-Digest: Xod1h8a9kUR4pTwuqZvJmtnQsgI=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_002.qmg
+SHA1-Digest: vmwik6bh179ta5oF0SvidA20/IM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_bg.qmg
+SHA1-Digest: c/wcQ9il1BGFgk4YFIjGcvABB8Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0069.qmg
+SHA1-Digest: FcmJepWsyATWWheeUjGEXOHhk+8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_044.
+ png
+SHA1-Digest: Zju18Avx6UywRX01LKLJYhvDME0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0055.qmg
+SHA1-Digest: 7aJ4nAR5kwlrkm4tLBpCsayZolY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0061.qmg
+SHA1-Digest: J7dOV5Gw2JXTe5A4tgcNeXxFAac=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0020.png
+SHA1-Digest: vMPh0yN9ko6qMCPruGXPsCg4zEo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_cloud_02.qm
+ g
+SHA1-Digest: jB87f24Y43OR2suW1GN7wOzZ1Rk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0030.qmg
+SHA1-Digest: KK/kKrtYBoFBS3luqMbpXdfq19E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0047.qmg
+SHA1-Digest: t8SiTlN9QD14tdT8ZfavEvfOmEM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0026.qmg
+SHA1-Digest: zjPpXXaZrPaA094jNJOgmDP4R4Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0034.qmg
+SHA1-Digest: Trcr1nx8v6yILYMKq3c32hMBKKo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0058.qmg
+SHA1-Digest: a7kMz5/eIrggUUV1UDsSLBz0Kis=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0055.png
+SHA1-Digest: ATosYP6S1T/c39fsWcakDrlZ7/U=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_20.png
+SHA1-Digest: UAdd8/bOChVmB7nrzLLep5RQizA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0035.qmg
+SHA1-Digest: RpLnIFMYnxTz2Ga0wKTtFBBC5WA=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_006.qmg
+SHA1-Digest: 6kFQp+35cQEa3I09JgrB84SSVYE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0025.qmg
+SHA1-Digest: 38vFnNdW30A0RVLIgcrE4FpNt1k=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0064.qmg
+SHA1-Digest: kczlWqwXBN10DqJUaQ5QS3qqc94=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0039.qmg
+SHA1-Digest: dgeX3BGGBU2iYrREk/ehwrWGCIE=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0044.png
+SHA1-Digest: NbXOLfsC4vqZ+OmMluQgkRXcAHo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_small_tree.q
+ mg
+SHA1-Digest: 8Mu4EyXJbFupon+a8wv9mAEfosE=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_chinese_new_year.wbp
+SHA1-Digest: Q4shbNy+ByfKVIhwVV03D2q2ruc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0002.qmg
+SHA1-Digest: V2FgE2IEW5wBzhqUMZG5P1FsScE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0041.qmg
+SHA1-Digest: 04v9Zh9sUC06C/IQecWlHvZnwiI=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0047.png
+SHA1-Digest: wSxjLDMoij4/ohxjNGZuLuc75WQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_045.
+ png
+SHA1-Digest: KVMQ1l9l7sFB+3K/sgpq0arOHJg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0030.qmg
+SHA1-Digest: FbRIQNxG6+BAMBIM4kNJ/V8512g=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0001.qmg
+SHA1-Digest: Rm50HVAYW0tPi8K+9Q1l76mwPvw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_013.
+ png
+SHA1-Digest: Lrzd3rTzM+I8fdkkvWo0A+t7vKk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0048.qmg
+SHA1-Digest: 6MvYNMb8brXj4htERICgl0Q5jko=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0014.png
+SHA1-Digest: XOw1Jjo72fjorcZA3EtG+mYQ/JQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_008.
+ png
+SHA1-Digest: CD/pkaTXwG5lFdukDmAlocT74nk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0016.qmg
+SHA1-Digest: oJEDL/nnca6kR2spyNN9MpqaQpI=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0045.png
+SHA1-Digest: s3sb/jVU3IkVHOYoH026VTGn82M=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0044.qmg
+SHA1-Digest: UnUK4Xrhez46vf0pc3ifp9O1FYE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_deer.qmg
+SHA1-Digest: eV1tArvn3/N3Ys/ExwxVnwmdQwI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0022.qmg
+SHA1-Digest: 7uaQwmnHPL+IkL4JgyKFVgAirFc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0055.qmg
+SHA1-Digest: 967vhdzjqqwXfS/v1XZJvpW+7K8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_03.qmg
+SHA1-Digest: rdi79pUQeN7eHj5O+QgTnAW75Ic=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_038.qmg
+SHA1-Digest: 1mKup0xSOOWFxRmJAO3mBDO8yUE=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0036.png
+SHA1-Digest: f4b3t5lFovTYs4fKfeV5U0P5Mic=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0013.qmg
+SHA1-Digest: N0lqb8mYfXxDkrYinHQ0jB89rlM=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0024.png
+SHA1-Digest: /O2gcN9eWG013PP0DJeQDDSlZI8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0046.qmg
+SHA1-Digest: cna8TqKWpjsw3r46PeCWj3larUE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0001.qmg
+SHA1-Digest: ULvbfVZy8LqkV9W+XR1qbePVXeg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0040.qmg
+SHA1-Digest: ed6Dvq2PSrdzjKcBg3M0Tq0uywQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0021.qmg
+SHA1-Digest: JwWhzVsI61zp95oEo5ZUINTHInQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0019.qmg
+SHA1-Digest: Jj7ZNFXKfc/NgU5+qEMK4mLG8cQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_019.
+ png
+SHA1-Digest: 3rmuBnKsABKCMqNYD5DvkOJuCc8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0027.png
+SHA1-Digest: hFB9+hOrv+UWRuE3ua9JzXB4zYM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0063.qmg
+SHA1-Digest: AyuOT63D0AqD2pPtz/5SwF0Knj0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_06.qmg
+SHA1-Digest: pjBpxqKXOXfPQT8BRuQJZraDwrQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0040.qmg
+SHA1-Digest: mxWQcEJ6mz36mwoJ9lf0rwajzRU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_028.qmg
+SHA1-Digest: w95SH5KQNOpYiev+u4uiMkRVT9Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0042.qmg
+SHA1-Digest: OLbQc/qtxOMACbk/4qA2eR+MrXs=
+
+Name: res/drawable-xxxhdpi-v4/reflection_17.qmg
+SHA1-Digest: ucB/PwFyewwuDlD9eijPiUjIHmc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0000.qmg
+SHA1-Digest: Wi1weM3DjmWfA6kjHwCovf/U/Q8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_10.qmg
+SHA1-Digest: Xum0cEzE7b6uIHSUVi9cfpuKWLE=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_000.qmg
+SHA1-Digest: n9YnM4Dm8tLNtXFl8DGKv9zYJoY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0011.qmg
+SHA1-Digest: IgvWmmer03CisvRCm+YXB8GpSYw=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0031.png
+SHA1-Digest: jzugAz+tyrZoRdZIrKuza/eQNrk=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_017.qmg
+SHA1-Digest: WWEcz4kwR8j2/CQ5081mdwo5l3Q=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_001.qmg
+SHA1-Digest: xo9l9vLbtW12LPu9iZeSzB47ikc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0013.qmg
+SHA1-Digest: 03u6IkT5r6QEZGW3kDXfQPd0PSk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0060.qmg
+SHA1-Digest: jqNku9UUbJK82dgO+FoJ3dJciqQ=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_congratulation.gif
+SHA1-Digest: v6kkSTS/NlUK32Z46gK453bkyy8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0015.qmg
+SHA1-Digest: 1ucHZ3RXiHk9ISnfjn+8djq54kY=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0052.png
+SHA1-Digest: cUkALITW5sEV9pHvpKtARxD4jbY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0030.qmg
+SHA1-Digest: 69WKPFq6AHzWySGiEizM8kEa+co=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_small_lanter
+ n_02.qmg
+SHA1-Digest: QusW5Mi7hwcdum2INRzVfuVTEmE=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_012.qmg
+SHA1-Digest: 9Lq9VcMX1mjzjJgr9+vBJ26+s8o=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0046.qmg
+SHA1-Digest: VuC9VC0LmHUpPcoFF3E6g3ya0lA=
+
+Name: res/xml/chinese_valentine.xml
+SHA1-Digest: 9OEcfz0ZNM1LjKyj6PEYJK/Juo8=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0005.png
+SHA1-Digest: 3bNI7j0LbvQGi4skW176XNarl5E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0054.qmg
+SHA1-Digest: MB1D6AqhUZQh+Tx5H/UzthOyW9Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0064.qmg
+SHA1-Digest: yoxw8teUeosn+7Ifiwzd5wKOYNU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0035.qmg
+SHA1-Digest: Ko1W9zuu/xGzXW/bEMhcV4mIlDg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0071.qmg
+SHA1-Digest: l0wdHR34XmsZK063XGliTa6F0Go=
+
+Name: AndroidManifest.xml
+SHA1-Digest: k2LZdVlncb6IAT0OIl/cZ1m4yvQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0043.qmg
+SHA1-Digest: 6aBXtZsqPaP8JFz2LNkhuZstHS4=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0031.png
+SHA1-Digest: 9IvpsIvN6wAui4Kxw1xn/yzaZ7A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0036.qmg
+SHA1-Digest: LIp2sjIQTDSNLnJlWcMRYbva5+Y=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_lantern.wbp
+SHA1-Digest: JVc7Phq2ACD30+9d5DSNcLszkGQ=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0007.png
+SHA1-Digest: C4jRU27T1bqHmzgpYqcCMJaX7sc=
+
+Name: res/drawable-xxxhdpi-v4/reflection_13.qmg
+SHA1-Digest: VsPKpbawWExowbRpDFouxZ8GVF4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0037.qmg
+SHA1-Digest: 8LIii/Ki+a2qqkbEFc4DJ6UuyOc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0040.png
+SHA1-Digest: 5ya3ITG0kKqoBGRpICSkpcS+/ac=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_19.png
+SHA1-Digest: 00HKqVZ7bCY2pycgQzjbE1RDb5M=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_anim_thumbnail.wbp
+SHA1-Digest: mrGA8bl0vBWLvWJfxRlMPecpV4A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_02.qmg
+SHA1-Digest: P/9/3H4Qqud2zVSmSbHc24j3mys=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0019.qmg
+SHA1-Digest: OKRoSqqPanxpmS5L58NJLTKOqME=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0011.png
+SHA1-Digest: n3GxVlA9Gk9vVWeoG2Ms++wh5bo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_01.qmg
+SHA1-Digest: gp3i6eHzgrRq7e0XbVsuPmr6N+Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_05.qmg
+SHA1-Digest: 0Yq5MRP1x8bsXuxcL+x5Il649SU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0010.qmg
+SHA1-Digest: Hc42l/TnVAc8IQlK2AbnrYTBmY0=
+
+Name: res/xml/mid_autumn.xml
+SHA1-Digest: Z71PBQGxclYaazSa2WhQIdr6HGo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0050.qmg
+SHA1-Digest: zZAc8yigG7VanBF1Lqu+vAXX+uU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0046.qmg
+SHA1-Digest: 6neQ1yI+EOFq7ka20R5/c+Nvz4M=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_024.
+ png
+SHA1-Digest: SiOprpUj7sOtWWfjOKLA3LZUic8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0042.png
+SHA1-Digest: 3gQVfFqIdtPohaQtrcV/9TtxB5o=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0065.qmg
+SHA1-Digest: gUaX5IVbu9Fyejo15cnROf84Zzg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0022.qmg
+SHA1-Digest: zx8+yKmonpkNx06nk0nJc5+m0Vs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0023.qmg
+SHA1-Digest: DccGYQtW5zQKkaUD2vrqbMm6gz4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0006.qmg
+SHA1-Digest: KzfwcDLyml8WZAYgnom2B/L4Qek=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0075.qmg
+SHA1-Digest: aS51MDfi1h+vsXZToHKlS4Mjzbw=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0039.png
+SHA1-Digest: cBHxKL1Dxf4CFn2Om9b/+/M1IDw=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_dragon_boat.gif
+SHA1-Digest: VNlc8eFIwcH8n+9TEHoy1QZHVGk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_star_02.qmg
+SHA1-Digest: 36n8pmg2R49pjWtsWOzTpfpRQKE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0003.qmg
+SHA1-Digest: bC9E7/GNeH7pbZX1VHSFi/MFGt0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0021.qmg
+SHA1-Digest: wMR6ivLHjnBfr4NxalF+rozF6z4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0051.qmg
+SHA1-Digest: h23m+vDX7nto+KgyMCsvT6MUuq8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image05.png
+SHA1-Digest: qxKbHk4pBu/HrDdcdOyUdF2pYlE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0070.qmg
+SHA1-Digest: PHUz8Z0LafHyDJAuTbwqDwwsT8I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_bud_1.qmg
+SHA1-Digest: lbN80iZVvqhvvFd+wI7YUP+Z8qc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0063.qmg
+SHA1-Digest: dDVnLrWJ9t67zLimAFHIfKFekVo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_049.
+ png
+SHA1-Digest: kUcFk7xlpdfH4j55cxovYlLR8ng=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0043.qmg
+SHA1-Digest: wzmVvoDLyIPCYwYN+TQJVIsvug0=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_039.qmg
+SHA1-Digest: 4nZbGd6cO3pRZjLIuQghoPDcqXY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0007.qmg
+SHA1-Digest: IA04oPKX/D1GOgQJYXDe4EtXCUw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0047.qmg
+SHA1-Digest: Sa5cb+Q2P+Jw60AgiFyyh+R2Otc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0004.qmg
+SHA1-Digest: IV+wKnshdGaGG3DSIf8OPtFFBx0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_034.
+ png
+SHA1-Digest: IMms6P/p5+Wi4YeL/rKbeq65hJg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0069.qmg
+SHA1-Digest: ghYqGqVXfTWr+qCQy6z2f5bOvLQ=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_019.qmg
+SHA1-Digest: 5mu/MclzgRykHZ5vA+K/yhxgZsA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_bg.qmg
+SHA1-Digest: uCxGsKDTVRGXg8sIl8LdybIN6tQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_002.
+ png
+SHA1-Digest: dddgdnhkqME6drl6j3YmvStaAhs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0025.qmg
+SHA1-Digest: /oC+YN46/+8RdOalv6OasEcPNoc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0044.qmg
+SHA1-Digest: fRqRqF4L+mh/0aoVVBIgqDGc3uk=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_008.qmg
+SHA1-Digest: 1mKup0xSOOWFxRmJAO3mBDO8yUE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_043.
+ png
+SHA1-Digest: DRzRaLCPmnTaiddAFgSubuD557w=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0075.qmg
+SHA1-Digest: +2HZxyU+5oVGYOofDlupbj8HfIw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image10.qmg
+SHA1-Digest: Wjl9w+a2UrWR7YGnmfGHPA8CMWw=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_christmas.gif
+SHA1-Digest: 1NGtyX38gOatz33wMZLiSvh7jUw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_4.qmg
+SHA1-Digest: 5MP/qKqLTsDP4rH5dhqI5yvN2UY=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0049.png
+SHA1-Digest: w1fapz4cXR/RRhNHutCCpU9FVfA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0013.qmg
+SHA1-Digest: IEfwKCiWMh5a9/I+D1gb0R5llAs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_moon.qmg
+SHA1-Digest: +yfssdRDZy+Hm3nDpDyW0mjevmI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0045.qmg
+SHA1-Digest: RmXM1plYSH/WnuueBxtdb274uIo=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_021.qmg
+SHA1-Digest: F8yC4wfAByemRx4NqpXkEgV97IU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0010.qmg
+SHA1-Digest: cVxzeqoRFf4gd8MZAqAciBcX3M8=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0051.png
+SHA1-Digest: RHLV6ncmbRSA6VdgNMBNcFK9ZU4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image08.qmg
+SHA1-Digest: HNy0o/8Vb9ggh7jDThnIt7uTf4s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0031.qmg
+SHA1-Digest: YaKFrH16O6wHT3eidheNAjX/WYo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0022.qmg
+SHA1-Digest: HK6jbxL4THO1uyTAnw6nWT0kcgc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0009.png
+SHA1-Digest: dxX/e2NNrFyIbminaMLqpV7dx/s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0027.qmg
+SHA1-Digest: 0BpvMRJ9MJwdlgqwKt+tHBprqvY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_main_lantern1.qmg
+SHA1-Digest: WefTStvH+CENxGL+tPBnzpAIxuY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0024.qmg
+SHA1-Digest: 2KZN9QIMqslTKFdUX4338CNWP2Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0048.qmg
+SHA1-Digest: yhCT6KGfE1Rhuq3xVgLxEAHOGeA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_bg.qmg
+SHA1-Digest: t35Duqn/KHw9UMx+EV/mgvEqU7I=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0056.png
+SHA1-Digest: evqnXPfMdm/BU05LMS5Wj2hM8vo=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_032.qmg
+SHA1-Digest: vmwik6bh179ta5oF0SvidA20/IM=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0002.png
+SHA1-Digest: GMiWvIFf78T8diaJHTFYoAp8f/0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0012.qmg
+SHA1-Digest: 31UEGuCXK+lE4fK0qeGWyS2Lw/g=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0044.qmg
+SHA1-Digest: ZguJkdcWC7Ex4UT7/UzVerE+CBw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0005.qmg
+SHA1-Digest: wE5y14L+CQuRFQgSEBfRGH6A2zA=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_018.qmg
+SHA1-Digest: 2HmKV3/Q21I8P8t+15BD6vaD4hk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image12.qmg
+SHA1-Digest: miBinQ6FCcGWBP8icvRlmxyPMBo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_cloud_top.png
+SHA1-Digest: VsZsPS8PBXAH7HpcIglp8pXN8Sk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0007.qmg
+SHA1-Digest: Oq9KP5kGjde8hEEZKEtb22NCHXE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0022.qmg
+SHA1-Digest: B99rHxP+QwP8VAw0Mk7KlIPnFZE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_06
+ .png
+SHA1-Digest: 39o5wZZKcZ9YIq17bwrlJQBCMLM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0002.qmg
+SHA1-Digest: Jb4gS+S8GPeyvyU6SKOfyHk8c/k=
+
+Name: res/drawable-xxxhdpi-v4/reflection_01.qmg
+SHA1-Digest: ra7wYNhgeS7/d1gvdAlNU6VJa5c=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_008.qmg
+SHA1-Digest: 2HmKV3/Q21I8P8t+15BD6vaD4hk=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0018.png
+SHA1-Digest: +iIiXuWu+a78AkiZhreQOU9AX2E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_18.qmg
+SHA1-Digest: C1TkOwmolMZoMySXaXGZvLo5Zb8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0055.png
+SHA1-Digest: teYGolTdfwxiDsbFIxAv0VbkRCk=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_027.qmg
+SHA1-Digest: WWEcz4kwR8j2/CQ5081mdwo5l3Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0042.qmg
+SHA1-Digest: hOF9IGgq6K38ATk9udo6xp01OHk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0018.qmg
+SHA1-Digest: KHnwUBepD5tM0awFOAvdS3mxpk8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0026.png
+SHA1-Digest: dzbsqji5ZASShA8+1M23phpS8zo=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_031.qmg
+SHA1-Digest: zkrG3IDQkYkKc5OhPkP1clB/zhg=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0040.png
+SHA1-Digest: V7xS+Y3UhT2+p1I1uksBtv2F0nM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0025.qmg
+SHA1-Digest: aBA3P0dvhwATCqmykoar6dM2mF4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0009.qmg
+SHA1-Digest: W85ANri2tC1LnSwTgm00hJ8j32U=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0060.qmg
+SHA1-Digest: RrIeex2QAEGYXwf2SntQLqz+rpU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0006.qmg
+SHA1-Digest: Wm2kSZGiaeYkEWulA4U5k6sLXD4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0050.qmg
+SHA1-Digest: CVMbSB942Pm84uhu98wOa6Sy5To=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0059.qmg
+SHA1-Digest: BztgbGP74HIeU1UA7sAF6onPuaU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_033.qmg
+SHA1-Digest: m/J8edULEUd1WSOrcQnnkv7RbAA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0052.qmg
+SHA1-Digest: pS1bXPtu/QeXwQJP9aPJvACrvHw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0013.qmg
+SHA1-Digest: 93W3D1hUW9XXwSAtr1GGjdK7Xk8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_021.qmg
+SHA1-Digest: zkrG3IDQkYkKc5OhPkP1clB/zhg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0034.qmg
+SHA1-Digest: buMFvzRs2Kiwfzr3Q/haAk5E1V4=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0038.png
+SHA1-Digest: iHpgU6IXaaM5VmmV9TmzJ11qRPs=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_004.qmg
+SHA1-Digest: MKwCjD3q8kFaRzWvjJVjQLLeaqQ=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0060.png
+SHA1-Digest: A/2+Ot2W5Ey9wQW/KWSfT7UGbdk=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0014.png
+SHA1-Digest: aNI32GtkDimfOCIsuGJonqNkzwY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_bg.qmg
+SHA1-Digest: Fv8zAOmOrRmPcduw2HYkrRFYi5A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0033.qmg
+SHA1-Digest: fuGCzYCWhXznDmZlET8YqfSspu8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_cloud_03.qm
+ g
+SHA1-Digest: zmY1Ojz9lK/ORgtsVCer15Zj168=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0062.qmg
+SHA1-Digest: NsEujbU0Sj+2LYjhLvBvRtO/VkY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0017.qmg
+SHA1-Digest: a7ow2x0CfbHLzgvsg6VNFFT2Nrs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_037.
+ png
+SHA1-Digest: K3Tln8+25MjGpI2nM9kxCWexFbo=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0006.png
+SHA1-Digest: VHrzuLZvlBhHdDlpt5iwYZiV1V8=
+
+Name: res/xml/valentine.xml
+SHA1-Digest: yjDvDonSTUrPLa6Ufo23SeEF5y4=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0025.png
+SHA1-Digest: KAQKtlLlg7dQlAUh4js2ZcVYOlw=
+
+Name: res/xml/birthday.xml
+SHA1-Digest: AYXucT3BLpEG7DkmDD7MyBIfIxw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_036.
+ png
+SHA1-Digest: uz3gjtyAdwTAWC4vpX+jcvfkYj0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0006.qmg
+SHA1-Digest: LXUT9CmVPQyqzJwikrHS/NQ4B8A=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0027.png
+SHA1-Digest: E6xHFoA7Oz3VBciuZHyPhXO0FW4=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_032.qmg
+SHA1-Digest: CdbTsXwvcVECGkqaYFeMIy0sMf8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0017.qmg
+SHA1-Digest: zkZ9bsKfxaewpQY5Zl1bH0O7Owo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0019.qmg
+SHA1-Digest: r8GOcNqpnw3FIeNovv/1ZoT/FhI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_1.qmg
+SHA1-Digest: fM+N+vnglPSxRNLUAfwI9V/5Uj8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_003.qmg
+SHA1-Digest: m/J8edULEUd1WSOrcQnnkv7RbAA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_heart.qmg
+SHA1-Digest: QCjIgGWX/CLaHJxAzZQFwMgpbIA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0073.qmg
+SHA1-Digest: TrlrCn1ZDynFFoVi9/Sn4AHP+AQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0018.qmg
+SHA1-Digest: PNQ0jlfydCmndMT+J/VyBzNMs4U=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0021.qmg
+SHA1-Digest: v/ilCsMs10gSlcE0qsr7ZuPO+Iw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_bud_4.png
+SHA1-Digest: tkA1luo3U0+buTul0CtJD67/zxQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0038.qmg
+SHA1-Digest: bZ0K0Cn9hyLeECHW0mGYVe4++Hc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_034.qmg
+SHA1-Digest: YS1smX4kRyXYc7pdIdZWColoLDY=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_014.qmg
+SHA1-Digest: v2ujU9qrqFejIBUDBCBxc9vDZhI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_text_happy.qmg
+SHA1-Digest: hPyLz3HDYM63ODjCJRzQZGkDKBE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_022.
+ png
+SHA1-Digest: ynXngGOgIrK8/k60RLVU4uVxN2Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0047.qmg
+SHA1-Digest: We+MlACkbTTbBbmq5HDElPYdeIc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0027.qmg
+SHA1-Digest: Ki4xumGCchNilyXj/QLgKmpGdx0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0053.qmg
+SHA1-Digest: PUdCPia1YNVA2saX1VkAv3bTVmg=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0019.png
+SHA1-Digest: W8/EgP+lX26L8Vp5ATSbmm4tous=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0002.qmg
+SHA1-Digest: jvMF4DiGigiIaqkC2C7yPOPFB4Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_main_lantern3.qmg
+SHA1-Digest: NNmTw0Hhq2mzQFRQflx0Z8xQBpk=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0058.png
+SHA1-Digest: q0AgeNJeXs2DplHpo+Ex0kA1rAo=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_013.qmg
+SHA1-Digest: Xr55qPVkjffraV3xWjEi0V5nhUY=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0046.png
+SHA1-Digest: 5y/xW5mhYWc7MKxyE5ippRyKnG0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0015.qmg
+SHA1-Digest: Dfgza+ZGAP6mD2F9+QoGyJsCdFs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_05
+ .png
+SHA1-Digest: TR21jlIshciQuvtEmNm+5UhOLsI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0036.qmg
+SHA1-Digest: Z1JUBRqVabIc8auEbgjo+rqXRcU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0056.qmg
+SHA1-Digest: HO0S0rQCXhNOI/AbK+OyokneuIc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_anim_preview.qmg
+SHA1-Digest: X7i6vkZbOzGxP+eUXrXkMAxxJtk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_main_lantern5.qmg
+SHA1-Digest: KxPPI3U2VIT62pcY+qzXPKI7nM8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0005.qmg
+SHA1-Digest: PzdUY+drlqyHvxqtP/p84b3/NoM=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0016.png
+SHA1-Digest: nGz4V0u/PLkcHlOEOT7ZmUCC1+Q=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0037.png
+SHA1-Digest: Di2J01/R2jCQIiezSXPuToFCzVE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_city.png
+SHA1-Digest: FUKDRA3poPi2FOTWEsP9meblRcA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0070.qmg
+SHA1-Digest: wpMXjy7Ag/jyPumwe7ehX/jD6Co=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0044.png
+SHA1-Digest: 3s5wQ2ksQRz0mT/CWlkcaiQC+M0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0034.qmg
+SHA1-Digest: WtBZYpe2IVGx+dGnKnxG5DSgSts=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_036.qmg
+SHA1-Digest: Eqkq+K0xeQDMrdVNgW0WO4dN6kY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0014.qmg
+SHA1-Digest: 73vGFGPuf8M+ufWlvMVowkqpYmE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image04.qmg
+SHA1-Digest: 592jBOO+6ls4lygVqE77K6tfaoA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0008.qmg
+SHA1-Digest: 11grl+NManye3Z7lG7PDFZuz+HQ=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_009.qmg
+SHA1-Digest: 5mu/MclzgRykHZ5vA+K/yhxgZsA=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0030.png
+SHA1-Digest: SHFthqciUPGjhwE89FeRqCkJnUY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_12.qmg
+SHA1-Digest: WgHCfuP3n0EuyBs4IwQFsFqZTJ8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0009.qmg
+SHA1-Digest: ONsATQHe+/Tvyp+Myw2czjLd8RI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0018.qmg
+SHA1-Digest: NIW3g/xErhNEjKQRqwd2bsXXiOI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image06.qmg
+SHA1-Digest: UyNAfoZC/enH+Dthd4E1M72BkcQ=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_020.qmg
+SHA1-Digest: ew1DW4wIeR5t1QYrd5OeEF0KCuY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0073.qmg
+SHA1-Digest: 0uVFikkU3weQ5ZMWAaHH5W2xSAU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_star_04.qmg
+SHA1-Digest: Yd0F7Hox4+0eWU8cgoXjJi9b0/4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_023.
+ png
+SHA1-Digest: FW+3xI4cqkklhju0d3+XwkTEjRc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0024.qmg
+SHA1-Digest: 3qqYpIvSKRMV4ipXkTkN+WUrhWM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0004.qmg
+SHA1-Digest: 0vCVPvjTvtOYQS150hkufXAlUP0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0061.qmg
+SHA1-Digest: Rw+JYrptgNgmwIgKDFDuQHP4Wsk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_tree.qmg
+SHA1-Digest: GPypyfWxrUXWBmO+AVppsoC4vEQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_14.png
+SHA1-Digest: teOIUp2/52B1fe/sxNQHON8RorQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0076.qmg
+SHA1-Digest: Y53rmIGE0/S3eEnT18u40KcsMq0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0059.qmg
+SHA1-Digest: xU2swlNtn2T6TuJlM1Bl7abeJR4=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0000.png
+SHA1-Digest: IhKOtIUbLyx5sT19cAiqS/X80aE=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0017.png
+SHA1-Digest: 1zz1YUBB+bGK+2G6lek9R+s5PG0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_048.
+ png
+SHA1-Digest: vbL6WhHz+OVpdZQBG1s7Sc/RArk=
+
+Name: res/drawable-xxxhdpi-v4/reflection_16.qmg
+SHA1-Digest: UOTPEGeU2MyjYTJCn/SVtA3SW+k=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0011.qmg
+SHA1-Digest: RFYKs3TZHNoHNVKd4vHzvelKUfA=
+
+Name: res/drawable-xxxhdpi-v4/reflection_14.qmg
+SHA1-Digest: XqM23UxQYpsTnPNbe4wihcHJabs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0049.qmg
+SHA1-Digest: PPd8CZVuHqNEMtfpHEAJ7peiBNo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0066.qmg
+SHA1-Digest: ZCBOuwWrkGYvORnIuiQYXSirTu0=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0053.png
+SHA1-Digest: dWlrm+HTfWnc/hsNkAv5umPFmWc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_037.qmg
+SHA1-Digest: bUCiSV9W7J3YGLW2Iaw6EZuLxd4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_cloud_01.qm
+ g
+SHA1-Digest: BB1W7rQtUDc0x4HQZVMoUjG12hY=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_030.qmg
+SHA1-Digest: ew1DW4wIeR5t1QYrd5OeEF0KCuY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0009.qmg
+SHA1-Digest: WN3yoe+27rFdDEfSZLFpYSgK+R8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_bg.qmg
+SHA1-Digest: H48p6sEM05iszgRz2OHQJGyYuLA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0070.qmg
+SHA1-Digest: Vjb+hiN+u8MKoGQIL/Hl2Fc+tvQ=
+
+Name: res/drawable-xxxhdpi-v4/reflection_19.qmg
+SHA1-Digest: eSe4KPFkJsngu2x6oN8w+6Bo/ds=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_035.qmg
+SHA1-Digest: HvkmcitQQg5aFbW+h9EfJkDaNZY=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_chinese_new_years.gif
+SHA1-Digest: Y9waetDO3knYPnVBeuXc7noOq2c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_bg2.qmg
+SHA1-Digest: D66K+oR/MtsILptYG1FZbVe+g9I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_small_lanter
+ n_01.qmg
+SHA1-Digest: 1UjJGijqlJId1kCNxv091lEZvEk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0059.qmg
+SHA1-Digest: j+ZX6s+fG2V1qoMYidqw/hRbGdU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_lace_bird.q
+ mg
+SHA1-Digest: Nm/+vDLK2FDyLeNWs3HrrzrzVEQ=
+
+Name: res/xml/christmas.xml
+SHA1-Digest: T7skQOEhACx5+3yTCDOUfy0BxYo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_040.
+ png
+SHA1-Digest: nktTi5cQx2TiroLiAlVp3l9BseI=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_036.qmg
+SHA1-Digest: l9VgFViL3Eo/Tcz2alIX58Ep9Nw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0074.qmg
+SHA1-Digest: kxbQBSNyq0CWJq3Uep6Cw65kn2c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0067.qmg
+SHA1-Digest: /U+k1E7mgy9oDmKLYeKeOYWfU6I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0020.qmg
+SHA1-Digest: G1/UWBZRz21PB9J3F+ua/ddsfuY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_22.png
+SHA1-Digest: 81BFHf0vc4vWUkLSMTloFIknP5Y=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_003.qmg
+SHA1-Digest: Syp9pNPrnSAMKPlz8Fu5ySNWAH8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_014.qmg
+SHA1-Digest: adkkwtC5xg+kBAWmBc2BDqWs4mA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0016.qmg
+SHA1-Digest: D+0RPGmA0JzJxvML8QczGFhDaXg=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_011.qmg
+SHA1-Digest: F8yC4wfAByemRx4NqpXkEgV97IU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_039.
+ png
+SHA1-Digest: StV85evCtneJkDDBaLDPuBylu4c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0017.qmg
+SHA1-Digest: Yc9krqUG/pGcM+MCuuTm+GI3gVU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0037.qmg
+SHA1-Digest: SfmVm/hwtYzDQP32lbGsSXbF290=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0003.qmg
+SHA1-Digest: OVObVTxgWsoNHzyoo1qY/YmHWZo=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_016.qmg
+SHA1-Digest: iTg+S3L9465ipg9z/F3ioeM6SbU=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0057.png
+SHA1-Digest: 3lxbeNf1tmf2C81GeXP76/Qtfgg=
+
+Name: res/xml/lantern.xml
+SHA1-Digest: 3GwQzPviFZEuGqFs6dUFUHIySUo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_cloud_down.png
+SHA1-Digest: hxsooPcSsnPwqMTY4XzjTCJnt3E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0074.qmg
+SHA1-Digest: Ka+yL/45Bbc0clA0HWj/Ls2QVoY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0051.qmg
+SHA1-Digest: Rm50HVAYW0tPi8K+9Q1l76mwPvw=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_007.qmg
+SHA1-Digest: 9saiRcYyrVcLR4wzt14A5r3EkUY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_3.qmg
+SHA1-Digest: OzDV63LYDjkMHPXaTOT//pAlFzk=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0023.png
+SHA1-Digest: zlzC+n374wcTn737F2CsUOqEu0s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0029.qmg
+SHA1-Digest: HOclx38EpxEtXZOu1xRaF+f81RI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_004.
+ png
+SHA1-Digest: 1xenFz930rEV5Qy2Kl4tVIx3f+c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0053.qmg
+SHA1-Digest: rYFgGUotrG7/qCfW+UO1UbWwbRo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0031.qmg
+SHA1-Digest: pkdmV0AxMfbvBamAYidV9W0teoY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_moon.qmg
+SHA1-Digest: DdnmhBz6CYZlWRH1raMzxgjxWNo=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0034.png
+SHA1-Digest: 0S5CA+3KwWGBSs1ziVWu8LwRiG4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0009.qmg
+SHA1-Digest: JcCHyYxGvpjZUzY2sdtp/PKiWEE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_new_year_star_05.png
+SHA1-Digest: rMAVTKGWWl2SyBwtYBGQqc7GcsA=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0010.png
+SHA1-Digest: 1Aa2sIrL9UOViHJbfxhIBWbC8RE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_012.
+ png
+SHA1-Digest: jvvJf2lqAdyO6O/SUYt8yRzjVD0=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_033.qmg
+SHA1-Digest: RU/2ilxb2YQjOJPB6AOF+3Aa0Hc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0025.png
+SHA1-Digest: TOYZXTS4dmgPg1uDzquvDMMEXh4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0033.qmg
+SHA1-Digest: 6lg6RQtFLql2RhRCDKY3I+DU8KQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_021.
+ png
+SHA1-Digest: M6O5/pf1eB1Zu7ZGT+Y7sqDeM/o=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image11.qmg
+SHA1-Digest: VwbXe2ZdLGjoNpzlFhqjKEqwQ68=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0024.png
+SHA1-Digest: bKqdcOndJcC4k56QFYQD2bPrSh8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0034.png
+SHA1-Digest: BblL0tbrGU1DS8bX2uYwf56CUs8=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0021.png
+SHA1-Digest: U88vRrBn21Tf7gw756h7yFO9LCc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_025.qmg
+SHA1-Digest: RawYeImIjZa4nORhKa7xXXIySFU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0015.qmg
+SHA1-Digest: C4kwtaZ8NsPaw1BJNxc6FIoZTlw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0029.qmg
+SHA1-Digest: zTrFulUzzhHqo37SZPzp4CmGGTk=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0029.png
+SHA1-Digest: nuqgK5OgaE+Fw/F76WyfbXneZ6o=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0037.png
+SHA1-Digest: JCYnx4GYhphpL0AEUD5gpcZVZRc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0001.qmg
+SHA1-Digest: +ACZjN839f+OlAb70M5Q2VwLZq0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_16.png
+SHA1-Digest: KpeddMIDacBxMaWSLJRBlgJahSY=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_019.qmg
+SHA1-Digest: OLQsIcAtLD/SulwrRo6o2f4lzBY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_2.qmg
+SHA1-Digest: HISkfo7okoV9qYl7rM6fjH8fvGw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0074.qmg
+SHA1-Digest: AKyUlKw+Ch+PjxdGifDrnKpsagg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_02.qmg
+SHA1-Digest: XIIhOslNOVDKQDio0g9qNxQiCik=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0051.png
+SHA1-Digest: ZU92/KdJtWqI00B47ugaTCuEVm4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0018.qmg
+SHA1-Digest: IV9mPTbymyHBmP6I4PbH+6A0YLw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0008.qmg
+SHA1-Digest: 8ua3akYVYzaAEPh/RQ00xDcVZYE=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_mid_autumn.wbp
+SHA1-Digest: 51/7hq+RscgYjmOD0hI6NWsCDe0=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0000.png
+SHA1-Digest: A/2+Ot2W5Ey9wQW/KWSfT7UGbdk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0048.qmg
+SHA1-Digest: RAhISIAWuVCU7HcARjcg1MA2dM8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0002.qmg
+SHA1-Digest: G7mEC58b5Eb6pU9/xFJ+sIhw5lE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_017.
+ png
+SHA1-Digest: 761Q/Tv1CI/GlpG0AZtYEy+mMbc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0037.qmg
+SHA1-Digest: n9EQMzN8G9rvk8XJmUDegZYMNb8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0028.qmg
+SHA1-Digest: tho7Abk3ZIIYWVsuZafPFYWrP4w=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0020.qmg
+SHA1-Digest: P4Lxd3LFK51LSdpWSBlDxEDo3ow=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0013.qmg
+SHA1-Digest: PNe6a9yOybxFNiOFgftEDmDtYDw=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_016.qmg
+SHA1-Digest: 6kFQp+35cQEa3I09JgrB84SSVYE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_main_lantern4.qmg
+SHA1-Digest: 27h6ChrIc4IKypeJEadQ6OfwxbE=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_lantern.gif
+SHA1-Digest: 0XEu698kKKLo18SkWybdeCG5l4E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_015.
+ png
+SHA1-Digest: ++I5Hp8tXkv4LpT5l3rWNn+r8AI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_gift.qmg
+SHA1-Digest: IEgTZ2n5vjkDNgn0dySIRfyn2R8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0068.qmg
+SHA1-Digest: JcgVeokW9AOdrE0r4NV0wnWKPqg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_big_tree.qmg
+SHA1-Digest: EJTJlU+S/ut7xMDC3je5IKfqMTw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_bg.qmg
+SHA1-Digest: t+cVWpuXZkGYQV85mcdUyAk5WBs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0039.qmg
+SHA1-Digest: kAQBGT3a6oihqU8d930S/vWdy04=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0069.qmg
+SHA1-Digest: MFuRMsIC0J9ZsWGBUJ9K6UIGXqc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_034.qmg
+SHA1-Digest: MKwCjD3q8kFaRzWvjJVjQLLeaqQ=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_birthday.wbp
+SHA1-Digest: ifX5+aUW3FFQR5Ixx4Ph8atOHsc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0014.qmg
+SHA1-Digest: LxwDLzt0uOQLRy8r1gJDNXRKxKw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0011.qmg
+SHA1-Digest: VV2E6i7SlwdZ0DJoBqoIvcbyYSw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_016.
+ png
+SHA1-Digest: iuXKdAgpCLTcF8TMUeKYj3P/Z3Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0001.qmg
+SHA1-Digest: iCSfVGP2FEEBcjNh8Dechn5Dlus=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0032.qmg
+SHA1-Digest: k5W1KeQJMCKwWKFwbUGOpbhQs8s=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0036.png
+SHA1-Digest: YUpYEmbVZfsOKs8EKUSrHzbmdYg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0007.qmg
+SHA1-Digest: Le8vcYEd2Opx2zLJ/taU5UD1Jis=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0005.qmg
+SHA1-Digest: CMoch1IpApyfwkr78xDReYC/fhg=
+
+Name: res/drawable-xxxhdpi-v4/reflection_09.qmg
+SHA1-Digest: ie9a96GIYHVdSMDlw0It3YpqPtM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0016.qmg
+SHA1-Digest: YH3qfY5BniBYwVxkMyAxbg6a3qY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_15.png
+SHA1-Digest: 9lu51c2r0ubGqQ/ZCqsTym9XE9A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0047.qmg
+SHA1-Digest: A7+QG4+LD7Rnvk+VH8au1lAUkBw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0035.qmg
+SHA1-Digest: 8C/y6zpE4aRYw7oJjnOaucE5E4A=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_025.
+ png
+SHA1-Digest: kEp9Zh3F1gtq7VSGSvz2Krav33I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0034.qmg
+SHA1-Digest: 4BKvnS9x2k6yV5JtqSV5TXhkDqI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0027.qmg
+SHA1-Digest: CrY2FOxZqjHVfPcpF9A/2DdyIMI=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_022.qmg
+SHA1-Digest: CdbTsXwvcVECGkqaYFeMIy0sMf8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_04.qmg
+SHA1-Digest: hBIvahODuqkochJxe3WnarwYJ6U=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_cake.qmg
+SHA1-Digest: 8NOkw9l7NgM4QPfL5Zgy+AvdKJU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_018.
+ png
+SHA1-Digest: XavC+Ka7oWS3CjXoI0iegIHlyWA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0067.qmg
+SHA1-Digest: n/ZSL4JUFuvccJ7pvLwml0uepI8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0045.qmg
+SHA1-Digest: oi7pxCFDSNpHvzhC95oPFtgZYuQ=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0050.png
+SHA1-Digest: MI7BzhvZCKTV2Opt6TrjAVZJCtY=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0043.png
+SHA1-Digest: kVwcURxzPs8d7Zl8YwjZXoFHdqw=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_028.qmg
+SHA1-Digest: gIvfv1FZqicqOrkTelBE3iyi6UI=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0050.png
+SHA1-Digest: Rv8bgBGmYGiBc2YdkBkDfyDJqAI=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0010.png
+SHA1-Digest: oOsuJO9R7oyn/5+fc5Vox7gl5vQ=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_new_years.gif
+SHA1-Digest: ixr2OUTdiUyjQzvyTQbL4ZXCpP4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0053.qmg
+SHA1-Digest: 8WDDvL3DtdwIsyFRGq474YJ4U+8=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0004.png
+SHA1-Digest: PVXcU5dttCqkYU2cyxqQ33eJ++8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_08.qmg
+SHA1-Digest: Rc0c1gcL0/yteLf2hbx9C4zAlxs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_030.
+ png
+SHA1-Digest: /zI1EfWCira7zGq9RXWfsVzIyLE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_050.
+ png
+SHA1-Digest: xaPrbBPU40A6cLLhI0rOt02sasY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0051.qmg
+SHA1-Digest: k3Fui4aja1OSXWxSXWqX88O89hU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_006.qmg
+SHA1-Digest: Eqkq+K0xeQDMrdVNgW0WO4dN6kY=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0019.png
+SHA1-Digest: klIyPn6CPzXFwphQJLvctBd4148=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0005.png
+SHA1-Digest: PRwt/YkWwZUkSqJC+rJ/ogEvM58=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0012.qmg
+SHA1-Digest: jmC0kWyTTTePtEkhm225YPuzUQU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0054.qmg
+SHA1-Digest: PiHwDlrc+x9filb8uJQaM2JDvyo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0027.qmg
+SHA1-Digest: zw7ajeh2t6FoUvx7onh9b/rI2Kg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0003.qmg
+SHA1-Digest: wvKRxgWWxpx/B8soF2H7aMXwbRc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0006.png
+SHA1-Digest: sfYlX4PTb5wSk54LeP8HaWpEDtY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0044.qmg
+SHA1-Digest: mZAtxRwD/X0pRVzuZ0dF5zi6dXI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0021.qmg
+SHA1-Digest: xZuv7/iFPob0A0f7d4tGh5xwr34=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0057.qmg
+SHA1-Digest: 3ePnKua5mT+gGVVYvd8YngnVamg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0049.qmg
+SHA1-Digest: ucLDcJWw79Ajf3CsW8apZNqtWZE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_032.
+ png
+SHA1-Digest: uRaWlz4nnhWOZeToMlUxhg42utw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0068.qmg
+SHA1-Digest: J28PEPy6wXsYBI7SwkMCQJQ2ze0=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_004.qmg
+SHA1-Digest: adkkwtC5xg+kBAWmBc2BDqWs4mA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0004.qmg
+SHA1-Digest: 9vM6bz7lQjBz1woCtturDf9x8tQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0054.qmg
+SHA1-Digest: 2EUMX/H6/YPWi9YMvbtPtxbtryY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0068.qmg
+SHA1-Digest: SuQLwheBgpiIOcAbvd0JjFFdicg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0062.qmg
+SHA1-Digest: Z7XkdQO14WzCinvTKjrKISEb7bw=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_dragon_boat.wbp
+SHA1-Digest: sQ+p+67wk1GwTrDoN3BI4tqXB1Q=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0049.qmg
+SHA1-Digest: 27RLiVxEqHVOQritMh9i4VAP8cY=
+
+Name: resources.arsc
+SHA1-Digest: HWPPT9T/GJZcUqQDiOG3aEXkFkw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0065.qmg
+SHA1-Digest: LbFCzUiIxDP7aRNN3oZ4oo2xdhg=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_024.qmg
+SHA1-Digest: YS1smX4kRyXYc7pdIdZWColoLDY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_21.png
+SHA1-Digest: MzHuGgLpC+n2Gb9fkkDAeSvMf/w=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0042.qmg
+SHA1-Digest: slUncy5lJMtKLeTUWI/gPPIRiTY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0041.qmg
+SHA1-Digest: hcgtk4dOGyqT+92vlgrRCINkgmE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0036.qmg
+SHA1-Digest: 958neWmR9BLNceOKuABpmueIffU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0072.qmg
+SHA1-Digest: JVYdLJjj7RGgUumakPwEEVpTF0M=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0046.png
+SHA1-Digest: YwZE0tsFqEb30JFUxzqzHyQfyOw=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_018.qmg
+SHA1-Digest: gIvfv1FZqicqOrkTelBE3iyi6UI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_13.png
+SHA1-Digest: sYp6P+7XpsxwhLmtyX6SkBfjeSU=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0048.png
+SHA1-Digest: IvpT1MzTiz+Mb1aSoahAnNsaw+I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0050.qmg
+SHA1-Digest: mVlTkxu23Mocdf2TJ+P3gtMiKJI=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_023.qmg
+SHA1-Digest: Xr55qPVkjffraV3xWjEi0V5nhUY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0012.qmg
+SHA1-Digest: wto5LuUF2VC3Ff6jxm3QYrv+y/E=
+
+Name: res/drawable-xxxhdpi-v4/reflection_07.qmg
+SHA1-Digest: GSpQ+dPawMgLIoJwqqDAE6pKIIs=
+
+Name: res/drawable-xxxhdpi-v4/reflection_08.qmg
+SHA1-Digest: i5eONi0PzMqFeAV4Xf4XoHRuJE4=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0004.png
+SHA1-Digest: ZEzWFE2+dlzoo8wDrxg1xdcdCBE=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_023.qmg
+SHA1-Digest: RU/2ilxb2YQjOJPB6AOF+3Aa0Hc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0058.qmg
+SHA1-Digest: fgB9aH/SjdaPuTvP9MFdLe31VvA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_026.
+ png
+SHA1-Digest: SlZQ+cNWUFhiW386CRCFFc/OOZ0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0014.qmg
+SHA1-Digest: C+af0gCipR9BwOqruyCOz8e5gWE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0035.qmg
+SHA1-Digest: Xu+A+jQO5hw27iQwn0FScQW6gTg=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0038.qmg
+SHA1-Digest: 8MR9JMocVinOBEwrW7p/+8q1R7U=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0048.qmg
+SHA1-Digest: cyG+JIXT8ff29D8vx7MWwuqQzhw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0040.qmg
+SHA1-Digest: 5ev4qXslWMXikTmla9N0vRjXcuo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0019.qmg
+SHA1-Digest: 8ltScwhG84tE3XjRET+vjMmgpvc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0031.qmg
+SHA1-Digest: I8wSFZJRhyjneGB33I5u9UOC2kQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0014.qmg
+SHA1-Digest: I1qCG3XVQTgMjfhIwb2ZngzBWAA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_006.
+ png
+SHA1-Digest: BsmkA+cMBVHydWM+2Z8kMX/DXIY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0006.qmg
+SHA1-Digest: ER9b/1hTlWiDLu8NMb0qly/u0ho=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0021.png
+SHA1-Digest: +C6mRHlgGXVmlLYLd2W0gVRZhBc=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0032.png
+SHA1-Digest: 9QzyPFaaA14hsS0AY9yDTEIwbho=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0020.qmg
+SHA1-Digest: ozryY3i2pDTBVYjre203OFnT7yM=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0003.png
+SHA1-Digest: irCQi3YZMUfa5jWMhtL/WgKMSbc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_029.qmg
+SHA1-Digest: OhReFpiLyAcwZserG2Ongxz2X2A=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0022.png
+SHA1-Digest: 4G0q4q3T/54AT8pG3rQ2GD69zng=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_17.png
+SHA1-Digest: QEzcQOGPwR0qRVX+/wknpHBlEHY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0004.qmg
+SHA1-Digest: q4BqnSLD5iGWYzWGDXtRnpFWtPM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0028.qmg
+SHA1-Digest: EVpMswCWZOW5/FnOmCTFULjg9Lo=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0060.png
+SHA1-Digest: IhKOtIUbLyx5sT19cAiqS/X80aE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0065.qmg
+SHA1-Digest: 9F9soI7Qcnj3ryULaGud3o/WZTE=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0059.png
+SHA1-Digest: RU41jVGJVcRUlPLyS1+y15QUxQs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0007.qmg
+SHA1-Digest: lDNY1ZO+ciUolUXPjNOmUe9ymic=
+
+Name: res/xml/new_year.xml
+SHA1-Digest: 3PqVshAFu8ojFxhLRtyQeJ/kQFc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_right_hill.qmg
+SHA1-Digest: I1RSirTTKngA6wd9blmqbmxWmeQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_06.qmg
+SHA1-Digest: YOg0yPegZ980ZscPd8kKLHcnP5w=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0033.qmg
+SHA1-Digest: xnjlpuML3A0kY32BSnCrBghRZAY=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0028.png
+SHA1-Digest: f3VZvRytP6VjNXaoQuGz38x25uk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_left_hill.qmg
+SHA1-Digest: Kc5SuKMNnj4iDTiGUcAnDHzaEPs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0066.qmg
+SHA1-Digest: 3m2NQnuIiTSkRdMui69toxu+XRw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_02.qmg
+SHA1-Digest: KZ/Q1BzvFbck6fFTdKx8cMOybaU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_005.qmg
+SHA1-Digest: qd4rSIZV2qcF7bP/08z43EqeZaA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image01.qmg
+SHA1-Digest: M3ui+0KHx4b32iukoASDWsXLKrQ=
+
+Name: res/xml/dragon_boat.xml
+SHA1-Digest: U1e1cD3U9HzNLFlaIGb6ndV0j8U=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0029.png
+SHA1-Digest: o2xbEaatxmKpypND7EngKeiW0xQ=
+
+Name: res/drawable-xxxhdpi-v4/reflection_11.qmg
+SHA1-Digest: 0iueB1oZVYSrd9KrSYdAg1+Ldbw=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0016.png
+SHA1-Digest: l7I1fEq8szBksWRzk5yScI3vXz8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0043.qmg
+SHA1-Digest: /zoW7O9dOJRGeagPuAUxWZPQ3wE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0026.qmg
+SHA1-Digest: jCUMDGwKBl9D9hOJ1qhNr6uMt7M=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_009.
+ png
+SHA1-Digest: 3bULNNTn0PWqNHU1xEYOR+nULa8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_051.
+ png
+SHA1-Digest: GE9mQd44qtQN1qn4W0EE1BPffHY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_02
+ .png
+SHA1-Digest: TSA8wg5yT4mqLciB0TH20j6FaTI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0005.qmg
+SHA1-Digest: 7XngHi1b4+j+xXOzLIeRaFKmqdk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0010.qmg
+SHA1-Digest: rvQXxJ3Pl2gvPn6ZiRQRlbhLT+M=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0047.png
+SHA1-Digest: zERbaKxIaRHxIYeONI5Xp0bpQJs=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_037.qmg
+SHA1-Digest: wAU6LZB/NdjOdifnzdGzPTL9qe4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_046.
+ png
+SHA1-Digest: XXcRbAuV/h3Ap0SmU2+Q4qC+d/8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0073.qmg
+SHA1-Digest: vYu1oFJhTrhR+Xb8QZN4TpTViOw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0011.qmg
+SHA1-Digest: 08eiuJJGef0VkP9rNKGSHsqLXXo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_big_lotus.qmg
+SHA1-Digest: /g1o/BaRlaym3N84L2dCbf2pOao=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0075.qmg
+SHA1-Digest: eI7yOFt8eNlYjM04EpZBauGEUiw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_bg.qmg
+SHA1-Digest: V4kabfhgI/TP5yOLxBRpFRKJ04E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0006.qmg
+SHA1-Digest: SX/1mDNQFE0zjHTTbek2mht05zU=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0012.png
+SHA1-Digest: nzGcFXERxb6B+8b9/v8cqlyKOuY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_small_lotus.qmg
+SHA1-Digest: Mh2ZAPqR5CXG5qXVyI+xGT9wPSQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0023.qmg
+SHA1-Digest: XiPIO7/hQ3QyJl0/nJZaUmvgMYM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0014.qmg
+SHA1-Digest: kv7xujmKfs85HHh9VXvikmmtEa0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0040.qmg
+SHA1-Digest: F1ImPWQZ+K9ibzJ/OdYqT+6FUBY=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0045.png
+SHA1-Digest: qcUJk36k2PtSA2/ELXqmELD+7Lw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0052.qmg
+SHA1-Digest: NIuTO3dNbHN5h8O3F+jkUFQXLLc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_031.qmg
+SHA1-Digest: hwrYm8ZvdEYqfLIF8PTAieNI3tQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0028.qmg
+SHA1-Digest: 6TOlyh1QfINa6Nk+fAG12lGnj2k=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_007.qmg
+SHA1-Digest: wAU6LZB/NdjOdifnzdGzPTL9qe4=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_christmas_bg.qmg
+SHA1-Digest: mbInVX6Kvp/LqQAiJlnMlsmr234=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0001.qmg
+SHA1-Digest: en3ceFi9p36BmGCCyLF2YqiE1Ms=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_007.
+ png
+SHA1-Digest: YD9ASGkWAP8XvVMWeGrDdt5jAL0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0072.qmg
+SHA1-Digest: PLI1FQmVHsCiqLCHfZ/Q7Boks5s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0037.qmg
+SHA1-Digest: MRE15TCaXOIZGJ3VLoJMaOKPTnE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_09.qmg
+SHA1-Digest: Zkd+dsOo5WKVFeSBldG6ANA42Bs=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_thank_you.gif
+SHA1-Digest: 8tD2cDZ3/wK4PHCsN8VnCk0qurc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0064.qmg
+SHA1-Digest: rowGIiaCKLRtPUDpvZh6c4hRVFQ=
+
+Name: res/xml/chinese_new_year.xml
+SHA1-Digest: Iwby4MWXRfzeLOCtjnSick4/dkc=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_fish_0038.qmg
+SHA1-Digest: pyJ4Iz9luam3DCF48d8un4hnDyE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0029.qmg
+SHA1-Digest: iLkqNZGhw31ogjBOBzVBoUfbRLw=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_mid_autumn.gif
+SHA1-Digest: CQS9SwTlSs7xlKMXh/PsbEX7+ZM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_027.
+ png
+SHA1-Digest: F83fgrPlynvgaNrS4ftcImQofRQ=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0030.png
+SHA1-Digest: M0igAyAaaIHucwMbb/VZAyzvF2k=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0025.qmg
+SHA1-Digest: 62rr2jzlX5pb62Oae7H4x0GJwd0=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_014.
+ png
+SHA1-Digest: WBan1z5e3PnQp8Ix+wcWKqlIBjQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_bud_3.qmg
+SHA1-Digest: RMljFXiBJmTVdnn4tuUH4Rc9n3M=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0054.png
+SHA1-Digest: Lo+Jb6Nnva00HgLI7xUERRc6/G4=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0038.png
+SHA1-Digest: Dt4nRhZTnT7F38h8bgeIu9qdwn4=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_029.qmg
+SHA1-Digest: OLQsIcAtLD/SulwrRo6o2f4lzBY=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0033.png
+SHA1-Digest: D9LdtKNlKS+0k5hQY70WQsrbX1s=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0015.png
+SHA1-Digest: 38HXZi2r3PpT8Lhmn09A4FsOtRo=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0071.qmg
+SHA1-Digest: L8k/FEuyj2EewC3dRVkouObgRO4=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_022.qmg
+SHA1-Digest: 5XqjhyMhN6c1MC+9fVjrDB4uQF8=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0026.qmg
+SHA1-Digest: vsm9EOE2aoijuasLGXBcc176zA0=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0041.png
+SHA1-Digest: nuXAFgIKjj67Q7eLJ7mPpRBndSA=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0023.qmg
+SHA1-Digest: RFHt07FcSsVmVQQ0S3l/AKNrE0I=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_candy_01.qmg
+SHA1-Digest: RREFpOIEu+8poDv2uVa8IEsMW/c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_dragon_boat_dragon_bg_wave_01
+ .png
+SHA1-Digest: afl/oEKaZUFwaq2jhaGkxVnk6xQ=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0056.png
+SHA1-Digest: E3eFzzsqP5lAqbKI+oRHwIoYEpE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0050.qmg
+SHA1-Digest: LHTa8vPYLJiV+MHI9dMnMxcAtgI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0036.qmg
+SHA1-Digest: fjCGmsr+KZxfWDW/98+NAmY8FzQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_041.
+ png
+SHA1-Digest: GX2obMEsHtR7FlSCDz+aBU56EYk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0017.qmg
+SHA1-Digest: qD3MIYmEWaeEgwAHmHM3ky4sOaY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0008.qmg
+SHA1-Digest: z3bMWxrnx7EfJ+NodbL0vNxJTNg=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_009.qmg
+SHA1-Digest: 4nZbGd6cO3pRZjLIuQghoPDcqXY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_mid_autumn_leaf_07.qmg
+SHA1-Digest: Mkg/wZztzSvL2WLm9hgymtRxysI=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0060.qmg
+SHA1-Digest: OpNZpHCxXEWyes8Re8RMpaN+pkc=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_020.qmg
+SHA1-Digest: C5ycVzcRjLqlrClTwO0hqXyL5nE=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0007.qmg
+SHA1-Digest: Gej76vbZ1sx3SQWPKXaf+8ImThI=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0053.png
+SHA1-Digest: 3Ba8iXdLKSqqJaJl852j4WkmL+s=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0057.qmg
+SHA1-Digest: uK5VJBow8+nfu7WWucZrvuV6sPk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_033.
+ png
+SHA1-Digest: 85V9YMGifIHwdLz0W3Vmsf5yjYs=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image02.qmg
+SHA1-Digest: VSZH8C6hpkoA/DtNcW5uSjLcAiI=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_015.qmg
+SHA1-Digest: qd4rSIZV2qcF7bP/08z43EqeZaA=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0011.png
+SHA1-Digest: kQk5/JnWgJ6jDBSRy7iKX6l7BJk=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_6.qmg
+SHA1-Digest: d96RlGkWmmV19YKa24T8smF8ygQ=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern1_0018.qmg
+SHA1-Digest: hs5bdumPkDFOSCejPHHqmLhCL9Y=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_001.
+ png
+SHA1-Digest: GE9mQd44qtQN1qn4W0EE1BPffHY=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_026.qmg
+SHA1-Digest: iTg+S3L9465ipg9z/F3ioeM6SbU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0063.qmg
+SHA1-Digest: ygd5n2ZoxrIaVg500zLpsB4D82E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0042.qmg
+SHA1-Digest: 5uN03I/zwyw+NCZVccjsW0Lw3ZM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_new_year_flower_5.qmg
+SHA1-Digest: pb9ugJfUwGfiN1cJNnQ8krRs+B8=
+
+Name: res/drawable-xxxhdpi-v4/message_bg_valentine.wbp
+SHA1-Digest: S3/UpLcw6PvuyZQcfOOsKRO8pcA=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0018.png
+SHA1-Digest: 7ajHSh5nN0cLR+m9XJOWGj0kfAM=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0023.png
+SHA1-Digest: p3LfmpeFUHIqc4s/+nFZ1ThwgnU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_017.qmg
+SHA1-Digest: 9saiRcYyrVcLR4wzt14A5r3EkUY=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_chinese_valentine_people_035.
+ png
+SHA1-Digest: V9Lh2mrUKZmu8ggLV80sObqDEYM=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_line.qmg
+SHA1-Digest: YPb5qwr3tUNPSUiOGTbv4gQn0qw=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern3_0011.qmg
+SHA1-Digest: 9F5W6x1WAdb3uecOqzPX3VbuXkM=
+
+Name: res/drawable-xxxhdpi-v4/greetingcard_valentines.gif
+SHA1-Digest: 0H33s3Fz5NHDFEXgLxni5PBFpnA=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_025.qmg
+SHA1-Digest: x9O+biDoGBKomV8UTaUkKUSykBM=
+
+Name: res/drawable-xxxhdpi-v4/reflection_05.qmg
+SHA1-Digest: WqbjIHKhCbiAQi8DLrEcQZVP66c=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_lantern_lantern2_0041.qmg
+SHA1-Digest: EH+xWF7L1KKflr/1owa1OBNaZP8=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers1_011.qmg
+SHA1-Digest: xo9l9vLbtW12LPu9iZeSzB47ikc=
+
+Name: res/drawable-xxxhdpi-v4/plant2_0017.png
+SHA1-Digest: gqwbnGUqY0LWudQrnJANbkLuGrU=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_valentine_image09.qmg
+SHA1-Digest: AizHf34wzHzxotL1GY2UktcVz/E=
+
+Name: res/drawable-xxxhdpi-v4/lockscreen_birthday_flame_0020.qmg
+SHA1-Digest: /Nk5LjfhQI9zN8epbuAHxaHQT6c=
+
+Name: res/drawable-xxxhdpi-v4/plant1_0013.png
+SHA1-Digest: N0P9Zs7LXwzjScv8eF2MAYuSlfU=
+
+Name: res/drawable-xxxhdpi-v4/firecrackers_002.qmg
+SHA1-Digest: 9Lq9VcMX1mjzjJgr9+vBJ26+s8o=

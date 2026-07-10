@@ -12,7 +12,9 @@ final class OverlayPrefs {
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
     static final String SHOW_DOODLE = "show_doodle";
+    static final String SEASONAL_UNLOCK_PARTNER = "seasonal_unlock_partner";
     static final String SEASON_MODE = "season_mode";
+    static final String DOODLE_SIZE_PERCENT = "doodle_size_percent";
     static final String POSITION_OFFSET_X = "position_offset_x";
     static final String POSITION_OFFSET_Y = "position_offset_y";
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
@@ -24,6 +26,7 @@ final class OverlayPrefs {
     static final String ROOT_TOUCH_CAPTURE_TEST_ENABLED = "root_touch_capture_test_enabled";
     static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
+    static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
     static final String EFFECT_PROFILE_LAST_SUMMARY = "effect_profile_last_summary";
     static final String EFFECT_PROFILE_DIAGNOSTIC_SUMMARY =
@@ -45,6 +48,8 @@ final class OverlayPrefs {
             "effect_background_force_recapture";
     static final String EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE =
             "effect_background_wake_capture_active";
+    static final String EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK =
+            "effect_background_wake_capture_should_relock";
     static final String EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX =
             "effect_background_last_capture_";
     static final String EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX =
@@ -85,6 +90,9 @@ final class OverlayPrefs {
     static final int TOUCH_BOX_ROUNDING_PX = 10;
     static final int POSITION_OFFSET_MIN = -100;
     static final int POSITION_OFFSET_MAX = 100;
+    static final int DOODLE_SIZE_MIN_PERCENT = 60;
+    static final int DOODLE_SIZE_MAX_PERCENT = 125;
+    static final int DOODLE_SIZE_DEFAULT_PERCENT = 75;
     static final int DEFAULT_EFFECT_BACKGROUND_REFRESH_HOURS = 24;
     static final int MIN_EFFECT_BACKGROUND_REFRESH_HOURS = 1;
     static final int MAX_EFFECT_BACKGROUND_REFRESH_HOURS = 168;
@@ -116,8 +124,17 @@ final class OverlayPrefs {
         return get(context).getBoolean(SHOW_DOODLE, true);
     }
 
+    static boolean seasonalUnlockPartner(Context context) {
+        return get(context).getBoolean(SEASONAL_UNLOCK_PARTNER, true);
+    }
+
     static int seasonMode(Context context) {
         return get(context).getInt(SEASON_MODE, SeasonalDoodleView.SEASON_AUTO);
+    }
+
+    static int doodleSizePercent(Context context) {
+        return clampDoodleSizePercent(get(context).getInt(DOODLE_SIZE_PERCENT,
+                DOODLE_SIZE_DEFAULT_PERCENT));
     }
 
     static int positionOffsetX(Context context) {
@@ -150,6 +167,10 @@ final class OverlayPrefs {
 
     static boolean unlockEffectEnabled(Context context) {
         return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
+    }
+
+    static boolean lockSoundEnabled(Context context) {
+        return get(context).getBoolean(LOCK_SOUND_ENABLED, true);
     }
 
     static int unlockEffect(Context context) {
@@ -187,7 +208,7 @@ final class OverlayPrefs {
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
-                return "NE Geometric Mosaic";
+                return "N4 Geometric Mosaic";
             default:
                 return "Unknown effect " + effect;
         }
@@ -216,6 +237,10 @@ final class OverlayPrefs {
         return get(context).getBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, false);
     }
 
+    static boolean effectBackgroundWakeCaptureShouldRelock(Context context) {
+        return get(context).getBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, false);
+    }
+
     static long effectBackgroundLastCapturedAt(Context context, int effect) {
         return get(context).getLong(EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect, 0L);
     }
@@ -237,6 +262,8 @@ final class OverlayPrefs {
         get(context).edit()
                 .putInt(EFFECT_BACKGROUND_REFRESH_TOKEN,
                         effectBackgroundRefreshToken(context) + 1)
+                .putBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, true)
+                .putBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, false)
                 .apply();
     }
 
@@ -342,6 +369,10 @@ final class OverlayPrefs {
 
     static int clampPositionOffset(int value) {
         return Math.max(POSITION_OFFSET_MIN, Math.min(POSITION_OFFSET_MAX, value));
+    }
+
+    static int clampDoodleSizePercent(int value) {
+        return Math.max(DOODLE_SIZE_MIN_PERCENT, Math.min(DOODLE_SIZE_MAX_PERCENT, value));
     }
 
     static int roundTouchCoordinate(int value) {

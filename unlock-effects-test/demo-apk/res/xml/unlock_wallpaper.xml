@@ -1,0 +1,4 @@
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/wallpaper_description"
+    android:settingsActivity="com.codex.s4unlockfx.EffectSelectorActivity"
+    android:thumbnail="@drawable/earth_banner" />

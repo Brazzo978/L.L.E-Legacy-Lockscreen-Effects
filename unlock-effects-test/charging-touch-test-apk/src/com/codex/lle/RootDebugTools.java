@@ -138,6 +138,40 @@ final class RootDebugTools {
         return Result.ok("Root keepalive plan saved: " + file.getAbsolutePath(), file);
     }
 
+    static Result applyKeepAlivePlan() {
+        String command = "dumpsys deviceidle whitelist +com.codex.lle"
+                + "; cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND allow"
+                + "; cmd appops set com.codex.lle RUN_IN_BACKGROUND allow"
+                + "; cmd appops set com.codex.lle WAKE_LOCK allow"
+                + "; am set-inactive com.codex.lle false";
+        CommandResult result = runSuCommand(command, MAX_TEXT_BYTES, DEFAULT_TIMEOUT_MS);
+        String out = text(result.stdout).trim();
+        String err = text(result.stderr).trim();
+        if (result.succeeded()) {
+            return Result.ok("Root keepalive applied"
+                    + (out.isEmpty() ? "" : ": " + out), null);
+        }
+        return Result.error("Root keepalive failed: "
+                + commandSummary(result, out, err), null);
+    }
+
+    static Result revertKeepAlivePlan() {
+        String command = "dumpsys deviceidle whitelist -com.codex.lle"
+                + "; cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND default"
+                + "; cmd appops set com.codex.lle RUN_IN_BACKGROUND default"
+                + "; cmd appops set com.codex.lle WAKE_LOCK default"
+                + "; am set-inactive com.codex.lle false";
+        CommandResult result = runSuCommand(command, MAX_TEXT_BYTES, DEFAULT_TIMEOUT_MS);
+        String out = text(result.stdout).trim();
+        String err = text(result.stderr).trim();
+        if (result.succeeded()) {
+            return Result.ok("Root keepalive reverted"
+                    + (out.isEmpty() ? "" : ": " + out), null);
+        }
+        return Result.error("Root keepalive revert failed: "
+                + commandSummary(result, out, err), null);
+    }
+
     private static void appendCommand(StringBuilder report, String command, long timeoutMs) {
         report.append("$ su -c \"").append(command).append("\"\n");
         CommandResult result = runSuCommand(command, MAX_REPORT_COMMAND_BYTES, timeoutMs);

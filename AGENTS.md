@@ -1,27 +1,28 @@
 # Agent Notes
 
 ## Repository and branches
-- Git root: `C:\Users\Admin\Documents\New project`.
+- Git root: `D:\New project`.
 - GitHub: `https://github.com/Brazzo978/unlock-effects-test` private repo.
-- Default branch `main` preserves the stable charging doodle app.
 - Active work branch: `codex/charging-touch-advanced`.
 - Stable validated tag: `charging-lock-stable-perfect-2026-06-30`.
 - Touch baseline tag: `charging-touch-advanced-baseline-2026-06-30`.
 
-## Stable app: do not break
-- Path: `unlock-effects-test\charging-lock-test-apk`.
-- Package: `com.codex.charginglocktest`.
-- User validated this APK with "FUNZIONA PERFETTA".
-- Main implementation path: `ChargingAccessibilityService` using `TYPE_ACCESSIBILITY_OVERLAY`.
-- The doodle fullscreen overlay is `FLAG_NOT_TOUCHABLE`, so unlock/touch is not blocked.
-- Defaults: lockscreen on, AOD off, home off.
-- Keep this app as the known-good baseline unless the user explicitly asks to modify it.
+## Legacy apps
+- Old app modules must not be revived or targeted by PRs.
+- Legacy charging-only app modules were removed from the active repo.
+- Port useful code into LLE manually instead of merging/cherry-picking legacy app changes.
 
-## Advanced touch test app
+## LLE app
 - Path: `unlock-effects-test\charging-touch-test-apk`.
-- Package: `com.codex.chargingtouchtest`.
-- Current APK: `unlock-effects-test\charging-touch-test-apk\build\ChargingTouchTest-debug.apk`.
-- It is the experimental branch for touch listening and unlock FX.
+- Package: `com.codex.lle`.
+- Current APK: `unlock-effects-test\charging-touch-test-apk\build\LLE-debug.apk`.
+- LLE means Legacy Lockscreen Effect; it is the experimental branch for touch listening and unlock FX.
+
+## LSE app
+- Path: `unlock-effects-test\demo-apk`.
+- Package: `com.codex.s4unlockfx`.
+- Launcher label: `L.S.E`.
+- LSE means Legacy Samsung Effect; keep this demo/reference app alongside LLE.
 - Current features:
   - Touch box calibration from app UI via `TouchBoxSetupActivity`.
   - Transparent calibrated touch window using `TouchDebugView`.
@@ -63,16 +64,14 @@
   - The mesh renderer requires a live accessibility screenshot/background texture before drawing. It intentionally avoids the fallback wallpaper for visible output because source-over base-cancel math only works if the sampled base matches the real lockscreen pixel.
 
 ## Build and install
-- Build stable:
-  `powershell -ExecutionPolicy Bypass -File .\unlock-effects-test\charging-lock-test-apk\build.ps1`
-- Build touch:
+- Build LLE:
   `powershell -ExecutionPolicy Bypass -File .\unlock-effects-test\charging-touch-test-apk\build.ps1`
-- Install touch:
-  `adb install -r .\unlock-effects-test\charging-touch-test-apk\build\ChargingTouchTest-debug.apk`
-- Open touch settings:
-  `adb shell am start -n com.codex.chargingtouchtest/.ControlActivity`
+- Install LLE:
+  `adb install -r .\unlock-effects-test\charging-touch-test-apk\build\LLE-debug.apk`
+- Open LLE settings:
+  `adb shell am start -n com.codex.lle/.ControlActivity`
 - Logs:
-  `adb logcat -s ChargingA11y ChargingTouchDebug ChargingOverlay ChargingLockTest ChargingTouchTest`
+  `adb logcat -s ChargingA11y LLEDebug ChargingOverlay LLE LLEControl LleRootDebug`
 
 ## Critical next objective: true S4 Lens Flare
 - User explicitly requested exact S4 lens flare, not an approximate/fake effect.

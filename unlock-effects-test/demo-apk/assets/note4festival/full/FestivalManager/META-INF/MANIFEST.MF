@@ -1,0 +1,29 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: AndroidManifest.xml
+SHA1-Digest: chjCFk5dAhf1SoA00/qtWC75Ucw=
+
+Name: res/drawable-xxxhdpi-v4/setup_btn_arrow_press.png
+SHA1-Digest: H+DwR5BpWPImbAJIeBKt6jHc55s=
+
+Name: res/drawable-xxxhdpi-v4/notification_festival.png
+SHA1-Digest: F5o8Gupe1QK+59eFp0FQTEEmSWw=
+
+Name: res/drawable-xxxhdpi-v4/festival_icon.qmg
+SHA1-Digest: OX8i65Fch+mtq9VQMkGnsf/JhHM=
+
+Name: res/drawable-xxxhdpi-v4/setup_btn_arrow.png
+SHA1-Digest: aLxCbZnyF5lXk9M2Co3eKW1dRQQ=
+
+Name: res/color/setupwizard_start_text_selector.xml
+SHA1-Digest: mohW+e/OrKL8IBgUta0YNfY/uWw=
+
+Name: res/layout/activity_main.xml
+SHA1-Digest: VlVlWYCRhkXxYo9HwANXm1H3RDg=
+
+Name: resources.arsc
+SHA1-Digest: aMOM/UXl6eMrR2O6O5myv4jhep4=
+
+Name: res/drawable-xxxhdpi-v4/birthday_new.wbp
+SHA1-Digest: 3glBYoUTUNr/6sILxXpgOmkKySY=

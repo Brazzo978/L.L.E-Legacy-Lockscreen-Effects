@@ -152,11 +152,16 @@ Il wrapper non passa piu una bitmap fullscreen "vera" da visualizzare: crea una
 color map dal cached screenshot e la invia tramite il path Samsung standard
 `handleCustomEvent(0, { Bitmap, Mode })`. La lib la usa come `uBGTexMap`.
 
-La color map attuale:
+La color map viene ora generata con un center-crop diretto dello screenshot alla
+dimensione render. Il vecchio passaggio sperimentale a 48 px e il successivo
+upscale sono stati rimossi, quindi il renderer Samsung riceve nuovamente una
+mappa colore con dettaglio pieno.
 
-- campiona lo screenshot con long edge 48 px;
-- riscalala alla dimensione render;
-- non applica blend bianco (`COLOR_MAP_WHITE_BLEND = 0`).
+Il wrapper audio replica inoltre i parametri SystemUI originali: `SoundPool` da
+10 stream, soglie drag di 1100 ms/120 px e fade ogni 10 ms con decremento 0.039
+al rilascio e 0.059 allo sblocco. L'handoff verso il PIN conserva i 400 ms
+Samsung includendo i 60 ms necessari a rimuovere l'overlay prima del gesto di
+accessibilita.
 
 ## Asset aggiunti al package
 
