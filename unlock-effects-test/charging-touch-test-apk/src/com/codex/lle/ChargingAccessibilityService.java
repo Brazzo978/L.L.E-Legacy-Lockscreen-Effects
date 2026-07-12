@@ -42,6 +42,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Calendar;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -311,6 +312,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private SeasonalDoodleView overlayView;
     private TouchDebugView touchDebugView;
     private WindowManager.LayoutParams touchDebugParams;
+    private final ArrayList<TouchDebugView> additionalTouchDebugViews =
+            new ArrayList<TouchDebugView>();
+    private final ArrayList<WindowManager.LayoutParams> additionalTouchDebugParams =
+            new ArrayList<WindowManager.LayoutParams>();
     private boolean touchDebugTouchable;
     private UnlockEffectRenderer unlockEffectRenderer;
     private View unlockEffectView;
@@ -744,7 +749,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || OverlayPrefs.TOUCH_BOX_LEFT.equals(key)
                 || OverlayPrefs.TOUCH_BOX_TOP.equals(key)
                 || OverlayPrefs.TOUCH_BOX_RIGHT.equals(key)
-                || OverlayPrefs.TOUCH_BOX_BOTTOM.equals(key))
+                || OverlayPrefs.TOUCH_BOX_BOTTOM.equals(key)
+                || OverlayPrefs.TOUCH_BOX_REGIONS.equals(key)
+                || OverlayPrefs.TOUCH_BOX_REFERENCE_WIDTH.equals(key)
+                || OverlayPrefs.TOUCH_BOX_REFERENCE_HEIGHT.equals(key))
                 && touchDebugView != null) {
             syncTouchDebugOverlay();
         }
@@ -1547,7 +1555,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
         boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
         boolean hideOverlaysForBackgroundCapture =
-                OverlayPrefs.effectBackgroundWakeCaptureActive(this) && interactive && locked;
+                (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
+                        || colorScreenshotInFlight) && interactive && locked;
         syncTouchBoxScreenshotCapture(reason, interactive, locked, blockedSurfaceActive);
         boolean aodSurface = AOD_PACKAGE.equals(lastWindowPackage);
 
@@ -1594,6 +1603,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                 aodSurface, hideOverlaysForTouchBoxCapture, hideOverlaysForBackgroundCapture,
                 blockedSurfaceActive)) {
             refreshUnlockEffectBackgroundSourceIfNeeded("service_background:" + reason);
+            // A capture can start inside this same visibility pass, after showFx was
+            // computed. Do not remount the renderer with the stale cache before the
+            // asynchronous screenshot callback has validated and applied the new frame.
+            if (colorScreenshotInFlight) {
+                showFx = false;
+                hideOverlaysForBackgroundCapture = true;
+            }
         }
 
         if (showDoodle) {
@@ -2276,6 +2292,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                                 + " pinEntryRequested=" + pinEntryRequested
                                 + " pinEntrySurface=" + pinEntrySurfaceVisible
                                 + " notificationShade=" + notificationShadeVisible
+                                + " gesture=" + unlockEffectGestureActive
+                                + " fxAttached=" + unlockEffectOverlayAttached
+                                + " fxParked=" + unlockEffectOverlayParked
+                                + " interactive="
+                                + (powerManager == null || powerManager.isInteractive())
+                                + " locked=" + isLockscreenLocked(false)
+                                + " displayState=" + displayStateName(currentDisplayState())
                                 + " pkg=" + lastWindowPackage);
                         bitmap.recycle();
                         if (!retryUnlockEffectBackgroundCapture(
@@ -3105,7 +3128,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR)
                 .apply();
         removeDoodleOverlay();
-        removeUnlockEffectOverlay();
+        // A parked Samsung Surface/TextureView can still leave a compositor hole in an
+        // accessibility screenshot even at alpha zero. Destroy the renderer window for
+        // the wizard capture so the cached editor image cannot contain black/duplicated
+        // surface tiles; the selected effect is reconstructed after capture.
+        destroyUnlockEffectOverlay();
         removeTouchDebugOverlay();
         handler.postDelayed(touchBoxScreenshotCaptureRunnable,
                 TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS);
@@ -3422,21 +3449,25 @@ public class ChargingAccessibilityService extends AccessibilityService
             removeTouchDebugOverlay();
             return;
         }
-        Rect box = resolveTouchBox();
+        List<Rect> boxes = resolveTouchBoxes();
         boolean standbyEnabled = OverlayPrefs.debugTouchStandby(this);
         boolean standbyTouchable = touchable || standbyEnabled;
         // Let an early wake touch try the same readiness gate used by normal gestures.
         boolean listening = touchable || standbyEnabled;
         if (touchDebugView != null) {
-            touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
-            touchDebugView.setListeningEnabled(listening);
-            updateTouchDebugLayout(box, standbyTouchable);
-            return;
+            if (touchDebugWindowCount() == boxes.size()) {
+                for (int i = 0; i < boxes.size(); i++) {
+                    TouchDebugView view = touchDebugViewAt(i);
+                    view.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+                    view.setListeningEnabled(listening);
+                }
+                updateTouchDebugLayouts(boxes, standbyTouchable);
+                return;
+            }
+            removeTouchDebugOverlay();
         }
-        touchDebugView = new TouchDebugView(this);
-        touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
-        touchDebugView.setListeningEnabled(listening);
-        touchDebugView.setTouchTriggerListener(new TouchDebugView.TouchTriggerListener() {
+        TouchDebugView.TouchTriggerListener triggerListener =
+                new TouchDebugView.TouchTriggerListener() {
             @Override
             public boolean onTouchStarted(float screenX, float screenY) {
                 if (isSeasonalUnlockPartnerModeEnabled()) {
@@ -3473,36 +3504,39 @@ public class ChargingAccessibilityService extends AccessibilityService
                 }
                 cancelUnlockEffectGesture();
             }
-        });
+        };
 
-        touchDebugParams = new WindowManager.LayoutParams(
-                box.width(),
-                box.height(),
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                touchListenBoxFlags(standbyTouchable),
-                PixelFormat.TRANSLUCENT);
         touchDebugTouchable = standbyTouchable;
-        touchDebugParams.gravity = Gravity.TOP | Gravity.START;
-        touchDebugParams.x = box.left;
-        touchDebugParams.y = box.top;
-        touchDebugParams.setTitle("LLETouchListenBox");
-        try {
-            windowManager.addView(touchDebugView, touchDebugParams);
-        } catch (RuntimeException e) {
-            if (isAlreadyAddedWindowError(e)) {
-                Log.w(TAG, "touch listen box already attached");
-            } else {
-                Log.e(TAG, "touch listen box addView failed", e);
-                touchDebugView = null;
-                touchDebugParams = null;
-                touchDebugTouchable = false;
+        for (int i = 0; i < boxes.size(); i++) {
+            Rect area = boxes.get(i);
+            TouchDebugView view = new TouchDebugView(this);
+            view.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+            view.setListeningEnabled(listening);
+            view.setTouchTriggerListener(triggerListener);
+            WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    area.width(), area.height(),
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    touchListenBoxFlags(standbyTouchable), PixelFormat.TRANSLUCENT);
+            params.gravity = Gravity.TOP | Gravity.START;
+            params.x = area.left;
+            params.y = area.top;
+            params.setTitle("LLETouchListenArea" + (i + 1));
+            try {
+                windowManager.addView(view, params);
+            } catch (RuntimeException e) {
+                Log.e(TAG, "touch listen area addView failed index=" + i, e);
+                removeTouchDebugOverlay();
                 return;
             }
+            if (i == 0) {
+                touchDebugView = view;
+                touchDebugParams = params;
+            } else {
+                additionalTouchDebugViews.add(view);
+                additionalTouchDebugParams.add(params);
+            }
         }
-        Log.i(TAG, "touch listen box shown left=" + box.left
-                + " top=" + box.top
-                + " right=" + box.right
-                + " bottom=" + box.bottom
+        Log.i(TAG, "touch listen region shown areas=" + boxes.size()
                 + " touchable=" + standbyTouchable + " listening=" + listening
                 + " active=" + touchable
                 + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
@@ -3908,40 +3942,58 @@ public class ChargingAccessibilityService extends AccessibilityService
             touchDebugParams = null;
             touchDebugTouchable = false;
         }
+        for (TouchDebugView view : additionalTouchDebugViews) {
+            try {
+                windowManager.removeView(view);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        additionalTouchDebugViews.clear();
+        additionalTouchDebugParams.clear();
     }
 
-    private void updateTouchDebugLayout(Rect box, boolean touchable) {
-        if (touchDebugView == null || touchDebugParams == null) {
+    private int touchDebugWindowCount() {
+        return touchDebugView == null ? 0 : 1 + additionalTouchDebugViews.size();
+    }
+
+    private TouchDebugView touchDebugViewAt(int index) {
+        return index == 0 ? touchDebugView : additionalTouchDebugViews.get(index - 1);
+    }
+
+    private WindowManager.LayoutParams touchDebugParamsAt(int index) {
+        return index == 0 ? touchDebugParams : additionalTouchDebugParams.get(index - 1);
+    }
+
+    private void updateTouchDebugLayouts(List<Rect> boxes, boolean touchable) {
+        if (touchDebugView == null || touchDebugParams == null
+                || touchDebugWindowCount() != boxes.size()) {
             return;
         }
         int flags = touchListenBoxFlags(touchable);
-        boolean changed = touchDebugParams.x != box.left
-                || touchDebugParams.y != box.top
-                || touchDebugParams.width != box.width()
-                || touchDebugParams.height != box.height()
-                || touchDebugParams.flags != flags
-                || touchDebugTouchable != touchable;
-        if (!changed) {
-            return;
+        for (int i = 0; i < boxes.size(); i++) {
+            Rect box = boxes.get(i);
+            TouchDebugView view = touchDebugViewAt(i);
+            WindowManager.LayoutParams params = touchDebugParamsAt(i);
+            boolean changed = params.x != box.left || params.y != box.top
+                    || params.width != box.width() || params.height != box.height()
+                    || params.flags != flags || touchDebugTouchable != touchable;
+            if (!changed) {
+                continue;
+            }
+            params.x = box.left;
+            params.y = box.top;
+            params.width = box.width();
+            params.height = box.height();
+            params.flags = flags;
+            try {
+                windowManager.updateViewLayout(view, params);
+            } catch (RuntimeException e) {
+                Log.e(TAG, "touch listen area update failed index=" + i, e);
+                removeTouchDebugOverlay();
+                return;
+            }
         }
-        touchDebugParams.x = box.left;
-        touchDebugParams.y = box.top;
-        touchDebugParams.width = box.width();
-        touchDebugParams.height = box.height();
-        touchDebugParams.flags = flags;
         touchDebugTouchable = touchable;
-        try {
-            windowManager.updateViewLayout(touchDebugView, touchDebugParams);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "touch listen box updateViewLayout failed", e);
-            removeTouchDebugOverlay();
-            return;
-        }
-        Log.i(TAG, "touch listen box updated left=" + box.left
-                + " top=" + box.top
-                + " right=" + box.right
-                + " bottom=" + box.bottom
-                + " touchable=" + touchable);
     }
 
     private int touchListenBoxFlags(boolean touchable) {
@@ -3952,33 +4004,39 @@ public class ChargingAccessibilityService extends AccessibilityService
         return flags;
     }
 
-    private Rect resolveTouchBox() {
+    private List<Rect> resolveTouchBoxes() {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int screenWidth = Math.max(dp(48), metrics.widthPixels);
         int screenHeight = Math.max(dp(48), metrics.heightPixels);
-
-        int left;
-        int top;
-        int right;
-        int bottom;
-        if (OverlayPrefs.touchBoxConfigured(this)) {
-            left = OverlayPrefs.touchBoxLeft(this);
-            top = OverlayPrefs.touchBoxTop(this);
-            right = OverlayPrefs.touchBoxRight(this);
-            bottom = OverlayPrefs.touchBoxBottom(this);
-        } else {
-            left = OverlayPrefs.DEFAULT_TOUCH_BOX_LEFT;
-            top = OverlayPrefs.DEFAULT_TOUCH_BOX_TOP;
-            right = OverlayPrefs.DEFAULT_TOUCH_BOX_RIGHT;
-            bottom = OverlayPrefs.DEFAULT_TOUCH_BOX_BOTTOM;
-        }
-
         int minSize = dp(48);
-        left = clamp(left, 0, screenWidth - minSize);
-        top = clamp(top, 0, screenHeight - minSize);
-        right = clamp(right, left + minSize, screenWidth);
-        bottom = clamp(bottom, top + minSize, screenHeight);
-        return new Rect(left, top, right, bottom);
+        ArrayList<Rect> boxes = new ArrayList<Rect>();
+        List<Rect> saved = OverlayPrefs.touchBoxRegions(this);
+        for (Rect source : saved) {
+            int left = clamp(source.left, 0, screenWidth - minSize);
+            int top = clamp(source.top, 0, screenHeight - minSize);
+            int right = clamp(source.right, left + minSize, screenWidth);
+            int bottom = clamp(source.bottom, top + minSize, screenHeight);
+            boxes.add(new Rect(left, top, right, bottom));
+        }
+        if (boxes.isEmpty()) {
+            boxes.add(new Rect(OverlayPrefs.DEFAULT_TOUCH_BOX_LEFT,
+                    OverlayPrefs.DEFAULT_TOUCH_BOX_TOP,
+                    Math.min(screenWidth, OverlayPrefs.DEFAULT_TOUCH_BOX_RIGHT),
+                    Math.min(screenHeight, OverlayPrefs.DEFAULT_TOUCH_BOX_BOTTOM)));
+        }
+        return boxes;
+    }
+
+    private Rect resolveTouchBox() {
+        return touchBoxBounds(resolveTouchBoxes());
+    }
+
+    private Rect touchBoxBounds(List<Rect> boxes) {
+        Rect bounds = new Rect(boxes.get(0));
+        for (int i = 1; i < boxes.size(); i++) {
+            bounds.union(boxes.get(i));
+        }
+        return bounds;
     }
 
     private void syncDebugLensLoop() {

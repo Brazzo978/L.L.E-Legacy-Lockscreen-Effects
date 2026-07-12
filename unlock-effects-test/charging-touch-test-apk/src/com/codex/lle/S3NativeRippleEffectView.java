@@ -2,7 +2,9 @@ package com.codex.lle;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.SystemClock;
@@ -160,7 +162,11 @@ public final class S3NativeRippleEffectView extends FrameLayout
                 || !(effectView instanceof GLSurfaceView)) {
             return;
         }
-        final Bitmap copy = source.copy(Bitmap.Config.ARGB_8888, false);
+        final Bitmap copy = createMappedBackground(source,
+                Math.max(1, getWidth() > 0 ? getWidth()
+                        : getResources().getDisplayMetrics().widthPixels),
+                Math.max(1, getHeight() > 0 ? getHeight()
+                        : getResources().getDisplayMetrics().heightPixels));
         if (copy == null) {
             return;
         }
@@ -197,6 +203,32 @@ public final class S3NativeRippleEffectView extends FrameLayout
     @Override
     public void clearBackgroundSourceBitmap() {
         externalBackground = false;
+    }
+
+    private Bitmap createMappedBackground(Bitmap source, int width, int height) {
+        if (source.getWidth() == width && source.getHeight() == height) {
+            return source.copy(Bitmap.Config.ARGB_8888, false);
+        }
+        float sourceRatio = source.getWidth() / (float) source.getHeight();
+        float targetRatio = width / (float) height;
+        Rect sourceRect;
+        if (sourceRatio > targetRatio) {
+            int cropWidth = Math.max(1, Math.round(source.getHeight() * targetRatio));
+            int left = Math.max(0, (source.getWidth() - cropWidth) / 2);
+            sourceRect = new Rect(left, 0,
+                    Math.min(source.getWidth(), left + cropWidth), source.getHeight());
+        } else {
+            int cropHeight = Math.max(1, Math.round(source.getWidth() / targetRatio));
+            int top = Math.max(0, (source.getHeight() - cropHeight) / 2);
+            sourceRect = new Rect(0, top, source.getWidth(),
+                    Math.min(source.getHeight(), top + cropHeight));
+        }
+        Bitmap mapped = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
+                | Paint.DITHER_FLAG);
+        new Canvas(mapped).drawBitmap(source, sourceRect,
+                new Rect(0, 0, width, height), paint);
+        return mapped;
     }
 
     @Override

@@ -55,6 +55,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Calendar;
@@ -2817,12 +2818,24 @@ public class ControlActivity extends Activity {
         int top = OverlayPrefs.touchBoxTop(this);
         int right = OverlayPrefs.touchBoxRight(this);
         int bottom = OverlayPrefs.touchBoxBottom(this);
+        ArrayList<Rect> areas = OverlayPrefs.touchBoxRegions(this);
+        if (!areas.isEmpty()) {
+            Rect bounds = new Rect(areas.get(0));
+            for (int i = 1; i < areas.size(); i++) {
+                bounds.union(areas.get(i));
+            }
+            left = bounds.left;
+            top = bounds.top;
+            right = bounds.right;
+            bottom = bounds.bottom;
+        }
         File screenshot = OverlayPrefs.touchBoxScreenshotFile(this);
         String cache = screenshot.exists() && screenshot.length() > 0L
                 ? "screenshot cache ready"
                 : "no screenshot cache";
         touchBoxSummary.setText((configured ? "Current" : "Default")
-                + ": " + left + "," + top + " - " + right + "," + bottom
+                + ": " + areas.size() + (areas.size() == 1 ? " area, " : " areas, ")
+                + left + "," + top + " - " + right + "," + bottom
                 + " (" + (right - left) + " x " + (bottom - top) + ")"
                 + "\n" + cache);
     }

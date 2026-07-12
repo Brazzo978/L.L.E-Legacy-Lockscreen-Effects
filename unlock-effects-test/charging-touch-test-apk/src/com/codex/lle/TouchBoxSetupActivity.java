@@ -9,8 +9,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
@@ -257,7 +255,7 @@ public class TouchBoxSetupActivity extends Activity {
         statusLabel.setTypeface(Typeface.MONOSPACE);
         bottom.addView(statusLabel);
 
-        TextView hint = bodyText("Tap image to add a pin. Drag a pin to move it.");
+        TextView hint = bodyText("Add areas, drag inside to move, or drag a corner to resize. Edges snap within 20 px.");
         hint.setTextSize(13f);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -268,35 +266,45 @@ public class TouchBoxSetupActivity extends Activity {
         LinearLayout rowOne = new LinearLayout(this);
         rowOne.setOrientation(LinearLayout.HORIZONTAL);
         bottom.addView(rowOne, rowParams());
-        rowOne.addView(materialButton("Remove pin", false, new View.OnClickListener() {
+        rowOne.addView(materialButton("Add area", true, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                editorView.removeSelectedPin();
+                editorView.addArea();
             }
         }), weightedParams(false));
-        rowOne.addView(materialButton("Reset pins", false, new View.OnClickListener() {
+        rowOne.addView(materialButton("Remove area", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                editorView.resetPinsFromSavedBox();
-            }
-        }), weightedParams(true));
-        rowOne.addView(materialButton("New shot", false, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startFreshCapture();
+                editorView.removeSelectedArea();
             }
         }), weightedParams(true));
 
         LinearLayout rowTwo = new LinearLayout(this);
         rowTwo.setOrientation(LinearLayout.HORIZONTAL);
         bottom.addView(rowTwo, rowParams());
-        rowTwo.addView(materialButton("Cancel", false, new View.OnClickListener() {
+        rowTwo.addView(materialButton("Reset areas", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                editorView.resetAreasFromSavedBox();
+            }
+        }), weightedParams(false));
+        rowTwo.addView(materialButton("New shot", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startFreshCapture();
+            }
+        }), weightedParams(true));
+
+        LinearLayout rowThree = new LinearLayout(this);
+        rowThree.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.addView(rowThree, rowParams());
+        rowThree.addView(materialButton("Cancel", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 finish();
             }
         }), weightedParams(false));
-        rowTwo.addView(materialButton("Save box", true, new View.OnClickListener() {
+        rowThree.addView(materialButton("Save areas", true, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 saveCurrentBox();
@@ -304,7 +312,7 @@ public class TouchBoxSetupActivity extends Activity {
         }), weightedParams(true));
 
         setContentView(root);
-        editorView.resetPinsFromSavedBox();
+        editorView.resetAreasFromSavedBox();
     }
 
     private void startFreshCapture() {
@@ -318,13 +326,13 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private void saveCurrentBox() {
-        Rect box = editorView == null ? null : editorView.currentRoundedBox();
-        if (box == null) {
-            Toast.makeText(this, "Add at least one pin", Toast.LENGTH_SHORT).show();
+        ArrayList<Rect> boxes = editorView == null ? null : editorView.currentRoundedBoxes();
+        if (boxes == null || boxes.isEmpty()) {
+            Toast.makeText(this, "Add at least one area", Toast.LENGTH_SHORT).show();
             return;
         }
-        OverlayPrefs.saveTouchBoxOutward(this, box.left, box.top, box.right, box.bottom);
-        Toast.makeText(this, "Touch box saved", Toast.LENGTH_SHORT).show();
+        OverlayPrefs.saveTouchBoxRegionsOutward(this, boxes);
+        Toast.makeText(this, "Touch areas saved", Toast.LENGTH_SHORT).show();
         setResult(RESULT_OK);
         finish();
     }
@@ -447,13 +455,23 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private final class PinEditorView extends View {
+        private static final int DRAG_NONE = 0;
+        private static final int DRAG_MOVE = 1;
+        private static final int DRAG_TOP_LEFT = 2;
+        private static final int DRAG_TOP_RIGHT = 3;
+        private static final int DRAG_BOTTOM_RIGHT = 4;
+        private static final int DRAG_BOTTOM_LEFT = 5;
+        private static final int SNAP_EDGE_PX = 20;
+        private static final int MAX_AREAS = 4;
+
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF imageRect = new RectF();
         private final RectF boxRect = new RectF();
-        private final Path pinPath = new Path();
-        private final ArrayList<PointF> pins = new ArrayList<PointF>();
-        private int selectedPin = -1;
-        private boolean draggingPin;
+        private final ArrayList<RectF> areas = new ArrayList<RectF>();
+        private int selectedArea = -1;
+        private int dragMode = DRAG_NONE;
+        private float lastScreenX;
+        private float lastScreenY;
 
         PinEditorView(Context context) {
             super(context);
@@ -462,64 +480,76 @@ public class TouchBoxSetupActivity extends Activity {
             setClickable(true);
         }
 
-        void resetPinsFromSavedBox() {
-            pins.clear();
-            Rect box = savedOrDefaultBox();
-            pins.add(new PointF(box.left, box.top));
-            pins.add(new PointF(box.right, box.top));
-            pins.add(new PointF(box.right, box.bottom));
-            pins.add(new PointF(box.left, box.bottom));
-            selectedPin = pins.size() - 1;
+        void resetAreasFromSavedBox() {
+            areas.clear();
+            for (Rect box : savedOrDefaultAreas()) {
+                areas.add(new RectF(box));
+            }
+            selectedArea = areas.isEmpty() ? -1 : areas.size() - 1;
             updateStatus();
             invalidate();
         }
 
-        void removeSelectedPin() {
-            if (selectedPin < 0 || selectedPin >= pins.size()) {
+        void addArea() {
+            if (screenshotBitmap == null || areas.size() >= MAX_AREAS) {
                 Toast.makeText(TouchBoxSetupActivity.this,
-                        "Select a pin first", Toast.LENGTH_SHORT).show();
+                        "Maximum " + MAX_AREAS + " areas", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (pins.size() <= 1) {
-                Toast.makeText(TouchBoxSetupActivity.this,
-                        "Keep at least one pin", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            pins.remove(selectedPin);
-            selectedPin = Math.min(selectedPin, pins.size() - 1);
+            float size = Math.min(Math.min(screenshotBitmap.getWidth(),
+                    screenshotBitmap.getHeight()) * 0.24f, dp(240));
+            size = Math.max(dp(96), size);
+            float centerX = screenshotBitmap.getWidth() * 0.5f;
+            float centerY = screenshotBitmap.getHeight() * 0.62f;
+            float offset = areas.size() * SNAP_EDGE_PX;
+            RectF area = new RectF(centerX - size / 2f + offset,
+                    centerY - size / 2f + offset,
+                    centerX + size / 2f + offset,
+                    centerY + size / 2f + offset);
+            keepInsideScreen(area);
+            areas.add(area);
+            selectedArea = areas.size() - 1;
             updateStatus();
             invalidate();
         }
 
-        Rect currentRoundedBox() {
-            if (pins.isEmpty() || screenshotBitmap == null) {
-                return null;
+        void removeSelectedArea() {
+            if (selectedArea < 0 || selectedArea >= areas.size()) {
+                Toast.makeText(TouchBoxSetupActivity.this,
+                        "Select an area first", Toast.LENGTH_SHORT).show();
+                return;
             }
-            float minX = pins.get(0).x;
-            float minY = pins.get(0).y;
-            float maxX = pins.get(0).x;
-            float maxY = pins.get(0).y;
-            for (int i = 1; i < pins.size(); i++) {
-                PointF pin = pins.get(i);
-                minX = Math.min(minX, pin.x);
-                minY = Math.min(minY, pin.y);
-                maxX = Math.max(maxX, pin.x);
-                maxY = Math.max(maxY, pin.y);
+            if (areas.size() <= 1) {
+                Toast.makeText(TouchBoxSetupActivity.this,
+                        "Keep at least one area", Toast.LENGTH_SHORT).show();
+                return;
             }
+            areas.remove(selectedArea);
+            selectedArea = Math.min(selectedArea, areas.size() - 1);
+            updateStatus();
+            invalidate();
+        }
 
+        ArrayList<Rect> currentRoundedBoxes() {
+            ArrayList<Rect> boxes = new ArrayList<Rect>();
+            if (areas.isEmpty() || screenshotBitmap == null) {
+                return boxes;
+            }
             int imageWidth = screenshotBitmap.getWidth();
             int imageHeight = screenshotBitmap.getHeight();
             int minSize = dp(48);
-            int roundedLeft = OverlayPrefs.roundTouchCoordinateDown((int) Math.floor(minX));
-            int roundedTop = OverlayPrefs.roundTouchCoordinateDown((int) Math.floor(minY));
-            int roundedRight = OverlayPrefs.roundTouchCoordinateUp((int) Math.ceil(maxX));
-            int roundedBottom = OverlayPrefs.roundTouchCoordinateUp((int) Math.ceil(maxY));
-
-            roundedLeft = clamp(roundedLeft, 0, Math.max(0, imageWidth - minSize));
-            roundedTop = clamp(roundedTop, 0, Math.max(0, imageHeight - minSize));
-            roundedRight = clamp(roundedRight, roundedLeft + minSize, imageWidth);
-            roundedBottom = clamp(roundedBottom, roundedTop + minSize, imageHeight);
-            return new Rect(roundedLeft, roundedTop, roundedRight, roundedBottom);
+            for (RectF area : areas) {
+                int left = OverlayPrefs.roundTouchCoordinateDown((int) Math.floor(area.left));
+                int top = OverlayPrefs.roundTouchCoordinateDown((int) Math.floor(area.top));
+                int right = OverlayPrefs.roundTouchCoordinateUp((int) Math.ceil(area.right));
+                int bottom = OverlayPrefs.roundTouchCoordinateUp((int) Math.ceil(area.bottom));
+                left = clamp(left, 0, Math.max(0, imageWidth - minSize));
+                top = clamp(top, 0, Math.max(0, imageHeight - minSize));
+                right = clamp(right, left + minSize, imageWidth);
+                bottom = clamp(bottom, top + minSize, imageHeight);
+                boxes.add(new Rect(left, top, right, bottom));
+            }
+            return boxes;
         }
 
         @Override
@@ -532,28 +562,31 @@ public class TouchBoxSetupActivity extends Activity {
             canvas.drawColor(Color.rgb(18, 20, 24));
             canvas.drawBitmap(screenshotBitmap, null, imageRect, paint);
 
-            Rect box = currentRoundedBox();
-            if (box != null) {
+            ArrayList<Rect> boxes = currentRoundedBoxes();
+            for (int i = 0; i < boxes.size(); i++) {
+                Rect box = boxes.get(i);
                 boxRect.set(
                         screenToViewX(box.left),
                         screenToViewY(box.top),
                         screenToViewX(box.right),
                         screenToViewY(box.bottom));
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(Color.argb(48, 20, 126, 245));
+                paint.setColor(i == selectedArea
+                        ? Color.argb(72, 20, 126, 245)
+                        : Color.argb(42, 20, 126, 245));
                 paint.setPathEffect(null);
                 canvas.drawRect(boxRect, paint);
 
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(dp(2));
-                paint.setColor(GRACE_BLUE);
+                paint.setColor(i == selectedArea ? GRACE_BLUE : Color.argb(190, 116, 215, 255));
                 paint.setPathEffect(new DashPathEffect(new float[]{dp(8), dp(5)}, 0));
                 canvas.drawRect(boxRect, paint);
                 paint.setPathEffect(null);
+                if (i == selectedArea) {
+                    drawAreaHandles(canvas, box);
+                }
             }
-
-            drawPinPath(canvas);
-            drawPins(canvas);
         }
 
         @Override
@@ -564,29 +597,44 @@ public class TouchBoxSetupActivity extends Activity {
             updateImageRect();
             int action = event.getActionMasked();
             if (action == MotionEvent.ACTION_DOWN) {
-                int hit = hitPin(event.getX(), event.getY());
-                if (hit >= 0) {
-                    selectedPin = hit;
-                    draggingPin = true;
-                } else if (imageRect.contains(event.getX(), event.getY())) {
-                    PointF point = viewToScreenPoint(event.getX(), event.getY());
-                    pins.add(point);
-                    selectedPin = pins.size() - 1;
-                    draggingPin = true;
+                float screenX = viewToScreenX(event.getX());
+                float screenY = viewToScreenY(event.getY());
+                int hitArea = hitArea(screenX, screenY);
+                if (hitArea >= 0) {
+                    selectedArea = hitArea;
+                    dragMode = hitHandle(areas.get(hitArea), screenX, screenY);
+                    if (dragMode == DRAG_NONE) {
+                        dragMode = DRAG_MOVE;
+                    }
+                    lastScreenX = screenX;
+                    lastScreenY = screenY;
+                } else {
+                    selectedArea = -1;
+                    dragMode = DRAG_NONE;
                 }
                 updateStatus();
                 invalidate();
                 return true;
             }
-            if (action == MotionEvent.ACTION_MOVE && draggingPin && selectedPin >= 0) {
-                PointF point = viewToScreenPoint(event.getX(), event.getY());
-                pins.get(selectedPin).set(point.x, point.y);
+            if (action == MotionEvent.ACTION_MOVE && dragMode != DRAG_NONE
+                    && selectedArea >= 0) {
+                float screenX = viewToScreenX(event.getX());
+                float screenY = viewToScreenY(event.getY());
+                updateDraggedArea(areas.get(selectedArea), screenX, screenY);
+                lastScreenX = screenX;
+                lastScreenY = screenY;
                 updateStatus();
                 invalidate();
                 return true;
             }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                draggingPin = false;
+                if (action == MotionEvent.ACTION_UP && selectedArea >= 0
+                        && dragMode != DRAG_NONE) {
+                    snapAreaToEdges(areas.get(selectedArea));
+                    updateStatus();
+                    invalidate();
+                }
+                dragMode = DRAG_NONE;
                 performClick();
                 return true;
             }
@@ -599,84 +647,123 @@ public class TouchBoxSetupActivity extends Activity {
             return true;
         }
 
-        private Rect savedOrDefaultBox() {
+        private ArrayList<Rect> savedOrDefaultAreas() {
             int imageWidth = screenshotBitmap.getWidth();
             int imageHeight = screenshotBitmap.getHeight();
             int minSize = dp(48);
-            int boxLeft;
-            int boxTop;
-            int boxRight;
-            int boxBottom;
-            if (OverlayPrefs.touchBoxConfigured(TouchBoxSetupActivity.this)) {
-                boxLeft = OverlayPrefs.touchBoxLeft(TouchBoxSetupActivity.this);
-                boxTop = OverlayPrefs.touchBoxTop(TouchBoxSetupActivity.this);
-                boxRight = OverlayPrefs.touchBoxRight(TouchBoxSetupActivity.this);
-                boxBottom = OverlayPrefs.touchBoxBottom(TouchBoxSetupActivity.this);
-            } else {
-                boxLeft = OverlayPrefs.DEFAULT_TOUCH_BOX_LEFT;
-                boxTop = OverlayPrefs.DEFAULT_TOUCH_BOX_TOP;
-                boxRight = OverlayPrefs.DEFAULT_TOUCH_BOX_RIGHT;
-                boxBottom = OverlayPrefs.DEFAULT_TOUCH_BOX_BOTTOM;
+            ArrayList<Rect> result = new ArrayList<Rect>();
+            for (Rect source : OverlayPrefs.touchBoxRegions(TouchBoxSetupActivity.this)) {
+                int left = clamp(source.left, 0, Math.max(0, imageWidth - minSize));
+                int top = clamp(source.top, 0, Math.max(0, imageHeight - minSize));
+                int right = clamp(source.right, left + minSize, imageWidth);
+                int bottom = clamp(source.bottom, top + minSize, imageHeight);
+                result.add(new Rect(left, top, right, bottom));
             }
-            boxLeft = clamp(boxLeft, 0, Math.max(0, imageWidth - minSize));
-            boxTop = clamp(boxTop, 0, Math.max(0, imageHeight - minSize));
-            boxRight = clamp(boxRight, boxLeft + minSize, imageWidth);
-            boxBottom = clamp(boxBottom, boxTop + minSize, imageHeight);
-            return new Rect(boxLeft, boxTop, boxRight, boxBottom);
+            return result;
         }
 
-        private void drawPinPath(Canvas canvas) {
-            if (pins.size() < 2) {
-                return;
-            }
-            pinPath.reset();
-            PointF first = pins.get(0);
-            pinPath.moveTo(screenToViewX(first.x), screenToViewY(first.y));
-            for (int i = 1; i < pins.size(); i++) {
-                PointF pin = pins.get(i);
-                pinPath.lineTo(screenToViewX(pin.x), screenToViewY(pin.y));
-            }
-            if (pins.size() > 2) {
-                pinPath.close();
-            }
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(2));
-            paint.setColor(Color.argb(220, 255, 214, 72));
-            paint.setPathEffect(null);
-            canvas.drawPath(pinPath, paint);
-        }
-
-        private void drawPins(Canvas canvas) {
-            for (int i = 0; i < pins.size(); i++) {
-                PointF pin = pins.get(i);
-                float x = screenToViewX(pin.x);
-                float y = screenToViewY(pin.y);
+        private void drawAreaHandles(Canvas canvas, Rect box) {
+            float[] xs = {box.left, box.right, box.right, box.left};
+            float[] ys = {box.top, box.top, box.bottom, box.bottom};
+            for (int i = 0; i < xs.length; i++) {
+                float x = screenToViewX(xs[i]);
+                float y = screenToViewY(ys[i]);
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(i == selectedPin ? GRACE_BLUE : Color.WHITE);
+                paint.setColor(GRACE_BLUE);
                 canvas.drawCircle(x, y, dp(8), paint);
-
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(dp(2));
-                paint.setColor(i == selectedPin ? Color.WHITE : GRACE_BLUE);
+                paint.setColor(Color.WHITE);
                 canvas.drawCircle(x, y, dp(8), paint);
             }
         }
 
-        private int hitPin(float x, float y) {
-            float radius = dp(26);
-            int best = -1;
-            float bestDistance = radius * radius;
-            for (int i = 0; i < pins.size(); i++) {
-                PointF pin = pins.get(i);
-                float dx = x - screenToViewX(pin.x);
-                float dy = y - screenToViewY(pin.y);
-                float distance = dx * dx + dy * dy;
-                if (distance <= bestDistance) {
-                    bestDistance = distance;
-                    best = i;
+        private int hitArea(float screenX, float screenY) {
+            for (int i = areas.size() - 1; i >= 0; i--) {
+                RectF area = areas.get(i);
+                if (hitHandle(area, screenX, screenY) != DRAG_NONE
+                        || area.contains(screenX, screenY)) {
+                    return i;
                 }
             }
-            return best;
+            return -1;
+        }
+
+        private int hitHandle(RectF area, float x, float y) {
+            float screenRadius = dp(26) / Math.max(0.01f,
+                    imageRect.width() / screenshotBitmap.getWidth());
+            float radiusSquared = screenRadius * screenRadius;
+            if (distanceSquared(x, y, area.left, area.top) <= radiusSquared) {
+                return DRAG_TOP_LEFT;
+            }
+            if (distanceSquared(x, y, area.right, area.top) <= radiusSquared) {
+                return DRAG_TOP_RIGHT;
+            }
+            if (distanceSquared(x, y, area.right, area.bottom) <= radiusSquared) {
+                return DRAG_BOTTOM_RIGHT;
+            }
+            if (distanceSquared(x, y, area.left, area.bottom) <= radiusSquared) {
+                return DRAG_BOTTOM_LEFT;
+            }
+            return DRAG_NONE;
+        }
+
+        private float distanceSquared(float x1, float y1, float x2, float y2) {
+            float dx = x1 - x2;
+            float dy = y1 - y2;
+            return dx * dx + dy * dy;
+        }
+
+        private void updateDraggedArea(RectF area, float screenX, float screenY) {
+            float minSize = dp(48);
+            if (dragMode == DRAG_MOVE) {
+                area.offset(screenX - lastScreenX, screenY - lastScreenY);
+                keepInsideScreen(area);
+                return;
+            }
+            if (dragMode == DRAG_TOP_LEFT || dragMode == DRAG_BOTTOM_LEFT) {
+                area.left = clampFloat(screenX, 0f, area.right - minSize);
+            }
+            if (dragMode == DRAG_TOP_RIGHT || dragMode == DRAG_BOTTOM_RIGHT) {
+                area.right = clampFloat(screenX, area.left + minSize,
+                        screenshotBitmap.getWidth());
+            }
+            if (dragMode == DRAG_TOP_LEFT || dragMode == DRAG_TOP_RIGHT) {
+                area.top = clampFloat(screenY, 0f, area.bottom - minSize);
+            }
+            if (dragMode == DRAG_BOTTOM_LEFT || dragMode == DRAG_BOTTOM_RIGHT) {
+                area.bottom = clampFloat(screenY, area.top + minSize,
+                        screenshotBitmap.getHeight());
+            }
+        }
+
+        private void keepInsideScreen(RectF area) {
+            float dx = area.left < 0f ? -area.left
+                    : area.right > screenshotBitmap.getWidth()
+                    ? screenshotBitmap.getWidth() - area.right : 0f;
+            float dy = area.top < 0f ? -area.top
+                    : area.bottom > screenshotBitmap.getHeight()
+                    ? screenshotBitmap.getHeight() - area.bottom : 0f;
+            area.offset(dx, dy);
+        }
+
+        private void snapAreaToEdges(RectF area) {
+            if (area.left <= SNAP_EDGE_PX) {
+                area.left = 0f;
+            }
+            if (screenshotBitmap.getWidth() - area.right <= SNAP_EDGE_PX) {
+                area.right = screenshotBitmap.getWidth();
+            }
+            if (area.top <= SNAP_EDGE_PX) {
+                area.top = 0f;
+            }
+            if (screenshotBitmap.getHeight() - area.bottom <= SNAP_EDGE_PX) {
+                area.bottom = screenshotBitmap.getHeight();
+            }
+        }
+
+        private float clampFloat(float value, float min, float max) {
+            return Math.max(min, Math.min(max, value));
         }
 
         private void updateImageRect() {
@@ -691,12 +778,14 @@ public class TouchBoxSetupActivity extends Activity {
             imageRect.set(left, top, left + imageWidth, top + imageHeight);
         }
 
-        private PointF viewToScreenPoint(float x, float y) {
+        private float viewToScreenX(float x) {
             float screenX = (x - imageRect.left) / imageRect.width() * screenshotBitmap.getWidth();
+            return clampFloat(screenX, 0f, screenshotBitmap.getWidth());
+        }
+
+        private float viewToScreenY(float y) {
             float screenY = (y - imageRect.top) / imageRect.height() * screenshotBitmap.getHeight();
-            screenX = clamp(Math.round(screenX), 0, screenshotBitmap.getWidth());
-            screenY = clamp(Math.round(screenY), 0, screenshotBitmap.getHeight());
-            return new PointF(screenX, screenY);
+            return clampFloat(screenY, 0f, screenshotBitmap.getHeight());
         }
 
         private float screenToViewX(float x) {
@@ -711,13 +800,16 @@ public class TouchBoxSetupActivity extends Activity {
             if (statusLabel == null) {
                 return;
             }
-            Rect box = currentRoundedBox();
-            if (box == null) {
-                statusLabel.setText("Pins 0");
+            ArrayList<Rect> boxes = currentRoundedBoxes();
+            if (boxes.isEmpty()) {
+                statusLabel.setText("Areas 0");
                 return;
             }
-            statusLabel.setText("Pins " + pins.size()
-                    + "   Box " + box.left + "," + box.top
+            int index = selectedArea >= 0 && selectedArea < boxes.size()
+                    ? selectedArea : 0;
+            Rect box = boxes.get(index);
+            statusLabel.setText("Areas " + boxes.size() + "   Selected " + (index + 1)
+                    + "   " + box.left + "," + box.top
                     + " - " + box.right + "," + box.bottom
                     + "   " + (box.right - box.left)
                     + " x " + (box.bottom - box.top));

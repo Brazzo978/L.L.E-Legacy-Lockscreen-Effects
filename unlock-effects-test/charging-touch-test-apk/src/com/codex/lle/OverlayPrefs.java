@@ -2,8 +2,11 @@ package com.codex.lle;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Rect;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 final class OverlayPrefs {
     static final String PREFS = "overlay_prefs";
@@ -60,6 +63,9 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_TOP = "touch_box_top";
     static final String TOUCH_BOX_RIGHT = "touch_box_right";
     static final String TOUCH_BOX_BOTTOM = "touch_box_bottom";
+    static final String TOUCH_BOX_REGIONS = "touch_box_regions";
+    static final String TOUCH_BOX_REFERENCE_WIDTH = "touch_box_reference_width";
+    static final String TOUCH_BOX_REFERENCE_HEIGHT = "touch_box_reference_height";
     static final String TOUCH_BOX_CAPTURE_REQUEST_ID = "touch_box_capture_request_id";
     static final String TOUCH_BOX_CAPTURE_RESULT_ID = "touch_box_capture_result_id";
     static final String TOUCH_BOX_CAPTURE_STATE = "touch_box_capture_state";
@@ -330,22 +336,123 @@ final class OverlayPrefs {
     }
 
     static void saveTouchBox(Context context, int left, int top, int right, int bottom) {
+        int[] displaySize = currentDisplaySize(context);
         get(context).edit()
                 .putBoolean(TOUCH_BOX_CONFIGURED, true)
                 .putInt(TOUCH_BOX_LEFT, roundTouchCoordinate(left))
                 .putInt(TOUCH_BOX_TOP, roundTouchCoordinate(top))
                 .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinate(right))
                 .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinate(bottom))
+                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
+                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
+                .remove(TOUCH_BOX_REGIONS)
                 .apply();
     }
 
     static void saveTouchBoxOutward(Context context, int left, int top, int right, int bottom) {
+        int[] displaySize = currentDisplaySize(context);
         get(context).edit()
                 .putBoolean(TOUCH_BOX_CONFIGURED, true)
                 .putInt(TOUCH_BOX_LEFT, roundTouchCoordinateDown(left))
                 .putInt(TOUCH_BOX_TOP, roundTouchCoordinateDown(top))
                 .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinateUp(right))
                 .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinateUp(bottom))
+                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
+                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
+                .remove(TOUCH_BOX_REGIONS)
+                .apply();
+    }
+
+    static ArrayList<Rect> touchBoxRegions(Context context) {
+        ArrayList<Rect> regions = new ArrayList<Rect>();
+        String encoded = get(context).getString(TOUCH_BOX_REGIONS, "");
+        if (encoded != null && encoded.length() > 0) {
+            String[] entries = encoded.split(";");
+            for (String entry : entries) {
+                String[] values = entry.split(",");
+                if (values.length != 4) {
+                    continue;
+                }
+                try {
+                    int left = Integer.parseInt(values[0]);
+                    int top = Integer.parseInt(values[1]);
+                    int right = Integer.parseInt(values[2]);
+                    int bottom = Integer.parseInt(values[3]);
+                    if (right > left && bottom > top) {
+                        regions.add(new Rect(left, top, right, bottom));
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        if (regions.isEmpty()) {
+            regions.add(new Rect(touchBoxLeft(context), touchBoxTop(context),
+                    touchBoxRight(context), touchBoxBottom(context)));
+        }
+        int[] displaySize = currentDisplaySize(context);
+        SharedPreferences prefs = get(context);
+        int referenceWidth = prefs.getInt(TOUCH_BOX_REFERENCE_WIDTH,
+                DEFAULT_TOUCH_BOX_RIGHT);
+        int referenceHeight = prefs.getInt(TOUCH_BOX_REFERENCE_HEIGHT, 2316);
+        if (referenceWidth > 0 && referenceHeight > 0
+                && displaySize[0] > 0 && displaySize[1] > 0
+                && (referenceWidth != displaySize[0]
+                || referenceHeight != displaySize[1])) {
+            float scaleX = displaySize[0] / (float) referenceWidth;
+            float scaleY = displaySize[1] / (float) referenceHeight;
+            for (Rect region : regions) {
+                region.set(Math.round(region.left * scaleX),
+                        Math.round(region.top * scaleY),
+                        Math.round(region.right * scaleX),
+                        Math.round(region.bottom * scaleY));
+            }
+        }
+        return regions;
+    }
+
+    static void saveTouchBoxRegionsOutward(Context context, List<Rect> source) {
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        ArrayList<Rect> regions = new ArrayList<Rect>();
+        Rect bounds = new Rect();
+        for (Rect rect : source) {
+            if (rect == null || rect.width() <= 0 || rect.height() <= 0) {
+                continue;
+            }
+            Rect rounded = new Rect(
+                    roundTouchCoordinateDown(rect.left),
+                    roundTouchCoordinateDown(rect.top),
+                    roundTouchCoordinateUp(rect.right),
+                    roundTouchCoordinateUp(rect.bottom));
+            if (regions.isEmpty()) {
+                bounds.set(rounded);
+            } else {
+                bounds.union(rounded);
+            }
+            regions.add(rounded);
+        }
+        if (regions.isEmpty()) {
+            return;
+        }
+        StringBuilder encoded = new StringBuilder();
+        for (Rect rect : regions) {
+            if (encoded.length() > 0) {
+                encoded.append(';');
+            }
+            encoded.append(rect.left).append(',').append(rect.top).append(',')
+                    .append(rect.right).append(',').append(rect.bottom);
+        }
+        int[] displaySize = currentDisplaySize(context);
+        get(context).edit()
+                .putBoolean(TOUCH_BOX_CONFIGURED, true)
+                .putInt(TOUCH_BOX_LEFT, bounds.left)
+                .putInt(TOUCH_BOX_TOP, bounds.top)
+                .putInt(TOUCH_BOX_RIGHT, bounds.right)
+                .putInt(TOUCH_BOX_BOTTOM, bounds.bottom)
+                .putString(TOUCH_BOX_REGIONS, encoded.toString())
+                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
+                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
                 .apply();
     }
 
@@ -356,7 +463,16 @@ final class OverlayPrefs {
                 .remove(TOUCH_BOX_TOP)
                 .remove(TOUCH_BOX_RIGHT)
                 .remove(TOUCH_BOX_BOTTOM)
+                .remove(TOUCH_BOX_REGIONS)
+                .remove(TOUCH_BOX_REFERENCE_WIDTH)
+                .remove(TOUCH_BOX_REFERENCE_HEIGHT)
                 .apply();
+    }
+
+    private static int[] currentDisplaySize(Context context) {
+        int width = Math.max(1, context.getResources().getDisplayMetrics().widthPixels);
+        int height = Math.max(1, context.getResources().getDisplayMetrics().heightPixels);
+        return new int[]{width, height};
     }
 
     static void migrateLegacyTouchBoxIfNeeded(Context context) {
