@@ -9,6 +9,8 @@ import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.SoundPool;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -21,6 +23,7 @@ import android.widget.FrameLayout;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.concurrent.locks.LockSupport;
 
 public class SamsungLockBgEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer {
@@ -36,6 +39,11 @@ public class SamsungLockBgEffectView extends FrameLayout
     private static final long DRAG_SOUND_FADE_STEP_MS = 10L;
     private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
     private static final float DRAG_SOUND_UNLOCK_FADE_STEP = 0.059f;
+    private static final long AFFORDANCE_DEDUP_WINDOW_MS = 2_500L;
+    private static final long ABSTRACT_FRAME_INTERVAL_NS = 33_333_333L;
+    private static final long GEOMETRIC_FRAME_INTERVAL_NS = 33_333_333L;
+    private static volatile long lastAbstractFrameNs;
+    private static volatile long lastGeometricFrameNs;
 
     private final int samsungEffectId;
     private final String effectName;
@@ -45,6 +53,8 @@ public class SamsungLockBgEffectView extends FrameLayout
     private final int tapSound;
     private final int dragSound;
     private final int unlockSound;
+    private final HandlerThread nativeCommandThread;
+    private final Handler nativeCommandHandler;
 
     private Object effectView;
     private View effectViewAsView;
@@ -69,6 +79,7 @@ public class SamsungLockBgEffectView extends FrameLayout
     private float dragSoundVolume = 1f;
     private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
     private boolean dragSoundFading;
+    private long lastAffordanceQueuedAt;
     private final Runnable dragSoundFadeRunnable = new Runnable() {
         @Override
         public void run() {
@@ -99,6 +110,9 @@ public class SamsungLockBgEffectView extends FrameLayout
         samsungEffectId = effectId;
         effectName = name;
         backgroundGain = bgGain;
+        nativeCommandThread = new HandlerThread("LLE-" + name.replace(' ', '-') + "-commands");
+        nativeCommandThread.start();
+        nativeCommandHandler = new Handler(nativeCommandThread.getLooper());
         audioManager = (AudioManager) context.getApplicationContext()
                 .getSystemService(Context.AUDIO_SERVICE);
         setWillNotDraw(false);
@@ -115,9 +129,13 @@ public class SamsungLockBgEffectView extends FrameLayout
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build())
                 .build();
-        tapSound = soundPool.load(context, R.raw.abstracttile_tap, 1);
-        dragSound = soundPool.load(context, R.raw.abstracttile_drag, 1);
-        unlockSound = soundPool.load(context, R.raw.abstracttile_unlock, 1);
+        boolean geometricMosaic = samsungEffectId == SAMSUNG_GEOMETRIC_MOSAIC;
+        tapSound = soundPool.load(context, geometricMosaic
+                ? R.raw.brilliantcut_tap : R.raw.abstracttile_tap, 1);
+        dragSound = soundPool.load(context, geometricMosaic
+                ? R.raw.brilliantcut_drag : R.raw.abstracttile_drag, 1);
+        unlockSound = soundPool.load(context, geometricMosaic
+                ? R.raw.brilliantcut_unlock : R.raw.abstracttile_unlock, 1);
         long soundsQueuedMs = SystemClock.uptimeMillis() - soundStartedAt;
 
         try {
@@ -241,20 +259,36 @@ public class SamsungLockBgEffectView extends FrameLayout
         if (!canRender()) {
             return;
         }
+        long now = SystemClock.uptimeMillis();
+        if (lastAffordanceQueuedAt > 0L
+                && now - lastAffordanceQueuedAt < AFFORDANCE_DEDUP_WINDOW_MS) {
+            Log.i(TAG, effectName + " duplicate affordance suppressed elapsedMs="
+                    + (now - lastAffordanceQueuedAt));
+            return;
+        }
         sendBackgroundBitmap();
         Rect rect = safeRect(screenRect);
-        try {
-            HashMap<String, Object> params = new HashMap<String, Object>();
-            params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
-            params.put("Rect", rect);
-            handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
-            Log.i(TAG, effectName + " affordance sent delayMs="
-                    + Math.max(0L, startDelayMs)
-                    + " rect=" + rect.left + "," + rect.top + ","
-                    + rect.right + "," + rect.bottom);
-        } catch (Throwable t) {
-            Log.d(TAG, "affordance command ignored", t);
-        }
+        final HashMap<String, Object> params = new HashMap<String, Object>();
+        params.put("StartDelay", Long.valueOf(Math.max(0L, startDelayMs)));
+        params.put("Rect", rect);
+        lastAffordanceQueuedAt = now;
+        nativeCommandHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (!canRender()) {
+                    return;
+                }
+                try {
+                    handleCustomEvent.invoke(effectView, CMD_LOCK_AFFORDANCE, params);
+                } catch (Throwable t) {
+                    Log.d(TAG, "affordance command ignored", t);
+                }
+            }
+        });
+        Log.i(TAG, effectName + " affordance queued off-main delayMs="
+                + Math.max(0L, startDelayMs)
+                + " rect=" + rect.left + "," + rect.top + ","
+                + rect.right + "," + rect.bottom);
     }
 
     @Override
@@ -293,6 +327,8 @@ public class SamsungLockBgEffectView extends FrameLayout
         resetEffect();
         destroyed = true;
         removeCallbacks(dragSoundFadeRunnable);
+        nativeCommandHandler.removeCallbacksAndMessages(null);
+        nativeCommandThread.quitSafely();
         stopDragSoundImmediately();
         soundPool.release();
         SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
@@ -317,7 +353,6 @@ public class SamsungLockBgEffectView extends FrameLayout
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        invalidateSentBackground();
         post(new Runnable() {
             @Override
             public void run() {
@@ -400,6 +435,32 @@ public class SamsungLockBgEffectView extends FrameLayout
         } catch (NoSuchMethodException e) {
             return null;
         }
+    }
+
+    /** Keeps Abstract Tiles' frame-stepped simulation at the stock S4 ~30 Hz cadence. */
+    public static void paceAbstractTileFrame() {
+        long now = System.nanoTime();
+        long previous = lastAbstractFrameNs;
+        if (previous > 0L) {
+            long remaining = ABSTRACT_FRAME_INTERVAL_NS - (now - previous);
+            if (remaining > 1_000_000L) {
+                LockSupport.parkNanos(remaining);
+            }
+        }
+        lastAbstractFrameNs = System.nanoTime();
+    }
+
+    /** Keeps Geometric Mosaic at the measured stock S4 SystemUI ~30 Hz cadence. */
+    public static void paceGeometricMosaicFrame() {
+        long now = System.nanoTime();
+        long previous = lastGeometricFrameNs;
+        if (previous > 0L) {
+            long remaining = GEOMETRIC_FRAME_INTERVAL_NS - (now - previous);
+            if (remaining > 1_000_000L) {
+                LockSupport.parkNanos(remaining);
+            }
+        }
+        lastGeometricFrameNs = System.nanoTime();
     }
 
     private void sendBackgroundBitmap() {

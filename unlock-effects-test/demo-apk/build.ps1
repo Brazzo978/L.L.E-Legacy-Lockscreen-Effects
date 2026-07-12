@@ -6,6 +6,10 @@ $UseNote5Dex = $false
 if ($args -contains "-Note5Dex") {
     $UseNote5Dex = $true
 }
+$UseS4SystemVisualEffect = $false
+if ($args -contains "-S4SystemVisualEffect") {
+    $UseS4SystemVisualEffect = $true
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -18,7 +22,7 @@ $out = Join-Path $root "build"
 $resZip = Join-Path $out "res.zip"
 $classes = Join-Path $out "classes"
 $dex = Join-Path $out "dex"
-$suffix = if ($Native32) { "-native32" } else { "" }
+$suffix = if ($UseS4SystemVisualEffect) { "-s4-system" } elseif ($Native32) { "-native32" } else { "" }
 $unsigned = Join-Path $out "S4UnlockFxTest$suffix-unsigned.apk"
 $aligned = Join-Path $out "S4UnlockFxTest$suffix-aligned.apk"
 $signed = Join-Path $out "S4UnlockFxTest$suffix-debug.apk"
@@ -45,7 +49,8 @@ Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out, $classes, $dex | Out-Null
 
 Run (Join-Path $buildTools "aapt2.exe") @("compile", "--dir", (Join-Path $root "res"), "-o", $resZip)
-Run (Join-Path $buildTools "aapt2.exe") @("link", "-o", $unsigned, "-I", $platform, "--manifest", (Join-Path $root "AndroidManifest.xml"), "-A", (Join-Path $root "assets"), $resZip, "--java", (Join-Path $out "gen"), "--auto-add-overlay")
+$manifest = if ($UseS4SystemVisualEffect) { Join-Path $root "AndroidManifest.s4-system.xml" } else { Join-Path $root "AndroidManifest.xml" }
+Run (Join-Path $buildTools "aapt2.exe") @("link", "-o", $unsigned, "-I", $platform, "--manifest", $manifest, "-A", (Join-Path $root "assets"), $resZip, "--java", (Join-Path $out "gen"), "--auto-add-overlay")
 $qmgDumpAssets = Join-Path $root "assets\qmgdump"
 if (Test-Path $qmgDumpAssets) {
     # aapt2 on Windows can store asset names with backslashes; AssetManager may
@@ -68,7 +73,9 @@ Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--output", $dex, $cl
 
 Copy-Item $unsigned $aligned
 Run "jar.exe" @("uf", $aligned, "-C", $dex, "classes.dex")
-if (Test-Path $samsungDex) {
+if ($UseS4SystemVisualEffect) {
+    Write-Host "Using the S4 system secvisualeffect shared library (no bundled Samsung dex)"
+} elseif (Test-Path $samsungDex) {
     Copy-Item $samsungDex (Join-Path $out "classes2.dex")
     Run "jar.exe" @("uf", $aligned, "-C", $out, "classes2.dex")
 }

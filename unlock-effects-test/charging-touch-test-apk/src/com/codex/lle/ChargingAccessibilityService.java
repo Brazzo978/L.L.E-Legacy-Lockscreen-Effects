@@ -117,7 +117,6 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long S4_LOCKBG_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
     private static final long COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
     private static final long SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
-    private static final long S3_RIPPLE_SURFACE_REATTACH_MIN_MS = 280L;
     private static final int TOUCH_LISTEN_BOX_BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -365,7 +364,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long cachedUnlockEffectBackgroundFileModified;
     private long cachedUnlockEffectBackgroundFileLength;
     private int cachedUnlockEffectBackgroundEffect = -1;
-    private long lastS3SurfaceReattachAt;
+    private long unlockEffectOverlayAddRetryAt;
     private long activeEffectProfileStartedAt;
     private long activeEffectProfileSyncMs;
     private long activeEffectProfileBeginMs;
@@ -998,13 +997,12 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean isKnownUnlockEffect(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
-                || effect == OverlayPrefs.EFFECT_S3_RIPPLE
+                || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                || effect == OverlayPrefs.EFFECT_S4_RIPPLE
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
     }
@@ -1260,15 +1258,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectRenderer.resetEffect();
         }
         if (unlockTouchCachedWhileScreenOff) {
-            if (shouldKeepUnlockEffectOverlayDuringScreenOff()) {
-                syncUnlockEffectOverlay(false);
-                if (unlockEffectRenderer != null) {
-                    unlockEffectRenderer.warmUp();
-                }
-                parkUnlockEffectOverlayForScreenOff();
-            } else {
-                removeUnlockEffectOverlay();
+            syncUnlockEffectOverlay(false);
+            if (unlockEffectRenderer != null) {
+                unlockEffectRenderer.warmUp();
             }
+            parkUnlockEffectOverlayForScreenOff();
             syncTouchDebugOverlay(true, false);
             Log.i(TAG, "unlock effect and touch box cached for screen off"
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
@@ -1285,13 +1279,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         holdHotWakeLock("screen_off_prearm");
-        if (shouldKeepUnlockEffectOverlayDuringScreenOff()) {
-            syncUnlockEffectOverlay(false);
-            scheduleUnlockEffectWarmBurst("screen_off_prearm");
-            parkUnlockEffectOverlayForScreenOff();
-        } else {
-            removeUnlockEffectOverlay();
-        }
+        syncUnlockEffectOverlay(false);
+        scheduleUnlockEffectWarmBurst("screen_off_prearm");
+        parkUnlockEffectOverlayForScreenOff();
         syncTouchDebugOverlay(true, false);
         unlockTouchCachedWhileScreenOff = touchDebugView != null;
         unlockAffordanceShownThisWake = false;
@@ -1316,12 +1306,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && !isCallSurfaceActive()
                 && OverlayPrefs.unlockEffectEnabled(this)
                 && OverlayPrefs.debugTouchArea(this);
-    }
-
-    private boolean shouldKeepUnlockEffectOverlayDuringScreenOff() {
-        int selectedEffect = OverlayPrefs.unlockEffect(this);
-        return selectedEffect != OverlayPrefs.EFFECT_S4_RIPPLE
-                && unlockEffectRendererType != OverlayPrefs.EFFECT_S4_RIPPLE;
     }
 
     private boolean shouldKeepNativePhysicsOverlayAttachedDuringHide(int effect) {
@@ -1372,7 +1356,8 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean isSamsungLockBgEffect(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == OverlayPrefs.EFFECT_WATERCOLOUR;
     }
 
     private boolean shouldParkUnlockEffectOverlayWhenIdle() {
@@ -1494,11 +1479,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockTouchCachedWhileScreenOff = false;
             } else {
                 parkDoodleOverlayForWarmth("screen_off_cached");
-                if (!shouldKeepUnlockEffectOverlayDuringScreenOff()) {
-                    removeUnlockEffectOverlay();
-                } else {
-                    parkUnlockEffectOverlayForScreenOff();
-                }
+                parkUnlockEffectOverlayForScreenOff();
                 syncTouchDebugOverlay(true, false);
             }
             Log.i(TAG, "visibility reason=" + reason
@@ -1921,11 +1902,12 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void syncUnlockEffectOverlay(final boolean visible) {
         long startedAt = SystemClock.uptimeMillis();
-        preloadUnlockEffectRenderer();
-        if (unlockEffectOverlayAttached && unlockEffectView != null
-                && shouldReattachUnlockEffectSurfaceForWarmup()) {
-            reattachUnlockEffectOverlay("surface_not_ready");
+        if (!unlockEffectOverlayAttached
+                && unlockEffectView != null
+                && startedAt < unlockEffectOverlayAddRetryAt) {
+            return;
         }
+        preloadUnlockEffectRenderer();
         if (unlockEffectOverlayAttached || unlockEffectView == null) {
             if (unlockEffectOverlayAttached && unlockEffectView != null) {
                 if (visible) {
@@ -1974,21 +1956,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
             Log.e(TAG, "unlock effect overlay addView failed type=" + unlockEffectRendererType, e);
-            UnlockEffectRenderer failedRenderer = unlockEffectRenderer;
             unlockEffectOverlayAttached = false;
-            unlockEffectView = null;
-            unlockEffectRenderer = null;
-            unlockEffectRendererType = -1;
-            if (failedRenderer != null) {
-                try {
-                    failedRenderer.destroy();
-                } catch (Throwable destroyError) {
-                    Log.d(TAG, "renderer cleanup ignored after addView failure",
-                            destroyError);
-                }
-            }
+            // Accessibility's overlay token can be transiently unavailable while the
+            // service is rebinding after an APK update or during a display transition.
+            // Keep the expensive native renderer and its decoded/GL state in RAM; the
+            // lockscreen poll will retry after a short backoff instead of constructing
+            // and destroying a new renderer every 10 ms.
+            unlockEffectOverlayAddRetryAt = SystemClock.uptimeMillis() + 250L;
             return;
         }
+        unlockEffectOverlayAddRetryAt = 0L;
         unlockEffectOverlayAttached = true;
         unlockEffectView.post(new Runnable() {
             @Override
@@ -2043,10 +2020,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         try {
             if (effect == OverlayPrefs.EFFECT_S4_LENS_FLARE) {
                 unlockEffectRenderer = new LensFlareEffectView(this);
-            } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE) {
-                unlockEffectRenderer = new S3RippleMeshEffectView(this);
-            } else if (effect == OverlayPrefs.EFFECT_S4_RIPPLE) {
-                unlockEffectRenderer = new S4RippleEffectView(this);
+            } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
+                unlockEffectRenderer = new S3NativeRippleEffectView(this);
             } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
                 unlockEffectRenderer = SamsungLockBgEffectView.abstractTiles(this);
             } else if (effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
@@ -2054,7 +2029,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
                 unlockEffectRenderer = new PoppingColoursEffectView(this);
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
-                unlockEffectRenderer = new WatercolorEffectView(this);
+                WatercolorNativeEffectView watercolor = new WatercolorNativeEffectView(this);
+                if (watercolor.isReady()) {
+                    unlockEffectRenderer = watercolor;
+                } else {
+                    watercolor.destroy();
+                    unlockEffectRenderer = null;
+                }
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
                 unlockEffectRenderer = new ColourDropletEffectView(this, false);
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO) {
@@ -2108,17 +2089,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectRendererRecreateReason = "";
     }
 
-    private boolean shouldReattachUnlockEffectSurfaceForWarmup() {
-        if (!(unlockEffectRenderer instanceof S3RippleMeshEffectView)) {
-            return false;
-        }
-        if (((S3RippleMeshEffectView) unlockEffectRenderer).isGlReadyForFrame()) {
-            return false;
-        }
-        long now = SystemClock.uptimeMillis();
-        return now - lastS3SurfaceReattachAt >= S3_RIPPLE_SURFACE_REATTACH_MIN_MS;
-    }
-
     private boolean canRecreateStaleLockBgRenderer() {
         return !unlockEffectGestureActive
                 && !pinEntryPending
@@ -2126,21 +2096,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && !pinEntrySurfaceVisible
                 && !notificationShadeVisible
                 && !isCallSurfaceActive();
-    }
-
-    private void reattachUnlockEffectOverlay(String reason) {
-        if (!unlockEffectOverlayAttached || unlockEffectView == null) {
-            return;
-        }
-        lastS3SurfaceReattachAt = SystemClock.uptimeMillis();
-        try {
-            windowManager.removeView(unlockEffectView);
-        } catch (RuntimeException ignored) {
-            // Display state transitions can remove the accessibility window first.
-        }
-        unlockEffectOverlayAttached = false;
-        Log.i(TAG, "unlock effect overlay reattaching reason=" + reason
-                + " type=" + unlockEffectRendererType);
     }
 
     private void showPendingUnlockAffordance(String reason) {
@@ -2211,8 +2166,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (unlockEffectRendererType == OverlayPrefs.EFFECT_S4_LENS_FLARE
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_RIPPLE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             if (!backgroundRenderer.hasBackgroundSourceBitmap()) {
                 refreshUnlockEffectBackgroundSourceIfNeeded("affordance:" + reason);
@@ -2722,8 +2676,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private long unlockEffectScreenshotMinScreenOnMs(int effect) {
         long minScreenOnMs = UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
-        if (effect == OverlayPrefs.EFFECT_S3_RIPPLE
-                || effect == OverlayPrefs.EFFECT_S4_RIPPLE) {
+        if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
             minScreenOnMs = S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS;
         } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             minScreenOnMs = S5_POPPING_SCREENSHOT_MIN_SCREEN_ON_MS;
@@ -2926,8 +2879,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                OverlayPrefs.EFFECT_S4_RIPPLE,
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -2956,8 +2908,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         File best = null;
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                OverlayPrefs.EFFECT_S4_RIPPLE,
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -3388,8 +3339,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void markSharedEffectBackgroundCacheCurrent(long timestamp, int refreshToken) {
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                OverlayPrefs.EFFECT_S4_RIPPLE,
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -3448,8 +3398,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean effectUsesScreenshotBackground(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
-                || effect == OverlayPrefs.EFFECT_S3_RIPPLE
-                || effect == OverlayPrefs.EFFECT_S4_RIPPLE
+                || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
@@ -3717,8 +3666,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             if (!unlockEffectOverlayParked) {
                 parkNativePhysicsRendererState(unlockEffectRenderer);
                 hideUnlockEffectView(unlockEffectView);
+                Log.i(TAG, "native physics overlay kept attached while hidden type="
+                        + removedType);
             }
-            Log.i(TAG, "native physics overlay kept attached while hidden type=" + removedType);
             return;
         }
         if (unlockEffectRenderer != null && unlockEffectOverlayAttached) {
@@ -3761,6 +3711,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         unlockEffectView = null;
         unlockEffectRendererType = -1;
+        unlockEffectOverlayAddRetryAt = 0L;
         unlockEffectOverlayParked = false;
         unlockEffectGestureActive = false;
         unlockEffectRendererNeedsRecreate = false;

@@ -1249,9 +1249,19 @@ public class ControlActivity extends Activity {
 
         section.addView(sectionLabel("Stabili"));
         section.addView(effectOption(
+                "S3 Ripple",
+                "Original Samsung ripple renderer with transparent lockscreen composition.",
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                current));
+        section.addView(effectOption(
                 "S4 Lens Flare",
                 "Original-style lens flare path for the S4 unlock gesture.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current));
+        section.addView(effectOption(
+                "N3 Watercolor",
+                "Original Samsung Watercolor renderer with transparent lockscreen composition.",
+                OverlayPrefs.EFFECT_WATERCOLOUR,
                 current));
         section.addView(effectOption(
                 "S5 Popping Colours",
@@ -1269,11 +1279,6 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current));
         section.addView(effectOption(
-                "N5 Sparkling Bubbles",
-                "Samsung native bubbles renderer with cached lockscreen color sampling.",
-                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
-                current));
-        section.addView(effectOption(
                 "N5 Colored Droplet",
                 "Ghidra-backed droplet renderer without motion sensor input.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -1283,22 +1288,10 @@ public class ControlActivity extends Activity {
                 "Native droplet physics with accelerometer-driven gravity and drift.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current));
-
-        section.addView(sectionLabel("WIP"));
         section.addView(effectOption(
-                "S3 ripple WIP",
-                "Reverse-backed, overlay-safe port. Background refraction is still incomplete.",
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                current));
-        section.addView(effectOption(
-                "S4 Ripple native WIP",
-                "Samsung RippleInk native path kept side-by-side for future refraction work.",
-                OverlayPrefs.EFFECT_S4_RIPPLE,
-                current));
-        section.addView(effectOption(
-                "N4 Watercolor WIP",
-                "Transparent app-owned watercolor renderer, still a WIP slot.",
-                OverlayPrefs.EFFECT_WATERCOLOUR,
+                "N5 Sparkling Bubbles",
+                "Samsung native bubbles renderer with cached lockscreen color sampling.",
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current));
 
         section.addView(screenshotServiceControls(current));
@@ -1417,8 +1410,7 @@ public class ControlActivity extends Activity {
     }
 
     private boolean effectUsesColormapCache(int effect) {
-        return effect == OverlayPrefs.EFFECT_S3_RIPPLE
-                || effect == OverlayPrefs.EFFECT_S4_RIPPLE
+        return effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
@@ -1865,8 +1857,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
                 drawPreviewLensFlare(canvas, paint, width, height);
                 break;
-            case OverlayPrefs.EFFECT_S3_RIPPLE:
-            case OverlayPrefs.EFFECT_S4_RIPPLE:
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 drawPreviewRipple(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
@@ -1910,8 +1901,7 @@ public class ControlActivity extends Activity {
         switch (effect) {
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return R.drawable.preview_unlock_poppingcolor_s5;
-            case OverlayPrefs.EFFECT_S3_RIPPLE:
-            case OverlayPrefs.EFFECT_S4_RIPPLE:
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return R.drawable.preview_unlock_ripple_s5;
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return R.drawable.preview_unlock_watercolor_s5;
@@ -2303,8 +2293,7 @@ public class ControlActivity extends Activity {
     private File latestLegacyColormapScreenshotFile() {
         File best = null;
         int[] effects = {
-                OverlayPrefs.EFFECT_S3_RIPPLE,
-                OverlayPrefs.EFFECT_S4_RIPPLE,
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -3121,8 +3110,7 @@ public class ControlActivity extends Activity {
         switch (effect) {
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
                 return Color.rgb(255, 194, 78);
-            case OverlayPrefs.EFFECT_S3_RIPPLE:
-            case OverlayPrefs.EFFECT_S4_RIPPLE:
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return Color.rgb(66, 169, 232);
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return Color.rgb(123, 206, 92);
@@ -3520,8 +3508,7 @@ public class ControlActivity extends Activity {
                 drop.close();
                 canvas.drawPath(drop, paint);
                 break;
-            case OverlayPrefs.EFFECT_S3_RIPPLE:
-            case OverlayPrefs.EFFECT_S4_RIPPLE:
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(Math.max(dp(1), unit * 0.065f));
                 canvas.drawOval(new RectF(cx - unit * 0.42f, cy - unit * 0.18f,

@@ -77,7 +77,7 @@ final class LockSoundPlayer {
 
         effectSounds[OverlayPrefs.EFFECT_S4_LENS_FLARE] =
                 load(R.raw.lens_flare_lock);
-        effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE] =
+        effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
                 load(R.raw.s3_lock);
         effectSounds[OverlayPrefs.EFFECT_S5_POPPING_COLOURS] =
                 load(R.raw.particle_lock);
@@ -89,8 +89,6 @@ final class LockSoundPlayer {
                 effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
         effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES] =
                 load(R.raw.ve_sparklingbubbles_lock);
-        effectSounds[OverlayPrefs.EFFECT_S4_RIPPLE] =
-                load(R.raw.s3_lock);
         effectSounds[OverlayPrefs.EFFECT_S4_ABSTRACT_TILES] =
                 load(R.raw.abstracttile_lock);
         effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =

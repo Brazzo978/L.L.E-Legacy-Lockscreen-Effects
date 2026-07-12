@@ -71,16 +71,15 @@ final class OverlayPrefs {
     static final int TOUCH_BOX_CAPTURE_READY = 4;
     static final int TOUCH_BOX_CAPTURE_FAILED = 5;
     static final int EFFECT_S4_LENS_FLARE = 0;
-    static final int EFFECT_S3_RIPPLE = 1;
     static final int EFFECT_S5_POPPING_COLOURS = 2;
     static final int EFFECT_WATERCOLOUR = 3;
     static final int EFFECT_N5_COLOUR_DROPLET = 4;
     static final int EFFECT_N5_SPARKLING_BUBBLES = 5;
-    static final int EFFECT_S4_RIPPLE = 6;
     static final int EFFECT_S4_ABSTRACT_TILES = 7;
     static final int EFFECT_S4_GEOMETRIC_MOSAIC = 8;
     static final int EFFECT_N5_COLOUR_DROPLET_GYRO = 9;
-    static final int EFFECT_COUNT = 10;
+    static final int EFFECT_S3_RIPPLE_NATIVE = 10;
+    static final int EFFECT_COUNT = 11;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -177,16 +176,21 @@ final class OverlayPrefs {
 
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
+        // Values 1 and 6 belonged to the removed S3 mesh and S4 RippleInk experiments.
+        // Upgrade those installs to the completed native S3 port.
+        if (effect == 1 || effect == 6) {
+            get(context).edit().putInt(UNLOCK_EFFECT, EFFECT_S3_RIPPLE_NATIVE).apply();
+            return EFFECT_S3_RIPPLE_NATIVE;
+        }
         if (effect != EFFECT_S4_LENS_FLARE
-                && effect != EFFECT_S3_RIPPLE
                 && effect != EFFECT_S5_POPPING_COLOURS
                 && effect != EFFECT_WATERCOLOUR
                 && effect != EFFECT_N5_COLOUR_DROPLET
                 && effect != EFFECT_N5_SPARKLING_BUBBLES
-                && effect != EFFECT_S4_RIPPLE
                 && effect != EFFECT_S4_ABSTRACT_TILES
                 && effect != EFFECT_S4_GEOMETRIC_MOSAIC
-                && effect != EFFECT_N5_COLOUR_DROPLET_GYRO) {
+                && effect != EFFECT_N5_COLOUR_DROPLET_GYRO
+                && effect != EFFECT_S3_RIPPLE_NATIVE) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
@@ -196,24 +200,22 @@ final class OverlayPrefs {
         switch (effect) {
             case EFFECT_S4_LENS_FLARE:
                 return "S4 Lens Flare";
-            case EFFECT_S3_RIPPLE:
-                return "S3 Ripple WIP";
             case EFFECT_S5_POPPING_COLOURS:
                 return "S5 Popping Colours";
             case EFFECT_WATERCOLOUR:
-                return "N4 Watercolor WIP";
+                return "N3 Watercolor";
             case EFFECT_N5_COLOUR_DROPLET:
                 return "N5 Colored Droplet";
             case EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return "N5 Colored Droplet + Gyro";
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return "N5 Sparkling Bubbles";
-            case EFFECT_S4_RIPPLE:
-                return "S4 Ripple native WIP";
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
                 return "N4 Geometric Mosaic";
+            case EFFECT_S3_RIPPLE_NATIVE:
+                return "S3 Ripple";
             default:
                 return "Unknown effect " + effect;
         }

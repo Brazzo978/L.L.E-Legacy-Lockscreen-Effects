@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.codex.s4unlockfx"
+    android:versionCode="1"
+    android:versionName="0.1-s4-system">
+
+    <uses-sdk
+        android:minSdkVersion="21"
+        android:targetSdkVersion="21" />
+
+    <application
+        android:theme="@style/AppTheme"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:debuggable="true">
+        <uses-library
+            android:name="secvisualeffect"
+            android:required="true" />
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="portrait"
+            android:label="L.S.E Samsung Stock Harness"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
