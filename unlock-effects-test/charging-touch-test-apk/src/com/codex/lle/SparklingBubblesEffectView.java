@@ -762,6 +762,9 @@ public class SparklingBubblesEffectView extends FrameLayout
     }
 
     private boolean canPlayEffectSound() {
+        if (!OverlayPrefs.unlockEffectSoundAllowedNow(context)) {
+            return false;
+        }
         try {
             if (Settings.System.getInt(context.getContentResolver(),
                     "lockscreen_sounds_enabled", 1) == 0) {

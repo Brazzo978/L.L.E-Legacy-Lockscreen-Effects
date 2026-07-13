@@ -283,6 +283,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             completeForcedEffectBackgroundRefresh("timeout");
         }
     };
+    private final Runnable timeWindowRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            evaluateVisibility("time_window_boundary");
+            scheduleTimeWindowRefresh();
+        }
+    };
     private final Runnable forcedEffectBackgroundSleepRunnable = new Runnable() {
         @Override
         public void run() {
@@ -433,6 +440,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 playLockSoundForScreenOff();
+                handler.removeCallbacks(timeWindowRefreshRunnable);
                 interactiveSessionWasUnlocked = false;
                 lastInteractive = false;
                 lastScreenOffAt = SystemClock.uptimeMillis();
@@ -455,6 +463,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 scheduleScreenOffPrearm();
                 scheduleEffectBackgroundRefreshAlarm("screen_off");
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+                handler.removeCallbacks(timeWindowRefreshRunnable);
                 interactiveSessionWasUnlocked = true;
                 unlockAffordancePending = false;
                 unlockAffordanceShownThisWake = false;
@@ -488,6 +497,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 // while SystemUI is still settling. Only ACTION_USER_PRESENT (or service startup
                 // while already unlocked) is strong enough evidence that this wake was unlocked.
                 interactiveSessionWasUnlocked = false;
+                scheduleTimeWindowRefresh();
                 if (OverlayPrefs.effectBackgroundWakeCaptureActive(
                         ChargingAccessibilityService.this)) {
                     handler.removeCallbacks(forcedEffectBackgroundTimeoutRunnable);
@@ -565,6 +575,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         configurePassiveService();
         refreshChargingState();
         ensureDoodleLoaded();
+        scheduleTimeWindowRefresh();
         if (!isChargingDoodleModeEnabled()) {
             preloadUnlockEffectRenderer();
         }
@@ -702,7 +713,6 @@ public class ChargingAccessibilityService extends AccessibilityService
             ensureDoodleLoaded();
         }
         if (OverlayPrefs.SHOW_DOODLE.equals(key)
-                || OverlayPrefs.SHOW_LOCK.equals(key)
                 || OverlayPrefs.SEASONAL_UNLOCK_PARTNER.equals(key)) {
             if (isChargingDoodleModeEnabled()) {
                 unloadUnlockEffectsForDoodleMode("prefs:" + key);
@@ -764,7 +774,21 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.UNLOCK_EFFECT.equals(key) && unlockEffectRenderer != null) {
             destroyUnlockEffectOverlay();
         }
+        scheduleTimeWindowRefresh();
         evaluateVisibility("prefs:" + key);
+    }
+
+    private void scheduleTimeWindowRefresh() {
+        handler.removeCallbacks(timeWindowRefreshRunnable);
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (!interactive
+                || !isLockscreenLocked(false)
+                || !OverlayPrefs.hasRuntimeSurfaceTimeWindow(this)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long delay = 60_000L - (now % 60_000L) + 50L;
+        handler.postDelayed(timeWindowRefreshRunnable, delay);
     }
 
     private void cleanup() {
@@ -1165,7 +1189,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void handleInteractiveLockscreenWake(String reason, boolean locked) {
-        if (!locked || !OverlayPrefs.unlockEffectEnabled(this)) {
+        if (locked) {
+            scheduleTimeWindowRefresh();
+        }
+        if (!locked || !OverlayPrefs.unlockEffectAllowedNow(this)) {
             return;
         }
         holdHotWakeLock("interactive_wake:" + reason);
@@ -1312,7 +1339,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && OverlayPrefs.masterEnabled(this)
                 && !showDoodle
                 && !isCallSurfaceActive()
-                && OverlayPrefs.unlockEffectEnabled(this)
+                && OverlayPrefs.unlockEffectAllowedNow(this)
                 && OverlayPrefs.debugTouchArea(this);
     }
 
@@ -1596,7 +1623,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean showFx = runtimeSurfaceAllowed
                 && !showDoodle
                 && !suppressUnlockFxAfterDoodleDisconnect
-                && OverlayPrefs.unlockEffectEnabled(this);
+                && OverlayPrefs.unlockEffectAllowedNow(this);
 
         if (!showDoodle
                 && shouldRunUnlockEffectBackgroundPreflight(interactive, displayOn, locked,
@@ -1710,7 +1737,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void syncDoodleOverlay() {
-        if (!OverlayPrefs.masterEnabled(this) || !OverlayPrefs.showDoodle(this)) {
+        if (!isChargingDoodleModeEnabled()) {
             removeDoodleOverlay();
             return;
         }
@@ -1806,7 +1833,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void ensureDoodleLoaded() {
         if (overlayView != null
                 || !OverlayPrefs.masterEnabled(this)
-                || !OverlayPrefs.showDoodle(this)
+                || !OverlayPrefs.doodleAllowedNow(this)
                 || !charging) {
             return;
         }
@@ -2365,7 +2392,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             boolean blockedSurfaceActive) {
         if (!interactive || !displayOn || !locked || aodSurface
                 || hideOverlaysForTouchBoxCapture || hideOverlaysForBackgroundCapture
-                || blockedSurfaceActive || !OverlayPrefs.unlockEffectEnabled(this)) {
+                || blockedSurfaceActive || !OverlayPrefs.unlockEffectAllowedNow(this)) {
             return false;
         }
         int effect = OverlayPrefs.unlockEffect(this);
@@ -4183,7 +4210,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 false,
                 blockedSurfaceActive)
                 && !showDoodle
-                && OverlayPrefs.unlockEffectEnabled(this);
+                && OverlayPrefs.unlockEffectAllowedNow(this);
     }
 
     private boolean isLockscreenLocked(boolean contentAware) {
@@ -4232,8 +4259,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean isChargingDoodleModeEnabled() {
         return OverlayPrefs.masterEnabled(this)
                 && charging
-                && OverlayPrefs.showDoodle(this)
-                && OverlayPrefs.showLock(this);
+                && OverlayPrefs.doodleAllowedNow(this);
     }
 
     private void playLockSoundForScreenOff() {
@@ -4248,24 +4274,29 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (lockSoundPlayer == null
                 || !OverlayPrefs.masterEnabled(this)
-                || !OverlayPrefs.lockSoundEnabled(this)
                 || isCallSurfaceActive()
                 || notificationShadeVisible) {
             return;
         }
-        lastLockSoundPlayedAt = now;
         if (isChargingDoodleModeEnabled()) {
+            if (!OverlayPrefs.doodleLockSoundAllowedNow(this)) {
+                return;
+            }
+            lastLockSoundPlayedAt = now;
             lockSoundPlayer.playSeasonalLock(OverlayPrefs.seasonMode(this));
             return;
         }
-        if (OverlayPrefs.unlockEffectEnabled(this)) {
+        if (OverlayPrefs.unlockEffectEnabled(this)
+                && OverlayPrefs.isImplementedEffect(OverlayPrefs.unlockEffect(this))
+                && OverlayPrefs.lockscreenLockSoundAllowedNow(this)) {
+            lastLockSoundPlayedAt = now;
             lockSoundPlayer.playEffectLock(OverlayPrefs.unlockEffect(this));
         }
     }
 
     private boolean isSeasonalUnlockPartnerModeEnabled() {
         return isChargingDoodleModeEnabled()
-                && OverlayPrefs.seasonalUnlockPartner(this);
+                && OverlayPrefs.seasonalUnlockPartnerAllowedNow(this);
     }
 
     private boolean isSeasonalUnlockSurfaceHoldActive(boolean pinSurfaceVisible,

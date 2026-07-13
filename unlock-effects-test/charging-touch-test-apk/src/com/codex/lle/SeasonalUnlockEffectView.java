@@ -534,7 +534,8 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     }
 
     private boolean lockscreenSoundsEnabled() {
-        return Settings.System.getInt(getContext().getContentResolver(),
+        return OverlayPrefs.seasonalUnlockPartnerSoundAllowedNow(getContext())
+                && Settings.System.getInt(getContext().getContentResolver(),
                 "lockscreen_sounds_enabled", 1) != 0;
     }
 

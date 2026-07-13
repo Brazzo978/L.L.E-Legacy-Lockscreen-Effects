@@ -744,6 +744,9 @@ public class SamsungLockBgEffectView extends FrameLayout
     }
 
     private boolean canPlaySound() {
+        if (!OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+            return false;
+        }
         if (Settings.System.getInt(getContext().getContentResolver(),
                 "lockscreen_sounds_enabled", 1) == 0) {
             return false;

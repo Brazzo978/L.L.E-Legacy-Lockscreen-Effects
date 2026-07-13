@@ -4,6 +4,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
 import android.app.Dialog;
+import android.app.TimePickerDialog;
 import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -22,6 +23,7 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.Shader;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -29,7 +31,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -59,6 +60,8 @@ import java.util.ArrayList;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Calendar;
+import java.util.HashSet;
+import java.util.Locale;
 
 public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
@@ -117,7 +120,9 @@ public class ControlActivity extends Activity {
     private int tabAdjacentDirection;
     private boolean tabAnimationRunning;
     private boolean doodleDebugExpanded;
+    private boolean doodlePositionExpanded;
     private boolean lockscreenDebugExpanded;
+    private final HashSet<String> expandedTimingSections = new HashSet<String>();
     private Typeface appFontRegular;
     private Typeface appFontBold;
     private PopupWindow effectPreviewPopup;
@@ -950,31 +955,165 @@ public class ControlActivity extends Activity {
     }
 
     private Switch toggle(String label, final String key, boolean defaultValue) {
+        Switch toggle = styledToggle(label, prefs.getBoolean(key, defaultValue));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(key, isChecked).apply();
+            }
+        });
+        return toggle;
+    }
+
+    private Switch styledToggle(String label, boolean checked) {
         Switch toggle = new Switch(this);
         toggle.setText(label);
         toggle.setTextColor(COLOR_TEXT);
         toggle.setTextSize(16f);
-        toggle.setChecked(prefs.getBoolean(key, defaultValue));
+        toggle.setChecked(checked);
         toggle.setGravity(Gravity.CENTER_VERTICAL);
         toggle.setIncludeFontPadding(false);
         toggle.setPadding(dp(14), 0, dp(8), 0);
         toggle.setBackground(controlRowBackground(false));
         tintSwitch(toggle);
-        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                prefs.edit().putBoolean(key, isChecked).apply();
-                if (OverlayPrefs.SHOW_DOODLE.equals(key)) {
-                    showTab(selectedTab);
-                }
-            }
-        });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(60));
         params.setMargins(0, dp(3), 0, dp(3));
         toggle.setLayoutParams(params);
         return toggle;
+    }
+
+    private LinearLayout verticalGroup() {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        return group;
+    }
+
+    private void setRevealState(final View content, boolean visible, boolean animate) {
+        content.animate().setListener(null).cancel();
+        if (!animate) {
+            content.setVisibility(visible ? View.VISIBLE : View.GONE);
+            content.setAlpha(1f);
+            content.setTranslationY(0f);
+            return;
+        }
+        if (visible) {
+            content.setVisibility(View.VISIBLE);
+            content.setAlpha(0f);
+            content.setTranslationY(-dp(8));
+            content.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(220L)
+                    .setInterpolator(tabEnterInterpolator())
+                    .start();
+            return;
+        }
+        content.animate()
+                .alpha(0f)
+                .translationY(-dp(8))
+                .setDuration(170L)
+                .setInterpolator(tabExitInterpolator())
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (content.getAlpha() <= 0.01f) {
+                            content.setVisibility(View.GONE);
+                            content.setAlpha(1f);
+                            content.setTranslationY(0f);
+                        }
+                    }
+                })
+                .start();
+    }
+
+    private View toggleWithAutomation(String label, final String key, boolean defaultValue,
+            final String timingId, final View timingContent, final View dependentContent) {
+        LinearLayout root = verticalGroup();
+        LinearLayout bubble = verticalGroup();
+        LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        bubbleParams.setMargins(0, dp(3), 0, dp(3));
+        bubble.setLayoutParams(bubbleParams);
+        bubble.setBackground(controlRowBackground(false));
+
+        boolean checked = prefs.getBoolean(key, defaultValue);
+        final Switch toggle = styledToggle(label, checked);
+        toggle.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(54));
+        toggle.setLayoutParams(toggleParams);
+
+        final LinearLayout automationRow = new LinearLayout(this);
+        automationRow.setOrientation(LinearLayout.HORIZONTAL);
+        automationRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        automationRow.setPadding(dp(12), 0, dp(12), dp(6));
+        final TextView automationChip = new TextView(this);
+        automationChip.setTextColor(COLOR_ACCENT_DEEP);
+        automationChip.setTextSize(10f);
+        automationChip.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        automationChip.setGravity(Gravity.CENTER);
+        automationChip.setIncludeFontPadding(false);
+        automationChip.setBackground(solidDrawable(
+                Color.argb(205, 231, 247, 248),
+                dp(13),
+                Color.argb(105, 64, 152, 160),
+                dp(1)));
+        automationRow.addView(automationChip, new LinearLayout.LayoutParams(
+                dp(82), dp(27)));
+
+        boolean expanded = expandedTimingSections.contains(timingId);
+        updateAutomationChip(automationChip, expanded);
+        setRevealState(automationRow, checked, false);
+        setRevealState(timingContent, checked && expanded, false);
+        if (dependentContent != null) {
+            setRevealState(dependentContent, checked, false);
+        }
+
+        automationChip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean next = !expandedTimingSections.contains(timingId);
+                if (next) {
+                    expandedTimingSections.add(timingId);
+                } else {
+                    expandedTimingSections.remove(timingId);
+                }
+                updateAutomationChip(automationChip, next);
+                setRevealState(timingContent, next && toggle.isChecked(), true);
+            }
+        });
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(key, isChecked).apply();
+                setRevealState(automationRow, isChecked, true);
+                setRevealState(timingContent,
+                        isChecked && expandedTimingSections.contains(timingId), true);
+                if (dependentContent != null) {
+                    setRevealState(dependentContent, isChecked, true);
+                }
+            }
+        });
+
+        bubble.addView(toggle);
+        bubble.addView(automationRow);
+        bubble.addView(timingContent);
+        root.addView(bubble);
+        if (dependentContent != null) {
+            root.addView(dependentContent);
+        }
+        return root;
+    }
+
+    private void updateAutomationChip(TextView chip, boolean expanded) {
+        chip.setText(expanded ? "AUTO  \u25BE" : "AUTO  +");
     }
 
     private Switch invertedToggle(String label, final String key, boolean defaultStoredValue) {
@@ -1002,191 +1141,200 @@ public class ControlActivity extends Activity {
         return toggle;
     }
 
-    private View chargingDoodleControls() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, 0, 0, dp(8));
-        section.setLayoutParams(sectionParams);
-        styleCard(section);
-        section.addView(sectionTitle("Charging doodle"));
-        section.addView(chargingDoodleHero());
-
-        section.addView(toggle("Enable charging doodle", OverlayPrefs.SHOW_DOODLE, true));
-        section.addView(toggle("Doodle on lockscreen", OverlayPrefs.SHOW_LOCK, true));
-        section.addView(toggle("Seasonal unlock partner",
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER, true));
-        if (OverlayPrefs.showDoodle(this)) {
-            section.addView(doodlePreviewPanel());
-        }
-        section.addView(seasonSelector());
-        section.addView(positionControls());
-        section.addView(doodleDebugMenu());
-        return section;
-    }
-
-    private View chargingDoodleHero() {
-        FrameLayout hero = new FrameLayout(this);
-        hero.setBackground(gradient(
-                GradientDrawable.Orientation.TL_BR,
-                new int[] {
-                        Color.rgb(255, 225, 139),
-                        Color.rgb(246, 194, 229),
-                        Color.rgb(154, 231, 220)
-                },
-                dp(22),
-                Color.argb(100, 255, 255, 255),
-                dp(1)));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            hero.setElevation(dp(5));
-            hero.setClipToOutline(true);
-        }
-        hero.addView(new GraceDoodleArtView(), new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-
-        LinearLayout copy = new LinearLayout(this);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        copy.setGravity(Gravity.CENTER_VERTICAL);
-        copy.setPadding(dp(20), dp(14), dp(112), dp(14));
-
-        TextView eyebrow = new TextView(this);
-        eyebrow.setText("CHARGING COMPANION");
-        eyebrow.setTextColor(Color.rgb(150, 90, 23));
-        eyebrow.setTextSize(10f);
-        eyebrow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            eyebrow.setLetterSpacing(0.13f);
-        }
-        copy.addView(eyebrow);
-
-        TextView title = new TextView(this);
-        title.setText("Seasons come alive");
-        title.setTextColor(COLOR_GRACE_NAVY);
-        title.setTextSize(22f);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleParams.setMargins(0, dp(3), 0, 0);
-        copy.addView(title, titleParams);
-
-        TextView caption = new TextView(this);
-        caption.setText("Spring  /  Summer  /  Autumn  /  Winter");
-        caption.setTextColor(Color.rgb(72, 77, 105));
-        caption.setTextSize(11f);
-        LinearLayout.LayoutParams captionParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        captionParams.setMargins(0, dp(5), 0, 0);
-        copy.addView(caption, captionParams);
-
-        hero.addView(copy, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(138));
-        params.setMargins(0, 0, 0, dp(13));
-        hero.setLayoutParams(params);
-        return hero;
-    }
-
-    private View doodlePreviewPanel() {
+    private View timeWindowControl(String label, String enabledKey,
+            String startKey, String endKey) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(0, dp(8), 0, dp(10));
         LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        panelParams.setMargins(0, dp(2), 0, dp(8));
+        panelParams.setMargins(dp(8), 0, dp(8), dp(7));
         panel.setLayoutParams(panelParams);
-        styleInsetPanel(panel);
+        panel.setBackgroundColor(Color.TRANSPARENT);
 
-        final Bitmap bitmap = createDoodlePreviewBitmap(720, 320);
-        ImageView preview = new ImageView(this) {
-            @Override
-            protected void onDetachedFromWindow() {
-                super.onDetachedFromWindow();
-                if (!bitmap.isRecycled()) {
-                    bitmap.recycle();
-                }
-            }
-        };
-        preview.setImageBitmap(bitmap);
-        preview.setAdjustViewBounds(false);
-        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        preview.setBackground(solidDrawable(Color.rgb(22, 48, 72), dp(12),
-                Color.argb(70, 255, 255, 255), dp(1)));
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
+        final LinearLayout times = new LinearLayout(this);
+        times.setOrientation(LinearLayout.HORIZONTAL);
+        times.setPadding(dp(8), 0, dp(8), dp(7));
+        TextView start = timeValueButton("From", startKey);
+        TextView end = timeValueButton("Until", endKey);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                0, dp(48), 1f);
+        valueParams.setMargins(dp(3), 0, dp(3), 0);
+        times.addView(start, valueParams);
+        times.addView(end, valueParams);
+        final boolean enabled = prefs.getBoolean(enabledKey, false);
+        Switch scheduleToggle = styledToggle(label, enabled);
+        scheduleToggle.setTextSize(13f);
+        scheduleToggle.setBackgroundColor(Color.TRANSPARENT);
+        scheduleToggle.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(150));
-        previewParams.setMargins(0, 0, 0, 0);
-        panel.addView(preview, previewParams);
+                dp(48)));
+        final String scheduleKey = enabledKey;
+        scheduleToggle.setOnCheckedChangeListener(
+                new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(scheduleKey, isChecked).apply();
+                setRevealState(times, isChecked, true);
+            }
+        });
+        panel.addView(scheduleToggle);
+        setRevealState(times, enabled, false);
+        panel.addView(times);
         return panel;
     }
 
-    private View seasonSelector() {
+    private TextView timeValueButton(final String caption, final String key) {
+        final TextView button = new TextView(this);
+        button.setTextColor(COLOR_ACCENT_DEEP);
+        button.setTextSize(14f);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setBackground(controlRowBackground(false));
+        updateTimeValueButton(button, caption, prefs.getInt(key,
+                OverlayPrefs.DEFAULT_TIME_START_MINUTE));
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                int stored = OverlayPrefs.clampTimeMinute(prefs.getInt(key,
+                        OverlayPrefs.DEFAULT_TIME_START_MINUTE));
+                TimePickerDialog dialog = new TimePickerDialog(ControlActivity.this,
+                        new TimePickerDialog.OnTimeSetListener() {
+                            @Override
+                            public void onTimeSet(android.widget.TimePicker timePicker,
+                                    int hourOfDay, int minute) {
+                                int value = hourOfDay * 60 + minute;
+                                prefs.edit().putInt(key, value).apply();
+                                updateTimeValueButton(button, caption, value);
+                            }
+                        }, stored / 60, stored % 60, true);
+                dialog.show();
+            }
+        });
+        return button;
+    }
+
+    private void updateTimeValueButton(TextView button, String caption, int minute) {
+        int value = OverlayPrefs.clampTimeMinute(minute);
+        button.setText(caption + "  " + String.format(Locale.US, "%02d:%02d",
+                value / 60, value % 60));
+    }
+
+    private View chargingDoodleControls() {
+        LinearLayout root = verticalGroup();
+        LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rootParams.setMargins(0, 0, 0, dp(4));
+        root.setLayoutParams(rootParams);
+
+        LinearLayout controls = verticalGroup();
+        LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        controlsParams.setMargins(0, 0, 0, dp(12));
+        controls.setLayoutParams(controlsParams);
+        styleCard(controls);
+        controls.addView(sectionTitle("Charging doodle"));
+
+        LinearLayout doodleTiming = verticalGroup();
+        doodleTiming.addView(timeWindowControl("Doodle active hours",
+                OverlayPrefs.DOODLE_TIME_ENABLED,
+                OverlayPrefs.DOODLE_TIME_START,
+                OverlayPrefs.DOODLE_TIME_END));
+
+        LinearLayout partnerTiming = verticalGroup();
+        partnerTiming.addView(timeWindowControl("Partner effect active hours",
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_ENABLED,
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_START,
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_END));
+
+        LinearLayout partnerSoundTiming = verticalGroup();
+        partnerSoundTiming.addView(timeWindowControl("Partner sound active hours",
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_ENABLED,
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_START,
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_END));
+
+        LinearLayout partnerExtras = verticalGroup();
+        partnerExtras.addView(toggleWithAutomation("Partner effect sounds",
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_ENABLED,
+                true,
+                "doodle_partner_sound",
+                partnerSoundTiming,
+                null));
+
+        LinearLayout doodleLockSoundTiming = verticalGroup();
+        doodleLockSoundTiming.addView(timeWindowControl(
+                "Doodle lock sound active hours",
+                OverlayPrefs.DOODLE_LOCK_SOUND_TIME_ENABLED,
+                OverlayPrefs.DOODLE_LOCK_SOUND_TIME_START,
+                OverlayPrefs.DOODLE_LOCK_SOUND_TIME_END));
+
+        LinearLayout doodleExtras = verticalGroup();
+        doodleExtras.addView(toggleWithAutomation("Seasonal unlock partner",
+                OverlayPrefs.SEASONAL_UNLOCK_PARTNER,
+                true,
+                "doodle_partner",
+                partnerTiming,
+                partnerExtras));
+        doodleExtras.addView(toggleWithAutomation("Doodle lock sound",
+                OverlayPrefs.DOODLE_LOCK_SOUND_ENABLED,
+                true,
+                "doodle_lock_sound",
+                doodleLockSoundTiming,
+                null));
+        controls.addView(toggleWithAutomation("Enable charging doodle",
+                OverlayPrefs.SHOW_DOODLE,
+                true,
+                "doodle",
+                doodleTiming,
+                doodleExtras));
+        root.addView(controls);
+        root.addView(seasonalEffectsCard());
+        root.addView(positionControls());
+        root.addView(doodleDebugMenu());
+        return root;
+    }
+
+    private View seasonalEffectsCard() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, dp(6), 0, dp(8));
+        sectionParams.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(sectionParams);
-        styleInsetPanel(section);
-        section.addView(sectionTitle("Seasonal doodle"));
-
-        final RadioGroup group = new RadioGroup(this);
-        group.setOrientation(RadioGroup.VERTICAL);
-        addSeasonOption(group, "Seasonal auto", SeasonalDoodleView.SEASON_AUTO);
-        addSeasonOption(group, "Spring", SeasonalDoodleView.SEASON_SPRING);
-        addSeasonOption(group, "Summer", SeasonalDoodleView.SEASON_SUMMER);
-        addSeasonOption(group, "Autumn", SeasonalDoodleView.SEASON_AUTUMN);
-        addSeasonOption(group, "Winter", SeasonalDoodleView.SEASON_WINTER);
-
+        styleCard(section);
+        section.addView(sectionTitle("Seasonal effects"));
+        section.addView(effectPreviewHint());
         int currentSeason = prefs.getInt(OverlayPrefs.SEASON_MODE, SeasonalDoodleView.SEASON_AUTO);
-        RadioButton checked = group.findViewWithTag(Integer.valueOf(currentSeason));
-        if (checked == null) {
-            checked = group.findViewWithTag(Integer.valueOf(SeasonalDoodleView.SEASON_AUTO));
-        }
-        if (checked != null) {
-            checked.setChecked(true);
-        }
-
-        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
-                View checkedView = radioGroup.findViewById(checkedId);
-                Object tag = checkedView == null ? null : checkedView.getTag();
-                if (tag instanceof Integer) {
-                    prefs.edit().putInt(OverlayPrefs.SEASON_MODE, ((Integer) tag).intValue()).apply();
-                    if (OverlayPrefs.showDoodle(ControlActivity.this)) {
-                        showTab(selectedTab);
-                    }
-                }
-            }
-        });
-        section.addView(group);
+        section.addView(seasonalEffectOption(
+                "Seasonal auto",
+                "Changes automatically with the current season.",
+                SeasonalDoodleView.SEASON_AUTO,
+                currentSeason));
+        section.addView(seasonalEffectOption(
+                "Spring",
+                "Soft blossoms and fresh spring particles.",
+                SeasonalDoodleView.SEASON_SPRING,
+                currentSeason));
+        section.addView(seasonalEffectOption(
+                "Summer",
+                "Warm sparks and bright summer colours.",
+                SeasonalDoodleView.SEASON_SUMMER,
+                currentSeason));
+        section.addView(seasonalEffectOption(
+                "Autumn",
+                "Falling leaves in warm amber tones.",
+                SeasonalDoodleView.SEASON_AUTUMN,
+                currentSeason));
+        section.addView(seasonalEffectOption(
+                "Winter",
+                "Snowflakes and crisp winter light.",
+                SeasonalDoodleView.SEASON_WINTER,
+                currentSeason));
         return section;
-    }
-
-    private void addSeasonOption(RadioGroup group, String label, int value) {
-        RadioButton button = new RadioButton(this);
-        button.setText(label);
-        button.setTextColor(COLOR_TEXT);
-        button.setTextSize(16f);
-        button.setTag(Integer.valueOf(value));
-        button.setPadding(0, 0, 0, 0);
-        button.setBackground(controlRowBackground(false));
-        tintRadio(button);
-        RadioGroup.LayoutParams params = new RadioGroup.LayoutParams(
-                RadioGroup.LayoutParams.MATCH_PARENT,
-                dp(44));
-        params.setMargins(0, 0, 0, 0);
-        group.addView(button, params);
     }
 
     private View doodleDebugMenu() {
@@ -1195,9 +1343,9 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(6), 0, dp(8));
+        params.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(params);
-        styleInsetPanel(section);
+        styleCard(section);
 
         section.addView(collapsibleHeader("Debug", doodleDebugExpanded,
                 new View.OnClickListener() {
@@ -1233,70 +1381,132 @@ public class ControlActivity extends Activity {
     }
 
     private View effectSelector() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
+        LinearLayout root = verticalGroup();
+        LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionParams.setMargins(0, 0, 0, dp(12));
-        section.setLayoutParams(sectionParams);
-        styleCard(section);
-        section.addView(sectionTitle("Unlock effect"));
+        rootParams.setMargins(0, 0, 0, dp(4));
+        root.setLayoutParams(rootParams);
+
+        LinearLayout controls = verticalGroup();
+        LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        controlsParams.setMargins(0, 0, 0, dp(12));
+        controls.setLayoutParams(controlsParams);
+        styleCard(controls);
+        controls.addView(sectionTitle("Unlock effect"));
 
         int current = pendingUnlockEffect >= 0 ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
-        section.addView(effectPreviewHint());
-        section.addView(toggle("Unlock effect on lockscreen", OverlayPrefs.UNLOCK_EFFECT_ENABLED, true));
-        section.addView(toggle("Lock effect sound", OverlayPrefs.LOCK_SOUND_ENABLED, true));
+        LinearLayout effectTiming = verticalGroup();
+        effectTiming.addView(timeWindowControl("Effect active hours",
+                OverlayPrefs.UNLOCK_EFFECT_TIME_ENABLED,
+                OverlayPrefs.UNLOCK_EFFECT_TIME_START,
+                OverlayPrefs.UNLOCK_EFFECT_TIME_END));
 
-        section.addView(sectionLabel("Stabili"));
-        section.addView(effectOption(
+        LinearLayout effectSoundTiming = verticalGroup();
+        effectSoundTiming.addView(timeWindowControl("Effect sound active hours",
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_ENABLED,
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_START,
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_END));
+
+        LinearLayout lockSoundTiming = verticalGroup();
+        lockSoundTiming.addView(timeWindowControl("Lock sound active hours",
+                OverlayPrefs.LOCK_SOUND_TIME_ENABLED,
+                OverlayPrefs.LOCK_SOUND_TIME_START,
+                OverlayPrefs.LOCK_SOUND_TIME_END));
+
+        LinearLayout effectExtras = verticalGroup();
+        effectExtras.addView(toggleWithAutomation("Effect sounds",
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_ENABLED,
+                true,
+                "lockscreen_effect_sound",
+                effectSoundTiming,
+                null));
+        effectExtras.addView(toggleWithAutomation("Lock effect sound",
+                OverlayPrefs.LOCK_SOUND_ENABLED,
+                true,
+                "lockscreen_lock_sound",
+                lockSoundTiming,
+                null));
+        controls.addView(toggleWithAutomation("Unlock effect on lockscreen",
+                OverlayPrefs.UNLOCK_EFFECT_ENABLED,
+                true,
+                "lockscreen_effect",
+                effectTiming,
+                effectExtras));
+        root.addView(controls);
+
+        LinearLayout effects = verticalGroup();
+        LinearLayout.LayoutParams effectsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        effectsParams.setMargins(0, 0, 0, dp(12));
+        effects.setLayoutParams(effectsParams);
+        styleCard(effects);
+        effects.addView(sectionTitle("Effects"));
+        effects.addView(effectPreviewHint());
+        effects.addView(effectOption(
                 "S3 Ripple",
                 "Original Samsung ripple renderer with transparent lockscreen composition.",
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "S4 Lens Flare",
                 "Original-style lens flare path for the S4 unlock gesture.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N3 Watercolor",
                 "Original Samsung Watercolor renderer with transparent lockscreen composition.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "S5 Popping Colours",
                 "Popping colour effect with screenshot-backed color map.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N4 Abstract Tiles",
                 "Samsung native LockBG tile renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N4 Geometric Mosaic",
                 "Samsung native LockBG mosaic renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N5 Colored Droplet",
                 "Ghidra-backed droplet renderer without motion sensor input.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N5 Colored Droplet + Gyro",
                 "Native droplet physics with accelerometer-driven gravity and drift.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current));
-        section.addView(effectOption(
+        effects.addView(effectOption(
                 "N5 Sparkling Bubbles",
                 "Samsung native bubbles renderer with cached lockscreen color sampling.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current));
 
-        section.addView(screenshotServiceControls(current));
-        return section;
+        effects.addView(sectionLabel("Work in progress"));
+        effects.addView(effectOption(
+                "TabS Blind",
+                "Placeholder for the Samsung tablet blind effect. No renderer yet.",
+                OverlayPrefs.EFFECT_TABS_BLIND_WIP,
+                current));
+        effects.addView(effectOption(
+                "N3 Ink in Water",
+                "Placeholder for the Note 3 Ink in Water port. No renderer yet.",
+                OverlayPrefs.EFFECT_N3_INK_IN_WATER_WIP,
+                current));
+
+        root.addView(effects);
+        root.addView(screenshotServiceControls(current));
+        return root;
     }
 
     private View effectPreviewHint() {
@@ -1330,10 +1540,10 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(10), 0, 0);
+        params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
-        styleInsetPanel(section);
-        section.addView(sectionLabel("Screenshot service"));
+        styleCard(section);
+        section.addView(sectionTitle("Screenshot service"));
         section.addView(infoText(effectBackgroundStatus(currentEffect)));
         section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
             @Override
@@ -1648,17 +1858,34 @@ public class ControlActivity extends Activity {
 
     private void showEffectPreviewBubble(View anchor, int effect, String title,
             float rawX, float rawY) {
+        showPreviewBubble(anchor, title, rawX, rawY,
+                createEffectPreviewBitmap(effect, 720, 720), true);
+    }
+
+    private void showSeasonPreviewBubble(View anchor, int season, String title,
+            float rawX, float rawY) {
+        showPreviewBubble(anchor, title, rawX, rawY,
+                createDoodlePreviewBitmap(420, 720, season), false);
+    }
+
+    private void showPreviewBubble(View anchor, String title, float rawX, float rawY,
+            Bitmap previewBitmap, boolean squarePreview) {
         if (anchor == null || isFinishing()) {
+            if (previewBitmap != null && !previewBitmap.isRecycled()) {
+                previewBitmap.recycle();
+            }
             return;
         }
         hideEffectPreviewBubble();
 
-        effectPreviewPopupBitmap = createEffectPreviewBitmap(effect, 420, 720);
+        effectPreviewPopupBitmap = previewBitmap;
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         int popupWidth = Math.min(Math.max(dp(260), screenWidth - dp(64)), dp(300));
-        int imageHeight = dp(240);
-        int estimatedHeight = dp(312);
+        // Root and card horizontal padding consume 28dp in total. Real effect
+        // captures are 1:1; seasonal placeholders retain their original portrait ratio.
+        int imageHeight = squarePreview ? popupWidth - dp(28) : dp(240);
+        int estimatedHeight = imageHeight + dp(70);
 
         int[] anchorLocation = new int[2];
         anchor.getLocationOnScreen(anchorLocation);
@@ -1801,7 +2028,7 @@ public class ControlActivity extends Activity {
         return tail;
     }
 
-    private Bitmap createDoodlePreviewBitmap(int width, int height) {
+    private Bitmap createDoodlePreviewBitmap(int width, int height, int seasonMode) {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
@@ -1813,7 +2040,8 @@ public class ControlActivity extends Activity {
         canvas.drawRoundRect(width * 0.06f, height * 0.12f,
                 width * 0.94f, height * 0.88f, dp(18), dp(18), paint);
 
-        drawDoodleSeasonalParticles(canvas, paint, width, height, resolveDoodlePreviewSeason());
+        drawDoodleSeasonalParticles(canvas, paint, width, height,
+                resolveDoodlePreviewSeason(seasonMode));
         drawDoodleChargingMark(canvas, paint, width, height);
 
         paint.setShader(null);
@@ -1900,14 +2128,51 @@ public class ControlActivity extends Activity {
 
     private int stockEffectPreviewResId(int effect) {
         switch (effect) {
-            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
-                return R.drawable.preview_unlock_poppingcolor_s5;
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
-                return R.drawable.preview_unlock_ripple_s5;
+                return R.drawable.preview_unlock_s3_ripple_lle;
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                return R.drawable.preview_unlock_s4_lens_flare_lle;
             case OverlayPrefs.EFFECT_WATERCOLOUR:
-                return R.drawable.preview_unlock_watercolor_s5;
+                return R.drawable.preview_unlock_n3_watercolor_lle;
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return R.drawable.preview_unlock_s5_popping_colours_lle;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
-                return R.drawable.preview_unlock_abstract_tiles_note4;
+                return R.drawable.preview_unlock_n4_abstract_tiles_lle;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                return R.drawable.preview_unlock_n4_geometric_mosaic_lle;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+                return R.drawable.preview_unlock_n5_colored_droplet_lle;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+                return R.drawable.preview_unlock_n5_colored_droplet_gyro_lle;
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                return R.drawable.preview_unlock_n5_sparkling_bubbles_lle;
+            default:
+                return 0;
+        }
+    }
+
+    private int effectIconResId(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
+                return R.drawable.icon_effect_s3_ripple_lle;
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                return R.drawable.icon_effect_s4_lens_flare_lle;
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                return R.drawable.icon_effect_n3_watercolor_lle;
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return R.drawable.icon_effect_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return R.drawable.icon_effect_n4_abstract_tiles_lle;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                return R.drawable.icon_effect_n4_geometric_mosaic_lle;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+                return R.drawable.icon_effect_n5_colored_droplet_lle;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+                return R.drawable.icon_effect_n5_colored_droplet_gyro_lle;
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                return R.drawable.icon_effect_n5_sparkling_bubbles_lle;
+            case OverlayPrefs.EFFECT_N3_INK_IN_WATER_WIP:
+                return R.drawable.icon_effect_n3_ink_in_water_lle;
             default:
                 return 0;
         }
@@ -2172,8 +2437,7 @@ public class ControlActivity extends Activity {
                 width * 0.945f, height * 0.925f, dp(18), dp(18), paint);
     }
 
-    private int resolveDoodlePreviewSeason() {
-        int mode = OverlayPrefs.seasonMode(this);
+    private int resolveDoodlePreviewSeason(int mode) {
         if (mode >= SeasonalDoodleView.SEASON_SPRING
                 && mode <= SeasonalDoodleView.SEASON_WINTER) {
             return mode;
@@ -2487,6 +2751,110 @@ public class ControlActivity extends Activity {
         return row;
     }
 
+    private View seasonalEffectOption(final String title, String subtitle,
+            final int value, int current) {
+        final boolean selected = value == current;
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(11), dp(12), dp(11));
+        row.setMinimumHeight(dp(82));
+
+        final boolean[] previewOpened = new boolean[] {false};
+        final float[] previewDown = new float[] {0f, 0f};
+        final Runnable previewRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (tabSwipeDragging || tabAnimationRunning) {
+                    return;
+                }
+                previewOpened[0] = true;
+                row.setPressed(false);
+                showSeasonPreviewBubble(row, value, title,
+                        previewDown[0], previewDown[1]);
+            }
+        };
+        row.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    previewOpened[0] = false;
+                    previewDown[0] = event.getRawX();
+                    previewDown[1] = event.getRawY();
+                    uiHandler.removeCallbacks(previewRunnable);
+                    uiHandler.postDelayed(previewRunnable, 430L);
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_MOVE) {
+                    float dx = Math.abs(event.getRawX() - previewDown[0]);
+                    float dy = Math.abs(event.getRawY() - previewDown[1]);
+                    if (dx > dp(14) || dy > dp(14)) {
+                        uiHandler.removeCallbacks(previewRunnable);
+                    }
+                    return false;
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    uiHandler.removeCallbacks(previewRunnable);
+                    hideEffectPreviewBubble();
+                }
+                return false;
+            }
+        });
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (previewOpened[0]) {
+                    previewOpened[0] = false;
+                    return;
+                }
+                prefs.edit().putInt(OverlayPrefs.SEASON_MODE, value).apply();
+                showTab(selectedTab);
+            }
+        });
+
+        row.setBackground(optionBackground(selected));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            row.setElevation(selected ? dp(4) : dp(1));
+        }
+
+        View marker = new GraceSeasonIconView(value, selected);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        markerParams.setMargins(0, 0, dp(14), 0);
+        row.addView(marker, markerParams);
+
+        LinearLayout copy = verticalGroup();
+        row.addView(copy, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        copy.addView(titleView);
+
+        TextView subtitleView = new TextView(this);
+        subtitleView.setText(subtitle);
+        subtitleView.setTextColor(COLOR_MUTED);
+        subtitleView.setTextSize(13f);
+        subtitleView.setLineSpacing(dp(1), 1.0f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.setMargins(0, dp(2), 0, 0);
+        copy.addView(subtitleView, subtitleParams);
+
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, dp(4), 0, dp(4));
+        row.setLayoutParams(rowParams);
+        return row;
+    }
+
     private void addEffectOption(RadioGroup group, String label, int value) {
         RadioButton button = new RadioButton(this);
         button.setText(label);
@@ -2516,14 +2884,43 @@ public class ControlActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(6), 0, dp(8));
+        params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
-        styleInsetPanel(section);
-        section.addView(sectionTitle("Size and position"));
+        styleCard(section);
 
-        section.addView(doodleSizeSlider());
-        section.addView(positionSlider("Horizontal", OverlayPrefs.POSITION_OFFSET_X, 0));
-        section.addView(positionSlider("Vertical", OverlayPrefs.POSITION_OFFSET_Y, 0));
+        final TextView header = new TextView(this);
+        header.setText(doodlePositionExpanded
+                ? "Size and position   ▾"
+                : "Size and position   +");
+        header.setTextColor(COLOR_ACCENT_DEEP);
+        header.setTextSize(16f);
+        header.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setIncludeFontPadding(false);
+        header.setPadding(dp(14), 0, dp(14), 0);
+        header.setBackground(controlRowBackground(false));
+        section.addView(header, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48)));
+
+        final LinearLayout content = verticalGroup();
+        content.setPadding(0, dp(6), 0, 0);
+        content.addView(doodleSizeSlider());
+        content.addView(positionSlider("Horizontal", OverlayPrefs.POSITION_OFFSET_X, 0));
+        content.addView(positionSlider("Vertical", OverlayPrefs.POSITION_OFFSET_Y, 0));
+        setRevealState(content, doodlePositionExpanded, false);
+        section.addView(content);
+
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                doodlePositionExpanded = !doodlePositionExpanded;
+                header.setText(doodlePositionExpanded
+                        ? "Size and position   ▾"
+                        : "Size and position   +");
+                setRevealState(content, doodlePositionExpanded, true);
+            }
+        });
         return section;
     }
 
@@ -3342,14 +3739,29 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private final class GraceEffectIconView extends View {
+    private int seasonAccentColor(int season) {
+        switch (season) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return Color.rgb(237, 136, 185);
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return Color.rgb(255, 184, 58);
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return Color.rgb(222, 119, 55);
+            case SeasonalDoodleView.SEASON_WINTER:
+                return Color.rgb(98, 177, 220);
+            default:
+                return Color.rgb(91, 199, 194);
+        }
+    }
+
+    private final class GraceSeasonIconView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final int effect;
+        private final int season;
         private final boolean selected;
 
-        GraceEffectIconView(int effect, boolean selected) {
+        GraceSeasonIconView(int season, boolean selected) {
             super(ControlActivity.this);
-            this.effect = effect;
+            this.season = season;
             this.selected = selected;
             setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
@@ -3359,6 +3771,132 @@ public class ControlActivity extends Activity {
             super.onDraw(canvas);
             float inset = dp(1.5f);
             RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            float radius = Math.min(getWidth(), getHeight()) * 0.27f;
+            int accent = seasonAccentColor(season);
+            int deep = blendColor(COLOR_GRACE_NAVY, accent, 0.58f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
+                    new int[] {blendColor(Color.WHITE, accent, 0.18f), accent, deep},
+                    new float[] {0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setShader(null);
+
+            float cx = bounds.centerX() - dp(2);
+            float cy = bounds.centerY() - dp(2);
+            float unit = Math.min(bounds.width(), bounds.height());
+            paint.setColor(Color.argb(235, 255, 255, 255));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            if (season == SeasonalDoodleView.SEASON_AUTO) {
+                int[] colors = {
+                        Color.rgb(255, 176, 207), Color.rgb(255, 213, 83),
+                        Color.rgb(229, 132, 61), Color.rgb(190, 232, 255)
+                };
+                for (int i = 0; i < colors.length; i++) {
+                    double angle = -Math.PI * 0.5 + i * Math.PI * 0.5;
+                    paint.setColor(colors[i]);
+                    canvas.drawCircle(cx + (float) Math.cos(angle) * unit * 0.18f,
+                            cy + (float) Math.sin(angle) * unit * 0.18f,
+                            unit * 0.105f, paint);
+                }
+                paint.setColor(Color.WHITE);
+                canvas.drawCircle(cx, cy, unit * 0.10f, paint);
+            } else if (season == SeasonalDoodleView.SEASON_SPRING) {
+                for (int i = 0; i < 5; i++) {
+                    double angle = -Math.PI * 0.5 + i * Math.PI * 0.4;
+                    canvas.drawCircle(cx + (float) Math.cos(angle) * unit * 0.16f,
+                            cy + (float) Math.sin(angle) * unit * 0.16f,
+                            unit * 0.12f, paint);
+                }
+                paint.setColor(Color.rgb(255, 218, 89));
+                canvas.drawCircle(cx, cy, unit * 0.09f, paint);
+            } else if (season == SeasonalDoodleView.SEASON_SUMMER) {
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(unit * 0.055f);
+                canvas.drawCircle(cx, cy, unit * 0.15f, paint);
+                for (int i = 0; i < 8; i++) {
+                    double angle = i * Math.PI * 0.25;
+                    canvas.drawLine(cx + (float) Math.cos(angle) * unit * 0.22f,
+                            cy + (float) Math.sin(angle) * unit * 0.22f,
+                            cx + (float) Math.cos(angle) * unit * 0.31f,
+                            cy + (float) Math.sin(angle) * unit * 0.31f, paint);
+                }
+                paint.setStyle(Paint.Style.FILL);
+            } else if (season == SeasonalDoodleView.SEASON_AUTUMN) {
+                Path leaf = new Path();
+                leaf.moveTo(cx, cy - unit * 0.27f);
+                leaf.cubicTo(cx + unit * 0.30f, cy - unit * 0.12f,
+                        cx + unit * 0.22f, cy + unit * 0.24f, cx, cy + unit * 0.29f);
+                leaf.cubicTo(cx - unit * 0.22f, cy + unit * 0.16f,
+                        cx - unit * 0.28f, cy - unit * 0.10f, cx, cy - unit * 0.27f);
+                canvas.drawPath(leaf, paint);
+                paint.setColor(Color.argb(150, 136, 66, 36));
+                paint.setStrokeWidth(unit * 0.035f);
+                canvas.drawLine(cx - unit * 0.12f, cy + unit * 0.18f,
+                        cx + unit * 0.12f, cy - unit * 0.15f, paint);
+            } else {
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(unit * 0.055f);
+                for (int i = 0; i < 3; i++) {
+                    double angle = i * Math.PI / 3.0;
+                    float dx = (float) Math.cos(angle) * unit * 0.27f;
+                    float dy = (float) Math.sin(angle) * unit * 0.27f;
+                    canvas.drawLine(cx - dx, cy - dy, cx + dx, cy + dy, paint);
+                }
+                paint.setStyle(Paint.Style.FILL);
+            }
+
+            // Small magnifier: this icon is also the long-press preview affordance.
+            float previewCx = bounds.right - unit * 0.16f;
+            float previewCy = bounds.bottom - unit * 0.17f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.argb(205, 35, 61, 91));
+            canvas.drawCircle(previewCx, previewCy, unit * 0.125f, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(dp(1.2f), unit * 0.025f));
+            paint.setColor(Color.WHITE);
+            canvas.drawCircle(previewCx - unit * 0.018f, previewCy - unit * 0.018f,
+                    unit * 0.050f, paint);
+            canvas.drawLine(previewCx + unit * 0.020f, previewCy + unit * 0.020f,
+                    previewCx + unit * 0.075f, previewCy + unit * 0.075f, paint);
+
+            paint.setStrokeWidth(dp(selected ? 2f : 1f));
+            paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class GraceEffectIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int effect;
+        private final boolean selected;
+        private final Drawable iconDrawable;
+
+        GraceEffectIconView(int effect, boolean selected) {
+            super(ControlActivity.this);
+            this.effect = effect;
+            this.selected = selected;
+            int iconResId = effectIconResId(effect);
+            this.iconDrawable = iconResId == 0
+                    ? null
+                    : getResources().getDrawable(iconResId);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = dp(1.5f);
+            RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            if (iconDrawable != null) {
+                iconDrawable.setBounds(
+                        Math.round(bounds.left),
+                        Math.round(bounds.top),
+                        Math.round(bounds.right),
+                        Math.round(bounds.bottom));
+                iconDrawable.draw(canvas);
+                return;
+            }
             float radius = Math.min(getWidth(), getHeight()) * 0.27f;
             int accent = effectAccentColor(effect);
             int deep = blendColor(COLOR_GRACE_NAVY, accent, 0.54f);
@@ -3384,69 +3922,6 @@ public class ControlActivity extends Activity {
             paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
             canvas.drawRoundRect(bounds, radius, radius, paint);
             paint.setStyle(Paint.Style.FILL);
-        }
-    }
-
-    private final class GraceDoodleArtView extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private long animationStartedAt;
-
-        GraceDoodleArtView() {
-            super(ControlActivity.this);
-            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        }
-
-        @Override
-        protected void onAttachedToWindow() {
-            super.onAttachedToWindow();
-            animationStartedAt = SystemClock.uptimeMillis();
-            postInvalidateOnAnimation();
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            long elapsed = Math.max(0L, SystemClock.uptimeMillis() - animationStartedAt);
-            float reveal = Math.min(1f, elapsed / 800f);
-            float unit = Math.min(getWidth(), getHeight());
-            float cx = getWidth() - unit * 0.48f;
-            float cy = getHeight() * 0.50f;
-
-            paint.setStyle(Paint.Style.FILL);
-            paint.setShader(new RadialGradient(cx, cy, unit * 0.48f,
-                    new int[] {Color.argb(Math.round(130 * reveal), 255, 255, 255), Color.TRANSPARENT},
-                    null,
-                    Shader.TileMode.CLAMP));
-            canvas.drawCircle(cx, cy, unit * 0.48f, paint);
-            paint.setShader(null);
-
-            float orbit = unit * 0.25f;
-            int[] colors = {
-                    Color.rgb(255, 106, 157),
-                    Color.rgb(255, 178, 47),
-                    Color.rgb(73, 197, 145),
-                    Color.rgb(104, 122, 225)
-            };
-            for (int i = 0; i < colors.length; i++) {
-                double angle = -Math.PI * 0.5 + i * Math.PI * 0.5;
-                paint.setColor(colors[i]);
-                canvas.drawCircle(
-                        cx + (float) Math.cos(angle) * orbit,
-                        cy + (float) Math.sin(angle) * orbit,
-                        unit * 0.075f * reveal,
-                        paint);
-            }
-            paint.setColor(Color.WHITE);
-            canvas.drawCircle(cx, cy, unit * 0.115f * reveal, paint);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(2));
-            paint.setColor(Color.argb(Math.round(180 * reveal), 62, 76, 122));
-            canvas.drawCircle(cx, cy, unit * 0.115f * reveal, paint);
-            paint.setStyle(Paint.Style.FILL);
-
-            if (elapsed < 1250L) {
-                postInvalidateOnAnimation();
-            }
         }
     }
 

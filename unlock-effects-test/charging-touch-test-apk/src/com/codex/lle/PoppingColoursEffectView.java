@@ -473,7 +473,7 @@ public class PoppingColoursEffectView extends FrameLayout
     }
 
     private void play(int soundId, float volume) {
-        if (soundId != 0) {
+        if (soundId != 0 && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             soundPool.play(soundId, volume, volume, 0, 0, 1f);
         }
     }

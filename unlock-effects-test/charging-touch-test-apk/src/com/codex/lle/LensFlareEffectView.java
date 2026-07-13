@@ -725,7 +725,8 @@ public class LensFlareEffectView extends FrameLayout
     }
 
     private void play(int soundId) {
-        if (!destroyed && soundId != 0) {
+        if (!destroyed && soundId != 0
+                && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
         }
     }

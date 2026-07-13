@@ -6,16 +6,51 @@ import android.graphics.Rect;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
 final class OverlayPrefs {
+    private static volatile long cachedEpochMinute = Long.MIN_VALUE;
+    private static volatile int cachedMinuteOfDay;
     static final String PREFS = "overlay_prefs";
     static final String MASTER_ENABLED = "master_enabled";
-    static final String SHOW_LOCK = "show_lock";
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
     static final String SHOW_DOODLE = "show_doodle";
     static final String SEASONAL_UNLOCK_PARTNER = "seasonal_unlock_partner";
+    static final String UNLOCK_EFFECT_TIME_ENABLED = "unlock_effect_time_enabled";
+    static final String UNLOCK_EFFECT_TIME_START = "unlock_effect_time_start";
+    static final String UNLOCK_EFFECT_TIME_END = "unlock_effect_time_end";
+    static final String UNLOCK_EFFECT_SOUND_ENABLED = "unlock_effect_sound_enabled";
+    static final String UNLOCK_EFFECT_SOUND_TIME_ENABLED =
+            "unlock_effect_sound_time_enabled";
+    static final String UNLOCK_EFFECT_SOUND_TIME_START = "unlock_effect_sound_time_start";
+    static final String UNLOCK_EFFECT_SOUND_TIME_END = "unlock_effect_sound_time_end";
+    static final String LOCK_SOUND_TIME_ENABLED = "lock_sound_time_enabled";
+    static final String LOCK_SOUND_TIME_START = "lock_sound_time_start";
+    static final String LOCK_SOUND_TIME_END = "lock_sound_time_end";
+    static final String DOODLE_TIME_ENABLED = "doodle_time_enabled";
+    static final String DOODLE_TIME_START = "doodle_time_start";
+    static final String DOODLE_TIME_END = "doodle_time_end";
+    static final String SEASONAL_UNLOCK_PARTNER_TIME_ENABLED =
+            "seasonal_unlock_partner_time_enabled";
+    static final String SEASONAL_UNLOCK_PARTNER_TIME_START =
+            "seasonal_unlock_partner_time_start";
+    static final String SEASONAL_UNLOCK_PARTNER_TIME_END =
+            "seasonal_unlock_partner_time_end";
+    static final String SEASONAL_UNLOCK_PARTNER_SOUND_ENABLED =
+            "seasonal_unlock_partner_sound_enabled";
+    static final String SEASONAL_UNLOCK_PARTNER_SOUND_TIME_ENABLED =
+            "seasonal_unlock_partner_sound_time_enabled";
+    static final String SEASONAL_UNLOCK_PARTNER_SOUND_TIME_START =
+            "seasonal_unlock_partner_sound_time_start";
+    static final String SEASONAL_UNLOCK_PARTNER_SOUND_TIME_END =
+            "seasonal_unlock_partner_sound_time_end";
+    static final String DOODLE_LOCK_SOUND_ENABLED = "doodle_lock_sound_enabled";
+    static final String DOODLE_LOCK_SOUND_TIME_ENABLED =
+            "doodle_lock_sound_time_enabled";
+    static final String DOODLE_LOCK_SOUND_TIME_START = "doodle_lock_sound_time_start";
+    static final String DOODLE_LOCK_SOUND_TIME_END = "doodle_lock_sound_time_end";
     static final String SEASON_MODE = "season_mode";
     static final String DOODLE_SIZE_PERCENT = "doodle_size_percent";
     static final String POSITION_OFFSET_X = "position_offset_x";
@@ -85,7 +120,11 @@ final class OverlayPrefs {
     static final int EFFECT_S4_GEOMETRIC_MOSAIC = 8;
     static final int EFFECT_N5_COLOUR_DROPLET_GYRO = 9;
     static final int EFFECT_S3_RIPPLE_NATIVE = 10;
-    static final int EFFECT_COUNT = 11;
+    static final int EFFECT_TABS_BLIND_WIP = 11;
+    static final int EFFECT_N3_INK_IN_WATER_WIP = 12;
+    static final int EFFECT_COUNT = 13;
+    static final int DEFAULT_TIME_START_MINUTE = 0;
+    static final int DEFAULT_TIME_END_MINUTE = 0;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
@@ -111,10 +150,6 @@ final class OverlayPrefs {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    static boolean showLock(Context context) {
-        return get(context).getBoolean(SHOW_LOCK, true);
-    }
-
     static boolean masterEnabled(Context context) {
         return get(context).getBoolean(MASTER_ENABLED, true);
     }
@@ -133,6 +168,110 @@ final class OverlayPrefs {
 
     static boolean seasonalUnlockPartner(Context context) {
         return get(context).getBoolean(SEASONAL_UNLOCK_PARTNER, true);
+    }
+
+    static boolean unlockEffectAllowedNow(Context context) {
+        return unlockEffectEnabled(context)
+                && isImplementedEffect(unlockEffect(context))
+                && timeWindowAllows(context,
+                UNLOCK_EFFECT_TIME_ENABLED,
+                UNLOCK_EFFECT_TIME_START,
+                UNLOCK_EFFECT_TIME_END);
+    }
+
+    static boolean unlockEffectSoundAllowedNow(Context context) {
+        return get(context).getBoolean(UNLOCK_EFFECT_SOUND_ENABLED, true)
+                && timeWindowAllows(context,
+                UNLOCK_EFFECT_SOUND_TIME_ENABLED,
+                UNLOCK_EFFECT_SOUND_TIME_START,
+                UNLOCK_EFFECT_SOUND_TIME_END);
+    }
+
+    static boolean lockscreenLockSoundAllowedNow(Context context) {
+        return lockSoundEnabled(context) && timeWindowAllows(context,
+                LOCK_SOUND_TIME_ENABLED,
+                LOCK_SOUND_TIME_START,
+                LOCK_SOUND_TIME_END);
+    }
+
+    static boolean doodleAllowedNow(Context context) {
+        return showDoodle(context) && timeWindowAllows(context,
+                DOODLE_TIME_ENABLED,
+                DOODLE_TIME_START,
+                DOODLE_TIME_END);
+    }
+
+    static boolean seasonalUnlockPartnerAllowedNow(Context context) {
+        return seasonalUnlockPartner(context) && timeWindowAllows(context,
+                SEASONAL_UNLOCK_PARTNER_TIME_ENABLED,
+                SEASONAL_UNLOCK_PARTNER_TIME_START,
+                SEASONAL_UNLOCK_PARTNER_TIME_END);
+    }
+
+    static boolean seasonalUnlockPartnerSoundAllowedNow(Context context) {
+        return get(context).getBoolean(SEASONAL_UNLOCK_PARTNER_SOUND_ENABLED, true)
+                && timeWindowAllows(context,
+                SEASONAL_UNLOCK_PARTNER_SOUND_TIME_ENABLED,
+                SEASONAL_UNLOCK_PARTNER_SOUND_TIME_START,
+                SEASONAL_UNLOCK_PARTNER_SOUND_TIME_END);
+    }
+
+    static boolean doodleLockSoundAllowedNow(Context context) {
+        return get(context).getBoolean(DOODLE_LOCK_SOUND_ENABLED, true)
+                && timeWindowAllows(context,
+                DOODLE_LOCK_SOUND_TIME_ENABLED,
+                DOODLE_LOCK_SOUND_TIME_START,
+                DOODLE_LOCK_SOUND_TIME_END);
+    }
+
+    static boolean hasRuntimeSurfaceTimeWindow(Context context) {
+        SharedPreferences prefs = get(context);
+        return prefs.getBoolean(UNLOCK_EFFECT_TIME_ENABLED, false)
+                || prefs.getBoolean(DOODLE_TIME_ENABLED, false)
+                || prefs.getBoolean(SEASONAL_UNLOCK_PARTNER_TIME_ENABLED, false);
+    }
+
+    static boolean timeWindowAllows(Context context, String enabledKey,
+            String startKey, String endKey) {
+        SharedPreferences prefs = get(context);
+        if (!prefs.getBoolean(enabledKey, false)) {
+            return true;
+        }
+        return isMinuteInWindow(currentMinuteOfDay(),
+                timeMinute(prefs, startKey, DEFAULT_TIME_START_MINUTE),
+                timeMinute(prefs, endKey, DEFAULT_TIME_END_MINUTE));
+    }
+
+    private static int currentMinuteOfDay() {
+        long epochMinute = System.currentTimeMillis() / 60_000L;
+        if (cachedEpochMinute != epochMinute) {
+            Calendar calendar = Calendar.getInstance();
+            cachedMinuteOfDay = calendar.get(Calendar.HOUR_OF_DAY) * 60
+                    + calendar.get(Calendar.MINUTE);
+            cachedEpochMinute = epochMinute;
+        }
+        return cachedMinuteOfDay;
+    }
+
+    static boolean isMinuteInWindow(int nowMinute, int startMinute, int endMinute) {
+        int now = clampTimeMinute(nowMinute);
+        int start = clampTimeMinute(startMinute);
+        int end = clampTimeMinute(endMinute);
+        if (start == end) {
+            return true;
+        }
+        if (start < end) {
+            return now >= start && now < end;
+        }
+        return now >= start || now < end;
+    }
+
+    static int timeMinute(SharedPreferences preferences, String key, int defaultValue) {
+        return clampTimeMinute(preferences.getInt(key, defaultValue));
+    }
+
+    static int clampTimeMinute(int minute) {
+        return Math.max(0, Math.min((24 * 60) - 1, minute));
     }
 
     static int seasonMode(Context context) {
@@ -196,7 +335,9 @@ final class OverlayPrefs {
                 && effect != EFFECT_S4_ABSTRACT_TILES
                 && effect != EFFECT_S4_GEOMETRIC_MOSAIC
                 && effect != EFFECT_N5_COLOUR_DROPLET_GYRO
-                && effect != EFFECT_S3_RIPPLE_NATIVE) {
+                && effect != EFFECT_S3_RIPPLE_NATIVE
+                && effect != EFFECT_TABS_BLIND_WIP
+                && effect != EFFECT_N3_INK_IN_WATER_WIP) {
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
@@ -222,6 +363,10 @@ final class OverlayPrefs {
                 return "N4 Geometric Mosaic";
             case EFFECT_S3_RIPPLE_NATIVE:
                 return "S3 Ripple";
+            case EFFECT_TABS_BLIND_WIP:
+                return "TabS Blind (WIP)";
+            case EFFECT_N3_INK_IN_WATER_WIP:
+                return "N3 Ink in Water (WIP)";
             default:
                 return "Unknown effect " + effect;
         }
@@ -230,6 +375,11 @@ final class OverlayPrefs {
     static boolean isColourDropletEffect(int effect) {
         return effect == EFFECT_N5_COLOUR_DROPLET
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO;
+    }
+
+    static boolean isImplementedEffect(int effect) {
+        return effect != EFFECT_TABS_BLIND_WIP
+                && effect != EFFECT_N3_INK_IN_WATER_WIP;
     }
 
     static boolean effectBackgroundAutoRefreshEnabled(Context context) {
