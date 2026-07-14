@@ -416,6 +416,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int unlockEffectBenchmarkOriginalEffect;
     private int candidateWakeGeneration;
     private int lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
+    private int unlockEffectRendererDisplayWidth;
+    private int unlockEffectRendererDisplayHeight;
     private StringBuilder unlockEffectBenchmarkCsv;
 
     private final DisplayManager.DisplayListener displayListener =
@@ -433,6 +435,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     if (displayId != Display.DEFAULT_DISPLAY) {
                         return;
                     }
+                    markNote5RendererStaleForDisplaySize();
                     scheduleCandidateWakeRefreshes("display_changed");
                 }
             };
@@ -1441,6 +1444,40 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR;
     }
 
+    private boolean isRecreatableNativeEffect(int effect) {
+        return isSamsungLockBgEffect(effect)
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES;
+    }
+
+    private void markNote5RendererStaleForDisplaySize() {
+        int effect = unlockEffectRendererType;
+        if (effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
+                && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+            return;
+        }
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int width = Math.max(1, metrics.widthPixels);
+        int height = Math.max(1, metrics.heightPixels);
+        if (unlockEffectRendererDisplayWidth <= 0 || unlockEffectRendererDisplayHeight <= 0) {
+            unlockEffectRendererDisplayWidth = width;
+            unlockEffectRendererDisplayHeight = height;
+            return;
+        }
+        if (width == unlockEffectRendererDisplayWidth
+                && height == unlockEffectRendererDisplayHeight) {
+            return;
+        }
+        unlockEffectRendererNeedsRecreate = true;
+        unlockEffectRendererRecreateReason = "display_size:"
+                + unlockEffectRendererDisplayWidth + "x" + unlockEffectRendererDisplayHeight
+                + "->" + width + "x" + height;
+        Log.i(TAG, "native Note 5 renderer marked stale reason="
+                + unlockEffectRendererRecreateReason + " type=" + effect);
+    }
+
     private boolean shouldParkUnlockEffectOverlayWhenIdle() {
         // The patched LockBG renderer has no fullscreen background pass and naturally
         // switches itself to RENDERMODE_WHEN_DIRTY. Keeping its Surface visible while the
@@ -2086,7 +2123,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
         if (unlockEffectRenderer != null && unlockEffectRendererType == effect) {
-            if (!unlockEffectRendererNeedsRecreate || !isSamsungLockBgEffect(effect)) {
+            if (!unlockEffectRendererNeedsRecreate || !isRecreatableNativeEffect(effect)) {
                 return;
             }
             if (!canRecreateStaleLockBgRenderer()) {
@@ -2111,17 +2148,63 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new LensFlareEffectView(this);
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
                 unlockEffectRenderer = new PoppingColoursEffectView(this);
+            } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
+                ColourDropletEffectView renderer = new ColourDropletEffectView(this, false);
+                if (!renderer.isReady()) {
+                    renderer.destroy();
+                    throw new IllegalStateException("Colour Droplet native renderer unavailable");
+                }
+                unlockEffectRenderer = renderer;
+            } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO) {
+                ColourDropletEffectView renderer = new ColourDropletEffectView(this, true);
+                if (!renderer.isReady()) {
+                    renderer.destroy();
+                    throw new IllegalStateException("Colour Droplet + Gyro native renderer unavailable");
+                }
+                unlockEffectRenderer = renderer;
+            } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+                SparklingBubblesEffectView renderer = new SparklingBubblesEffectView(this);
+                if (!renderer.isReady()) {
+                    renderer.destroy();
+                    throw new IllegalStateException("Sparkling Bubbles native renderer unavailable");
+                }
+                unlockEffectRenderer = renderer;
             } else {
                 unlockEffectRenderer = null;
             }
         } catch (Throwable t) {
             Log.e(TAG, "unlock effect renderer preload failed type=" + effect, t);
+            if (unlockEffectRenderer != null) {
+                try {
+                    unlockEffectRenderer.destroy();
+                } catch (Throwable destroyError) {
+                    Log.d(TAG, "failed renderer cleanup ignored", destroyError);
+                }
+            }
             unlockEffectRenderer = null;
             unlockEffectView = null;
             unlockEffectRendererType = -1;
             unlockEffectRendererNeedsRecreate = false;
             unlockEffectRendererRecreateReason = "";
-            return;
+            if (effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                    && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
+                    && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+                return;
+            }
+            effect = OverlayPrefs.EFFECT_S4_LENS_FLARE;
+            OverlayPrefs.get(this).edit()
+                    .putInt(OverlayPrefs.UNLOCK_EFFECT, effect)
+                    .apply();
+            unlockEffectRendererType = effect;
+            try {
+                unlockEffectRenderer = new LensFlareEffectView(this);
+                Log.w(TAG, "native Note 5 renderer fell back to Lens Flare");
+            } catch (Throwable fallbackError) {
+                Log.e(TAG, "Lens Flare fallback failed", fallbackError);
+                unlockEffectRenderer = null;
+                unlockEffectRendererType = -1;
+                return;
+            }
         }
         if (unlockEffectRenderer == null) {
             unlockEffectRenderer = null;
@@ -2145,6 +2228,16 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectRendererNeedsRecreate = false;
             unlockEffectRendererRecreateReason = "";
             return;
+        }
+        if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            unlockEffectRendererDisplayWidth = Math.max(1, metrics.widthPixels);
+            unlockEffectRendererDisplayHeight = Math.max(1, metrics.heightPixels);
+        } else {
+            unlockEffectRendererDisplayWidth = 0;
+            unlockEffectRendererDisplayHeight = 0;
         }
         long cacheStartedAt = SystemClock.uptimeMillis();
         loadCachedUnlockEffectBackgroundSourceIfNeeded(effect);
@@ -3803,6 +3896,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectGestureActive = false;
         unlockEffectRendererNeedsRecreate = false;
         unlockEffectRendererRecreateReason = "";
+        unlockEffectRendererDisplayWidth = 0;
+        unlockEffectRendererDisplayHeight = 0;
     }
 
     private void scheduleNativePhysicsPostDestroyGc(final int effect) {

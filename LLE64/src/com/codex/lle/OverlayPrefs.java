@@ -321,10 +321,7 @@ final class OverlayPrefs {
 
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
-        // LLE64 starts from renderers that do not depend on the legacy ARMv7
-        // libraries. Preserve the old ids for future ports, but never select one
-        // until an AArch64 implementation has been audited and enabled here.
-        if (effect != EFFECT_S4_LENS_FLARE && effect != EFFECT_S5_POPPING_COLOURS) {
+        if (!isImplementedEffect(effect)) {
             get(context).edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
             return EFFECT_S4_LENS_FLARE;
         }
@@ -367,7 +364,10 @@ final class OverlayPrefs {
 
     static boolean isImplementedEffect(int effect) {
         return effect == EFFECT_S4_LENS_FLARE
-                || effect == EFFECT_S5_POPPING_COLOURS;
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_N5_COLOUR_DROPLET
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == EFFECT_N5_SPARKLING_BUBBLES;
     }
 
     static boolean effectBackgroundAutoRefreshEnabled(Context context) {

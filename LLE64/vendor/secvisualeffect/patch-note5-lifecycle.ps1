@@ -194,7 +194,7 @@ $outputFullPath = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $outputFullPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 Run-Java "org.jf.smali.Main" @(
-    "assemble", $stage, "--output", $outputFullPath
+    "assemble", "--jobs", "1", $stage, "--output", $outputFullPath
 )
 
 New-Item -ItemType Directory -Force -Path $verifyStage | Out-Null

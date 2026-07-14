@@ -14,8 +14,14 @@ Common `DT_NEEDED`:
 - Android public/runtime libraries: `libEGL.so`, `libGLESv2.so`, `libandroid.so`, `libc.so`, `libjnigraphics.so`, `liblog.so`, `libm.so`, `libz.so`.
 - C++ dependencies: `libstdc++.so` and `libstlport.so`.
 
-## Current blocker
+## Blocker resolution
 
-No AArch64 `libstlport.so` was found in the repository/dumps; every discovered `libstlport.so` is ARM32 (`EM_ARM`). Therefore these two candidates are **not yet packageable** on the Fold7. Next step is to enumerate their unresolved STLport symbols and determine whether a narrow AArch64 compatibility shim is sufficient or whether the engine must be relinked/reimplemented.
+The matching AOJ4 firmware was later supplied and contains an authentic
+AArch64 `libstlport.so` (SHA-256
+`821B11D1EA2E1853D0DE0F547F9FE224100AAA53A500F69441765BB089615CCA`).
+Both renderers now load and run with that library on the Fold7; no compatibility
+shim is used. See `reverse/note5-arm64-candidates/FIRMWARE-AUDIT.md` and
+`RUNTIME-PROBE.md` for the extraction and device results.
 
-Confidence: ELF architecture and dependencies `CONFIRMED`; runtime compatibility `UNRESOLVED`.
+Confidence: ELF architecture, dependencies and Fold7 runtime compatibility
+`CONFIRMED`. Public redistribution rights remain outside this technical audit.

@@ -150,6 +150,16 @@ public class ColourDropletEffectView extends FrameLayout
                 : "N5 Colored Droplet";
     }
 
+    boolean isReady() {
+        return ready
+                && !destroyed
+                && (!gyroEnabled
+                || (sensorManager != null
+                && accelerometer != null
+                && sensorJniRenderer != null
+                && nativeOnSensorEvent != null));
+    }
+
     @Override
     public void beginGesture(float screenX, float screenY) {
         if (!canRender()) {

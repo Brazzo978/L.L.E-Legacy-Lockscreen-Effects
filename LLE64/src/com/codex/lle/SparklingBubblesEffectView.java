@@ -146,6 +146,10 @@ public class SparklingBubblesEffectView extends FrameLayout
         return "N5 Sparkling Bubbles";
     }
 
+    boolean isReady() {
+        return ready && !destroyed;
+    }
+
     @Override
     public void beginGesture(float screenX, float screenY) {
         if (!canRender()) {

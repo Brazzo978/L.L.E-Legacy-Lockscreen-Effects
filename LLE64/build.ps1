@@ -25,6 +25,8 @@ $buildTools = Join-Path $sdk "build-tools\35.0.1"
 $platform = Join-Path $sdk "platforms\android-35\android.jar"
 $clang = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android23-clang.cmd"
 $readelf = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe"
+$objdump = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-objdump.exe"
+$strings = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strings.exe"
 
 $out = Join-Path $root "build"
 $classes = Join-Path $out "classes"
@@ -105,12 +107,10 @@ Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--min-api", "23", "-
 Copy-Item $unsigned $assembled
 Run "jar.exe" @("uf", $assembled, "-C", $dex, "classes.dex")
 $samsungDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
-if ($IncludeNote5Probe) {
-    $boundedSamsungDex = Join-Path $out "classes-note5-bounded.dex"
-    & (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
-        -OutputPath $boundedSamsungDex
-    $samsungDex = $boundedSamsungDex
-}
+$boundedSamsungDex = Join-Path $out "classes-note5-bounded.dex"
+& (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
+    -OutputPath $boundedSamsungDex
+$samsungDex = $boundedSamsungDex
 if (-not (Test-Path $samsungDex)) {
     throw "Missing Samsung visual-effect dex: $samsungDex"
 }
@@ -128,18 +128,64 @@ if ($LASTEXITCODE -ne 0 -or ($markerHeader -join "`n") -notmatch "Machine:\s+AAr
     throw "ARM64 marker verification failed"
 }
 
-if ($IncludeNote5Probe) {
-    $candidateRoot = Join-Path $root "reference\arm64-candidates\note5-aoj4"
-    foreach ($library in @(
-        "libColourDropletEffect.so",
-        "libSparklingBubblesEffect.so",
-        "libstlport.so"
-    )) {
-        $candidate = Join-Path $candidateRoot $library
-        if (-not (Test-Path $candidate)) {
-            throw "Missing Note 5 ARM64 candidate: $candidate"
-        }
-        Copy-Item $candidate (Join-Path $arm64Stage $library) -Force
+$candidateRoot = Join-Path $root "reference\arm64-candidates\note5-aoj4"
+$stableNote5Hashes = @{
+    "libColourDropletEffect.so" = "634DC703FF9288A4961B3E636B83DD89DDBF86DF6087D624DC19B4231E6C010C"
+    "libSparklingBubblesEffect.so" = "F96E287CD20B411A863D07D012631FA61761FC35AEC50D4B4A4B454577B2C944"
+    "libstlport.so" = "821B11D1EA2E1853D0DE0F547F9FE224100AAA53A500F69441765BB089615CCA"
+}
+foreach ($library in @(
+    "libColourDropletEffect.so",
+    "libSparklingBubblesEffect.so",
+    "libstlport.so"
+)) {
+    $candidate = Join-Path $candidateRoot $library
+    if (-not (Test-Path $candidate)) {
+        throw "Missing stable Note 5 ARM64 library: $candidate"
+    }
+    $candidateHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+    if ($candidateHash -ne $stableNote5Hashes[$library]) {
+        throw "Unexpected SHA-256 for $library`: $candidateHash"
+    }
+    $header = (& $readelf -h $candidate) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $header -notmatch "Machine:\s+AArch64") {
+        throw "$library is not an AArch64 ELF"
+    }
+    $dynamic = (& $readelf -d $candidate) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or
+            $dynamic -notmatch "SONAME.*\[$([regex]::Escape($library))\]") {
+        throw "$library has an unexpected or missing SONAME"
+    }
+    if ($library -ne "libstlport.so" -and $dynamic -notmatch "NEEDED.*\[libstlport\.so\]") {
+        throw "$library no longer declares libstlport.so"
+    }
+    $stagedLibrary = Join-Path $arm64Stage $library
+    Copy-Item $candidate $stagedLibrary -Force
+    if ((Get-FileHash -LiteralPath $stagedLibrary -Algorithm SHA256).Hash -ne $candidateHash) {
+        throw "Staged copy hash mismatch for $library"
+    }
+}
+$note5PatchScript = Join-Path $root `
+        "vendor\native-patches\patch-note5-arm64-transparency.ps1"
+& $note5PatchScript `
+        -ReferenceDirectory $candidateRoot `
+        -StagedDirectory $arm64Stage `
+        -ReadElfPath $readelf `
+        -ObjdumpPath $objdump `
+        -StringsPath $strings
+if ($LASTEXITCODE -ne 0) {
+    throw "Note 5 ARM64 transparency patch failed with exit code $LASTEXITCODE"
+}
+$stableNote5StagedHashes = @{
+    "libColourDropletEffect.so" = "38FFB25ADAA178D96B981C3EC0D616EC86B2F73EC5EBDDE8437E02D610D19EE4"
+    "libSparklingBubblesEffect.so" = "B96EC92493477AF9F9958A8B7A6466BB4EDD5195145D47F339BB68A9C8552FC0"
+    "libstlport.so" = "821B11D1EA2E1853D0DE0F547F9FE224100AAA53A500F69441765BB089615CCA"
+}
+foreach ($library in $stableNote5StagedHashes.Keys) {
+    $stagedHash = (Get-FileHash -LiteralPath (Join-Path $arm64Stage $library) `
+            -Algorithm SHA256).Hash
+    if ($stagedHash -ne $stableNote5StagedHashes[$library]) {
+        throw "Unexpected staged SHA-256 for $library`: $stagedHash"
     }
 }
 if ($IncludeRippleCoreProbe) {
@@ -176,14 +222,12 @@ Run (Join-Path $buildTools "apksigner.bat") @("verify", "--verbose", $signed)
 
 $entries = @(& "jar.exe" tf $signed)
 $nativeEntries = @($entries | Where-Object { $_ -like "lib/*" -and -not $_.EndsWith("/") })
-$expectedNativeEntries = @("lib/arm64-v8a/liblle64marker.so")
-if ($IncludeNote5Probe) {
-    $expectedNativeEntries += @(
-        "lib/arm64-v8a/libColourDropletEffect.so",
-        "lib/arm64-v8a/libSparklingBubblesEffect.so",
-        "lib/arm64-v8a/libstlport.so"
-    )
-}
+$expectedNativeEntries = @(
+    "lib/arm64-v8a/liblle64marker.so",
+    "lib/arm64-v8a/libColourDropletEffect.so",
+    "lib/arm64-v8a/libSparklingBubblesEffect.so",
+    "lib/arm64-v8a/libstlport.so"
+)
 if ($IncludeRippleCoreProbe) {
     $expectedNativeEntries += "lib/arm64-v8a/libWaterRipple.so"
 }
@@ -196,9 +240,7 @@ if ($entries -match "armeabi|x86") {
 }
 
 Write-Host "Built ARM64-only APK: $signed"
-if ($IncludeNote5Probe) {
-    Write-Warning "Probe build contains proprietary Samsung firmware libraries; keep it test-only."
-}
+Write-Warning "APK contains proprietary Samsung Note 5 firmware libraries."
 if ($IncludeRippleCoreProbe) {
     Write-Warning "Probe build contains only the Water Ripple core JNI subset; GPU methods are intentionally absent."
 }

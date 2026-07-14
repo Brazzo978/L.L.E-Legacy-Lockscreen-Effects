@@ -2,15 +2,24 @@
 
 Baseline ARM64 separata di **Legacy Lockscreen Effects**, package `com.codex.lle`.
 
-## Stato iniziale
+## Stato
 
 - S4 Lens Flare: attivo, renderer Java/Canvas app-owned.
 - S5 Popping Colours: attivo, renderer Samsung dex senza dipendenze `.so` legacy.
-- Water Ripple, Watercolor, Abstract Tiles e Geometric Mosaic: disattivati finché il port AArch64 non è verificato.
-- N5 Colour Droplet e Sparkling Bubbles: librerie AArch64 e STLport originali AOJ4 conservate in `reference/arm64-candidates`; entrambe superano JNI, EGL/GLES, input, reset e destroy sul Fold7. Restano fuori dall'APK stabile finche compositing dello sfondo, stress del lifecycle e vincoli di distribuzione non sono chiusi.
-- Tutte le librerie ARMv7 sono conservate intatte in `reference/arm32-original` e non partecipano alla build.
+- N5 Colored Droplet e Sparkling Bubbles: attivi nella build stabile ARM64. Usano il dex Samsung con teardown bounded e le librerie AArch64/STLport originali AOJ4, patchate in staging per comporre soltanto le particelle sopra la SystemUI reale.
+- N5 Colored Droplet + Gyro: attivo; riusa il renderer trasparente Droplet e inoltra l'accelerometro al bridge JNI soltanto mentre il lockscreen è attivo.
+- Water Ripple: core JNI e pipeline GLES2 ARM64 verificati sul Fold7; integrazione lifecycle/JNI completa ancora in corso e non inclusa nell'APK stabile.
+- Watercolor, Abstract Tiles e Geometric Mosaic: disattivati finché il port AArch64 non è verificato.
+- Tutte le librerie ARMv7 restano intatte in `reference/arm32-original` e non partecipano alla build.
 
-L'APK contiene una sola libreria nativa, `lib/arm64-v8a/liblle64marker.so`. Il marker viene caricato dal servizio di accessibilità e rende esplicito/fail-fast il vincolo ARM64.
+La build stabile contiene esclusivamente queste librerie sotto `lib/arm64-v8a`:
+
+- `liblle64marker.so`
+- `libColourDropletEffect.so`
+- `libSparklingBubblesEffect.so`
+- `libstlport.so`
+
+Le copie firmware sotto `reference/` non vengono modificate. `build.ps1` ne verifica gli hash, le copia nella directory temporanea e applica le patch di trasparenza soltanto alle copie staged. La build verifica inoltre AArch64, SONAME, dipendenze, opcode/GLSL patched ed elenco esatto delle entry native dell'APK.
 
 ## Build
 
@@ -20,26 +29,20 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 Output: `build\LLE64-debug.apk`.
 
-La build stabile fallisce se trova una libreria `armeabi-v7a`/x86 o una voce nativa diversa dal marker AArch64.
-
-Sono disponibili due build sperimentali riproducibili e separate:
+Probe Water Ripple core isolato:
 
 ```powershell
-# Test delle librerie Note 5 con la STLport ARM64 originale del firmware AOJ4.
-powershell -ExecutionPolicy Bypass -File .\build.ps1 -IncludeNote5Probe
-
-# Solo test ART dei metodi ARM64 initWaters/ripple/move.
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -IncludeRippleCoreProbe
 ```
 
-Il probe Note 5 ricostruisce un `classes2.dex` temporaneo con teardown Samsung
-bounded a 2000 ms; il dex vendor originale resta intatto. Le librerie firmware
-sono proprietarie e il relativo APK e esclusivamente test-only.
+`-IncludeNote5Probe` produce ancora un APK di diagnostica con la probe Activity esportata, ma usa gli stessi renderer N5 ARM64 e lo stesso dex bounded della build stabile.
 
-Il port Water Ripple in `ports/water-ripple` ha superato sia il test nativo AArch64
-sia il test JNI dentro ART. Non e ancora selezionabile: rendering GLES e texture
-devono essere completati e verificati prima dell'integrazione.
-
-## Dispositivo verificato
+## Verifica Fold7
 
 Galaxy Z Fold7 `SM-F966B`, Android 16/API 36: `arm64-v8a`, `zygote64`, nessuna ABI a 32 bit.
+
+Colored Droplet, Droplet + Gyro e Sparkling Bubbles hanno superato load JNI, EGL/GLES, input, reset, destroy, park/resume e verifica visiva trasparente sopra il lockscreen reale. Per Gyro sono stati osservati campioni accelerometro reali e quattro coppie register/unregister pulite. L'APK installato riporta `primaryCpuAbi=arm64-v8a`; durante i cicli schermo non sono stati osservati crash, errori EGL/JNI o timeout GL nel processo LLE.
+
+## Distribuzione
+
+Le tre librerie Note 5 derivano da firmware Samsung e sono proprietarie. La build è tecnicamente valida per test privato/locale; una distribuzione pubblica richiede una decisione separata sui diritti di redistribuzione.

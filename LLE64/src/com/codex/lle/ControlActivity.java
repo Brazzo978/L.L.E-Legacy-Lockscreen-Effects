@@ -1457,6 +1457,21 @@ public class ControlActivity extends Activity {
                 "Samsung dex renderer with screenshot-backed color map; no legacy .so required.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
+        effects.addView(effectOption(
+                "N5 Colored Droplet",
+                "Original Note 5 ARM64 renderer; the live lockscreen is sampled only inside droplets.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                current));
+        effects.addView(effectOption(
+                "N5 Colored Droplet + Gyro",
+                "Original Note 5 ARM64 renderer with accelerometer-driven gravity.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
+                current));
+        effects.addView(effectOption(
+                "N5 Sparkling Bubbles",
+                "Original Note 5 ARM64 renderer; the live lockscreen colors only the particles.",
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                current));
 
         root.addView(effects);
         root.addView(screenshotServiceControls(current));
