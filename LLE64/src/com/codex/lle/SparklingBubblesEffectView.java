@@ -310,17 +310,20 @@ public class SparklingBubblesEffectView extends FrameLayout
         if (destroyed) {
             return;
         }
+        Log.i(TAG, "BEGIN sparkling bubbles destroy");
+        Log.i(TAG, "BEGIN sparkling bubbles reset");
         resetEffect();
+        Log.i(TAG, "END sparkling bubbles reset");
         removeCallbacks(forceDirtyRunnable);
         removeCallbacks(dragSoundFadeRunnable);
         sendScreenTurnedOffCommand();
         destroyed = true;
         soundPool.release();
-        SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
             try {
+                Log.i(TAG, "BEGIN sparkling bubbles removeEffect/detach");
                 removeEffect.invoke(effectView);
-                Log.i(TAG, "sparkling bubbles removeEffect sent after GL shutdown");
+                Log.i(TAG, "END sparkling bubbles removeEffect/detach");
             } catch (Throwable t) {
                 Log.d(TAG, "removeEffect ignored", t);
             }
@@ -335,6 +338,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         externalColorSource = false;
         blurMaskBitmap = null;
         cleanupSamsungState();
+        Log.i(TAG, "END sparkling bubbles destroy");
     }
 
     @Override

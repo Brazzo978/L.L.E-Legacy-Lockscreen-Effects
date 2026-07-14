@@ -105,6 +105,12 @@ Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--min-api", "23", "-
 Copy-Item $unsigned $assembled
 Run "jar.exe" @("uf", $assembled, "-C", $dex, "classes.dex")
 $samsungDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
+if ($IncludeNote5Probe) {
+    $boundedSamsungDex = Join-Path $out "classes-note5-bounded.dex"
+    & (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
+        -OutputPath $boundedSamsungDex
+    $samsungDex = $boundedSamsungDex
+}
 if (-not (Test-Path $samsungDex)) {
     throw "Missing Samsung visual-effect dex: $samsungDex"
 }
@@ -123,15 +129,12 @@ if ($LASTEXITCODE -ne 0 -or ($markerHeader -join "`n") -notmatch "Machine:\s+AAr
 }
 
 if ($IncludeNote5Probe) {
-    $probeRoot = Join-Path $root "tools\dlopen-probe"
     $candidateRoot = Join-Path $root "reference\arm64-candidates\note5-aoj4"
-    Run $clang @(
-        "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror",
-        "-Wl,-soname,libstlport.so",
-        (Join-Path $probeRoot "libstlport_probe_shim.c"),
-        "-o", (Join-Path $arm64Stage "libstlport.so")
-    )
-    foreach ($library in @("libColourDropletEffect.so", "libSparklingBubblesEffect.so")) {
+    foreach ($library in @(
+        "libColourDropletEffect.so",
+        "libSparklingBubblesEffect.so",
+        "libstlport.so"
+    )) {
         $candidate = Join-Path $candidateRoot $library
         if (-not (Test-Path $candidate)) {
             throw "Missing Note 5 ARM64 candidate: $candidate"
@@ -194,7 +197,7 @@ if ($entries -match "armeabi|x86") {
 
 Write-Host "Built ARM64-only APK: $signed"
 if ($IncludeNote5Probe) {
-    Write-Warning "Probe build contains an ABI-incomplete STLport shim; do not distribute."
+    Write-Warning "Probe build contains proprietary Samsung firmware libraries; keep it test-only."
 }
 if ($IncludeRippleCoreProbe) {
     Write-Warning "Probe build contains only the Water Ripple core JNI subset; GPU methods are intentionally absent."

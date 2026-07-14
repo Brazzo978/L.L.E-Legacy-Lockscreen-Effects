@@ -306,16 +306,19 @@ public class ColourDropletEffectView extends FrameLayout
         if (destroyed) {
             return;
         }
+        Log.i(TAG, "BEGIN colour droplet destroy");
+        Log.i(TAG, "BEGIN colour droplet reset");
         resetEffect();
+        Log.i(TAG, "END colour droplet reset");
         removeCallbacks(forceDirtyRunnable);
         sendScreenTurnedOffCommand();
         destroyed = true;
         soundPool.release();
-        SamsungGlTextureShutdown.shutdown(effectViewAsView, TAG);
         if (removeEffect != null && effectView != null) {
             try {
+                Log.i(TAG, "BEGIN colour droplet removeEffect/detach");
                 removeEffect.invoke(effectView);
-                Log.i(TAG, "colour droplet removeEffect sent after GL shutdown");
+                Log.i(TAG, "END colour droplet removeEffect/detach");
             } catch (Throwable t) {
                 Log.d(TAG, "removeEffect ignored", t);
             }
@@ -332,6 +335,7 @@ public class ColourDropletEffectView extends FrameLayout
         normalResourceBitmap = null;
         edgeDensityResourceBitmap = null;
         cleanupSamsungState();
+        Log.i(TAG, "END colour droplet destroy");
     }
 
     @Override

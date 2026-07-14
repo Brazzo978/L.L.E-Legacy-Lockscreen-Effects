@@ -2,10 +2,17 @@ package com.codex.lle;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public final class Note5NativeProbeActivity extends Activity {
@@ -16,11 +23,17 @@ public final class Note5NativeProbeActivity extends Activity {
             "com.samsung.android.visualeffect.lock.sparklingbubbles.JniSparklingBubblesRenderer";
     private static final String WATER_RIPPLE =
             "com.android.internal.policy.impl.keyguard.sec.JniWaterRippleRender";
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private UnlockEffectRenderer activeRenderer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String requested = getIntent().getStringExtra("effect");
+        if ("droplet-render".equals(requested) || "bubbles-render".equals(requested)) {
+            probeRenderer("droplet-render".equals(requested));
+            return;
+        }
         StringBuilder result = new StringBuilder("LLE64 native JNI probe\n");
         if ("ripple-core".equals(requested)) {
             probeRippleCore(result);
@@ -37,6 +50,111 @@ public final class Note5NativeProbeActivity extends Activity {
         view.setTextSize(16f);
         view.setPadding(32, 64, 32, 32);
         setContentView(view);
+    }
+
+    private void probeRenderer(final boolean droplet) {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        final String name = droplet ? "Colour Droplet" : "Sparkling Bubbles";
+        final FrameLayout host = new FrameLayout(this);
+        host.setBackgroundColor(Color.BLACK);
+        setContentView(host);
+        try {
+            activeRenderer = droplet
+                    ? new ColourDropletEffectView(this, false)
+                    : new SparklingBubblesEffectView(this);
+            View effect = activeRenderer.asView();
+            host.addView(effect, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+            if (!readReady(activeRenderer)) {
+                throw new IllegalStateException(name + " wrapper reported renderer unavailable");
+            }
+            Log.i(TAG, "PASS " + name + " wrapper/native renderer constructed");
+        } catch (Throwable failure) {
+            Log.e(TAG, "FAIL " + name + " renderer construction", failure);
+            showFailure(host, name, failure);
+            return;
+        }
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (activeRenderer == null) return;
+                int width = Math.max(1, host.getWidth());
+                int height = Math.max(1, host.getHeight());
+                activeRenderer.warmUp();
+                int radius = Math.max(100, Math.min(width, height) / 4);
+                activeRenderer.showUnlockAffordance(new Rect(
+                        width / 2 - radius, height / 2 - radius,
+                        width / 2 + radius, height / 2 + radius), 0L);
+                Log.i(TAG, "PASS " + name + " warmup/affordance queued size="
+                        + width + "x" + height);
+            }
+        }, 900L);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (activeRenderer == null) return;
+                float x = Math.max(1, host.getWidth()) * 0.45f;
+                float y = Math.max(1, host.getHeight()) * 0.50f;
+                activeRenderer.beginGesture(x, y);
+                activeRenderer.updateGesture(x + 80f, y + 60f);
+                activeRenderer.finishGesture(false);
+                Log.i(TAG, "PASS " + name + " touch sequence queued");
+            }
+        }, 2100L);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (activeRenderer == null) return;
+                Log.i(TAG, "BEGIN " + name + " reset");
+                activeRenderer.resetEffect();
+                Log.i(TAG, "PASS " + name + " survived init/GLES/touch/reset window");
+            }
+        }, 5000L);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                destroyRenderer(name);
+            }
+        }, 6500L);
+    }
+
+    private boolean readReady(UnlockEffectRenderer renderer) throws Exception {
+        Field ready = renderer.getClass().getDeclaredField("ready");
+        ready.setAccessible(true);
+        return ready.getBoolean(renderer);
+    }
+
+    private void showFailure(FrameLayout host, String name, Throwable failure) {
+        TextView view = new TextView(this);
+        view.setText("FAIL " + name + "\n" + failure);
+        view.setTextColor(Color.RED);
+        view.setTextSize(16f);
+        view.setPadding(32, 64, 32, 32);
+        host.addView(view);
+    }
+
+    private void destroyRenderer(String name) {
+        UnlockEffectRenderer renderer = activeRenderer;
+        activeRenderer = null;
+        if (renderer == null) return;
+        try {
+            Log.i(TAG, "BEGIN " + name + " renderer destroy");
+            renderer.destroy();
+            Log.i(TAG, "PASS " + name + " renderer destroyed cleanly");
+        } catch (Throwable failure) {
+            Log.e(TAG, "FAIL " + name + " renderer destruction", failure);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        destroyRenderer("active Note5");
+        super.onDestroy();
     }
 
     private void probeRippleCore(StringBuilder result) {
