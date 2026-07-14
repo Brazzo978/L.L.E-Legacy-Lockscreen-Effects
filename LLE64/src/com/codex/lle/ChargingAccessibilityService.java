@@ -1470,6 +1470,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void markNativeRendererStaleForDisplaySize() {
         int effect = unlockEffectRendererType;
         if (effect != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                && effect != OverlayPrefs.EFFECT_WATERCOLOUR
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
@@ -2173,6 +2174,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
                 unlockEffectRenderer = new PoppingColoursEffectView(this);
+            } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
+                WatercolorNativeEffectView renderer = new WatercolorNativeEffectView(this);
+                if (!renderer.isReady()) {
+                    renderer.destroy();
+                    throw new IllegalStateException("Watercolor ARM64 renderer unavailable");
+                }
+                unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
                 ColourDropletEffectView renderer = new ColourDropletEffectView(this, false);
                 if (!renderer.isReady()) {
@@ -2212,6 +2220,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectRendererNeedsRecreate = false;
             unlockEffectRendererRecreateReason = "";
             if (effect != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                    && effect != OverlayPrefs.EFFECT_WATERCOLOUR
                     && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                     && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                     && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
@@ -2258,6 +2267,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
@@ -2360,6 +2370,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
         if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_WATERCOLOUR
                 || OverlayPrefs.isColourDropletEffect(unlockEffectRendererType)
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC

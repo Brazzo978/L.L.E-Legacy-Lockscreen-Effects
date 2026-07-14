@@ -20,7 +20,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.concurrent.locks.LockSupport;
 
-/** Hosts Samsung's original WaterColorEffect and its ARM32 native simulation. */
+/** Hosts Samsung's WaterColor Java shell with LLE64's reconstructed ARM64 engine. */
 public final class WatercolorNativeEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer {
     private static final String TAG = "ChargingWaterNative";
@@ -123,11 +123,6 @@ public final class WatercolorNativeEffectView extends FrameLayout
             beginGesture(screenX, screenY);
             return;
         }
-        if (!longPressSoundPlayed
-                && SystemClock.uptimeMillis() - downTime > LONG_PRESS_SOUND_MS) {
-            longPressSoundPlayed = true;
-            play(tapSound);
-        }
         lastX = screenX;
         lastY = screenY;
         forwardTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
@@ -139,7 +134,9 @@ public final class WatercolorNativeEffectView extends FrameLayout
             return;
         }
         gestureActive = false;
+        playReleaseTapIfNeeded();
         forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
+        downTime = 0L;
         if (completed) {
             sendCommand(CMD_UNLOCK, new HashMap<String, Object>());
             play(unlockSound);
@@ -153,8 +150,9 @@ public final class WatercolorNativeEffectView extends FrameLayout
             return;
         }
         gestureActive = false;
-        longPressSoundPlayed = false;
+        playReleaseTapIfNeeded();
         forwardTouch(MotionEvent.ACTION_CANCEL, lastX, lastY);
+        downTime = 0L;
     }
 
     @Override
@@ -338,6 +336,15 @@ public final class WatercolorNativeEffectView extends FrameLayout
             Log.e(TAG, "touch forwarding failed action=" + action, t);
         } finally {
             event.recycle();
+        }
+    }
+
+    private void playReleaseTapIfNeeded() {
+        if (!longPressSoundPlayed
+                && downTime > 0L
+                && SystemClock.uptimeMillis() - downTime > LONG_PRESS_SOUND_MS) {
+            longPressSoundPlayed = true;
+            play(tapSound);
         }
     }
 

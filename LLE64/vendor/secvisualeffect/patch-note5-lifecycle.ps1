@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $expectedDexSha256 = "206265D2719C5223E57412871B2B778DC56A088300B52B1FEDEB548BFB7EEDB0"
-$expectedPatchedDexSha256 = "C7829EB4AC3C3D0BC7EE2E29FAF26BB4D732C3D189EA3AFE9A1CC802EA8B165D"
+$expectedPatchedDexSha256 = "5BC6CFFB89208D9C4F9D80BD207E1061E92B0B4CD9D0E9CE69372EC003C4CF2B"
 $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
 $repoRoot = Split-Path $lleRoot -Parent
@@ -17,6 +17,9 @@ $buildRoot = [IO.Path]::GetFullPath((Join-Path $lleRoot "build"))
 $stage = [IO.Path]::GetFullPath((Join-Path $buildRoot "secvisualeffect-bounded-smali"))
 $verifyStage = [IO.Path]::GetFullPath((Join-Path $buildRoot "secvisualeffect-bounded-verify"))
 $targetSmaliRelative = "com\samsung\android\visualeffect\common\GLTextureView`$GLThread.smali"
+$eglChooserRelative = "com\samsung\android\visualeffect\common\GLTextureView`$SimpleEGLConfigChooser.smali"
+$textureRendererRelative = "com\samsung\android\visualeffect\lock\common\GLTextureViewRenderer.smali"
+$watercolorRendererRelative = "com\samsung\android\visualeffect\lock\watercolor\WaterColorRenderer.smali"
 
 function Run-Java([string] $MainClass, [string[]] $Arguments) {
     & $java "-cp" $javaTools $MainClass @Arguments
@@ -260,6 +263,67 @@ $smali = Replace-OneMethod $smali "onPause\(\)V" $boundedOnPause
 $smali = Replace-OneMethod $smali "requestExitAndWait\(\)V" $boundedRequestExit
 [IO.File]::WriteAllText($targetSmali, $smali, [Text.UTF8Encoding]::new($false))
 
+# Samsung asks EGL for RGB888 with alphaSize=0. Watercolor is hosted in a
+# transparent TextureView, so its default framebuffer must actually be RGBA8888.
+$eglChooserSmali = Join-Path $stage $eglChooserRelative
+if (-not (Test-Path -LiteralPath $eglChooserSmali)) {
+    throw "Missing disassembled EGL chooser: $eglChooserSmali"
+}
+$eglChooser = [IO.File]::ReadAllText($eglChooserSmali).Replace("`r`n", "`n")
+$eglChooser = Replace-OneLiteral `
+        $eglChooser `
+        "    const/4 v5, 0x0" `
+        "    const/16 v5, 0x8" `
+        "RGB-only EGL alpha size"
+[IO.File]::WriteAllText($eglChooserSmali, $eglChooser, [Text.UTF8Encoding]::new($false))
+
+# Watercolor advances its legacy state once per draw. Keep that draw cadence at
+# the stock 60 Hz even when Samsung's GLTextureView is hosted on a 120 Hz panel.
+$watercolorRendererSmali = Join-Path $stage $watercolorRendererRelative
+if (-not (Test-Path -LiteralPath $watercolorRendererSmali)) {
+    throw "Missing disassembled WaterColorRenderer: $watercolorRendererSmali"
+}
+$watercolorRenderer = [IO.File]::ReadAllText($watercolorRendererSmali).Replace("`r`n", "`n")
+if ($watercolorRenderer.Contains(".method public onDrawFrame(")) {
+    throw "Unexpected WaterColorRenderer: pacing override already present"
+}
+$watercolorPacedDraw = @'
+
+.method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
+    .registers 2
+    .param p1, "gl"    # Ljavax/microedition/khronos/opengles/GL10;
+
+    invoke-static {}, Lcom/codex/lle/WatercolorNativeEffectView;->paceOriginalFrame()V
+
+    invoke-super {p0, p1}, Lcom/samsung/android/visualeffect/lock/common/GLTextureViewRenderer;->onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
+
+    return-void
+.end method
+'@
+$lastMethodEnd = $watercolorRenderer.LastIndexOf(
+        ".end method", [StringComparison]::Ordinal)
+if ($lastMethodEnd -lt 0) {
+    throw "Unexpected WaterColorRenderer: constructor end not found"
+}
+$insertAt = $lastMethodEnd + ".end method".Length
+$watercolorRenderer = $watercolorRenderer.Insert($insertAt, $watercolorPacedDraw)
+[IO.File]::WriteAllText(
+        $watercolorRendererSmali,
+        $watercolorRenderer,
+        [Text.UTF8Encoding]::new($false))
+
+# The vendored dex is already package-relocated for LLE64. Keep this invariant
+# explicit because loadSpecialTexture otherwise looks in Samsung's missing APK.
+$textureRendererSmali = Join-Path $stage $textureRendererRelative
+if (-not (Test-Path -LiteralPath $textureRendererSmali)) {
+    throw "Missing disassembled GLTextureViewRenderer: $textureRendererSmali"
+}
+$textureRenderer = [IO.File]::ReadAllText($textureRendererSmali)
+$llePackageLiteral = '    const-string v15, "com.codex.lle"'
+if ([regex]::Matches($textureRenderer, [regex]::Escape($llePackageLiteral)).Count -ne 1) {
+    throw "Unexpected GLTextureViewRenderer asset package relocation"
+}
+
 $outputFullPath = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $outputFullPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
@@ -295,6 +359,30 @@ $verifiedDestroyGuardCount = [regex]::Matches(
         $verifiedDestroyGuardPattern).Count
 if ($verifiedDestroyGuardCount -ne 1) {
     throw "Patched dex verification failed: guarded renderer destroy count=$verifiedDestroyGuardCount"
+}
+
+$verifiedEglChooser = [IO.File]::ReadAllText((Join-Path $verifyStage $eglChooserRelative))
+if ([regex]::Matches(
+        $verifiedEglChooser,
+        [regex]::Escape("const/16 v5, 0x8")).Count -ne 1) {
+    throw "Patched dex verification failed: RGBA8888 EGL chooser missing"
+}
+$verifiedWatercolorRenderer = [IO.File]::ReadAllText(
+        (Join-Path $verifyStage $watercolorRendererRelative))
+foreach ($required in @(
+    ".method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V",
+    "Lcom/codex/lle/WatercolorNativeEffectView;->paceOriginalFrame()V"
+)) {
+    if (-not $verifiedWatercolorRenderer.Contains($required)) {
+        throw "Patched dex verification failed: missing Watercolor pacing $required"
+    }
+}
+$verifiedTextureRenderer = [IO.File]::ReadAllText(
+        (Join-Path $verifyStage $textureRendererRelative))
+if ([regex]::Matches(
+        $verifiedTextureRenderer,
+        [regex]::Escape($llePackageLiteral)).Count -ne 1) {
+    throw "Patched dex verification failed: LLE64 asset package missing"
 }
 
 $outputHash = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash

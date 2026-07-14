@@ -1463,6 +1463,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current));
         effects.addView(effectOption(
+                "N3 Watercolor (Early Alpha)",
+                "ARM64 GLES port of Samsung Watercolor with a transparent screenshot-backed brush.",
+                OverlayPrefs.EFFECT_WATERCOLOUR,
+                current));
+        effects.addView(effectOption(
                 "N5 Colored Droplet",
                 "Original Note 5 ARM64 renderer; the live lockscreen is sampled only inside droplets.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,

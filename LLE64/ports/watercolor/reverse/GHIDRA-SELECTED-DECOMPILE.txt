@@ -1,0 +1,5221 @@
+program=libsecveWaterColor.so
+imageBase=00010000
+
+============================================================
+requested=0x21c74
+entry=00021c74
+name=createScene
+signature=undefined createScene(void)
+body=[[00021c74, 00021c8f]]
+references-to:
+  Entry Point EXTERNAL
+decompileCompleted=true
+error=
+
+void * createScene(void)
+
+{
+  void *pvVar1;
+  
+  pvVar1 = operator_new(0xdc);
+  FUN_0001eb90();
+  return pvVar1;
+}
+
+
+
+============================================================
+requested=0x1eb90
+entry=0001eb90
+name=FUN_0001eb90
+signature=undefined FUN_0001eb90(void)
+body=[[0001eb90, 0001fb83] [0001fbc4, 00021c5b]]
+references-to:
+  00021c84 UNCONDITIONAL_CALL
+decompileCompleted=true
+error=
+
+void FUN_0001eb90(int *param_1)
+
+{
+  undefined1 **ppuVar1;
+  uint uVar2;
+  void *pvVar3;
+  int *piVar4;
+  undefined1 **ppuVar5;
+  uint uVar6;
+  undefined4 *puVar7;
+  int *piVar8;
+  int *piVar9;
+  int *piVar10;
+  undefined4 uVar11;
+  uint uVar12;
+  undefined4 uVar13;
+  undefined4 uVar14;
+  int iVar15;
+  int iVar16;
+  int iVar17;
+  int *piVar18;
+  size_t sVar19;
+  undefined4 *puVar20;
+  int *piVar21;
+  int iVar22;
+  undefined4 *puVar23;
+  undefined4 *puVar24;
+  int *piVar25;
+  int *piVar26;
+  int iVar27;
+  int *piVar28;
+  int iVar29;
+  undefined4 *puVar30;
+  undefined4 *puVar31;
+  undefined4 *puVar32;
+  uint uVar33;
+  int *piVar34;
+  uint uVar35;
+  undefined4 *puVar36;
+  bool bVar37;
+  int *local_b4;
+  undefined4 *local_b0;
+  undefined4 *local_a8;
+  int local_a0;
+  int local_9c;
+  undefined1 local_98 [4];
+  undefined4 local_94;
+  undefined1 *local_90;
+  undefined1 *local_8c;
+  int local_88;
+  uint local_80;
+  undefined1 local_7c [4];
+  undefined4 local_78;
+  undefined1 *local_74;
+  undefined1 *local_70;
+  int local_6c;
+  int local_60 [4];
+  int *local_50;
+  int *local_4c;
+  undefined1 *local_48 [4];
+  undefined1 **local_38;
+  undefined1 **local_34;
+  int local_2c;
+  
+  iVar16 = DAT_0001fb84 + 0x1ebb0;
+  piVar25 = *(int **)(iVar16 + DAT_0001fb88);
+  iVar22 = DAT_0001fb8c + 0x1ebc4;
+  iVar29 = DAT_0001fb90 + 0x1ebd0;
+  param_1[3] = 0;
+  local_2c = *piVar25;
+  *param_1 = iVar29;
+  piVar8 = param_1 + 2;
+  *(undefined1 *)piVar8 = 0;
+  param_1[10] = 0;
+  param_1[0xb] = 0;
+  param_1[4] = (int)piVar8;
+  param_1[0xc] = 0;
+  param_1[5] = (int)piVar8;
+  param_1[0xd] = 0;
+  param_1[0xe] = 0;
+  param_1[0xf] = 0;
+  param_1[0x10] = 0;
+  param_1[0x11] = 0;
+  param_1[0x12] = 0;
+  param_1[0x13] = 0;
+  param_1[0x14] = 0;
+  param_1[0x15] = 0;
+  param_1[0x16] = 0;
+  param_1[0x17] = 0;
+  param_1[0x18] = 0;
+  param_1[0x19] = 0;
+  param_1[6] = 0;
+  param_1[8] = 0;
+  param_1[9] = 0;
+  *(undefined1 *)(param_1 + 0x1d) = 0;
+  *(undefined1 *)((int)param_1 + 0x75) = 0;
+  *(undefined1 *)((int)param_1 + 0x76) = 0;
+  param_1[0x1a] = 0;
+  param_1[0x1b] = 0;
+  param_1[0x1c] = 0;
+  *(undefined1 *)((int)param_1 + 0x77) = 0;
+  param_1[0x1e] = 0;
+  param_1[0x1f] = 0;
+  param_1[0x20] = iVar22;
+  vi::ModelObject::ModelObject((ModelObject *)(param_1 + 0x21));
+  param_1[0x24] = 0;
+  param_1[0x25] = 0;
+  param_1[0x26] = 0;
+  param_1[0x27] = 0;
+  param_1[0x28] = 0;
+  iVar22 = eglGetCurrentContext();
+  param_1[0x2a] = 0;
+  param_1[0x2b] = 0;
+  param_1[0x2c] = 0;
+  param_1[0x2d] = 0;
+  param_1[0x2e] = 0;
+  param_1[0x2f] = 0;
+  param_1[0x30] = 0;
+  param_1[0x31] = 0;
+  param_1[0x32] = 0;
+  param_1[0x33] = 0;
+  param_1[0x34] = 0;
+  param_1[0x35] = 0;
+  param_1[0x29] = iVar22;
+  uVar2 = time((time_t *)0x0);
+  srand(uVar2);
+  uVar2 = param_1[0x29];
+  iVar29 = *(int *)(iVar16 + DAT_0001fb94);
+  iVar16 = *(int *)(iVar29 + 4);
+  iVar22 = iVar29;
+  if (*(int *)(iVar29 + 4) == 0) {
+LAB_0001f35c:
+    local_98[0] = 0;
+    local_94 = 0;
+    local_88 = 0;
+    local_78 = 0;
+    local_7c[0] = 0;
+    local_6c = 0;
+    local_a0 = iVar22;
+    local_90 = local_98;
+    local_8c = local_98;
+    local_80 = uVar2;
+    local_74 = local_7c;
+    local_70 = local_7c;
+    FUN_0001e850(&local_9c,iVar29,&local_a0,&local_80);
+    if (local_6c != 0) {
+      FUN_0001cb60(local_7c,local_78);
+    }
+    iVar22 = local_9c;
+    if (local_88 != 0) {
+      FUN_0001cb60(local_98,local_94);
+    }
+  }
+  else {
+    do {
+      if (*(uint *)(iVar16 + 0x10) < uVar2) {
+        iVar17 = *(int *)(iVar16 + 0xc);
+      }
+      else {
+        iVar17 = *(int *)(iVar16 + 8);
+        iVar22 = iVar16;
+      }
+      iVar16 = iVar17;
+    } while (iVar17 != 0);
+    if ((iVar22 == iVar29) || (uVar2 < *(uint *)(iVar22 + 0x10))) goto LAB_0001f35c;
+  }
+  iVar16 = iVar22 + 0x14;
+  param_1[1] = iVar16;
+  iVar22 = *(int *)(iVar22 + 0x1c);
+  if (iVar16 != iVar22) {
+    do {
+      while( true ) {
+        piVar18 = (int *)param_1[0x2d];
+        piVar26 = (int *)param_1[0x2e];
+        sVar19 = (int)piVar26 - (int)piVar18;
+        uVar2 = (int)sVar19 >> 4;
+        uVar6 = (int)sVar19 >> 2;
+        uVar35 = uVar6;
+        piVar8 = piVar18;
+        if (0 < (int)uVar2) break;
+LAB_0001f3dc:
+        if (uVar35 == 2) {
+          iVar29 = *(int *)(iVar22 + 0x28);
+LAB_0001f488:
+          if (*piVar8 != iVar29) {
+            piVar8 = piVar8 + 1;
+LAB_0001f498:
+            if (*piVar8 != iVar29) goto LAB_0001f3f4;
+          }
+          goto LAB_0001ef20;
+        }
+        if (uVar35 == 3) {
+          iVar29 = *(int *)(iVar22 + 0x28);
+          if (*piVar8 == iVar29) goto LAB_0001ef20;
+          piVar8 = piVar8 + 1;
+          goto LAB_0001f488;
+        }
+        if (uVar35 == 1) {
+          iVar29 = *(int *)(iVar22 + 0x28);
+          goto LAB_0001f498;
+        }
+LAB_0001f3f4:
+        if (piVar26 == (int *)param_1[0x2f]) {
+          if (uVar6 == 0) {
+            uVar2 = 1;
+          }
+          else {
+            uVar2 = uVar6 * 2;
+          }
+          if ((uVar2 < 0x40000000) && (uVar6 <= uVar2)) {
+            if (uVar2 != 0) {
+              local_80 = uVar2 * 4;
+              if (0x80 < local_80) goto LAB_00020efc;
+              puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+              goto LAB_00020e90;
+            }
+            puVar36 = (undefined4 *)0x0;
+            iVar29 = 0;
+          }
+          else {
+            local_80 = 0xfffffffc;
+LAB_00020efc:
+            puVar36 = operator_new(local_80);
+LAB_00020e90:
+            piVar18 = (int *)param_1[0x2d];
+            iVar29 = (int)puVar36 + (local_80 & 0xfffffffc);
+            sVar19 = (int)piVar26 - (int)piVar18;
+          }
+          puVar7 = puVar36;
+          if (sVar19 != 0) {
+            pvVar3 = memmove(puVar36,piVar18,sVar19);
+            puVar7 = (undefined4 *)((int)pvVar3 + sVar19);
+          }
+          *puVar7 = *(undefined4 *)(iVar22 + 0x28);
+          pvVar3 = (void *)param_1[0x2d];
+          if (pvVar3 != (void *)0x0) {
+            uVar2 = param_1[0x2f] - (int)pvVar3 & 0xfffffffc;
+            if (uVar2 < 0x81) {
+              std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+            }
+            else {
+              operator_delete(pvVar3);
+            }
+          }
+          param_1[0x2d] = (int)puVar36;
+          param_1[0x2e] = (int)(puVar7 + 1);
+          param_1[0x2f] = iVar29;
+          goto LAB_0001ef28;
+        }
+        *piVar26 = *(int *)(iVar22 + 0x28);
+        iVar29 = *(int *)(iVar22 + 0xc);
+        param_1[0x2e] = param_1[0x2e] + 4;
+        if (iVar29 == 0) goto LAB_0001f420;
+LAB_0001ef34:
+        do {
+          iVar22 = iVar29;
+          iVar29 = *(int *)(iVar22 + 8);
+        } while (*(int *)(iVar22 + 8) != 0);
+joined_r0x000209e0:
+        if (iVar16 == iVar22) goto LAB_0001ef4c;
+      }
+      iVar29 = *(int *)(iVar22 + 0x28);
+      if (*piVar18 != iVar29) {
+        if (iVar29 == piVar18[1]) {
+          piVar8 = piVar18 + 1;
+        }
+        else {
+          piVar4 = piVar18;
+          if (iVar29 == piVar18[2]) {
+LAB_0001f468:
+            piVar8 = piVar4 + 2;
+          }
+          else {
+            piVar34 = piVar18;
+            if (iVar29 == piVar18[3]) {
+LAB_0001f474:
+              piVar8 = piVar34 + 3;
+            }
+            else {
+              uVar33 = uVar2 - 1;
+              uVar12 = uVar33 & 3;
+              piVar9 = piVar18;
+              uVar35 = uVar2;
+              if (uVar12 == 0) goto LAB_0001ee50;
+              piVar9 = piVar18 + 4;
+              piVar8 = piVar9;
+              if (piVar18[4] != iVar29) {
+                piVar10 = piVar18;
+                if (piVar18[5] == iVar29) {
+LAB_0001f47c:
+                  piVar8 = piVar10 + 5;
+                }
+                else {
+                  piVar4 = piVar9;
+                  if (piVar18[6] == iVar29) goto LAB_0001f468;
+                  piVar34 = piVar9;
+                  if (piVar18[7] == iVar29) goto LAB_0001f474;
+                  uVar35 = uVar33;
+                  if (uVar12 == 1) goto LAB_0001ee50;
+                  if (uVar12 != 2) {
+                    uVar33 = uVar2 - 2;
+                    piVar34 = piVar18 + 8;
+                    piVar8 = piVar34;
+                    if (piVar18[8] == iVar29) goto LAB_0001ef20;
+                    piVar10 = piVar9;
+                    if (piVar18[9] == iVar29) goto LAB_0001f47c;
+                    piVar4 = piVar34;
+                    if (piVar18[10] == iVar29) goto LAB_0001f468;
+                    if (piVar18[0xb] == iVar29) goto LAB_0001f474;
+                  }
+                  uVar35 = uVar33 - 1;
+                  iVar17 = piVar34[4];
+                  piVar9 = piVar34 + 4;
+                  while (piVar8 = piVar9, iVar17 != iVar29) {
+                    piVar10 = piVar34;
+                    if (piVar34[5] == iVar29) goto LAB_0001f47c;
+                    piVar4 = piVar9;
+                    if (piVar34[6] == iVar29) goto LAB_0001f468;
+                    piVar34 = piVar9;
+                    if (piVar9[3] == iVar29) goto LAB_0001f474;
+LAB_0001ee50:
+                    piVar4 = piVar9 + 4;
+                    piVar8 = piVar4;
+                    if (uVar35 == 1) {
+                      uVar35 = (int)piVar26 - (int)piVar4 >> 2;
+                      goto LAB_0001f3dc;
+                    }
+                    if (piVar9[4] == iVar29) break;
+                    piVar10 = piVar9;
+                    if (piVar9[5] == iVar29) goto LAB_0001f47c;
+                    if (piVar9[6] == iVar29) goto LAB_0001f468;
+                    piVar34 = piVar4;
+                    if (piVar9[7] == iVar29) goto LAB_0001f474;
+                    piVar34 = piVar9 + 8;
+                    piVar8 = piVar34;
+                    if (piVar9[8] == iVar29) break;
+                    piVar10 = piVar4;
+                    if (piVar9[9] == iVar29) goto LAB_0001f47c;
+                    piVar4 = piVar34;
+                    if (piVar9[10] == iVar29) goto LAB_0001f468;
+                    if (piVar9[0xb] == iVar29) goto LAB_0001f474;
+                    piVar8 = piVar9 + 0xc;
+                    if (piVar9[0xc] == iVar29) break;
+                    piVar10 = piVar34;
+                    if (piVar9[0xd] == iVar29) goto LAB_0001f47c;
+                    piVar4 = piVar8;
+                    if (piVar9[0xe] == iVar29) goto LAB_0001f468;
+                    piVar34 = piVar8;
+                    if (piVar9[0xf] == iVar29) goto LAB_0001f474;
+                    piVar34 = piVar9 + 0xc;
+                    uVar35 = uVar35 - 4;
+                    iVar17 = piVar9[0x10];
+                    piVar9 = piVar9 + 0x10;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+LAB_0001ef20:
+      if (piVar26 == piVar8) goto LAB_0001f3f4;
+LAB_0001ef28:
+      iVar29 = *(int *)(iVar22 + 0xc);
+      if (*(int *)(iVar22 + 0xc) != 0) goto LAB_0001ef34;
+LAB_0001f420:
+      iVar17 = *(int *)(iVar22 + 4);
+      bVar37 = *(int *)(iVar17 + 0xc) != iVar22;
+      iVar29 = iVar22;
+      iVar22 = iVar17;
+      if (bVar37) goto joined_r0x000209e0;
+      do {
+        iVar27 = iVar17;
+        iVar15 = iVar29;
+        iVar22 = *(int *)(iVar27 + 4);
+        iVar29 = iVar27;
+        iVar17 = iVar22;
+      } while (*(int *)(iVar22 + 0xc) == iVar27);
+      if (iVar22 == iVar15) {
+        iVar22 = iVar27;
+      }
+    } while (iVar16 != iVar22);
+  }
+LAB_0001ef4c:
+  *param_1 = DAT_0001fb98 + 0x1ef68;
+  FUN_0001a94c(local_60);
+  piVar18 = local_4c;
+  piVar8 = local_50;
+  piVar26 = (int *)param_1[0x27];
+  if (piVar26 == (int *)param_1[0x28]) {
+    piVar4 = (int *)param_1[0x26];
+    if ((local_60 < piVar4) || (piVar26 <= local_60)) {
+      iVar22 = (int)piVar26 - (int)piVar4 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_00020358;
+          piVar8 = (int *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_00020360;
+        }
+        piVar18 = (int *)0x18;
+        piVar8 = (int *)0x0;
+        local_b4 = (int *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_00020358:
+        piVar8 = operator_new(local_80);
+LAB_00020360:
+        piVar4 = (int *)param_1[0x26];
+        piVar18 = piVar8 + 6;
+        uVar2 = ((int)piVar26 - (int)piVar4 >> 3) * -0x55555555;
+        local_b4 = piVar8 + (local_80 / 0x18) * 6;
+      }
+      piVar34 = local_4c;
+      piVar26 = local_50;
+      piVar9 = piVar8;
+      if (0 < (int)uVar2) {
+        piVar10 = piVar4 + 6;
+        piVar21 = piVar8 + 6;
+        piVar28 = piVar8 + 5;
+        piVar18 = piVar8;
+        piVar9 = piVar10;
+        uVar6 = uVar2;
+        if ((uVar2 & 1) == 0) {
+          *piVar28 = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar4[1];
+            iVar16 = piVar4[2];
+            iVar29 = piVar4[3];
+            *piVar8 = *piVar4;
+            piVar8[1] = iVar22;
+            piVar8[2] = iVar16;
+            piVar8[3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar8[5] = (int)piVar8;
+            piVar8[4] = (int)piVar8 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar8[5] = piVar4[5];
+            piVar8[4] = piVar4[4];
+            *piVar8 = *piVar4;
+            piVar4[5] = 0;
+          }
+          piVar9 = piVar4 + 0xc;
+          piVar21 = piVar8 + 0xc;
+          piVar18 = piVar8 + 6;
+          uVar6 = uVar2 - 1;
+          piVar4 = piVar10;
+          piVar10 = piVar9;
+        }
+        while( true ) {
+          *(int *)((int)piVar28 + ((int)piVar18 - (int)piVar8)) = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar9[-5];
+            iVar16 = piVar9[-4];
+            iVar29 = piVar9[-3];
+            piVar21[-6] = piVar9[-6];
+            piVar21[-5] = iVar22;
+            piVar21[-4] = iVar16;
+            piVar21[-3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar18[5] = (int)piVar18;
+            piVar18[4] = (int)piVar18 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar18[5] = piVar4[5];
+            piVar18[4] = piVar4[4];
+            piVar21[-6] = piVar9[-6];
+            piVar4[5] = 0;
+          }
+          piVar4 = piVar18 + 6;
+          if (uVar6 == 1) break;
+          *(int *)((int)piVar28 + ((int)piVar4 - (int)piVar8)) = piVar10[5];
+          if (piVar10 == (int *)piVar10[5]) {
+            iVar22 = piVar9[1];
+            iVar16 = piVar9[2];
+            iVar29 = piVar9[3];
+            *piVar21 = *piVar9;
+            piVar21[1] = iVar22;
+            piVar21[2] = iVar16;
+            piVar21[3] = iVar29;
+            iVar22 = piVar10[4];
+            piVar18[0xb] = (int)piVar4;
+            piVar18[10] = (int)piVar4 + (iVar22 - (int)piVar10);
+          }
+          else {
+            piVar18[0xb] = piVar10[5];
+            piVar18[10] = piVar10[4];
+            *piVar21 = *piVar9;
+            piVar10[5] = 0;
+          }
+          piVar21 = piVar21 + 0xc;
+          piVar18 = piVar18 + 0xc;
+          piVar9 = piVar9 + 0xc;
+          uVar6 = uVar6 - 2;
+          piVar4 = piVar10 + 6;
+          piVar10 = piVar10 + 0xc;
+        }
+        piVar18 = piVar8 + uVar2 * 6 + 6;
+        piVar9 = piVar8 + uVar2 * 6;
+      }
+      piVar9[4] = (int)piVar9;
+      piVar9[5] = (int)piVar9;
+      sVar19 = (int)local_50 - (int)local_4c;
+      uVar2 = sVar19 + 1;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_00021c5c + 0x20d48));
+        piVar4 = (int *)piVar9[5];
+      }
+      else {
+        piVar4 = piVar9;
+        if (0x10 < uVar2) {
+          local_80 = uVar2;
+          if (uVar2 < 0x81) {
+            piVar4 = (int *)std::__node_alloc::_M_allocate(&local_80);
+          }
+          else {
+            piVar4 = operator_new(uVar2);
+          }
+          piVar9[5] = (int)piVar4;
+          piVar9[4] = (int)piVar4;
+          *piVar9 = (int)((int)piVar4 + local_80);
+        }
+      }
+      if (piVar34 != piVar26) {
+        pvVar3 = memcpy(piVar4,piVar34,sVar19);
+        piVar4 = (int *)((int)pvVar3 + sVar19);
+      }
+      piVar9[4] = (int)piVar4;
+      *(undefined1 *)piVar4 = 0;
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)piVar8;
+      param_1[0x27] = (int)piVar18;
+      param_1[0x28] = (int)local_b4;
+    }
+    else {
+      local_38 = local_48;
+      sVar19 = (int)local_50 - (int)local_4c;
+      uVar2 = sVar19 + 1;
+      local_34 = local_38;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_0001fbb4 + 0x1f7b0));
+      }
+      else if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          local_38 = (undefined1 **)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          local_38 = operator_new(uVar2);
+        }
+        local_48[0] = (undefined1 *)((int)local_38 + local_80);
+        local_34 = local_38;
+      }
+      ppuVar5 = local_34;
+      if (piVar18 != piVar8) {
+        pvVar3 = memcpy(local_34,piVar18,sVar19);
+        ppuVar5 = (undefined1 **)((int)pvVar3 + sVar19);
+      }
+      local_38 = ppuVar5;
+      *(undefined1 *)ppuVar5 = 0;
+      puVar36 = (undefined4 *)param_1[0x26];
+      iVar22 = param_1[0x27] - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_0001f82c;
+          puVar7 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_0001f834;
+        }
+        puVar32 = (undefined4 *)0x18;
+        puVar7 = (undefined4 *)0x0;
+        local_b0 = (undefined4 *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_0001f82c:
+        puVar7 = operator_new(local_80);
+LAB_0001f834:
+        puVar36 = (undefined4 *)param_1[0x26];
+        puVar32 = puVar7 + 6;
+        local_b0 = puVar7 + (local_80 / 0x18) * 6;
+      }
+      ppuVar1 = local_34;
+      ppuVar5 = local_38;
+      iVar22 = (int)piVar26 - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      puVar20 = puVar7;
+      if (0 < (int)uVar2) {
+        puVar30 = puVar36 + 6;
+        puVar31 = puVar7 + 6;
+        puVar23 = puVar7 + 5;
+        puVar32 = puVar7;
+        puVar20 = puVar30;
+        if ((uVar2 & 1) == 0) {
+          *puVar23 = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar36[1];
+            uVar13 = puVar36[2];
+            uVar14 = puVar36[3];
+            *puVar7 = *puVar36;
+            puVar7[1] = uVar11;
+            puVar7[2] = uVar13;
+            puVar7[3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar7[5] = puVar7;
+            puVar7[4] = (int)puVar7 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar7[5] = (undefined4 *)puVar36[5];
+            puVar7[4] = puVar36[4];
+            *puVar7 = *puVar36;
+            puVar36[5] = 0;
+          }
+          puVar20 = puVar36 + 0xc;
+          puVar31 = puVar7 + 0xc;
+          uVar2 = uVar2 - 1;
+          puVar32 = puVar7 + 6;
+          puVar36 = puVar30;
+          puVar30 = puVar20;
+        }
+        while( true ) {
+          *(undefined4 *)((int)puVar23 + ((int)puVar32 - (int)puVar7)) = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar20[-5];
+            uVar13 = puVar20[-4];
+            uVar14 = puVar20[-3];
+            puVar31[-6] = puVar20[-6];
+            puVar31[-5] = uVar11;
+            puVar31[-4] = uVar13;
+            puVar31[-3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar32[5] = puVar32;
+            puVar32[4] = (int)puVar32 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar32[5] = (undefined4 *)puVar36[5];
+            puVar32[4] = puVar36[4];
+            puVar31[-6] = puVar20[-6];
+            puVar36[5] = 0;
+          }
+          puVar36 = puVar32 + 6;
+          if (uVar2 == 1) break;
+          *(undefined4 *)((int)puVar23 + ((int)puVar36 - (int)puVar7)) = puVar30[5];
+          if (puVar30 == (undefined4 *)puVar30[5]) {
+            uVar11 = puVar20[1];
+            uVar13 = puVar20[2];
+            uVar14 = puVar20[3];
+            *puVar31 = *puVar20;
+            puVar31[1] = uVar11;
+            puVar31[2] = uVar13;
+            puVar31[3] = uVar14;
+            iVar16 = puVar30[4];
+            puVar32[0xb] = puVar36;
+            puVar32[10] = (int)puVar36 + (iVar16 - (int)puVar30);
+          }
+          else {
+            puVar32[0xb] = (undefined4 *)puVar30[5];
+            puVar32[10] = puVar30[4];
+            *puVar31 = *puVar20;
+            puVar30[5] = 0;
+          }
+          uVar2 = uVar2 - 2;
+          puVar31 = puVar31 + 0xc;
+          puVar32 = puVar32 + 0xc;
+          puVar20 = puVar20 + 0xc;
+          puVar36 = puVar30 + 6;
+          puVar30 = puVar30 + 0xc;
+        }
+        puVar32 = puVar7 + iVar22 * 2 + 6;
+        puVar20 = puVar7 + iVar22 * 2;
+      }
+      puVar20[4] = puVar20;
+      puVar20[5] = puVar20;
+      sVar19 = (int)local_38 - (int)local_34;
+      uVar2 = sVar19 + 1;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_00021c64 + 0x21738));
+        puVar36 = (undefined4 *)puVar20[5];
+      }
+      else {
+        puVar36 = puVar20;
+        if (0x10 < uVar2) {
+          local_80 = uVar2;
+          if (uVar2 < 0x81) {
+            puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          }
+          else {
+            puVar36 = operator_new(uVar2);
+          }
+          puVar20[5] = puVar36;
+          puVar20[4] = puVar36;
+          *puVar20 = (undefined1 *)((int)puVar36 + local_80);
+        }
+      }
+      if (ppuVar1 != ppuVar5) {
+        pvVar3 = memcpy(puVar36,ppuVar1,sVar19);
+        puVar36 = (undefined4 *)((int)pvVar3 + sVar19);
+      }
+      puVar20[4] = puVar36;
+      *(undefined1 *)puVar36 = 0;
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)puVar7;
+      param_1[0x27] = (int)puVar32;
+      param_1[0x28] = (int)local_b0;
+      if ((local_34 != local_48) && (local_34 != (undefined1 **)0x0)) {
+        if ((uint)((int)local_48[0] - (int)local_34) < 0x81) {
+          std::__node_alloc::_M_deallocate(local_34,(int)local_48[0] - (int)local_34);
+        }
+        else {
+          operator_delete(local_34);
+        }
+      }
+    }
+  }
+  else {
+    piVar26[4] = (int)piVar26;
+    piVar26[5] = (int)piVar26;
+    sVar19 = (int)local_50 - (int)local_4c;
+    uVar2 = sVar19 + 1;
+    if (uVar2 == 0) {
+      std::__stl_throw_length_error((char *)(DAT_0001fb9c + 0x1efa4));
+      piVar4 = (int *)piVar26[5];
+    }
+    else {
+      piVar4 = piVar26;
+      if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          piVar4 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          piVar4 = operator_new(uVar2);
+        }
+        piVar26[5] = (int)piVar4;
+        piVar26[4] = (int)piVar4;
+        *piVar26 = (int)((int)piVar4 + local_80);
+      }
+    }
+    if (piVar18 != piVar8) {
+      pvVar3 = memcpy(piVar4,piVar18,sVar19);
+      piVar4 = (int *)((int)pvVar3 + sVar19);
+    }
+    piVar26[4] = (int)piVar4;
+    *(undefined1 *)piVar4 = 0;
+    param_1[0x27] = param_1[0x27] + 0x18;
+  }
+  if ((local_4c != local_60) && (local_4c != (int *)0x0)) {
+    if ((uint)(local_60[0] - (int)local_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_4c,local_60[0] - (int)local_4c);
+    }
+    else {
+      operator_delete(local_4c);
+    }
+  }
+  FUN_0001a8d4(local_60);
+  piVar18 = local_4c;
+  piVar8 = local_50;
+  piVar26 = (int *)param_1[0x27];
+  if (piVar26 == (int *)param_1[0x28]) {
+    piVar4 = (int *)param_1[0x26];
+    if ((local_60 < piVar4) || (piVar26 <= local_60)) {
+      iVar22 = (int)piVar26 - (int)piVar4 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_00020668;
+          piVar8 = (int *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_00020670;
+        }
+        piVar18 = (int *)0x18;
+        piVar8 = (int *)0x0;
+        local_b4 = (int *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_00020668:
+        piVar8 = operator_new(local_80);
+LAB_00020670:
+        piVar4 = (int *)param_1[0x26];
+        piVar18 = piVar8 + 6;
+        uVar2 = ((int)piVar26 - (int)piVar4 >> 3) * -0x55555555;
+        local_b4 = piVar8 + (local_80 / 0x18) * 6;
+      }
+      piVar26 = piVar8;
+      if (0 < (int)uVar2) {
+        piVar34 = piVar4 + 6;
+        piVar9 = piVar8 + 6;
+        piVar10 = piVar8 + 5;
+        piVar18 = piVar8;
+        piVar26 = piVar34;
+        uVar6 = uVar2;
+        if ((uVar2 & 1) == 0) {
+          *piVar10 = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar4[1];
+            iVar16 = piVar4[2];
+            iVar29 = piVar4[3];
+            *piVar8 = *piVar4;
+            piVar8[1] = iVar22;
+            piVar8[2] = iVar16;
+            piVar8[3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar8[5] = (int)piVar8;
+            piVar8[4] = (int)piVar8 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar8[5] = piVar4[5];
+            piVar8[4] = piVar4[4];
+            *piVar8 = *piVar4;
+            piVar4[5] = 0;
+          }
+          piVar26 = piVar4 + 0xc;
+          piVar9 = piVar8 + 0xc;
+          piVar18 = piVar8 + 6;
+          uVar6 = uVar2 - 1;
+          piVar4 = piVar34;
+          piVar34 = piVar26;
+        }
+        while( true ) {
+          *(int *)((int)piVar10 + ((int)piVar18 - (int)piVar8)) = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar26[-5];
+            iVar16 = piVar26[-4];
+            iVar29 = piVar26[-3];
+            piVar9[-6] = piVar26[-6];
+            piVar9[-5] = iVar22;
+            piVar9[-4] = iVar16;
+            piVar9[-3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar18[5] = (int)piVar18;
+            piVar18[4] = (int)piVar18 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar18[5] = piVar4[5];
+            piVar18[4] = piVar4[4];
+            piVar9[-6] = piVar26[-6];
+            piVar4[5] = 0;
+          }
+          piVar4 = piVar18 + 6;
+          if (uVar6 == 1) break;
+          *(int *)((int)piVar10 + ((int)piVar4 - (int)piVar8)) = piVar34[5];
+          if (piVar34 == (int *)piVar34[5]) {
+            iVar22 = piVar26[1];
+            iVar16 = piVar26[2];
+            iVar29 = piVar26[3];
+            *piVar9 = *piVar26;
+            piVar9[1] = iVar22;
+            piVar9[2] = iVar16;
+            piVar9[3] = iVar29;
+            iVar22 = piVar34[4];
+            piVar18[0xb] = (int)piVar4;
+            piVar18[10] = (int)piVar4 + (iVar22 - (int)piVar34);
+          }
+          else {
+            piVar18[0xb] = piVar34[5];
+            piVar18[10] = piVar34[4];
+            *piVar9 = *piVar26;
+            piVar34[5] = 0;
+          }
+          piVar9 = piVar9 + 0xc;
+          piVar18 = piVar18 + 0xc;
+          piVar26 = piVar26 + 0xc;
+          uVar6 = uVar6 - 2;
+          piVar4 = piVar34 + 6;
+          piVar34 = piVar34 + 0xc;
+        }
+        piVar18 = piVar8 + uVar2 * 6 + 6;
+        piVar26 = piVar8 + uVar2 * 6;
+      }
+      piVar26[4] = (int)piVar26;
+      piVar26[5] = (int)piVar26;
+      FUN_0001cab0(piVar26,local_4c,local_50);
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)piVar8;
+      param_1[0x27] = (int)piVar18;
+      param_1[0x28] = (int)local_b4;
+    }
+    else {
+      local_38 = local_48;
+      sVar19 = (int)local_50 - (int)local_4c;
+      uVar2 = sVar19 + 1;
+      local_34 = local_38;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_0001fbb0 + 0x1f5a4));
+      }
+      else if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          local_38 = (undefined1 **)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          local_38 = operator_new(uVar2);
+        }
+        local_48[0] = (undefined1 *)((int)local_38 + local_80);
+        local_34 = local_38;
+      }
+      ppuVar5 = local_34;
+      if (piVar18 != piVar8) {
+        pvVar3 = memcpy(local_34,piVar18,sVar19);
+        ppuVar5 = (undefined1 **)((int)pvVar3 + sVar19);
+      }
+      local_38 = ppuVar5;
+      *(undefined1 *)ppuVar5 = 0;
+      puVar36 = (undefined4 *)param_1[0x26];
+      iVar22 = param_1[0x27] - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_0001f620;
+          puVar7 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_0001f628;
+        }
+        puVar32 = (undefined4 *)0x18;
+        puVar7 = (undefined4 *)0x0;
+        local_b0 = (undefined4 *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_0001f620:
+        puVar7 = operator_new(local_80);
+LAB_0001f628:
+        puVar36 = (undefined4 *)param_1[0x26];
+        puVar32 = puVar7 + 6;
+        local_b0 = puVar7 + (local_80 / 0x18) * 6;
+      }
+      ppuVar1 = local_34;
+      ppuVar5 = local_38;
+      iVar22 = (int)piVar26 - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      puVar20 = puVar7;
+      if (0 < (int)uVar2) {
+        puVar30 = puVar36 + 6;
+        puVar31 = puVar7 + 6;
+        puVar23 = puVar7 + 5;
+        puVar32 = puVar7;
+        puVar20 = puVar30;
+        if ((uVar2 & 1) == 0) {
+          *puVar23 = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar36[1];
+            uVar13 = puVar36[2];
+            uVar14 = puVar36[3];
+            *puVar7 = *puVar36;
+            puVar7[1] = uVar11;
+            puVar7[2] = uVar13;
+            puVar7[3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar7[5] = puVar7;
+            puVar7[4] = (int)puVar7 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar7[5] = (undefined4 *)puVar36[5];
+            puVar7[4] = puVar36[4];
+            *puVar7 = *puVar36;
+            puVar36[5] = 0;
+          }
+          puVar20 = puVar36 + 0xc;
+          puVar31 = puVar7 + 0xc;
+          uVar2 = uVar2 - 1;
+          puVar32 = puVar7 + 6;
+          puVar36 = puVar30;
+          puVar30 = puVar20;
+        }
+        while( true ) {
+          *(undefined4 *)((int)puVar23 + ((int)puVar32 - (int)puVar7)) = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar20[-5];
+            uVar13 = puVar20[-4];
+            uVar14 = puVar20[-3];
+            puVar31[-6] = puVar20[-6];
+            puVar31[-5] = uVar11;
+            puVar31[-4] = uVar13;
+            puVar31[-3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar32[5] = puVar32;
+            puVar32[4] = (int)puVar32 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar32[5] = (undefined4 *)puVar36[5];
+            puVar32[4] = puVar36[4];
+            puVar31[-6] = puVar20[-6];
+            puVar36[5] = 0;
+          }
+          puVar36 = puVar32 + 6;
+          if (uVar2 == 1) break;
+          *(undefined4 *)((int)puVar23 + ((int)puVar36 - (int)puVar7)) = puVar30[5];
+          if (puVar30 == (undefined4 *)puVar30[5]) {
+            uVar11 = puVar20[1];
+            uVar13 = puVar20[2];
+            uVar14 = puVar20[3];
+            *puVar31 = *puVar20;
+            puVar31[1] = uVar11;
+            puVar31[2] = uVar13;
+            puVar31[3] = uVar14;
+            iVar16 = puVar30[4];
+            puVar32[0xb] = puVar36;
+            puVar32[10] = (int)puVar36 + (iVar16 - (int)puVar30);
+          }
+          else {
+            puVar32[0xb] = (undefined4 *)puVar30[5];
+            puVar32[10] = puVar30[4];
+            *puVar31 = *puVar20;
+            puVar30[5] = 0;
+          }
+          uVar2 = uVar2 - 2;
+          puVar31 = puVar31 + 0xc;
+          puVar32 = puVar32 + 0xc;
+          puVar20 = puVar20 + 0xc;
+          puVar36 = puVar30 + 6;
+          puVar30 = puVar30 + 0xc;
+        }
+        puVar32 = puVar7 + iVar22 * 2 + 6;
+        puVar20 = puVar7 + iVar22 * 2;
+      }
+      puVar20[4] = puVar20;
+      puVar20[5] = puVar20;
+      sVar19 = (int)local_38 - (int)local_34;
+      uVar2 = sVar19 + 1;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_00021c68 + 0x2179c));
+        puVar36 = (undefined4 *)puVar20[5];
+      }
+      else {
+        puVar36 = puVar20;
+        if (0x10 < uVar2) {
+          local_80 = uVar2;
+          if (uVar2 < 0x81) {
+            puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          }
+          else {
+            puVar36 = operator_new(uVar2);
+          }
+          puVar20[5] = puVar36;
+          puVar20[4] = puVar36;
+          *puVar20 = (undefined1 *)((int)puVar36 + local_80);
+        }
+      }
+      if (ppuVar1 != ppuVar5) {
+        pvVar3 = memcpy(puVar36,ppuVar1,sVar19);
+        puVar36 = (undefined4 *)((int)pvVar3 + sVar19);
+      }
+      puVar20[4] = puVar36;
+      *(undefined1 *)puVar36 = 0;
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)puVar7;
+      param_1[0x27] = (int)puVar32;
+      param_1[0x28] = (int)local_b0;
+      if ((local_34 != local_48) && (local_34 != (undefined1 **)0x0)) {
+        if ((uint)((int)local_48[0] - (int)local_34) < 0x81) {
+          std::__node_alloc::_M_deallocate(local_34,(int)local_48[0] - (int)local_34);
+        }
+        else {
+          operator_delete(local_34);
+        }
+      }
+    }
+  }
+  else {
+    piVar26[4] = (int)piVar26;
+    piVar26[5] = (int)piVar26;
+    sVar19 = (int)local_50 - (int)local_4c;
+    uVar2 = sVar19 + 1;
+    if (uVar2 == 0) {
+      std::__stl_throw_length_error((char *)(DAT_0001fbac + 0x1f550));
+      piVar4 = (int *)piVar26[5];
+    }
+    else {
+      piVar4 = piVar26;
+      if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          piVar4 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          piVar4 = operator_new(uVar2);
+        }
+        piVar26[5] = (int)piVar4;
+        piVar26[4] = (int)piVar4;
+        *piVar26 = (int)piVar4 + local_80;
+      }
+    }
+    if (piVar18 != piVar8) {
+      pvVar3 = memcpy(piVar4,piVar18,sVar19);
+      piVar4 = (int *)((int)pvVar3 + sVar19);
+    }
+    piVar26[4] = (int)piVar4;
+    *(undefined1 *)piVar4 = 0;
+    param_1[0x27] = param_1[0x27] + 0x18;
+  }
+  if ((local_4c != local_60) && (local_4c != (int *)0x0)) {
+    if ((uint)(local_60[0] - (int)local_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_4c,local_60[0] - (int)local_4c);
+    }
+    else {
+      operator_delete(local_4c);
+    }
+  }
+  FUN_0001aa90(local_60);
+  piVar18 = local_4c;
+  piVar8 = local_50;
+  piVar26 = (int *)param_1[0x27];
+  if (piVar26 == (int *)param_1[0x28]) {
+    piVar4 = (int *)param_1[0x26];
+    if ((local_60 < piVar4) || (piVar26 <= local_60)) {
+      iVar22 = (int)piVar26 - (int)piVar4 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_00020048;
+          piVar8 = (int *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_00020050;
+        }
+        piVar18 = (int *)0x18;
+        piVar8 = (int *)0x0;
+        local_b4 = (int *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_00020048:
+        piVar8 = operator_new(local_80);
+LAB_00020050:
+        piVar4 = (int *)param_1[0x26];
+        piVar18 = piVar8 + 6;
+        uVar2 = ((int)piVar26 - (int)piVar4 >> 3) * -0x55555555;
+        local_b4 = piVar8 + (local_80 / 0x18) * 6;
+      }
+      piVar26 = piVar8;
+      if (0 < (int)uVar2) {
+        piVar34 = piVar4 + 6;
+        piVar9 = piVar8 + 6;
+        piVar10 = piVar8 + 5;
+        piVar18 = piVar8;
+        piVar26 = piVar34;
+        uVar6 = uVar2;
+        if ((uVar2 & 1) == 0) {
+          *piVar10 = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar4[1];
+            iVar16 = piVar4[2];
+            iVar29 = piVar4[3];
+            *piVar8 = *piVar4;
+            piVar8[1] = iVar22;
+            piVar8[2] = iVar16;
+            piVar8[3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar8[5] = (int)piVar8;
+            piVar8[4] = (int)piVar8 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar8[5] = piVar4[5];
+            piVar8[4] = piVar4[4];
+            *piVar8 = *piVar4;
+            piVar4[5] = 0;
+          }
+          piVar26 = piVar4 + 0xc;
+          piVar9 = piVar8 + 0xc;
+          piVar18 = piVar8 + 6;
+          uVar6 = uVar2 - 1;
+          piVar4 = piVar34;
+          piVar34 = piVar26;
+        }
+        while( true ) {
+          *(int *)((int)piVar10 + ((int)piVar18 - (int)piVar8)) = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar26[-5];
+            iVar16 = piVar26[-4];
+            iVar29 = piVar26[-3];
+            piVar9[-6] = piVar26[-6];
+            piVar9[-5] = iVar22;
+            piVar9[-4] = iVar16;
+            piVar9[-3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar18[5] = (int)piVar18;
+            piVar18[4] = (int)piVar18 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar18[5] = piVar4[5];
+            piVar18[4] = piVar4[4];
+            piVar9[-6] = piVar26[-6];
+            piVar4[5] = 0;
+          }
+          piVar4 = piVar18 + 6;
+          if (uVar6 == 1) break;
+          *(int *)((int)piVar10 + ((int)piVar4 - (int)piVar8)) = piVar34[5];
+          if (piVar34 == (int *)piVar34[5]) {
+            iVar22 = piVar26[1];
+            iVar16 = piVar26[2];
+            iVar29 = piVar26[3];
+            *piVar9 = *piVar26;
+            piVar9[1] = iVar22;
+            piVar9[2] = iVar16;
+            piVar9[3] = iVar29;
+            iVar22 = piVar34[4];
+            piVar18[0xb] = (int)piVar4;
+            piVar18[10] = (int)piVar4 + (iVar22 - (int)piVar34);
+          }
+          else {
+            piVar18[0xb] = piVar34[5];
+            piVar18[10] = piVar34[4];
+            *piVar9 = *piVar26;
+            piVar34[5] = 0;
+          }
+          piVar9 = piVar9 + 0xc;
+          piVar18 = piVar18 + 0xc;
+          piVar26 = piVar26 + 0xc;
+          uVar6 = uVar6 - 2;
+          piVar4 = piVar34 + 6;
+          piVar34 = piVar34 + 0xc;
+        }
+        piVar18 = piVar8 + uVar2 * 6 + 6;
+        piVar26 = piVar8 + uVar2 * 6;
+      }
+      piVar26[4] = (int)piVar26;
+      piVar26[5] = (int)piVar26;
+      FUN_0001cab0(piVar26,local_4c,local_50);
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)piVar8;
+      param_1[0x27] = (int)piVar18;
+      param_1[0x28] = (int)local_b4;
+    }
+    else {
+      local_38 = local_48;
+      sVar19 = (int)local_50 - (int)local_4c;
+      uVar2 = sVar19 + 1;
+      local_34 = local_38;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_0001fbc0 + 0x1fe1c));
+      }
+      else if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          local_38 = (undefined1 **)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          local_38 = operator_new(uVar2);
+        }
+        local_48[0] = (undefined1 *)((int)local_38 + local_80);
+        local_34 = local_38;
+      }
+      ppuVar5 = local_34;
+      if (piVar18 != piVar8) {
+        pvVar3 = memcpy(local_34,piVar18,sVar19);
+        ppuVar5 = (undefined1 **)((int)pvVar3 + sVar19);
+      }
+      local_38 = ppuVar5;
+      *(undefined1 *)ppuVar5 = 0;
+      puVar36 = (undefined4 *)param_1[0x26];
+      iVar22 = param_1[0x27] - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_0001fe98;
+          puVar7 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_0001fea0;
+        }
+        puVar32 = (undefined4 *)0x18;
+        puVar7 = (undefined4 *)0x0;
+        local_b0 = (undefined4 *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_0001fe98:
+        puVar7 = operator_new(local_80);
+LAB_0001fea0:
+        puVar36 = (undefined4 *)param_1[0x26];
+        puVar32 = puVar7 + 6;
+        local_b0 = puVar7 + (local_80 / 0x18) * 6;
+      }
+      ppuVar1 = local_34;
+      ppuVar5 = local_38;
+      iVar22 = (int)piVar26 - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      puVar20 = puVar7;
+      if (0 < (int)uVar2) {
+        puVar30 = puVar36 + 6;
+        puVar31 = puVar7 + 6;
+        puVar23 = puVar7 + 5;
+        puVar32 = puVar7;
+        puVar20 = puVar30;
+        if ((uVar2 & 1) == 0) {
+          *puVar23 = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar36[1];
+            uVar13 = puVar36[2];
+            uVar14 = puVar36[3];
+            *puVar7 = *puVar36;
+            puVar7[1] = uVar11;
+            puVar7[2] = uVar13;
+            puVar7[3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar7[5] = puVar7;
+            puVar7[4] = (int)puVar7 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar7[5] = (undefined4 *)puVar36[5];
+            puVar7[4] = puVar36[4];
+            *puVar7 = *puVar36;
+            puVar36[5] = 0;
+          }
+          puVar20 = puVar36 + 0xc;
+          puVar31 = puVar7 + 0xc;
+          uVar2 = uVar2 - 1;
+          puVar32 = puVar7 + 6;
+          puVar36 = puVar30;
+          puVar30 = puVar20;
+        }
+        while( true ) {
+          *(undefined4 *)((int)puVar23 + ((int)puVar32 - (int)puVar7)) = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar20[-5];
+            uVar13 = puVar20[-4];
+            uVar14 = puVar20[-3];
+            puVar31[-6] = puVar20[-6];
+            puVar31[-5] = uVar11;
+            puVar31[-4] = uVar13;
+            puVar31[-3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar32[5] = puVar32;
+            puVar32[4] = (int)puVar32 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar32[5] = (undefined4 *)puVar36[5];
+            puVar32[4] = puVar36[4];
+            puVar31[-6] = puVar20[-6];
+            puVar36[5] = 0;
+          }
+          puVar36 = puVar32 + 6;
+          if (uVar2 == 1) break;
+          *(undefined4 *)((int)puVar23 + ((int)puVar36 - (int)puVar7)) = puVar30[5];
+          if (puVar30 == (undefined4 *)puVar30[5]) {
+            uVar11 = puVar20[1];
+            uVar13 = puVar20[2];
+            uVar14 = puVar20[3];
+            *puVar31 = *puVar20;
+            puVar31[1] = uVar11;
+            puVar31[2] = uVar13;
+            puVar31[3] = uVar14;
+            iVar16 = puVar30[4];
+            puVar32[0xb] = puVar36;
+            puVar32[10] = (int)puVar36 + (iVar16 - (int)puVar30);
+          }
+          else {
+            puVar32[0xb] = (undefined4 *)puVar30[5];
+            puVar32[10] = puVar30[4];
+            *puVar31 = *puVar20;
+            puVar30[5] = 0;
+          }
+          uVar2 = uVar2 - 2;
+          puVar31 = puVar31 + 0xc;
+          puVar32 = puVar32 + 0xc;
+          puVar20 = puVar20 + 0xc;
+          puVar36 = puVar30 + 6;
+          puVar30 = puVar30 + 0xc;
+        }
+        puVar32 = puVar7 + iVar22 * 2 + 6;
+        puVar20 = puVar7 + iVar22 * 2;
+      }
+      puVar20[4] = puVar20;
+      puVar20[5] = puVar20;
+      sVar19 = (int)local_38 - (int)local_34;
+      uVar2 = sVar19 + 1;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_00021c6c + 0x217b8));
+        puVar36 = (undefined4 *)puVar20[5];
+      }
+      else {
+        puVar36 = puVar20;
+        if (0x10 < uVar2) {
+          local_80 = uVar2;
+          if (uVar2 < 0x81) {
+            puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          }
+          else {
+            puVar36 = operator_new(uVar2);
+          }
+          puVar20[5] = puVar36;
+          puVar20[4] = puVar36;
+          *puVar20 = (undefined1 *)((int)puVar36 + local_80);
+        }
+      }
+      if (ppuVar1 != ppuVar5) {
+        pvVar3 = memcpy(puVar36,ppuVar1,sVar19);
+        puVar36 = (undefined4 *)((int)pvVar3 + sVar19);
+      }
+      puVar20[4] = puVar36;
+      *(undefined1 *)puVar36 = 0;
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)puVar7;
+      param_1[0x27] = (int)puVar32;
+      param_1[0x28] = (int)local_b0;
+      if ((local_34 != local_48) && (local_34 != (undefined1 **)0x0)) {
+        if ((uint)((int)local_48[0] - (int)local_34) < 0x81) {
+          std::__node_alloc::_M_deallocate(local_34,(int)local_48[0] - (int)local_34);
+        }
+        else {
+          operator_delete(local_34);
+        }
+      }
+    }
+  }
+  else {
+    piVar26[4] = (int)piVar26;
+    piVar26[5] = (int)piVar26;
+    sVar19 = (int)local_50 - (int)local_4c;
+    uVar2 = sVar19 + 1;
+    if (uVar2 == 0) {
+      std::__stl_throw_length_error((char *)(DAT_0001fba8 + 0x1f53c));
+      piVar4 = (int *)piVar26[5];
+    }
+    else {
+      piVar4 = piVar26;
+      if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          piVar4 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          piVar4 = operator_new(uVar2);
+        }
+        piVar26[5] = (int)piVar4;
+        piVar26[4] = (int)piVar4;
+        *piVar26 = (int)piVar4 + local_80;
+      }
+    }
+    if (piVar18 != piVar8) {
+      pvVar3 = memcpy(piVar4,piVar18,sVar19);
+      piVar4 = (int *)((int)pvVar3 + sVar19);
+    }
+    piVar26[4] = (int)piVar4;
+    *(undefined1 *)piVar4 = 0;
+    param_1[0x27] = param_1[0x27] + 0x18;
+  }
+  if ((local_4c != local_60) && (local_4c != (int *)0x0)) {
+    if ((uint)(local_60[0] - (int)local_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_4c,local_60[0] - (int)local_4c);
+    }
+    else {
+      operator_delete(local_4c);
+    }
+  }
+  FUN_0001aa18(local_60);
+  piVar18 = local_4c;
+  piVar8 = local_50;
+  piVar26 = (int *)param_1[0x27];
+  if (piVar26 == (int *)param_1[0x28]) {
+    piVar4 = (int *)param_1[0x26];
+    if ((local_60 < piVar4) || (piVar26 <= local_60)) {
+      iVar22 = (int)piVar26 - (int)piVar4 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_000201d0;
+          piVar8 = (int *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_000201d8;
+        }
+        piVar18 = (int *)0x18;
+        piVar8 = (int *)0x0;
+        local_b4 = (int *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_000201d0:
+        piVar8 = operator_new(local_80);
+LAB_000201d8:
+        piVar4 = (int *)param_1[0x26];
+        piVar18 = piVar8 + 6;
+        uVar2 = ((int)piVar26 - (int)piVar4 >> 3) * -0x55555555;
+        local_b4 = piVar8 + (local_80 / 0x18) * 6;
+      }
+      piVar26 = piVar8;
+      if (0 < (int)uVar2) {
+        piVar34 = piVar4 + 6;
+        piVar9 = piVar8 + 6;
+        piVar10 = piVar8 + 5;
+        piVar18 = piVar8;
+        piVar26 = piVar34;
+        uVar6 = uVar2;
+        if ((uVar2 & 1) == 0) {
+          *piVar10 = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar4[1];
+            iVar16 = piVar4[2];
+            iVar29 = piVar4[3];
+            *piVar8 = *piVar4;
+            piVar8[1] = iVar22;
+            piVar8[2] = iVar16;
+            piVar8[3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar8[5] = (int)piVar8;
+            piVar8[4] = (int)piVar8 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar8[5] = piVar4[5];
+            piVar8[4] = piVar4[4];
+            *piVar8 = *piVar4;
+            piVar4[5] = 0;
+          }
+          piVar26 = piVar4 + 0xc;
+          piVar9 = piVar8 + 0xc;
+          piVar18 = piVar8 + 6;
+          uVar6 = uVar2 - 1;
+          piVar4 = piVar34;
+          piVar34 = piVar26;
+        }
+        while( true ) {
+          *(int *)((int)piVar10 + ((int)piVar18 - (int)piVar8)) = piVar4[5];
+          if (piVar4 == (int *)piVar4[5]) {
+            iVar22 = piVar26[-5];
+            iVar16 = piVar26[-4];
+            iVar29 = piVar26[-3];
+            piVar9[-6] = piVar26[-6];
+            piVar9[-5] = iVar22;
+            piVar9[-4] = iVar16;
+            piVar9[-3] = iVar29;
+            iVar22 = piVar4[4];
+            piVar18[5] = (int)piVar18;
+            piVar18[4] = (int)piVar18 + (iVar22 - (int)piVar4);
+          }
+          else {
+            piVar18[5] = piVar4[5];
+            piVar18[4] = piVar4[4];
+            piVar9[-6] = piVar26[-6];
+            piVar4[5] = 0;
+          }
+          piVar4 = piVar18 + 6;
+          if (uVar6 == 1) break;
+          *(int *)((int)piVar10 + ((int)piVar4 - (int)piVar8)) = piVar34[5];
+          if (piVar34 == (int *)piVar34[5]) {
+            iVar22 = piVar26[1];
+            iVar16 = piVar26[2];
+            iVar29 = piVar26[3];
+            *piVar9 = *piVar26;
+            piVar9[1] = iVar22;
+            piVar9[2] = iVar16;
+            piVar9[3] = iVar29;
+            iVar22 = piVar34[4];
+            piVar18[0xb] = (int)piVar4;
+            piVar18[10] = (int)piVar4 + (iVar22 - (int)piVar34);
+          }
+          else {
+            piVar18[0xb] = piVar34[5];
+            piVar18[10] = piVar34[4];
+            *piVar9 = *piVar26;
+            piVar34[5] = 0;
+          }
+          piVar9 = piVar9 + 0xc;
+          piVar18 = piVar18 + 0xc;
+          piVar26 = piVar26 + 0xc;
+          uVar6 = uVar6 - 2;
+          piVar4 = piVar34 + 6;
+          piVar34 = piVar34 + 0xc;
+        }
+        piVar18 = piVar8 + uVar2 * 6 + 6;
+        piVar26 = piVar8 + uVar2 * 6;
+      }
+      piVar26[4] = (int)piVar26;
+      piVar26[5] = (int)piVar26;
+      FUN_0001cab0(piVar26,local_4c,local_50);
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)piVar8;
+      param_1[0x27] = (int)piVar18;
+      param_1[0x28] = (int)local_b4;
+    }
+    else {
+      local_38 = local_48;
+      sVar19 = (int)local_50 - (int)local_4c;
+      uVar2 = sVar19 + 1;
+      local_34 = local_38;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_0001fbbc + 0x1fc10));
+      }
+      else if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          local_38 = (undefined1 **)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          local_38 = operator_new(uVar2);
+        }
+        local_48[0] = (undefined1 *)((int)local_38 + local_80);
+        local_34 = local_38;
+      }
+      ppuVar5 = local_34;
+      if (piVar18 != piVar8) {
+        pvVar3 = memcpy(local_34,piVar18,sVar19);
+        ppuVar5 = (undefined1 **)((int)pvVar3 + sVar19);
+      }
+      local_38 = ppuVar5;
+      *(undefined1 *)ppuVar5 = 0;
+      puVar36 = (undefined4 *)param_1[0x26];
+      iVar22 = param_1[0x27] - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      if (uVar2 == 0) {
+        uVar6 = 1;
+      }
+      else {
+        uVar6 = iVar22 * 0x55555556;
+      }
+      if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+        if (uVar6 != 0) {
+          local_80 = uVar6 * 0x18;
+          if (0x80 < local_80) goto LAB_0001fc8c;
+          puVar7 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          goto LAB_0001fc94;
+        }
+        puVar32 = (undefined4 *)0x18;
+        puVar7 = (undefined4 *)0x0;
+        local_b0 = (undefined4 *)0x0;
+      }
+      else {
+        local_80 = 0xfffffff0;
+LAB_0001fc8c:
+        puVar7 = operator_new(local_80);
+LAB_0001fc94:
+        puVar36 = (undefined4 *)param_1[0x26];
+        puVar32 = puVar7 + 6;
+        local_b0 = puVar7 + (local_80 / 0x18) * 6;
+      }
+      ppuVar1 = local_34;
+      ppuVar5 = local_38;
+      iVar22 = (int)piVar26 - (int)puVar36 >> 3;
+      uVar2 = iVar22 * -0x55555555;
+      puVar20 = puVar7;
+      if (0 < (int)uVar2) {
+        puVar30 = puVar36 + 6;
+        puVar31 = puVar7 + 6;
+        puVar23 = puVar7 + 5;
+        puVar32 = puVar7;
+        puVar20 = puVar30;
+        if ((uVar2 & 1) == 0) {
+          *puVar23 = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar36[1];
+            uVar13 = puVar36[2];
+            uVar14 = puVar36[3];
+            *puVar7 = *puVar36;
+            puVar7[1] = uVar11;
+            puVar7[2] = uVar13;
+            puVar7[3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar7[5] = puVar7;
+            puVar7[4] = (int)puVar7 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar7[5] = (undefined4 *)puVar36[5];
+            puVar7[4] = puVar36[4];
+            *puVar7 = *puVar36;
+            puVar36[5] = 0;
+          }
+          puVar20 = puVar36 + 0xc;
+          puVar31 = puVar7 + 0xc;
+          uVar2 = uVar2 - 1;
+          puVar32 = puVar7 + 6;
+          puVar36 = puVar30;
+          puVar30 = puVar20;
+        }
+        while( true ) {
+          *(undefined4 *)((int)puVar23 + ((int)puVar32 - (int)puVar7)) = puVar36[5];
+          if (puVar36 == (undefined4 *)puVar36[5]) {
+            uVar11 = puVar20[-5];
+            uVar13 = puVar20[-4];
+            uVar14 = puVar20[-3];
+            puVar31[-6] = puVar20[-6];
+            puVar31[-5] = uVar11;
+            puVar31[-4] = uVar13;
+            puVar31[-3] = uVar14;
+            iVar16 = puVar36[4];
+            puVar32[5] = puVar32;
+            puVar32[4] = (int)puVar32 + (iVar16 - (int)puVar36);
+          }
+          else {
+            puVar32[5] = (undefined4 *)puVar36[5];
+            puVar32[4] = puVar36[4];
+            puVar31[-6] = puVar20[-6];
+            puVar36[5] = 0;
+          }
+          puVar36 = puVar32 + 6;
+          if (uVar2 == 1) break;
+          *(undefined4 *)((int)puVar23 + ((int)puVar36 - (int)puVar7)) = puVar30[5];
+          if (puVar30 == (undefined4 *)puVar30[5]) {
+            uVar11 = puVar20[1];
+            uVar13 = puVar20[2];
+            uVar14 = puVar20[3];
+            *puVar31 = *puVar20;
+            puVar31[1] = uVar11;
+            puVar31[2] = uVar13;
+            puVar31[3] = uVar14;
+            iVar16 = puVar30[4];
+            puVar32[0xb] = puVar36;
+            puVar32[10] = (int)puVar36 + (iVar16 - (int)puVar30);
+          }
+          else {
+            puVar32[0xb] = (undefined4 *)puVar30[5];
+            puVar32[10] = puVar30[4];
+            *puVar31 = *puVar20;
+            puVar30[5] = 0;
+          }
+          uVar2 = uVar2 - 2;
+          puVar31 = puVar31 + 0xc;
+          puVar32 = puVar32 + 0xc;
+          puVar20 = puVar20 + 0xc;
+          puVar36 = puVar30 + 6;
+          puVar30 = puVar30 + 0xc;
+        }
+        puVar32 = puVar7 + iVar22 * 2 + 6;
+        puVar20 = puVar7 + iVar22 * 2;
+      }
+      puVar20[4] = puVar20;
+      puVar20[5] = puVar20;
+      sVar19 = (int)local_38 - (int)local_34;
+      uVar2 = sVar19 + 1;
+      if (uVar2 == 0) {
+        std::__stl_throw_length_error((char *)(DAT_00021c70 + 0x217ec));
+        puVar36 = (undefined4 *)puVar20[5];
+      }
+      else {
+        puVar36 = puVar20;
+        if (0x10 < uVar2) {
+          local_80 = uVar2;
+          if (uVar2 < 0x81) {
+            puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+          }
+          else {
+            puVar36 = operator_new(uVar2);
+          }
+          puVar20[5] = puVar36;
+          puVar20[4] = puVar36;
+          *puVar20 = (undefined1 *)((int)puVar36 + local_80);
+        }
+      }
+      if (ppuVar1 != ppuVar5) {
+        pvVar3 = memcpy(puVar36,ppuVar1,sVar19);
+        puVar36 = (undefined4 *)((int)pvVar3 + sVar19);
+      }
+      puVar20[4] = puVar36;
+      *(undefined1 *)puVar36 = 0;
+      pvVar3 = (void *)param_1[0x26];
+      if (pvVar3 != (void *)0x0) {
+        uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+        if (uVar2 < 0x81) {
+          std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+        }
+        else {
+          operator_delete(pvVar3);
+        }
+      }
+      param_1[0x26] = (int)puVar7;
+      param_1[0x27] = (int)puVar32;
+      param_1[0x28] = (int)local_b0;
+      if ((local_34 != local_48) && (local_34 != (undefined1 **)0x0)) {
+        if ((uint)((int)local_48[0] - (int)local_34) < 0x81) {
+          std::__node_alloc::_M_deallocate(local_34,(int)local_48[0] - (int)local_34);
+        }
+        else {
+          operator_delete(local_34);
+        }
+      }
+    }
+  }
+  else {
+    piVar26[4] = (int)piVar26;
+    piVar26[5] = (int)piVar26;
+    sVar19 = (int)local_50 - (int)local_4c;
+    uVar2 = sVar19 + 1;
+    if (uVar2 == 0) {
+      std::__stl_throw_length_error((char *)(DAT_0001fba4 + 0x1f528));
+      piVar4 = (int *)piVar26[5];
+    }
+    else {
+      piVar4 = piVar26;
+      if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          piVar4 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          piVar4 = operator_new(uVar2);
+        }
+        piVar26[5] = (int)piVar4;
+        piVar26[4] = (int)piVar4;
+        *piVar26 = (int)piVar4 + local_80;
+      }
+    }
+    if (piVar18 != piVar8) {
+      pvVar3 = memcpy(piVar4,piVar18,sVar19);
+      piVar4 = (int *)((int)pvVar3 + sVar19);
+    }
+    piVar26[4] = (int)piVar4;
+    *(undefined1 *)piVar4 = 0;
+    param_1[0x27] = param_1[0x27] + 0x18;
+  }
+  if ((local_4c != local_60) && (local_4c != (int *)0x0)) {
+    if ((uint)(local_60[0] - (int)local_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_4c,local_60[0] - (int)local_4c);
+    }
+    else {
+      operator_delete(local_4c);
+    }
+  }
+  FUN_0001a9a0(local_60);
+  piVar8 = local_4c;
+  piVar18 = (int *)param_1[0x27];
+  if (piVar18 != (int *)param_1[0x28]) {
+    piVar18[4] = (int)piVar18;
+    piVar18[5] = (int)piVar18;
+    sVar19 = (int)local_50 - (int)local_4c;
+    uVar2 = sVar19 + 1;
+    if (uVar2 == 0) {
+      std::__stl_throw_length_error((char *)(DAT_0001fba0 + 0x1f514));
+      piVar26 = (int *)piVar18[5];
+    }
+    else {
+      piVar26 = piVar18;
+      if (0x10 < uVar2) {
+        local_80 = uVar2;
+        if (uVar2 < 0x81) {
+          piVar26 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        }
+        else {
+          piVar26 = operator_new(uVar2);
+        }
+        piVar18[5] = (int)piVar26;
+        piVar18[4] = (int)piVar26;
+        *piVar18 = (int)piVar26 + local_80;
+      }
+    }
+    if (piVar8 != local_50) {
+      pvVar3 = memcpy(piVar26,piVar8,sVar19);
+      piVar26 = (int *)((int)pvVar3 + sVar19);
+    }
+    piVar18[4] = (int)piVar26;
+    *(undefined1 *)piVar26 = 0;
+    param_1[0x27] = param_1[0x27] + 0x18;
+    goto LAB_0001f308;
+  }
+  piVar26 = (int *)param_1[0x26];
+  if ((local_60 < piVar26) || (piVar18 <= local_60)) {
+    iVar22 = (int)piVar18 - (int)piVar26 >> 3;
+    uVar2 = iVar22 * -0x55555555;
+    if (uVar2 == 0) {
+      uVar6 = 1;
+    }
+    else {
+      uVar6 = iVar22 * 0x55555556;
+    }
+    if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+      if (uVar6 != 0) {
+        local_80 = uVar6 * 0x18;
+        if (0x80 < local_80) goto LAB_000204e0;
+        piVar8 = (int *)std::__node_alloc::_M_allocate(&local_80);
+        goto LAB_000204e8;
+      }
+      piVar4 = (int *)0x18;
+      piVar8 = (int *)0x0;
+      local_b4 = (int *)0x0;
+    }
+    else {
+      local_80 = 0xfffffff0;
+LAB_000204e0:
+      piVar8 = operator_new(local_80);
+LAB_000204e8:
+      piVar26 = (int *)param_1[0x26];
+      piVar4 = piVar8 + 6;
+      uVar2 = ((int)piVar18 - (int)piVar26 >> 3) * -0x55555555;
+      local_b4 = piVar8 + (local_80 / 0x18) * 6;
+    }
+    piVar18 = piVar8;
+    if (0 < (int)uVar2) {
+      piVar34 = piVar26 + 6;
+      piVar9 = piVar8 + 6;
+      piVar10 = piVar8 + 5;
+      piVar4 = piVar34;
+      uVar6 = uVar2;
+      if ((uVar2 & 1) == 0) {
+        *piVar10 = piVar26[5];
+        if (piVar26 == (int *)piVar26[5]) {
+          iVar22 = piVar26[1];
+          iVar16 = piVar26[2];
+          iVar29 = piVar26[3];
+          *piVar8 = *piVar26;
+          piVar8[1] = iVar22;
+          piVar8[2] = iVar16;
+          piVar8[3] = iVar29;
+          iVar22 = piVar26[4];
+          piVar8[5] = (int)piVar8;
+          piVar8[4] = (int)piVar8 + (iVar22 - (int)piVar26);
+        }
+        else {
+          piVar8[5] = piVar26[5];
+          piVar8[4] = piVar26[4];
+          *piVar8 = *piVar26;
+          piVar26[5] = 0;
+        }
+        piVar4 = piVar26 + 0xc;
+        piVar9 = piVar8 + 0xc;
+        piVar18 = piVar8 + 6;
+        uVar6 = uVar2 - 1;
+        piVar26 = piVar34;
+        piVar34 = piVar4;
+      }
+      while( true ) {
+        *(int *)((int)piVar10 + ((int)piVar18 - (int)piVar8)) = piVar26[5];
+        if (piVar26 == (int *)piVar26[5]) {
+          iVar22 = piVar4[-5];
+          iVar16 = piVar4[-4];
+          iVar29 = piVar4[-3];
+          piVar9[-6] = piVar4[-6];
+          piVar9[-5] = iVar22;
+          piVar9[-4] = iVar16;
+          piVar9[-3] = iVar29;
+          iVar22 = piVar26[4];
+          piVar18[5] = (int)piVar18;
+          piVar18[4] = (int)piVar18 + (iVar22 - (int)piVar26);
+        }
+        else {
+          piVar18[5] = piVar26[5];
+          piVar18[4] = piVar26[4];
+          piVar9[-6] = piVar4[-6];
+          piVar26[5] = 0;
+        }
+        piVar26 = piVar18 + 6;
+        if (uVar6 == 1) break;
+        *(int *)((int)piVar10 + ((int)piVar26 - (int)piVar8)) = piVar34[5];
+        if (piVar34 == (int *)piVar34[5]) {
+          iVar22 = piVar4[1];
+          iVar16 = piVar4[2];
+          iVar29 = piVar4[3];
+          *piVar9 = *piVar4;
+          piVar9[1] = iVar22;
+          piVar9[2] = iVar16;
+          piVar9[3] = iVar29;
+          iVar22 = piVar34[4];
+          piVar18[0xb] = (int)piVar26;
+          piVar18[10] = (int)piVar26 + (iVar22 - (int)piVar34);
+        }
+        else {
+          piVar18[0xb] = piVar34[5];
+          piVar18[10] = piVar34[4];
+          *piVar9 = *piVar4;
+          piVar34[5] = 0;
+        }
+        piVar9 = piVar9 + 0xc;
+        piVar18 = piVar18 + 0xc;
+        piVar4 = piVar4 + 0xc;
+        uVar6 = uVar6 - 2;
+        piVar26 = piVar34 + 6;
+        piVar34 = piVar34 + 0xc;
+      }
+      piVar4 = piVar8 + uVar2 * 6 + 6;
+      piVar18 = piVar8 + uVar2 * 6;
+    }
+    piVar18[4] = (int)piVar18;
+    piVar18[5] = (int)piVar18;
+    FUN_0001cab0(piVar18,local_4c,local_50);
+    pvVar3 = (void *)param_1[0x26];
+    if (pvVar3 != (void *)0x0) {
+      uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+      if (uVar2 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    param_1[0x26] = (int)piVar8;
+    param_1[0x27] = (int)piVar4;
+    param_1[0x28] = (int)local_b4;
+    goto LAB_0001f308;
+  }
+  local_38 = local_48;
+  sVar19 = (int)local_50 - (int)local_4c;
+  uVar2 = sVar19 + 1;
+  local_34 = local_38;
+  if (uVar2 == 0) {
+    std::__stl_throw_length_error((char *)(DAT_0001fbb8 + 0x1f9bc));
+  }
+  else if (0x10 < uVar2) {
+    local_80 = uVar2;
+    if (uVar2 < 0x81) {
+      local_38 = (undefined1 **)std::__node_alloc::_M_allocate(&local_80);
+    }
+    else {
+      local_38 = operator_new(uVar2);
+    }
+    local_48[0] = (undefined1 *)((int)local_38 + local_80);
+    local_34 = local_38;
+  }
+  ppuVar5 = local_34;
+  if (piVar8 != local_50) {
+    pvVar3 = memcpy(local_34,piVar8,sVar19);
+    ppuVar5 = (undefined1 **)((int)pvVar3 + sVar19);
+  }
+  local_38 = ppuVar5;
+  *(undefined1 *)ppuVar5 = 0;
+  puVar36 = (undefined4 *)param_1[0x26];
+  iVar22 = param_1[0x27] - (int)puVar36 >> 3;
+  uVar2 = iVar22 * -0x55555555;
+  if (uVar2 == 0) {
+    uVar6 = 1;
+  }
+  else {
+    uVar6 = iVar22 * 0x55555556;
+  }
+  if ((uVar6 < 0xaaaaaab) && (uVar2 <= uVar6)) {
+    if (uVar6 != 0) {
+      local_80 = uVar6 * 0x18;
+      if (0x80 < local_80) goto LAB_0001fa38;
+      puVar7 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+      goto LAB_0001fa40;
+    }
+    puVar32 = (undefined4 *)0x18;
+    puVar7 = (undefined4 *)0x0;
+    local_a8 = (undefined4 *)0x0;
+  }
+  else {
+    local_80 = 0xfffffff0;
+LAB_0001fa38:
+    puVar7 = operator_new(local_80);
+LAB_0001fa40:
+    puVar36 = (undefined4 *)param_1[0x26];
+    puVar32 = puVar7 + 6;
+    local_a8 = puVar7 + (local_80 / 0x18) * 6;
+  }
+  ppuVar1 = local_34;
+  ppuVar5 = local_38;
+  iVar22 = (int)piVar18 - (int)puVar36 >> 3;
+  uVar2 = iVar22 * -0x55555555;
+  puVar20 = puVar7;
+  if (0 < (int)uVar2) {
+    puVar31 = puVar36 + 6;
+    puVar23 = puVar7 + 5;
+    puVar24 = puVar7 + 6;
+    puVar32 = puVar31;
+    puVar30 = puVar31;
+    if ((uVar2 & 1) == 0) {
+      *puVar23 = puVar36[5];
+      if (puVar36 == (undefined4 *)puVar36[5]) {
+        uVar11 = puVar36[1];
+        uVar13 = puVar36[2];
+        uVar14 = puVar36[3];
+        *puVar7 = *puVar36;
+        puVar7[1] = uVar11;
+        puVar7[2] = uVar13;
+        puVar7[3] = uVar14;
+        iVar16 = puVar36[4];
+        puVar7[5] = puVar7;
+        puVar7[4] = (int)puVar7 + (iVar16 - (int)puVar36);
+      }
+      else {
+        puVar7[5] = (undefined4 *)puVar36[5];
+        puVar7[4] = puVar36[4];
+        *puVar7 = *puVar36;
+        puVar36[5] = 0;
+      }
+      puVar24 = puVar7 + 0xc;
+      uVar2 = uVar2 - 1;
+      puVar32 = puVar36 + 0xc;
+      puVar20 = puVar7 + 6;
+      puVar30 = puVar36 + 0xc;
+      puVar36 = puVar31;
+    }
+    while( true ) {
+      *(undefined4 *)((int)puVar23 + ((int)puVar20 - (int)puVar7)) = puVar36[5];
+      if (puVar36 == (undefined4 *)puVar36[5]) {
+        uVar11 = puVar30[-5];
+        uVar13 = puVar30[-4];
+        uVar14 = puVar30[-3];
+        puVar24[-6] = puVar30[-6];
+        puVar24[-5] = uVar11;
+        puVar24[-4] = uVar13;
+        puVar24[-3] = uVar14;
+        iVar16 = puVar36[4];
+        puVar20[5] = puVar20;
+        puVar20[4] = (int)puVar20 + (iVar16 - (int)puVar36);
+      }
+      else {
+        puVar20[5] = (undefined4 *)puVar36[5];
+        puVar20[4] = puVar36[4];
+        puVar24[-6] = puVar30[-6];
+        puVar36[5] = 0;
+      }
+      puVar31 = puVar20 + 6;
+      if (uVar2 == 1) break;
+      puVar36 = puVar32 + 6;
+      *(undefined4 *)((int)puVar23 + ((int)puVar31 - (int)puVar7)) = puVar32[5];
+      if (puVar32 == (undefined4 *)puVar32[5]) {
+        uVar11 = puVar30[1];
+        uVar13 = puVar30[2];
+        uVar14 = puVar30[3];
+        *puVar24 = *puVar30;
+        puVar24[1] = uVar11;
+        puVar24[2] = uVar13;
+        puVar24[3] = uVar14;
+        iVar16 = puVar32[4];
+        puVar20[0xb] = puVar31;
+        puVar20[10] = (int)puVar31 + (iVar16 - (int)puVar32);
+      }
+      else {
+        puVar20[0xb] = (undefined4 *)puVar32[5];
+        puVar20[10] = puVar32[4];
+        *puVar24 = *puVar30;
+        puVar32[5] = 0;
+      }
+      uVar2 = uVar2 - 2;
+      puVar24 = puVar24 + 0xc;
+      puVar32 = puVar32 + 0xc;
+      puVar20 = puVar20 + 0xc;
+      puVar30 = puVar30 + 0xc;
+    }
+    puVar32 = puVar7 + iVar22 * 2 + 6;
+    puVar20 = puVar7 + iVar22 * 2;
+  }
+  puVar20[4] = puVar20;
+  puVar20[5] = puVar20;
+  sVar19 = (int)local_38 - (int)local_34;
+  uVar2 = sVar19 + 1;
+  if (uVar2 == 0) {
+    std::__stl_throw_length_error((char *)(DAT_00021c60 + 0x21704));
+    puVar36 = (undefined4 *)puVar20[5];
+  }
+  else {
+    puVar36 = puVar20;
+    if (0x10 < uVar2) {
+      local_80 = uVar2;
+      if (uVar2 < 0x81) {
+        puVar36 = (undefined4 *)std::__node_alloc::_M_allocate(&local_80);
+      }
+      else {
+        puVar36 = operator_new(uVar2);
+      }
+      puVar20[5] = puVar36;
+      puVar20[4] = puVar36;
+      *puVar20 = (undefined1 *)((int)puVar36 + local_80);
+    }
+  }
+  if (ppuVar1 != ppuVar5) {
+    pvVar3 = memcpy(puVar36,ppuVar1,sVar19);
+    puVar36 = (undefined4 *)((int)pvVar3 + sVar19);
+  }
+  puVar20[4] = puVar36;
+  *(undefined1 *)puVar36 = 0;
+  pvVar3 = (void *)param_1[0x26];
+  if (pvVar3 != (void *)0x0) {
+    uVar2 = (param_1[0x28] - (int)pvVar3 >> 3) * 8;
+    if (uVar2 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar3,uVar2);
+    }
+    else {
+      operator_delete(pvVar3);
+    }
+  }
+  param_1[0x26] = (int)puVar7;
+  param_1[0x27] = (int)puVar32;
+  param_1[0x28] = (int)local_a8;
+  if ((local_34 != local_48) && (local_34 != (undefined1 **)0x0)) {
+    if ((uint)((int)local_48[0] - (int)local_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_34,(int)local_48[0] - (int)local_34);
+    }
+    else {
+      operator_delete(local_34);
+    }
+  }
+LAB_0001f308:
+  if ((local_4c != local_60) && (local_4c != (int *)0x0)) {
+    if ((uint)(local_60[0] - (int)local_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(local_4c,local_60[0] - (int)local_4c);
+    }
+    else {
+      operator_delete(local_4c);
+    }
+  }
+  param_1[0x36] = 0;
+  if (local_2c == *piVar25) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail(param_1);
+}
+
+
+
+============================================================
+requested=0x1a09c
+entry=0001a09c
+name=FUN_0001a09c
+signature=undefined FUN_0001a09c(void)
+body=[[0001a09c, 0001a0ef]]
+references-to:
+  00023c00 DATA
+  00023c88 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a09c(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                 undefined4 param_5)
+
+{
+  int iVar1;
+  undefined4 *puVar2;
+  int iVar3;
+  
+  iVar1 = DAT_0001a0f8;
+  iVar3 = DAT_0001a0f0 + 0x1a0b4;
+  puVar2 = *(undefined4 **)(iVar3 + DAT_0001a0f4);
+  *puVar2 = param_2;
+  puVar2[1] = param_3;
+  puVar2 = *(undefined4 **)(iVar3 + iVar1);
+  *puVar2 = param_4;
+  puVar2[1] = param_5;
+  glViewport(param_2,param_3,param_4,param_5);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a11c
+entry=0001a11c
+name=FUN_0001a11c
+signature=undefined FUN_0001a11c(void)
+body=[[00015aac, 00015ab7] [0001a11c, 0001a123]]
+references-to:
+  00023c8c DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a11c(int param_1)
+
+{
+  *(undefined1 *)(*(int *)(param_1 + 0xd8) + 0xcf1) = 1;
+  return;
+}
+
+
+
+============================================================
+requested=0x1a124
+entry=0001a124
+name=FUN_0001a124
+signature=undefined FUN_0001a124(void)
+body=[[00014f38, 00014f43] [0001a124, 0001a12b]]
+references-to:
+  00023c94 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a124(int param_1)
+
+{
+  *(undefined1 *)(*(int *)(param_1 + 0xd8) + 0xab0) = 1;
+  return;
+}
+
+
+
+============================================================
+requested=0x1a12c
+entry=0001a12c
+name=FUN_0001a12c
+signature=undefined FUN_0001a12c(void)
+body=[[0001a12c, 0001a17b]]
+references-to:
+  00023ca8 DATA
+  00023cc0 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a12c(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0x0,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a17c
+entry=0001a17c
+name=FUN_0001a17c
+signature=undefined FUN_0001a17c(void)
+body=[[0001a17c, 0001a1cb]]
+references-to:
+  00023cac DATA
+  00023cc4 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a17c(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0x1,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a1cc
+entry=0001a1cc
+name=FUN_0001a1cc
+signature=undefined FUN_0001a1cc(void)
+body=[[0001a1cc, 0001a21b]]
+references-to:
+  00023cb0 DATA
+  00023cc8 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a1cc(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0x2,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a21c
+entry=0001a21c
+name=FUN_0001a21c
+signature=undefined FUN_0001a21c(void)
+body=[[0001a21c, 0001a26b]]
+references-to:
+  00023cb4 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a21c(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0x9,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a26c
+entry=0001a26c
+name=FUN_0001a26c
+signature=undefined FUN_0001a26c(void)
+body=[[0001a26c, 0001a2bb]]
+references-to:
+  00023cb8 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a26c(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0xa,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a2bc
+entry=0001a2bc
+name=FUN_0001a2bc
+signature=undefined FUN_0001a2bc(void)
+body=[[0001a2bc, 0001a30b]]
+references-to:
+  00023cbc DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a2bc(int param_1,undefined8 *param_2)
+
+{
+  undefined8 uVar1;
+  undefined8 uStack_10;
+  
+  uVar1 = FixedToFP(*(undefined8 *)(param_1 + 0x20),0x20,0x20,0,0,0);
+  uVar1 = FloatVectorMult(uVar1,*param_2,2,0x20);
+  uStack_10 = FPToFixed(uVar1,0x20,0x20,0,0,3);
+  SPhysics::SPISceneComponent::onTouchEvent
+            (*(int *)(param_1 + 0xd8),0,1,(int *)0x7,(int *)&uStack_10);
+  return;
+}
+
+
+
+============================================================
+requested=0x1a5bc
+entry=0001a5bc
+name=FUN_0001a5bc
+signature=undefined FUN_0001a5bc(void)
+body=[[0001a5bc, 0001a5ff]]
+references-to:
+  00023ca4 DATA
+decompileCompleted=true
+error=
+
+byte FUN_0001a5bc(int param_1)
+
+{
+  byte bVar1;
+  int iVar2;
+  
+  SPhysics::SPISceneComponent::onUpdateScene();
+  SPhysics::SPISceneComponent::onDrawScene();
+  iVar2 = SPhysics::SPISceneComponent::isEmpty();
+  if (iVar2 == 0) {
+    return 1;
+  }
+  bVar1 = FUN_0001365c(*(undefined4 *)(param_1 + 0xd8));
+  return bVar1 ^ 1;
+}
+
+
+
+============================================================
+requested=0x1a624
+entry=0001a600
+name=FUN_0001a600
+signature=undefined FUN_0001a600(void)
+body=[[0001a600, 0001a65b]]
+references-to:
+  00012924 PARAM
+decompileCompleted=true
+error=
+
+int * FUN_0001a600(int *param_1)
+
+{
+  void *pvVar1;
+  uint uVar2;
+  
+  pvVar1 = (void *)param_1[1];
+  *param_1 = DAT_0001a65c + 0x1a624;
+  if (pvVar1 != (void *)0x0) {
+    uVar2 = param_1[3] - (int)pvVar1 & 0xfffffffc;
+    if (uVar2 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar2);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  *param_1 = DAT_0001a660 + 0x1a650;
+  return param_1;
+}
+
+
+
+============================================================
+requested=0x1a664
+entry=0001a664
+name=FUN_0001a664
+signature=undefined FUN_0001a664(void)
+body=[[0001a664, 0001a787]]
+references-to:
+  00023c64 DATA
+  00023cec DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a664(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  undefined4 uVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  float *pfVar7;
+  undefined4 uVar8;
+  undefined4 *puVar9;
+  undefined4 *puVar10;
+  undefined4 uVar11;
+  undefined4 uVar12;
+  undefined4 uVar13;
+  float fVar14;
+  
+  iVar2 = DAT_0001a798;
+  iVar1 = DAT_0001a794;
+  fVar14 = *(float *)(param_1 + 0x38) * DAT_0001a788;
+  iVar4 = DAT_0001a78c + 0x1a684;
+  pfVar7 = *(float **)(iVar4 + DAT_0001a790);
+  pfVar7[5] = 1.792591;
+  pfVar7[1] = 0.0;
+  pfVar7[2] = 0.0;
+  pfVar7[3] = 0.0;
+  pfVar7[4] = 0.0;
+  pfVar7[6] = 0.0;
+  pfVar7[7] = 0.0;
+  pfVar7[8] = 0.0;
+  pfVar7[9] = 0.0;
+  pfVar7[0xc] = 0.0;
+  pfVar7[0xd] = 0.0;
+  pfVar7[0xf] = 0.0;
+  pfVar7[0xb] = -1.0;
+  pfVar7[10] = -1.0002;
+  pfVar7[0xe] = -2.0002;
+  *pfVar7 = 1.0 / fVar14;
+  puVar10 = *(undefined4 **)(iVar4 + iVar1);
+  puVar9 = *(undefined4 **)(iVar4 + iVar2);
+  uVar5 = puVar10[1];
+  uVar6 = puVar10[2];
+  uVar11 = puVar10[3];
+  uVar12 = puVar10[4];
+  uVar3 = puVar10[5];
+  *puVar9 = *puVar10;
+  uVar8 = puVar10[6];
+  puVar9[1] = uVar5;
+  puVar9[2] = uVar6;
+  puVar9[3] = uVar11;
+  puVar9[4] = uVar12;
+  puVar9[5] = uVar3;
+  puVar9[6] = uVar8;
+  uVar3 = puVar10[8];
+  uVar12 = puVar10[9];
+  puVar9[7] = puVar10[7];
+  puVar9[8] = uVar3;
+  uVar13 = puVar10[10];
+  uVar3 = puVar10[0xb];
+  uVar8 = puVar10[0xc];
+  uVar6 = puVar10[0xd];
+  uVar5 = puVar10[0xe];
+  uVar11 = puVar10[0xf];
+  puVar9[9] = uVar12;
+  puVar9[10] = uVar13;
+  puVar9[0xb] = uVar3;
+  puVar9[0xc] = uVar8;
+  puVar9[0xd] = uVar6;
+  puVar9[0xe] = uVar5;
+  puVar9[0xf] = uVar11;
+  return;
+}
+
+
+
+============================================================
+requested=0x1a79c
+entry=0001a79c
+name=FUN_0001a79c
+signature=undefined FUN_0001a79c(void)
+body=[[0001a79c, 0001a8c3]]
+references-to:
+  00023c60 DATA
+  00023ce8 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001a79c(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  undefined4 uVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  float *pfVar7;
+  undefined4 *puVar8;
+  undefined4 uVar9;
+  undefined4 *puVar10;
+  float fVar11;
+  float fVar12;
+  
+  iVar2 = DAT_0001a8d0;
+  iVar1 = DAT_0001a8cc;
+  fVar11 = (float)(longlong)*(int *)(param_1 + 0x20);
+  iVar4 = DAT_0001a8c4 + 0x1a7c4;
+  pfVar7 = *(float **)(iVar4 + DAT_0001a8c8);
+  fVar12 = (float)(longlong)*(int *)(param_1 + 0x24);
+  pfVar7[1] = 0.0;
+  pfVar7[2] = 0.0;
+  pfVar7[3] = 0.0;
+  pfVar7[4] = 0.0;
+  pfVar7[10] = -0.001;
+  pfVar7[6] = 0.0;
+  pfVar7[7] = 0.0;
+  pfVar7[8] = 0.0;
+  pfVar7[9] = 0.0;
+  pfVar7[0xb] = 0.0;
+  pfVar7[0xe] = 0.0;
+  pfVar7[0xf] = 1.0;
+  pfVar7[0xc] = fVar11 / -fVar11;
+  *pfVar7 = 2.0 / fVar11;
+  pfVar7[5] = 2.0 / fVar12;
+  pfVar7[0xd] = fVar12 / -fVar12;
+  puVar10 = *(undefined4 **)(iVar4 + iVar1);
+  puVar8 = *(undefined4 **)(iVar4 + iVar2);
+  uVar5 = puVar10[1];
+  uVar6 = puVar10[2];
+  uVar3 = puVar10[3];
+  *puVar8 = *puVar10;
+  puVar8[1] = uVar5;
+  uVar9 = puVar10[4];
+  uVar5 = puVar10[5];
+  puVar8[2] = uVar6;
+  puVar8[3] = uVar3;
+  puVar8[4] = uVar9;
+  puVar8[5] = uVar5;
+  uVar3 = puVar10[7];
+  uVar9 = puVar10[8];
+  uVar5 = puVar10[10];
+  puVar8[6] = puVar10[6];
+  uVar6 = puVar10[9];
+  puVar8[7] = uVar3;
+  puVar8[8] = uVar9;
+  puVar8[9] = uVar6;
+  uVar6 = puVar10[0xc];
+  puVar8[10] = uVar5;
+  uVar5 = puVar10[0xd];
+  uVar3 = puVar10[0xe];
+  uVar9 = puVar10[0xf];
+  puVar8[0xb] = puVar10[0xb];
+  puVar8[0xc] = uVar6;
+  puVar8[0xd] = uVar5;
+  puVar8[0xe] = uVar3;
+  puVar8[0xf] = uVar9;
+  return;
+}
+
+
+
+============================================================
+requested=0x1ab08
+entry=0001ab08
+name=FUN_0001ab08
+signature=undefined FUN_0001ab08(void)
+body=[[0001ab08, 0001b13b]]
+references-to:
+  00023c98 DATA
+decompileCompleted=true
+error=
+
+void FUN_0001ab08(int param_1)
+
+{
+  int *piVar1;
+  char *pcVar2;
+  int iVar3;
+  int iVar4;
+  int iVar5;
+  size_t sVar6;
+  int *piVar7;
+  size_t sVar8;
+  int iVar9;
+  undefined4 *puVar10;
+  size_t sVar11;
+  int iVar12;
+  int iVar13;
+  undefined4 *puStack_54;
+  undefined4 *puStack_50;
+  undefined4 uStack_48;
+  int iStack_38;
+  undefined4 *puStack_34;
+  int iStack_2c;
+  
+  piVar7 = *(int **)(param_1 + 0x94);
+  piVar1 = *(int **)(DAT_0001b13c + 0x1ab18 + DAT_0001b140);
+  iStack_2c = *piVar1;
+  if (piVar7 == (int *)0x0) {
+    iVar13 = *(int *)(param_1 + 4);
+    uStack_48._2_2_ = (ushort)((uint)uStack_48 >> 0x10) & 0xff00;
+    iStack_38 = (int)&uStack_48 + 2;
+    uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+    puStack_34 = &uStack_48;
+    if (*(int *)(iVar13 + 4) == 0) {
+LAB_0001ae40:
+      __android_log_print(6,DAT_0001b150 + 0x1ae54,DAT_0001b154 + 0x1ae58,&uStack_48);
+      piVar7 = *(int **)(param_1 + 0x90);
+      puVar10 = puStack_34;
+    }
+    else {
+      sVar8 = iStack_38 - (int)&uStack_48;
+      iVar9 = *(int *)(iVar13 + 4);
+      iVar5 = iVar13;
+      do {
+        sVar11 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar6 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar6 = sVar8;
+        }
+        iVar12 = memcmp(*(void **)(iVar9 + 0x24),&uStack_48,sVar6);
+        if (iVar12 == 0) {
+          if ((int)sVar11 < (int)sVar8) goto LAB_0001abfc;
+LAB_0001ac34:
+          iVar12 = *(int *)(iVar9 + 8);
+          iVar5 = iVar9;
+        }
+        else {
+          if (-1 < iVar12) goto LAB_0001ac34;
+LAB_0001abfc:
+          iVar12 = *(int *)(iVar9 + 0xc);
+        }
+        iVar9 = iVar12;
+      } while (iVar12 != 0);
+      if (iVar13 == iVar5) goto LAB_0001ae40;
+      sVar11 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+      sVar6 = sVar11;
+      if ((int)sVar8 <= (int)sVar11) {
+        sVar6 = sVar8;
+      }
+      iVar13 = memcmp(&uStack_48,*(void **)(iVar5 + 0x24),sVar6);
+      if (iVar13 == 0) {
+        if ((int)sVar8 < (int)sVar11) goto LAB_0001ae40;
+      }
+      else if (iVar13 < 0) goto LAB_0001ae40;
+      piVar7 = *(int **)(iVar5 + 0x28);
+      puVar10 = &uStack_48;
+      if (piVar7 == (int *)0x0) {
+        piVar7 = *(int **)(param_1 + 0x90);
+      }
+    }
+    if ((puVar10 != &uStack_48) && (puVar10 != (undefined4 *)0x0)) {
+      if ((uint)(uStack_48 - (int)puVar10) < 0x81) {
+        std::__node_alloc::_M_deallocate(puVar10,uStack_48 - (int)puVar10);
+      }
+      else {
+        operator_delete(puVar10);
+      }
+    }
+    if (*(int **)(param_1 + 0x90) != piVar7) {
+      *(int **)(param_1 + 0x94) = piVar7;
+    }
+  }
+  (**(code **)(*piVar7 + 0x10))(piVar7);
+  pcVar2 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  iVar13 = *(int *)(param_1 + 0x94);
+  if (iVar13 == 0) {
+    iVar13 = *(int *)(param_1 + 4);
+    iVar5 = (int)&uStack_48 + 2;
+    uStack_48._2_2_ = (ushort)((uint)uStack_48 >> 0x10) & 0xff00;
+    uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+    iStack_38 = iVar5;
+    puStack_34 = &uStack_48;
+    if (*(int *)(iVar13 + 4) == 0) {
+LAB_0001ad0c:
+      __android_log_print(6,DAT_0001b14c + 0x1ad28,DAT_0001b148 + 0x1ad24,&uStack_48);
+      iVar9 = *(int *)(param_1 + 0x90);
+      puVar10 = puStack_34;
+    }
+    else {
+      sVar8 = iVar5 - (int)&uStack_48;
+      iVar9 = *(int *)(iVar13 + 4);
+      iVar12 = iVar13;
+      do {
+        sVar11 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar6 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar6 = sVar8;
+        }
+        iVar3 = memcmp(*(void **)(iVar9 + 0x24),&uStack_48,sVar6);
+        if (iVar3 == 0) {
+          if ((int)sVar11 < (int)sVar8) goto LAB_0001ac8c;
+LAB_0001acc4:
+          iVar3 = *(int *)(iVar9 + 8);
+          iVar12 = iVar9;
+        }
+        else {
+          if (-1 < iVar3) goto LAB_0001acc4;
+LAB_0001ac8c:
+          iVar3 = *(int *)(iVar9 + 0xc);
+        }
+        iVar9 = iVar3;
+      } while (iVar3 != 0);
+      if (iVar12 == iVar13) goto LAB_0001ad0c;
+      sVar11 = *(int *)(iVar12 + 0x20) - (int)*(void **)(iVar12 + 0x24);
+      sVar6 = sVar11;
+      if ((int)sVar8 <= (int)sVar11) {
+        sVar6 = sVar8;
+      }
+      iVar13 = memcmp(&uStack_48,*(void **)(iVar12 + 0x24),sVar6);
+      if (iVar13 == 0) {
+        if ((int)sVar8 < (int)sVar11) goto LAB_0001ad0c;
+      }
+      else if (iVar13 < 0) goto LAB_0001ad0c;
+      iVar9 = *(int *)(iVar12 + 0x28);
+      puVar10 = &uStack_48;
+      if (iVar9 == 0) {
+        iVar9 = *(int *)(param_1 + 0x90);
+      }
+    }
+    if ((puVar10 != &uStack_48) && (puVar10 != (undefined4 *)0x0)) {
+      if ((uint)(uStack_48 - (int)puVar10) < 0x81) {
+        std::__node_alloc::_M_deallocate(puVar10,uStack_48 - (int)puVar10);
+      }
+      else {
+        operator_delete(puVar10);
+      }
+    }
+    if (*(int *)(param_1 + 0x90) == iVar9) {
+      iVar13 = *(int *)(param_1 + 0x94);
+    }
+    else {
+      *(int *)(param_1 + 0x94) = iVar9;
+      iVar13 = iVar9;
+    }
+    iVar9 = *(int *)(iVar9 + 8);
+    if (iVar13 == 0) {
+      iVar13 = *(int *)(param_1 + 4);
+      iStack_38 = (int)&uStack_48 + 2;
+      uStack_48._2_2_ = (ushort)((uint)uStack_48 >> 0x10) & 0xff00;
+      uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+      puStack_34 = &uStack_48;
+      if (*(int *)(iVar13 + 4) == 0) {
+LAB_0001af00:
+        __android_log_print(6,DAT_0001b158 + 0x1af18,DAT_0001b15c + 0x1af1c,&uStack_48);
+        iVar13 = *(int *)(param_1 + 0x90);
+        puStack_50 = puStack_34;
+      }
+      else {
+        sVar8 = iVar5 - (int)&uStack_48;
+        iVar12 = *(int *)(iVar13 + 4);
+        iVar3 = iVar13;
+        do {
+          sVar11 = *(int *)(iVar12 + 0x20) - (int)*(void **)(iVar12 + 0x24);
+          sVar6 = sVar11;
+          if ((int)sVar8 <= (int)sVar11) {
+            sVar6 = sVar8;
+          }
+          iVar4 = memcmp(*(void **)(iVar12 + 0x24),&uStack_48,sVar6);
+          if (iVar4 == 0) {
+            if ((int)sVar11 < (int)sVar8) goto LAB_0001adc4;
+LAB_0001adfc:
+            iVar4 = *(int *)(iVar12 + 8);
+            iVar3 = iVar12;
+          }
+          else {
+            if (-1 < iVar4) goto LAB_0001adfc;
+LAB_0001adc4:
+            iVar4 = *(int *)(iVar12 + 0xc);
+          }
+          iVar12 = iVar4;
+        } while (iVar4 != 0);
+        if (iVar3 == iVar13) goto LAB_0001af00;
+        sVar11 = *(int *)(iVar3 + 0x20) - (int)*(void **)(iVar3 + 0x24);
+        sVar6 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar6 = sVar8;
+        }
+        iVar13 = memcmp(&uStack_48,*(void **)(iVar3 + 0x24),sVar6);
+        if (iVar13 == 0) {
+          if ((int)sVar8 < (int)sVar11) goto LAB_0001af00;
+        }
+        else if (iVar13 < 0) goto LAB_0001af00;
+        iVar13 = *(int *)(iVar3 + 0x28);
+        puStack_50 = &uStack_48;
+        if (iVar13 == 0) {
+          iVar13 = *(int *)(param_1 + 0x90);
+        }
+      }
+      if ((puStack_50 != &uStack_48) && (puStack_50 != (undefined4 *)0x0)) {
+        if ((uint)(uStack_48 - (int)puStack_50) < 0x81) {
+          std::__node_alloc::_M_deallocate(puStack_50,uStack_48 - (int)puStack_50);
+        }
+        else {
+          operator_delete(puStack_50);
+        }
+      }
+      if (*(int *)(param_1 + 0x90) == iVar13) {
+        iVar12 = *(int *)(param_1 + 0x94);
+      }
+      else {
+        *(int *)(param_1 + 0x94) = iVar13;
+        iVar12 = iVar13;
+      }
+      iVar13 = *(int *)(iVar13 + 0x10);
+      if (iVar12 != 0) goto LAB_0001ab6c;
+      iVar12 = *(int *)(param_1 + 4);
+      iStack_38 = (int)&uStack_48 + 2;
+      uStack_48._2_2_ = (ushort)((uint)uStack_48 >> 0x10) & 0xff00;
+      uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+      puStack_34 = &uStack_48;
+      if (*(int *)(iVar12 + 4) == 0) {
+LAB_0001b060:
+        __android_log_print(6,DAT_0001b160 + 0x1b078,DAT_0001b164 + 0x1b07c,&uStack_48);
+        iVar5 = *(int *)(param_1 + 0x90);
+        puStack_54 = puStack_34;
+      }
+      else {
+        sVar8 = iVar5 - (int)&uStack_48;
+        iVar5 = *(int *)(iVar12 + 4);
+        iVar3 = iVar12;
+        do {
+          sVar11 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+          sVar6 = sVar11;
+          if ((int)sVar8 <= (int)sVar11) {
+            sVar6 = sVar8;
+          }
+          iVar4 = memcmp(*(void **)(iVar5 + 0x24),&uStack_48,sVar6);
+          if (iVar4 == 0) {
+            if ((int)sVar11 < (int)sVar8) goto LAB_0001afcc;
+LAB_0001b004:
+            iVar4 = *(int *)(iVar5 + 8);
+            iVar3 = iVar5;
+          }
+          else {
+            if (-1 < iVar4) goto LAB_0001b004;
+LAB_0001afcc:
+            iVar4 = *(int *)(iVar5 + 0xc);
+          }
+          iVar5 = iVar4;
+        } while (iVar4 != 0);
+        if (iVar3 == iVar12) goto LAB_0001b060;
+        sVar11 = *(int *)(iVar3 + 0x20) - (int)*(void **)(iVar3 + 0x24);
+        sVar6 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar6 = sVar8;
+        }
+        iVar5 = memcmp(&uStack_48,*(void **)(iVar3 + 0x24),sVar6);
+        if (iVar5 == 0) {
+          if ((int)sVar8 < (int)sVar11) goto LAB_0001b060;
+        }
+        else if (iVar5 < 0) goto LAB_0001b060;
+        iVar5 = *(int *)(iVar3 + 0x28);
+        puStack_54 = &uStack_48;
+        if (iVar5 == 0) {
+          iVar5 = *(int *)(param_1 + 0x90);
+        }
+      }
+      if ((puStack_54 != &uStack_48) && (puStack_54 != (undefined4 *)0x0)) {
+        if ((uint)(uStack_48 - (int)puStack_54) < 0x81) {
+          std::__node_alloc::_M_deallocate(puStack_54,uStack_48 - (int)puStack_54);
+        }
+        else {
+          operator_delete(puStack_54);
+        }
+      }
+      if (*(int *)(param_1 + 0x90) != iVar5) {
+        *(int *)(param_1 + 0x94) = iVar5;
+      }
+      goto LAB_0001ab6c;
+    }
+  }
+  else {
+    iVar9 = *(int *)(iVar13 + 8);
+  }
+  iVar13 = *(int *)(iVar13 + 0x10);
+LAB_0001ab6c:
+  SPhysics::SPTextureManager::setTextureId(pcVar2,DAT_0001b144 + 0x1ab88,iVar9,iVar13);
+  FUN_00014c00(*(undefined4 *)(param_1 + 0xd8));
+  FUN_00015ab8(*(undefined4 *)(param_1 + 0xd8));
+  if (iStack_2c == *piVar1) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+
+
+
+============================================================
+requested=0x1caac
+entry=0001caac
+name=thunk_FUN_0001b168
+signature=undefined thunk_FUN_0001b168(void)
+body=[[0001caac, 0001caaf]]
+references-to:
+  00023c9c DATA
+  00023ca0 DATA
+decompileCompleted=true
+error=
+
+void thunk_FUN_0001b168(int param_1)
+
+{
+  int *piVar1;
+  int *piVar2;
+  void *pvVar3;
+  char *pcVar4;
+  int iVar5;
+  int iVar6;
+  size_t sVar7;
+  int iVar8;
+  int iVar9;
+  size_t sVar10;
+  int iVar11;
+  undefined4 *puVar12;
+  undefined4 uVar13;
+  int iVar14;
+  int *piVar15;
+  size_t sVar16;
+  undefined4 *puStack_90;
+  undefined4 *puStack_8c;
+  int aiStack_78 [4];
+  int iStack_68;
+  int *piStack_64;
+  int aiStack_60 [4];
+  int iStack_50;
+  int *piStack_4c;
+  undefined4 uStack_48;
+  int iStack_38;
+  undefined4 *puStack_34;
+  int iStack_2c;
+  
+  piVar2 = *(int **)(DAT_0001c164 + 0x1b178 + DAT_0001c168);
+  iStack_2c = *piVar2;
+  SPhysics::SPTextureManager::getInstancePtr();
+  SPhysics::SPTextureManager::ReleaseInstance();
+  pvVar3 = operator_new(0xcf8);
+  FUN_00015c30(pvVar3,1,3);
+  *(void **)(param_1 + 0xd8) = pvVar3;
+  SPhysics::SPISceneComponent::onInitScene((int)pvVar3,*(int *)(param_1 + 0x20));
+  piVar15 = *(int **)(param_1 + 0x94);
+  if (piVar15 == (int *)0x0) {
+    iVar8 = *(int *)(param_1 + 4);
+    iStack_38 = (int)&uStack_48 + 2;
+    uStack_48 = CONCAT13(uStack_48._3_1_,0x6762);
+    puStack_34 = &uStack_48;
+    if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c684:
+      __android_log_print(6,DAT_0001c1fc + 0x1c698,DAT_0001c200 + 0x1c69c,&uStack_48);
+      piVar15 = *(int **)(param_1 + 0x90);
+      puVar12 = puStack_34;
+    }
+    else {
+      sVar10 = iStack_38 - (int)&uStack_48;
+      iVar11 = *(int *)(iVar8 + 4);
+      iVar14 = iVar8;
+      do {
+        sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar11 + 0x24),&uStack_48,sVar7);
+        if (iVar9 == 0) {
+          if ((int)sVar10 <= (int)sVar16) goto LAB_0001c640;
+LAB_0001c608:
+          iVar9 = *(int *)(iVar11 + 0xc);
+        }
+        else {
+          if (iVar9 < 0) goto LAB_0001c608;
+LAB_0001c640:
+          iVar9 = *(int *)(iVar11 + 8);
+          iVar14 = iVar11;
+        }
+        iVar11 = iVar9;
+      } while (iVar9 != 0);
+      if (iVar8 == iVar14) goto LAB_0001c684;
+      sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+      sVar7 = sVar16;
+      if ((int)sVar10 <= (int)sVar16) {
+        sVar7 = sVar10;
+      }
+      iVar8 = memcmp(&uStack_48,*(void **)(iVar14 + 0x24),sVar7);
+      if (iVar8 == 0) {
+        if ((int)sVar10 < (int)sVar16) goto LAB_0001c684;
+      }
+      else if (iVar8 < 0) goto LAB_0001c684;
+      piVar15 = *(int **)(iVar14 + 0x28);
+      puVar12 = &uStack_48;
+      if (piVar15 == (int *)0x0) {
+        piVar15 = *(int **)(param_1 + 0x90);
+      }
+    }
+    if ((puVar12 != &uStack_48) && (puVar12 != (undefined4 *)0x0)) {
+      if ((uint)(uStack_48 - (int)puVar12) < 0x81) {
+        std::__node_alloc::_M_deallocate(puVar12,uStack_48 - (int)puVar12);
+      }
+      else {
+        operator_delete(puVar12);
+      }
+    }
+    if (*(int **)(param_1 + 0x90) != piVar15) {
+      *(int **)(param_1 + 0x94) = piVar15;
+    }
+  }
+  (**(code **)(*piVar15 + 0x10))(piVar15);
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  iVar8 = *(int *)(param_1 + 0x94);
+  if (iVar8 == 0) {
+    iVar8 = *(int *)(param_1 + 4);
+    iVar14 = (int)&uStack_48 + 2;
+    uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+    iStack_38 = iVar14;
+    puStack_34 = &uStack_48;
+    puStack_90 = &uStack_48;
+    if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c718:
+      __android_log_print(6,DAT_0001c204 + 0x1c730,DAT_0001c208 + 0x1c734,&uStack_48);
+      iVar8 = *(int *)(param_1 + 0x90);
+      puStack_90 = puStack_34;
+    }
+    else {
+      sVar10 = iVar14 - (int)&uStack_48;
+      iVar11 = iVar8;
+      iVar9 = *(int *)(iVar8 + 4);
+      do {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),&uStack_48,sVar7);
+        if (iVar5 == 0) {
+          if ((int)sVar10 <= (int)sVar16) goto LAB_0001c5b8;
+LAB_0001c580:
+          iVar5 = *(int *)(iVar9 + 0xc);
+        }
+        else {
+          if (iVar5 < 0) goto LAB_0001c580;
+LAB_0001c5b8:
+          iVar5 = *(int *)(iVar9 + 8);
+          iVar11 = iVar9;
+        }
+        iVar9 = iVar5;
+      } while (iVar5 != 0);
+      if (iVar8 == iVar11) goto LAB_0001c718;
+      sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+      sVar7 = sVar16;
+      if ((int)sVar10 <= (int)sVar16) {
+        sVar7 = sVar10;
+      }
+      iVar8 = memcmp(&uStack_48,*(void **)(iVar11 + 0x24),sVar7);
+      if (iVar8 == 0) {
+        if ((int)sVar10 < (int)sVar16) goto LAB_0001c718;
+      }
+      else if (iVar8 < 0) goto LAB_0001c718;
+      iVar8 = *(int *)(iVar11 + 0x28);
+      if (iVar8 == 0) {
+        iVar8 = *(int *)(param_1 + 0x90);
+      }
+    }
+    if ((puStack_90 != &uStack_48) && (puStack_90 != (undefined4 *)0x0)) {
+      if ((uint)(uStack_48 - (int)puStack_90) < 0x81) {
+        std::__node_alloc::_M_deallocate(puStack_90,uStack_48 - (int)puStack_90);
+      }
+      else {
+        operator_delete(puStack_90);
+      }
+    }
+    iVar11 = *(int *)(iVar8 + 8);
+    if (*(int *)(param_1 + 0x90) == iVar8) {
+      iVar8 = *(int *)(param_1 + 0x94);
+    }
+    else {
+      *(int *)(param_1 + 0x94) = iVar8;
+    }
+    if (iVar8 != 0) goto LAB_0001b200;
+    iVar8 = *(int *)(param_1 + 4);
+    iStack_38 = (int)&uStack_48 + 2;
+    uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+    puStack_34 = &uStack_48;
+    if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c884:
+      __android_log_print(6,DAT_0001c20c + 0x1c89c,DAT_0001c210 + 0x1c8a0,&uStack_48);
+      iVar9 = *(int *)(param_1 + 0x90);
+      puStack_90 = puStack_34;
+    }
+    else {
+      sVar10 = iVar14 - (int)&uStack_48;
+      iVar9 = iVar8;
+      iVar5 = *(int *)(iVar8 + 4);
+      do {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),&uStack_48,sVar7);
+        if (iVar6 == 0) {
+          if ((int)sVar10 <= (int)sVar16) goto LAB_0001c814;
+LAB_0001c7dc:
+          iVar6 = *(int *)(iVar5 + 0xc);
+        }
+        else {
+          if (iVar6 < 0) goto LAB_0001c7dc;
+LAB_0001c814:
+          iVar6 = *(int *)(iVar5 + 8);
+          iVar9 = iVar5;
+        }
+        iVar5 = iVar6;
+      } while (iVar6 != 0);
+      if (iVar8 == iVar9) goto LAB_0001c884;
+      sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+      sVar7 = sVar16;
+      if ((int)sVar10 <= (int)sVar16) {
+        sVar7 = sVar10;
+      }
+      iVar8 = memcmp(&uStack_48,*(void **)(iVar9 + 0x24),sVar7);
+      if (iVar8 == 0) {
+        if ((int)sVar10 < (int)sVar16) goto LAB_0001c884;
+      }
+      else if (iVar8 < 0) goto LAB_0001c884;
+      iVar9 = *(int *)(iVar9 + 0x28);
+      puStack_90 = &uStack_48;
+      if (iVar9 == 0) {
+        iVar9 = *(int *)(param_1 + 0x90);
+      }
+    }
+    if ((puStack_90 != &uStack_48) && (puStack_90 != (undefined4 *)0x0)) {
+      if ((uint)(uStack_48 - (int)puStack_90) < 0x81) {
+        std::__node_alloc::_M_deallocate(puStack_90,uStack_48 - (int)puStack_90);
+      }
+      else {
+        operator_delete(puStack_90);
+      }
+    }
+    if (*(int *)(param_1 + 0x90) == iVar9) {
+      iVar8 = *(int *)(param_1 + 0x94);
+    }
+    else {
+      *(int *)(param_1 + 0x94) = iVar9;
+      iVar8 = iVar9;
+    }
+    iVar9 = *(int *)(iVar9 + 0x10);
+    if (iVar8 == 0) {
+      iVar8 = *(int *)(param_1 + 4);
+      iStack_38 = (int)&uStack_48 + 2;
+      uStack_48 = CONCAT22(uStack_48._2_2_,0x6762);
+      puStack_34 = &uStack_48;
+      if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c9d0:
+        __android_log_print(6,DAT_0001c214 + 0x1c9e8,DAT_0001c218 + 0x1c9ec,&uStack_48);
+        iVar8 = *(int *)(param_1 + 0x90);
+        puStack_8c = puStack_34;
+      }
+      else {
+        sVar10 = iVar14 - (int)&uStack_48;
+        iVar14 = iVar8;
+        iVar5 = *(int *)(iVar8 + 4);
+        do {
+          sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+          sVar7 = sVar16;
+          if ((int)sVar10 <= (int)sVar16) {
+            sVar7 = sVar10;
+          }
+          iVar6 = memcmp(*(void **)(iVar5 + 0x24),&uStack_48,sVar7);
+          if (iVar6 == 0) {
+            if ((int)sVar10 <= (int)sVar16) goto LAB_0001c984;
+LAB_0001c94c:
+            iVar6 = *(int *)(iVar5 + 0xc);
+          }
+          else {
+            if (iVar6 < 0) goto LAB_0001c94c;
+LAB_0001c984:
+            iVar6 = *(int *)(iVar5 + 8);
+            iVar14 = iVar5;
+          }
+          iVar5 = iVar6;
+        } while (iVar6 != 0);
+        if (iVar8 == iVar14) goto LAB_0001c9d0;
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar8 = memcmp(&uStack_48,*(void **)(iVar14 + 0x24),sVar7);
+        if (iVar8 == 0) {
+          if ((int)sVar10 < (int)sVar16) goto LAB_0001c9d0;
+        }
+        else if (iVar8 < 0) goto LAB_0001c9d0;
+        iVar8 = *(int *)(iVar14 + 0x28);
+        puStack_8c = &uStack_48;
+        if (iVar8 == 0) {
+          iVar8 = *(int *)(param_1 + 0x90);
+        }
+      }
+      if ((puStack_8c != &uStack_48) && (puStack_8c != (undefined4 *)0x0)) {
+        if ((uint)(uStack_48 - (int)puStack_8c) < 0x81) {
+          std::__node_alloc::_M_deallocate(puStack_8c,uStack_48 - (int)puStack_8c);
+        }
+        else {
+          operator_delete(puStack_8c);
+        }
+      }
+      if (*(int *)(param_1 + 0x90) != iVar8) {
+        *(int *)(param_1 + 0x94) = iVar8;
+      }
+    }
+  }
+  else {
+    iVar11 = *(int *)(iVar8 + 8);
+LAB_0001b200:
+    iVar9 = *(int *)(iVar8 + 0x10);
+  }
+  uVar13 = *(undefined4 *)(iVar8 + 0x14);
+  SPhysics::SPTextureManager::setTextureId(pcVar4,DAT_0001c16c + 0x1b224,iVar11,iVar9);
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  FUN_0001a9a0(aiStack_78);
+  piVar15 = piStack_64;
+  iVar8 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c220:
+    __android_log_print(6,DAT_0001c18c + 0x1c238,DAT_0001c190 + 0x1c23c,piVar15,uVar13);
+    piVar15 = *(int **)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_68 - (int)piStack_64;
+    iVar11 = iVar8;
+    iVar14 = *(int *)(iVar8 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar14 + 0x24),piVar15,sVar7);
+        if (iVar9 == 0) break;
+        if (iVar9 < 0) goto LAB_0001b268;
+LAB_0001b2a0:
+        piVar1 = (int *)(iVar14 + 8);
+        iVar11 = iVar14;
+        iVar14 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b2b0;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b2a0;
+LAB_0001b268:
+      iVar14 = *(int *)(iVar14 + 0xc);
+    } while (iVar14 != 0);
+LAB_0001b2b0:
+    if (iVar8 == iVar11) goto LAB_0001c220;
+    sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar8 = memcmp(piVar15,*(void **)(iVar11 + 0x24),sVar7);
+    if (iVar8 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c220;
+    }
+    else if (iVar8 < 0) goto LAB_0001c220;
+    piVar15 = *(int **)(iVar11 + 0x28);
+    if (piVar15 == (int *)0x0) {
+      piVar15 = *(int **)(param_1 + 0x90);
+    }
+  }
+  iVar8 = (**(code **)(*piVar15 + 8))();
+  FUN_0001a9a0(aiStack_60);
+  piVar15 = piStack_4c;
+  iVar11 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar11 + 4) == 0) {
+LAB_0001c140:
+    __android_log_print(6,DAT_0001c184 + 0x1c158,DAT_0001c188 + 0x1c15c,piVar15);
+    iVar11 = *(int *)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_50 - (int)piStack_4c;
+    iVar14 = iVar11;
+    iVar9 = *(int *)(iVar11 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),piVar15,sVar7);
+        if (iVar5 == 0) break;
+        if (iVar5 < 0) goto LAB_0001b340;
+LAB_0001b378:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar14 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b388;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b378;
+LAB_0001b340:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_0001b388:
+    if (iVar11 == iVar14) goto LAB_0001c140;
+    sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar11 = memcmp(piVar15,*(void **)(iVar14 + 0x24),sVar7);
+    if (iVar11 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c140;
+    }
+    else if (iVar11 < 0) goto LAB_0001c140;
+    iVar11 = *(int *)(iVar14 + 0x28);
+    if (iVar11 == 0) {
+      iVar11 = *(int *)(param_1 + 0x90);
+    }
+  }
+  iVar11 = *(int *)(iVar11 + 0x10);
+  FUN_0001a9a0(&uStack_48);
+  puVar12 = puStack_34;
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) == 0) {
+LAB_0001c248:
+    __android_log_print(6,DAT_0001c194 + 0x1c260,DAT_0001c198 + 0x1c264,puVar12);
+  }
+  else {
+    sVar10 = iStack_38 - (int)puStack_34;
+    iVar9 = iVar14;
+    iVar5 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),puVar12,sVar7);
+        if (iVar6 == 0) break;
+        if (iVar6 < 0) goto LAB_0001b408;
+LAB_0001b440:
+        piVar15 = (int *)(iVar5 + 8);
+        iVar9 = iVar5;
+        iVar5 = *piVar15;
+        if (*piVar15 == 0) goto LAB_0001b450;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b440;
+LAB_0001b408:
+      iVar5 = *(int *)(iVar5 + 0xc);
+    } while (iVar5 != 0);
+LAB_0001b450:
+    if (iVar9 == iVar14) goto LAB_0001c248;
+    sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar14 = memcmp(puVar12,*(void **)(iVar9 + 0x24),sVar7);
+    if (iVar14 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c248;
+    }
+    else if (iVar14 < 0) goto LAB_0001c248;
+  }
+  SPhysics::SPTextureManager::setTextureColor(pcVar4,(void *)(DAT_0001c170 + 0x1b4ac),iVar8,iVar11);
+  if ((puStack_34 != &uStack_48) && (puStack_34 != (undefined4 *)0x0)) {
+    if ((uint)(uStack_48 - (int)puStack_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(puStack_34,uStack_48 - (int)puStack_34);
+    }
+    else {
+      operator_delete(puStack_34);
+    }
+  }
+  if ((piStack_4c != aiStack_60) && (piStack_4c != (int *)0x0)) {
+    if ((uint)(aiStack_60[0] - (int)piStack_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_4c,aiStack_60[0] - (int)piStack_4c);
+    }
+    else {
+      operator_delete(piStack_4c);
+    }
+  }
+  if ((piStack_64 != aiStack_78) && (piStack_64 != (int *)0x0)) {
+    if ((uint)(aiStack_78[0] - (int)piStack_64) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_64,aiStack_78[0] - (int)piStack_64);
+    }
+    else {
+      operator_delete(piStack_64);
+    }
+  }
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  FUN_0001a94c(aiStack_78);
+  piVar15 = piStack_64;
+  iVar8 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c2e8:
+    __android_log_print(6,DAT_0001c1b4 + 0x1c300,DAT_0001c1b8 + 0x1c304,piVar15);
+    piVar15 = *(int **)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_68 - (int)piStack_64;
+    iVar11 = iVar8;
+    iVar14 = *(int *)(iVar8 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar14 + 0x24),piVar15,sVar7);
+        if (iVar9 == 0) break;
+        if (iVar9 < 0) goto LAB_0001b56c;
+LAB_0001b5a4:
+        piVar1 = (int *)(iVar14 + 8);
+        iVar11 = iVar14;
+        iVar14 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b5b4;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b5a4;
+LAB_0001b56c:
+      iVar14 = *(int *)(iVar14 + 0xc);
+    } while (iVar14 != 0);
+LAB_0001b5b4:
+    if (iVar11 == iVar8) goto LAB_0001c2e8;
+    sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar8 = memcmp(piVar15,*(void **)(iVar11 + 0x24),sVar7);
+    if (iVar8 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c2e8;
+    }
+    else if (iVar8 < 0) goto LAB_0001c2e8;
+    piVar15 = *(int **)(iVar11 + 0x28);
+    if (piVar15 == (int *)0x0) {
+      piVar15 = *(int **)(param_1 + 0x90);
+    }
+  }
+  iVar8 = (**(code **)(*piVar15 + 8))();
+  FUN_0001a94c(aiStack_60);
+  piVar15 = piStack_4c;
+  iVar11 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar11 + 4) == 0) {
+LAB_0001c270:
+    __android_log_print(6,DAT_0001c19c + 0x1c288,DAT_0001c1a0 + 0x1c28c,piVar15);
+    iVar11 = *(int *)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_50 - (int)piStack_4c;
+    iVar14 = iVar11;
+    iVar9 = *(int *)(iVar11 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),piVar15,sVar7);
+        if (iVar5 == 0) break;
+        if (iVar5 < 0) goto LAB_0001b63c;
+LAB_0001b674:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar14 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b684;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b674;
+LAB_0001b63c:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_0001b684:
+    if (iVar14 == iVar11) goto LAB_0001c270;
+    sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar11 = memcmp(piVar15,*(void **)(iVar14 + 0x24),sVar7);
+    if (iVar11 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c270;
+    }
+    else if (iVar11 < 0) goto LAB_0001c270;
+    iVar11 = *(int *)(iVar14 + 0x28);
+    if (iVar11 == 0) {
+      iVar11 = *(int *)(param_1 + 0x90);
+    }
+  }
+  iVar11 = *(int *)(iVar11 + 0x10);
+  FUN_0001a94c(&uStack_48);
+  puVar12 = puStack_34;
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) == 0) {
+LAB_0001c2c0:
+    __android_log_print(6,DAT_0001c1ac + 0x1c2d8,DAT_0001c1b0 + 0x1c2dc,puVar12);
+  }
+  else {
+    sVar10 = iStack_38 - (int)puStack_34;
+    iVar9 = iVar14;
+    iVar5 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),puVar12,sVar7);
+        if (iVar6 == 0) break;
+        if (iVar6 < 0) goto LAB_0001b704;
+LAB_0001b73c:
+        piVar15 = (int *)(iVar5 + 8);
+        iVar9 = iVar5;
+        iVar5 = *piVar15;
+        if (*piVar15 == 0) goto LAB_0001b74c;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b73c;
+LAB_0001b704:
+      iVar5 = *(int *)(iVar5 + 0xc);
+    } while (iVar5 != 0);
+LAB_0001b74c:
+    if (iVar9 == iVar14) goto LAB_0001c2c0;
+    sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar14 = memcmp(puVar12,*(void **)(iVar9 + 0x24),sVar7);
+    if (iVar14 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c2c0;
+    }
+    else if (iVar14 < 0) goto LAB_0001c2c0;
+  }
+  SPhysics::SPTextureManager::setTexture(pcVar4,(void *)(DAT_0001c174 + 0x1b7a8),iVar8,iVar11);
+  if ((puStack_34 != &uStack_48) && (puStack_34 != (undefined4 *)0x0)) {
+    if ((uint)(uStack_48 - (int)puStack_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(puStack_34,uStack_48 - (int)puStack_34);
+    }
+    else {
+      operator_delete(puStack_34);
+    }
+  }
+  if ((piStack_4c != aiStack_60) && (piStack_4c != (int *)0x0)) {
+    if ((uint)(aiStack_60[0] - (int)piStack_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_4c,aiStack_60[0] - (int)piStack_4c);
+    }
+    else {
+      operator_delete(piStack_4c);
+    }
+  }
+  if ((piStack_64 != aiStack_78) && (piStack_64 != (int *)0x0)) {
+    if ((uint)(aiStack_78[0] - (int)piStack_64) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_64,aiStack_78[0] - (int)piStack_64);
+    }
+    else {
+      operator_delete(piStack_64);
+    }
+  }
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  FUN_0001a8d4(aiStack_78);
+  piVar15 = piStack_64;
+  iVar8 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c388:
+    __android_log_print(6,DAT_0001c1d8 + 0x1c3a4,DAT_0001c1d4 + 0x1c3a0,piVar15);
+    piVar15 = *(int **)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_68 - (int)piStack_64;
+    iVar11 = iVar8;
+    iVar14 = *(int *)(iVar8 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar14 + 0x24),piVar15,sVar7);
+        if (iVar9 == 0) break;
+        if (iVar9 < 0) goto LAB_0001b868;
+LAB_0001b8a0:
+        piVar1 = (int *)(iVar14 + 8);
+        iVar11 = iVar14;
+        iVar14 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b8b0;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b8a0;
+LAB_0001b868:
+      iVar14 = *(int *)(iVar14 + 0xc);
+    } while (iVar14 != 0);
+LAB_0001b8b0:
+    if (iVar11 == iVar8) goto LAB_0001c388;
+    sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar8 = memcmp(piVar15,*(void **)(iVar11 + 0x24),sVar7);
+    if (iVar8 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c388;
+    }
+    else if (iVar8 < 0) goto LAB_0001c388;
+    piVar15 = *(int **)(iVar11 + 0x28);
+    if (piVar15 == (int *)0x0) {
+      piVar15 = *(int **)(param_1 + 0x90);
+    }
+  }
+  iVar8 = (**(code **)(*piVar15 + 8))();
+  FUN_0001a8d4(aiStack_60);
+  piVar15 = piStack_4c;
+  iVar11 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar11 + 4) == 0) {
+LAB_0001c3d8:
+    __android_log_print(6,DAT_0001c1e8 + 0x1c3f4,DAT_0001c1e4 + 0x1c3f0,piVar15);
+    iVar11 = *(int *)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_50 - (int)piStack_4c;
+    iVar14 = iVar11;
+    iVar9 = *(int *)(iVar11 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),piVar15,sVar7);
+        if (iVar5 == 0) break;
+        if (iVar5 < 0) goto LAB_0001b938;
+LAB_0001b970:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar14 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001b980;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001b970;
+LAB_0001b938:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_0001b980:
+    if (iVar14 == iVar11) goto LAB_0001c3d8;
+    sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar11 = memcmp(piVar15,*(void **)(iVar14 + 0x24),sVar7);
+    if (iVar11 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c3d8;
+    }
+    else if (iVar11 < 0) goto LAB_0001c3d8;
+    iVar11 = *(int *)(iVar14 + 0x28);
+    if (iVar11 == 0) {
+      iVar11 = *(int *)(param_1 + 0x90);
+    }
+  }
+  iVar11 = *(int *)(iVar11 + 0x10);
+  FUN_0001a8d4(&uStack_48);
+  puVar12 = puStack_34;
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) == 0) {
+LAB_0001c3b0:
+    __android_log_print(6,DAT_0001c1e0 + 0x1c3cc,DAT_0001c1dc + 0x1c3c8,puVar12);
+  }
+  else {
+    sVar10 = iStack_38 - (int)puStack_34;
+    iVar9 = iVar14;
+    iVar5 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),puVar12,sVar7);
+        if (iVar6 == 0) break;
+        if (iVar6 < 0) goto LAB_0001ba00;
+LAB_0001ba38:
+        piVar15 = (int *)(iVar5 + 8);
+        iVar9 = iVar5;
+        iVar5 = *piVar15;
+        if (*piVar15 == 0) goto LAB_0001ba48;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001ba38;
+LAB_0001ba00:
+      iVar5 = *(int *)(iVar5 + 0xc);
+    } while (iVar5 != 0);
+LAB_0001ba48:
+    if (iVar9 == iVar14) goto LAB_0001c3b0;
+    sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar14 = memcmp(puVar12,*(void **)(iVar9 + 0x24),sVar7);
+    if (iVar14 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c3b0;
+    }
+    else if (iVar14 < 0) goto LAB_0001c3b0;
+  }
+  SPhysics::SPTextureManager::setTexture(pcVar4,(void *)(DAT_0001c178 + 0x1baa4),iVar8,iVar11);
+  if ((puStack_34 != &uStack_48) && (puStack_34 != (undefined4 *)0x0)) {
+    if ((uint)(uStack_48 - (int)puStack_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(puStack_34,uStack_48 - (int)puStack_34);
+    }
+    else {
+      operator_delete(puStack_34);
+    }
+  }
+  if ((piStack_4c != aiStack_60) && (piStack_4c != (int *)0x0)) {
+    if ((uint)(aiStack_60[0] - (int)piStack_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_4c,aiStack_60[0] - (int)piStack_4c);
+    }
+    else {
+      operator_delete(piStack_4c);
+    }
+  }
+  if ((piStack_64 != aiStack_78) && (piStack_64 != (int *)0x0)) {
+    if ((uint)(aiStack_78[0] - (int)piStack_64) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_64,aiStack_78[0] - (int)piStack_64);
+    }
+    else {
+      operator_delete(piStack_64);
+    }
+  }
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  FUN_0001aa90(aiStack_78);
+  piVar15 = piStack_64;
+  iVar8 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c360:
+    __android_log_print(6,DAT_0001c1cc + 0x1c378,DAT_0001c1d0 + 0x1c37c,piVar15);
+    piVar15 = *(int **)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_68 - (int)piStack_64;
+    iVar11 = iVar8;
+    iVar14 = *(int *)(iVar8 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar14 + 0x24),piVar15,sVar7);
+        if (iVar9 == 0) break;
+        if (iVar9 < 0) goto LAB_0001bb64;
+LAB_0001bb9c:
+        piVar1 = (int *)(iVar14 + 8);
+        iVar11 = iVar14;
+        iVar14 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001bbac;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001bb9c;
+LAB_0001bb64:
+      iVar14 = *(int *)(iVar14 + 0xc);
+    } while (iVar14 != 0);
+LAB_0001bbac:
+    if (iVar11 == iVar8) goto LAB_0001c360;
+    sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar8 = memcmp(piVar15,*(void **)(iVar11 + 0x24),sVar7);
+    if (iVar8 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c360;
+    }
+    else if (iVar8 < 0) goto LAB_0001c360;
+    piVar15 = *(int **)(iVar11 + 0x28);
+    if (piVar15 == (int *)0x0) {
+      piVar15 = *(int **)(param_1 + 0x90);
+    }
+  }
+  iVar8 = (**(code **)(*piVar15 + 8))();
+  FUN_0001aa90(aiStack_60);
+  piVar15 = piStack_4c;
+  iVar11 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar11 + 4) == 0) {
+LAB_0001c338:
+    __android_log_print(6,DAT_0001c1c4 + 0x1c350,DAT_0001c1c8 + 0x1c354,piVar15);
+    iVar11 = *(int *)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_50 - (int)piStack_4c;
+    iVar14 = iVar11;
+    iVar9 = *(int *)(iVar11 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),piVar15,sVar7);
+        if (iVar5 == 0) break;
+        if (iVar5 < 0) goto LAB_0001bc34;
+LAB_0001bc6c:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar14 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001bc7c;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001bc6c;
+LAB_0001bc34:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_0001bc7c:
+    if (iVar14 == iVar11) goto LAB_0001c338;
+    sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar11 = memcmp(piVar15,*(void **)(iVar14 + 0x24),sVar7);
+    if (iVar11 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c338;
+    }
+    else if (iVar11 < 0) goto LAB_0001c338;
+    iVar11 = *(int *)(iVar14 + 0x28);
+    if (iVar11 == 0) {
+      iVar11 = *(int *)(param_1 + 0x90);
+    }
+  }
+  iVar11 = *(int *)(iVar11 + 0x10);
+  FUN_0001aa90(&uStack_48);
+  puVar12 = puStack_34;
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) == 0) {
+LAB_0001c310:
+    __android_log_print(6,DAT_0001c1bc + 0x1c328,DAT_0001c1c0 + 0x1c32c,puVar12);
+  }
+  else {
+    sVar10 = iStack_38 - (int)puStack_34;
+    iVar9 = iVar14;
+    iVar5 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),puVar12,sVar7);
+        if (iVar6 == 0) break;
+        if (iVar6 < 0) goto LAB_0001bcfc;
+LAB_0001bd34:
+        piVar15 = (int *)(iVar5 + 8);
+        iVar9 = iVar5;
+        iVar5 = *piVar15;
+        if (*piVar15 == 0) goto LAB_0001bd44;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001bd34;
+LAB_0001bcfc:
+      iVar5 = *(int *)(iVar5 + 0xc);
+    } while (iVar5 != 0);
+LAB_0001bd44:
+    if (iVar9 == iVar14) goto LAB_0001c310;
+    sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar14 = memcmp(puVar12,*(void **)(iVar9 + 0x24),sVar7);
+    if (iVar14 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c310;
+    }
+    else if (iVar14 < 0) goto LAB_0001c310;
+  }
+  SPhysics::SPTextureManager::setTexture(pcVar4,(void *)(DAT_0001c17c + 0x1bda0),iVar8,iVar11);
+  if ((puStack_34 != &uStack_48) && (puStack_34 != (undefined4 *)0x0)) {
+    if ((uint)(uStack_48 - (int)puStack_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(puStack_34,uStack_48 - (int)puStack_34);
+    }
+    else {
+      operator_delete(puStack_34);
+    }
+  }
+  if ((piStack_4c != aiStack_60) && (piStack_4c != (int *)0x0)) {
+    if ((uint)(aiStack_60[0] - (int)piStack_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_4c,aiStack_60[0] - (int)piStack_4c);
+    }
+    else {
+      operator_delete(piStack_4c);
+    }
+  }
+  if ((piStack_64 != aiStack_78) && (piStack_64 != (int *)0x0)) {
+    if ((uint)(aiStack_78[0] - (int)piStack_64) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_64,aiStack_78[0] - (int)piStack_64);
+    }
+    else {
+      operator_delete(piStack_64);
+    }
+  }
+  pcVar4 = (char *)SPhysics::SPTextureManager::getInstancePtr();
+  FUN_0001aa18(aiStack_78);
+  piVar15 = piStack_64;
+  iVar8 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar8 + 4) == 0) {
+LAB_0001c298:
+    __android_log_print(6,DAT_0001c1a8 + 0x1c2b4,DAT_0001c1a4 + 0x1c2b0,piVar15);
+    piVar15 = *(int **)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_68 - (int)piStack_64;
+    iVar11 = iVar8;
+    iVar14 = *(int *)(iVar8 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar9 = memcmp(*(void **)(iVar14 + 0x24),piVar15,sVar7);
+        if (iVar9 == 0) break;
+        if (iVar9 < 0) goto LAB_0001be60;
+LAB_0001be98:
+        piVar1 = (int *)(iVar14 + 8);
+        iVar11 = iVar14;
+        iVar14 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001bea8;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001be98;
+LAB_0001be60:
+      iVar14 = *(int *)(iVar14 + 0xc);
+    } while (iVar14 != 0);
+LAB_0001bea8:
+    if (iVar11 == iVar8) goto LAB_0001c298;
+    sVar16 = *(int *)(iVar11 + 0x20) - (int)*(void **)(iVar11 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar8 = memcmp(piVar15,*(void **)(iVar11 + 0x24),sVar7);
+    if (iVar8 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c298;
+    }
+    else if (iVar8 < 0) goto LAB_0001c298;
+    piVar15 = *(int **)(iVar11 + 0x28);
+    if (piVar15 == (int *)0x0) {
+      piVar15 = *(int **)(param_1 + 0x90);
+    }
+  }
+  iVar8 = (**(code **)(*piVar15 + 8))();
+  FUN_0001aa18(aiStack_60);
+  piVar15 = piStack_4c;
+  iVar11 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar11 + 4) == 0) {
+LAB_0001c428:
+    __android_log_print(6,DAT_0001c1f8 + 0x1c444,DAT_0001c1f4 + 0x1c440,piVar15);
+    iVar11 = *(int *)(param_1 + 0x90);
+  }
+  else {
+    sVar10 = iStack_50 - (int)piStack_4c;
+    iVar14 = iVar11;
+    iVar9 = *(int *)(iVar11 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar5 = memcmp(*(void **)(iVar9 + 0x24),piVar15,sVar7);
+        if (iVar5 == 0) break;
+        if (iVar5 < 0) goto LAB_0001bf30;
+LAB_0001bf68:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar14 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_0001bf78;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001bf68;
+LAB_0001bf30:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_0001bf78:
+    if (iVar14 == iVar11) goto LAB_0001c428;
+    sVar16 = *(int *)(iVar14 + 0x20) - (int)*(void **)(iVar14 + 0x24);
+    sVar7 = sVar16;
+    if ((int)sVar10 <= (int)sVar16) {
+      sVar7 = sVar10;
+    }
+    iVar11 = memcmp(piVar15,*(void **)(iVar14 + 0x24),sVar7);
+    if (iVar11 == 0) {
+      if ((int)sVar10 < (int)sVar16) goto LAB_0001c428;
+    }
+    else if (iVar11 < 0) goto LAB_0001c428;
+    iVar11 = *(int *)(iVar14 + 0x28);
+    if (iVar11 == 0) {
+      iVar11 = *(int *)(param_1 + 0x90);
+    }
+  }
+  iVar11 = *(int *)(iVar11 + 0x10);
+  FUN_0001aa18(&uStack_48);
+  puVar12 = puStack_34;
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) != 0) {
+    sVar10 = iStack_38 - (int)puStack_34;
+    iVar9 = iVar14;
+    iVar5 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar16 = *(int *)(iVar5 + 0x20) - (int)*(void **)(iVar5 + 0x24);
+        sVar7 = sVar16;
+        if ((int)sVar10 <= (int)sVar16) {
+          sVar7 = sVar10;
+        }
+        iVar6 = memcmp(*(void **)(iVar5 + 0x24),puVar12,sVar7);
+        if (iVar6 == 0) break;
+        if (iVar6 < 0) goto LAB_0001bff8;
+LAB_0001c030:
+        piVar15 = (int *)(iVar5 + 8);
+        iVar9 = iVar5;
+        iVar5 = *piVar15;
+        if (*piVar15 == 0) goto LAB_0001c040;
+      }
+      if ((int)sVar10 <= (int)sVar16) goto LAB_0001c030;
+LAB_0001bff8:
+      iVar5 = *(int *)(iVar5 + 0xc);
+    } while (iVar5 != 0);
+LAB_0001c040:
+    if (iVar9 != iVar14) {
+      sVar16 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+      sVar7 = sVar16;
+      if ((int)sVar10 <= (int)sVar16) {
+        sVar7 = sVar10;
+      }
+      iVar14 = memcmp(puVar12,*(void **)(iVar9 + 0x24),sVar7);
+      if (iVar14 == 0) {
+        if ((int)sVar16 <= (int)sVar10) goto LAB_0001c084;
+      }
+      else if (-1 < iVar14) goto LAB_0001c084;
+    }
+  }
+  __android_log_print(6,DAT_0001c1f0 + 0x1c41c,DAT_0001c1ec + 0x1c418,puVar12);
+LAB_0001c084:
+  SPhysics::SPTextureManager::setTexture(pcVar4,(void *)(DAT_0001c180 + 0x1c09c),iVar8,iVar11);
+  if ((puStack_34 != &uStack_48) && (puStack_34 != (undefined4 *)0x0)) {
+    if ((uint)(uStack_48 - (int)puStack_34) < 0x81) {
+      std::__node_alloc::_M_deallocate(puStack_34,uStack_48 - (int)puStack_34);
+    }
+    else {
+      operator_delete(puStack_34);
+    }
+  }
+  if ((piStack_4c != aiStack_60) && (piStack_4c != (int *)0x0)) {
+    if ((uint)(aiStack_60[0] - (int)piStack_4c) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_4c,aiStack_60[0] - (int)piStack_4c);
+    }
+    else {
+      operator_delete(piStack_4c);
+    }
+  }
+  if ((piStack_64 != aiStack_78) && (piStack_64 != (int *)0x0)) {
+    if ((uint)(aiStack_78[0] - (int)piStack_64) < 0x81) {
+      std::__node_alloc::_M_deallocate(piStack_64,aiStack_78[0] - (int)piStack_64);
+    }
+    else {
+      operator_delete(piStack_64);
+    }
+  }
+  if (iStack_2c != *piVar2) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return;
+}
+
+
+
+============================================================
+requested=0x1dbcc
+entry=0001dbcc
+name=FUN_0001dbcc
+signature=undefined FUN_0001dbcc(void)
+body=[[0001dbcc, 0001e017]]
+references-to:
+  00023ce4 DATA
+decompileCompleted=true
+error=
+
+int * FUN_0001dbcc(int *param_1)
+
+{
+  void *pvVar1;
+  void *pvVar2;
+  void *pvVar3;
+  uint uVar4;
+  uint uVar5;
+  int iVar6;
+  void *pvVar7;
+  int *piVar8;
+  void *pvVar9;
+  void *pvVar10;
+  
+  *param_1 = DAT_0001e018 + 0x1dbe4;
+  SPhysics::SPTextureManager::getInstancePtr();
+  SPhysics::SPTextureManager::ReleaseInstance();
+  if ((int *)param_1[0x36] != (int *)0x0) {
+    (**(code **)(*(int *)param_1[0x36] + 4))();
+  }
+  *param_1 = DAT_0001e01c + 0x1dc20;
+  if ((int *)param_1[0x24] != (int *)0x0) {
+    (**(code **)(*(int *)param_1[0x24] + 4))();
+  }
+  param_1[0x24] = 0;
+  (**(code **)(*(int *)param_1[0x20] + 4))();
+  if (param_1[0x2a] != param_1[0x2b]) {
+    __android_log_print(6,DAT_0001e020 + 0x1dc68,DAT_0001e024 + 0x1dc6c);
+  }
+  if (param_1[0x30] != param_1[0x31]) {
+    __android_log_print(6,DAT_0001e028 + 0x1dc90,DAT_0001e02c + 0x1dc94);
+  }
+  pvVar1 = (void *)param_1[0x33];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = (param_1[0x35] - (int)pvVar1 >> 2) * 4;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x30];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x32] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x2d];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x2f] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x2a];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x2c] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x27];
+  pvVar10 = (void *)param_1[0x26];
+  if (pvVar1 == pvVar10) goto LAB_0001df10;
+  pvVar9 = (void *)((int)pvVar1 + -0x18);
+  uVar4 = ((uint)((int)pvVar9 - (int)pvVar10) >> 3) * 0xaaab & 3;
+  pvVar2 = pvVar9;
+  if (uVar4 != 0) {
+    iVar6 = (int)pvVar9 * 2 - (int)pvVar1;
+    pvVar2 = *(void **)(iVar6 + 0x2c);
+    if ((pvVar2 != pvVar9) && (pvVar2 != (void *)0x0)) {
+      uVar5 = *(int *)(iVar6 + 0x18) - (int)pvVar2;
+      if (uVar5 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar2,uVar5);
+      }
+      else {
+        operator_delete(pvVar2);
+      }
+    }
+    pvVar2 = (void *)((int)pvVar1 + -0x30);
+    if (uVar4 != 1) {
+      if (uVar4 != 2) {
+        pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+        if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+          uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+          if (uVar4 < 0x81) {
+            std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+          }
+          else {
+            operator_delete(pvVar3);
+          }
+        }
+        pvVar2 = (void *)((int)pvVar1 + -0x48);
+      }
+      pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+      if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+        uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+        if (0x80 < uVar4) {
+          operator_delete(pvVar3);
+          pvVar2 = (void *)((int)pvVar2 + -0x18);
+          goto LAB_0001ded0;
+        }
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      pvVar2 = (void *)((int)pvVar2 + -0x18);
+    }
+  }
+LAB_0001ded0:
+  while( true ) {
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    if (pvVar10 == pvVar2) break;
+    pvVar7 = (void *)((int)pvVar2 + -0x18);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar7 = (void *)((int)pvVar2 + -0x30);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar7 = (void *)((int)pvVar2 + -0x48);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar2 = (void *)((int)pvVar2 + -0x60);
+  }
+  pvVar1 = (void *)param_1[0x26];
+LAB_0001df10:
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = (param_1[0x28] - (int)pvVar1 >> 3) * 8;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x21];
+  if (pvVar1 != (void *)0x0) {
+    if ((uint)(param_1[0x23] - (int)pvVar1) < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,param_1[0x23] - (int)pvVar1);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  if (param_1[6] != 0) {
+    piVar8 = param_1 + 2;
+    FUN_0001cb60(piVar8,param_1[3]);
+    param_1[4] = (int)piVar8;
+    param_1[5] = (int)piVar8;
+    param_1[3] = 0;
+    param_1[6] = 0;
+  }
+  operator_delete(param_1);
+  return param_1;
+}
+
+
+
+============================================================
+requested=0x1d770
+entry=0001d770
+name=FUN_0001d770
+signature=undefined FUN_0001d770(void)
+body=[[0001d770, 0001dbb3]]
+references-to:
+  00023ce0 DATA
+decompileCompleted=true
+error=
+
+int * FUN_0001d770(int *param_1)
+
+{
+  void *pvVar1;
+  void *pvVar2;
+  void *pvVar3;
+  uint uVar4;
+  uint uVar5;
+  int iVar6;
+  void *pvVar7;
+  int *piVar8;
+  void *pvVar9;
+  void *pvVar10;
+  
+  *param_1 = DAT_0001dbb4 + 0x1d788;
+  SPhysics::SPTextureManager::getInstancePtr();
+  SPhysics::SPTextureManager::ReleaseInstance();
+  if ((int *)param_1[0x36] != (int *)0x0) {
+    (**(code **)(*(int *)param_1[0x36] + 4))();
+  }
+  *param_1 = DAT_0001dbb8 + 0x1d7c4;
+  if ((int *)param_1[0x24] != (int *)0x0) {
+    (**(code **)(*(int *)param_1[0x24] + 4))();
+  }
+  param_1[0x24] = 0;
+  (**(code **)(*(int *)param_1[0x20] + 4))();
+  if (param_1[0x2a] != param_1[0x2b]) {
+    __android_log_print(6,DAT_0001dbbc + 0x1d80c,DAT_0001dbc0 + 0x1d810);
+  }
+  if (param_1[0x30] != param_1[0x31]) {
+    __android_log_print(6,DAT_0001dbc4 + 0x1d834,DAT_0001dbc8 + 0x1d838);
+  }
+  pvVar1 = (void *)param_1[0x33];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = (param_1[0x35] - (int)pvVar1 >> 2) * 4;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x30];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x32] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x2d];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x2f] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x2a];
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = param_1[0x2c] - (int)pvVar1 & 0xfffffffc;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x27];
+  pvVar10 = (void *)param_1[0x26];
+  if (pvVar1 == pvVar10) goto LAB_0001dab4;
+  pvVar9 = (void *)((int)pvVar1 + -0x18);
+  uVar4 = ((uint)((int)pvVar9 - (int)pvVar10) >> 3) * 0xaaab & 3;
+  pvVar2 = pvVar9;
+  if (uVar4 != 0) {
+    iVar6 = (int)pvVar9 * 2 - (int)pvVar1;
+    pvVar2 = *(void **)(iVar6 + 0x2c);
+    if ((pvVar2 != pvVar9) && (pvVar2 != (void *)0x0)) {
+      uVar5 = *(int *)(iVar6 + 0x18) - (int)pvVar2;
+      if (uVar5 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar2,uVar5);
+      }
+      else {
+        operator_delete(pvVar2);
+      }
+    }
+    pvVar2 = (void *)((int)pvVar1 + -0x30);
+    if (uVar4 != 1) {
+      if (uVar4 != 2) {
+        pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+        if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+          uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+          if (uVar4 < 0x81) {
+            std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+          }
+          else {
+            operator_delete(pvVar3);
+          }
+        }
+        pvVar2 = (void *)((int)pvVar1 + -0x48);
+      }
+      pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+      if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+        uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+        if (0x80 < uVar4) {
+          operator_delete(pvVar3);
+          pvVar2 = (void *)((int)pvVar2 + -0x18);
+          goto LAB_0001da74;
+        }
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      pvVar2 = (void *)((int)pvVar2 + -0x18);
+    }
+  }
+LAB_0001da74:
+  while( true ) {
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar2 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar2) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar2 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    if (pvVar10 == pvVar2) break;
+    pvVar7 = (void *)((int)pvVar2 + -0x18);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar7 = (void *)((int)pvVar2 + -0x30);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar7 = (void *)((int)pvVar2 + -0x48);
+    pvVar3 = *(void **)((int)pvVar9 + (int)pvVar7 + (0x2c - (int)pvVar1));
+    if ((pvVar3 != pvVar7) && (pvVar3 != (void *)0x0)) {
+      uVar4 = *(int *)((int)pvVar9 + (int)pvVar7 + (0x18 - (int)pvVar1)) - (int)pvVar3;
+      if (uVar4 < 0x81) {
+        std::__node_alloc::_M_deallocate(pvVar3,uVar4);
+      }
+      else {
+        operator_delete(pvVar3);
+      }
+    }
+    pvVar2 = (void *)((int)pvVar2 + -0x60);
+  }
+  pvVar1 = (void *)param_1[0x26];
+LAB_0001dab4:
+  if (pvVar1 != (void *)0x0) {
+    uVar4 = (param_1[0x28] - (int)pvVar1 >> 3) * 8;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,uVar4);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  pvVar1 = (void *)param_1[0x21];
+  if (pvVar1 != (void *)0x0) {
+    if ((uint)(param_1[0x23] - (int)pvVar1) < 0x81) {
+      std::__node_alloc::_M_deallocate(pvVar1,param_1[0x23] - (int)pvVar1);
+    }
+    else {
+      operator_delete(pvVar1);
+    }
+  }
+  if (param_1[6] != 0) {
+    piVar8 = param_1 + 2;
+    FUN_0001cb60(piVar8,param_1[3]);
+    param_1[4] = (int)piVar8;
+    param_1[5] = (int)piVar8;
+    param_1[3] = 0;
+    param_1[6] = 0;
+  }
+  return param_1;
+}
+
+
+
+============================================================
+requested=0x13140
+entry=00013140
+name=FUN_00013140
+signature=undefined FUN_00013140(void)
+body=[[00013140, 00013433]]
+references-to:
+  00017130 UNCONDITIONAL_CALL
+  00014c24 UNCONDITIONAL_CALL
+  00014c40 UNCONDITIONAL_CALL
+decompileCompleted=true
+error=
+
+void FUN_00013140(int param_1)
+
+{
+  int iVar1;
+  char *pcVar2;
+  uint uVar3;
+  float extraout_s0;
+  float fVar4;
+  float extraout_s0_00;
+  float extraout_s0_01;
+  float extraout_s0_02;
+  float extraout_s0_03;
+  float extraout_s0_04;
+  float extraout_s1;
+  undefined8 uVar5;
+  float extraout_s1_00;
+  float extraout_s1_01;
+  float extraout_s1_02;
+  float fVar6;
+  float extraout_s1_03;
+  float extraout_s1_04;
+  float extraout_s2;
+  float extraout_s2_00;
+  float extraout_s2_01;
+  float extraout_s2_02;
+  float fVar7;
+  float extraout_s2_03;
+  float extraout_s2_04;
+  
+  glViewport(0,0,(int)((float)(longlong)*(int *)(param_1 + 0x24) * *(float *)(param_1 + 0xa98)),
+             (int)((float)(longlong)*(int *)(param_1 + 0x28) * *(float *)(param_1 + 0xa98)));
+  glBindFramebuffer(0x8d40,*(undefined4 *)(param_1 + 0xa6c));
+  glClearColor(0x3f000000,0x3f000000,0,0);
+  glClear(0x4100);
+  glBindFramebuffer(0x8d40,0);
+  glBindFramebuffer(0x8d40,*(undefined4 *)(param_1 + 0xa6c));
+  fVar4 = extraout_s0;
+  fVar6 = extraout_s1;
+  fVar7 = extraout_s2;
+  if ((uint)(*(int *)(param_1 + 0xad0) - *(int *)(param_1 + 0xacc)) >> 5 != 0) {
+    uVar3 = 0;
+    do {
+      uVar3 = uVar3 + 1;
+      uVar5 = SPhysics::SPDrawRadialWaterBrush::setPosition(fVar4,fVar6,fVar7);
+      fVar4 = (float)SPhysics::SPDrawRadialWaterBrush::setSize
+                               ((float)uVar5,(float)((ulonglong)uVar5 >> 0x20));
+      fVar4 = (float)SPhysics::SPDrawRadialWaterBrush::setAlpha(fVar4);
+      SPhysics::SPDrawRadialWaterBrush::setTimeStep(fVar4);
+      SPhysics::SPIRenderer::draw();
+      fVar4 = extraout_s0_00;
+      fVar6 = extraout_s1_00;
+      fVar7 = extraout_s2_00;
+    } while (uVar3 < (uint)(*(int *)(param_1 + 0xad0) - *(int *)(param_1 + 0xacc) >> 5));
+  }
+  iVar1 = *(int *)(param_1 + 0xac0);
+  if ((uint)(*(int *)(param_1 + 0xac4) - iVar1) >> 5 != 0) {
+    pcVar2 = (char *)(param_1 + 0x2c);
+    uVar3 = 0;
+    do {
+      iVar1 = *(int *)(iVar1 + uVar3 * 0x20 + 0x1c);
+      if (iVar1 == 1) {
+        SPhysics::SPDrawRadialWaterBrush::setMaskTexture(pcVar2);
+        fVar4 = extraout_s0_04;
+        fVar6 = extraout_s1_04;
+        fVar7 = extraout_s2_04;
+      }
+      else if (iVar1 == 0) {
+        SPhysics::SPDrawRadialWaterBrush::setMaskTexture(pcVar2);
+        fVar4 = extraout_s0_03;
+        fVar6 = extraout_s1_03;
+        fVar7 = extraout_s2_03;
+      }
+      else if (iVar1 == 2) {
+        SPhysics::SPDrawRadialWaterBrush::setMaskTexture(pcVar2);
+        fVar4 = extraout_s0_02;
+        fVar6 = extraout_s1_02;
+        fVar7 = extraout_s2_02;
+      }
+      uVar5 = SPhysics::SPDrawRadialWaterBrush::setPosition(fVar4,fVar6,fVar7);
+      fVar4 = (float)SPhysics::SPDrawRadialWaterBrush::setSize
+                               ((float)uVar5,(float)((ulonglong)uVar5 >> 0x20));
+      fVar4 = (float)SPhysics::SPDrawRadialWaterBrush::setAlpha(fVar4);
+      if (*(char *)(param_1 + 0xab0) == '\0') {
+        SPhysics::SPDrawRadialWaterBrush::setTimeStep(fVar4);
+      }
+      else {
+        SPhysics::SPDrawRadialWaterBrush::setTimeStep(fVar4);
+      }
+      uVar3 = uVar3 + 1;
+      SPhysics::SPIRenderer::draw();
+      iVar1 = *(int *)(param_1 + 0xac0);
+      fVar4 = extraout_s0_01;
+      fVar6 = extraout_s1_01;
+      fVar7 = extraout_s2_01;
+    } while (uVar3 < (uint)(*(int *)(param_1 + 0xac4) - iVar1 >> 5));
+  }
+  glViewport(0,0,(int)((float)(longlong)*(int *)(param_1 + 0x24) * *(float *)(param_1 + 0xa9c)),
+             (int)((float)(longlong)*(int *)(param_1 + 0x28) * *(float *)(param_1 + 0xa9c)));
+  glBindFramebuffer(0x8d40,*(undefined4 *)(param_1 + 0xa78));
+  SPhysics::SPDrawBGAdvectWaterBrush::setVelocityRadialTextureID
+            (param_1 + 0x564U,*(uint *)(param_1 + 0xa84));
+  SPhysics::SPDrawBGAdvectWaterBrush::setFBOID(param_1 + 0x564U);
+  SPhysics::SPDrawBGAdvectWaterBrush::draw();
+  return;
+}
+
+
+
+============================================================
+requested=0x13448
+entry=00013448
+name=FUN_00013448
+signature=undefined FUN_00013448(void)
+body=[[00013448, 0001364b]]
+references-to:
+  00013e54 UNCONDITIONAL_CALL
+  000156cc UNCONDITIONAL_CALL
+  00017260 UNCONDITIONAL_CALL
+  00013658 UNCONDITIONAL_CALL
+decompileCompleted=true
+error=
+
+void FUN_00013448(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  float *pfVar3;
+  float fVar4;
+  undefined8 uVar5;
+  float fVar7;
+  float fVar6;
+  
+  if (*(int *)(param_1 + 0xac0) != *(int *)(param_1 + 0xac4)) {
+    *(int *)(param_1 + 0xac4) = *(int *)(param_1 + 0xac0);
+  }
+  fVar4 = *(float *)(param_1 + 0xab8) * 20.0;
+  if (*(int *)(param_1 + 0xacc) != *(int *)(param_1 + 0xad0)) {
+    *(int *)(param_1 + 0xad0) = *(int *)(param_1 + 0xacc);
+  }
+  *(undefined4 *)(param_1 + 0xcc8) = 0x3f800000;
+  *(undefined1 *)(param_1 + 0xab0) = 0;
+  *(undefined1 *)(param_1 + 0xabc) = 0;
+  *(undefined1 *)(param_1 + 0xccc) = 0;
+  *(int *)(param_1 + 0xab4) = (int)fVar4;
+  *(undefined4 *)(param_1 + 0xcd0) = 0;
+  *(undefined4 *)(param_1 + 0xaa4) = 0;
+  *(undefined4 *)(param_1 + 0xaa0) = 0;
+  *(undefined4 *)(param_1 + 0xaac) = 0;
+  *(undefined4 *)(param_1 + 0xaa8) = 0;
+  *(undefined4 *)(param_1 + 0xcb8) = 0x3f800000;
+  fVar4 = (float)SPhysics::SPDrawBGAdvectWaterBrush::setNoiseVectorScalar(fVar4);
+  fVar4 = (float)SPhysics::SPDrawBGAdvectWaterBrush::setRadialVectorScalar(fVar4);
+  fVar4 = (float)SPhysics::SPDrawMixWaterBrush::setSaturation(fVar4);
+  fVar4 = (float)SPhysics::SPDrawMixWaterBrush::setRedSaturation(fVar4);
+  fVar4 = (float)SPhysics::SPDrawMixWaterBrush::setGreenSaturation(fVar4);
+  fVar4 = (float)SPhysics::SPDrawMixWaterBrush::setBlueSaturation(fVar4);
+  uVar5 = SPhysics::SPDrawMixWaterBrush::setBrightness(fVar4);
+  fVar4 = DAT_0001364c;
+  fVar6 = (float)((ulonglong)uVar5 >> 0x20);
+  iVar1 = *(int *)(param_1 + 0x24);
+  iVar2 = *(int *)(param_1 + 0x28);
+  pfVar3 = (float *)(param_1 + 0xcbc);
+  *(undefined4 *)(param_1 + 0xcc4) = 0x3f4ccccd;
+  *(undefined4 *)(param_1 + 0xab8) = 0x3fc00000;
+  *(undefined4 *)(param_1 + 0xab4) = 0x1e;
+  *(undefined4 *)(param_1 + 0xcc0) = 0x40000000;
+  fVar7 = (float)(longlong)iVar1 + (float)(longlong)iVar1;
+  *pfVar3 = fVar7 * fVar4;
+  if (iVar1 == iVar2) {
+    *pfVar3 = *(float *)(param_1 + 0xcd8) * DAT_00013654 * fVar7;
+    SPhysics::SPDrawRadialWaterBrush::setRatio((float)uVar5,fVar6);
+  }
+  else if (iVar1 < iVar2) {
+    fVar4 = *(float *)(param_1 + 0xcd8) * fVar4;
+    *pfVar3 = fVar4 * fVar7;
+    SPhysics::SPDrawRadialWaterBrush::setRatio((float)(longlong)iVar2,fVar4);
+  }
+  else {
+    *pfVar3 = *(float *)(param_1 + 0xcd8) * DAT_00013650 * (float)(longlong)iVar2;
+    SPhysics::SPDrawRadialWaterBrush::setRatio((float)uVar5,fVar6);
+  }
+  *(undefined1 *)(param_1 + 0xcf0) = 1;
+  *(undefined1 *)(param_1 + 0xcd4) = 0;
+  return;
+}
+
+
+
+============================================================
+requested=0x13668
+entry=00013668
+name=FUN_00013668
+signature=undefined FUN_00013668(void)
+body=[[00013668, 00013a5b]]
+references-to:
+  00013b3c UNCONDITIONAL_CALL
+  0001412c UNCONDITIONAL_CALL
+  00015604 UNCONDITIONAL_CALL
+  0001567c UNCONDITIONAL_CALL
+  00015984 UNCONDITIONAL_CALL
+  0001590c UNCONDITIONAL_CALL
+  000159f0 UNCONDITIONAL_CALL
+  00015a54 UNCONDITIONAL_CALL
+decompileCompleted=true
+error=
+
+void FUN_00013668(int param_1,undefined4 *param_2,undefined4 *param_3,undefined4 *param_4,
+                 char *param_5)
+
+{
+  char cVar1;
+  undefined4 uVar2;
+  int iVar3;
+  undefined4 uVar4;
+  undefined4 uVar5;
+  undefined4 *puVar6;
+  undefined4 *puVar7;
+  undefined4 uVar8;
+  uint uVar9;
+  undefined4 *puVar10;
+  uint uVar11;
+  undefined4 uVar12;
+  undefined4 uVar13;
+  int local_68;
+  undefined4 *local_64;
+  undefined4 *local_60;
+  uint local_5c;
+  undefined4 *local_58;
+  undefined4 *local_50;
+  int local_44;
+  uint local_30 [3];
+  
+  if ((*(char *)(param_1 + 0xcf2) == '\0') &&
+     ((uint)(*(int *)(param_1 + 0xac4) - *(int *)(param_1 + 0xac0)) >> 5 != 0)) {
+    return;
+  }
+  uVar13 = *param_2;
+  uVar12 = *param_3;
+  cVar1 = *param_5;
+  uVar8 = *param_4;
+  if (cVar1 == '\0') {
+    iVar3 = rand();
+    local_68 = (uint)(0.0 < (double)(longlong)iVar3 * DAT_00013a60) *
+               (int)(longlong)((double)(longlong)iVar3 * DAT_00013a60);
+  }
+  else {
+    local_68 = 0;
+  }
+  puVar7 = *(undefined4 **)(param_1 + 0xac4);
+  if (puVar7 != *(undefined4 **)(param_1 + 0xac8)) {
+    *(char *)(puVar7 + 6) = cVar1;
+    *puVar7 = uVar8;
+    puVar7[1] = uVar8;
+    puVar7[2] = uVar8;
+    puVar7[4] = uVar13;
+    puVar7[5] = uVar12;
+    puVar7[7] = local_68;
+    puVar7[3] = 0;
+    *(undefined4 **)(param_1 + 0xac4) = puVar7 + 8;
+    return;
+  }
+  local_50 = *(undefined4 **)(param_1 + 0xac0);
+  uVar11 = (int)puVar7 - (int)local_50 >> 5;
+  if (uVar11 == 0) {
+    uVar9 = 1;
+  }
+  else {
+    uVar9 = uVar11 * 2;
+  }
+  if ((uVar9 < 0x8000000) && (uVar11 <= uVar9)) {
+    if (uVar9 != 0) {
+      local_30[0] = uVar9 * 0x20;
+      if (0x80 < local_30[0]) goto LAB_00013730;
+      local_58 = (undefined4 *)std::__node_alloc::_M_allocate(local_30);
+      goto LAB_0001373c;
+    }
+    puVar10 = (undefined4 *)0x20;
+    local_58 = (undefined4 *)0x0;
+    local_44 = 0;
+  }
+  else {
+    local_30[0] = 0xffffffe0;
+LAB_00013730:
+    local_58 = operator_new(local_30[0]);
+LAB_0001373c:
+    local_50 = *(undefined4 **)(param_1 + 0xac0);
+    puVar10 = local_58 + 8;
+    local_44 = (int)local_58 + (local_30[0] & 0xffffffe0);
+    iVar3 = (int)puVar7 - (int)local_50;
+    puVar7 = *(undefined4 **)(param_1 + 0xac8);
+    uVar11 = iVar3 >> 5;
+  }
+  puVar6 = local_58;
+  if ((int)uVar11 < 1) goto LAB_00013968;
+  local_5c = uVar11 - 1;
+  uVar9 = local_5c & 3;
+  uVar2 = local_50[1];
+  uVar4 = local_50[2];
+  uVar5 = local_50[3];
+  *local_58 = *local_50;
+  local_58[1] = uVar2;
+  local_58[2] = uVar4;
+  local_58[3] = uVar5;
+  uVar2 = local_50[5];
+  uVar4 = local_50[6];
+  uVar5 = local_50[7];
+  local_58[4] = local_50[4];
+  local_58[5] = uVar2;
+  local_58[6] = uVar4;
+  local_58[7] = uVar5;
+  puVar6 = local_58 + 0x10;
+  puVar10 = local_50 + 0x10;
+  if (local_5c != 0) {
+    if (uVar9 != 0) {
+      local_64 = puVar10;
+      local_60 = puVar6;
+      if (uVar9 != 1) {
+        if (uVar9 != 2) {
+          uVar2 = local_50[9];
+          uVar4 = local_50[10];
+          uVar5 = local_50[0xb];
+          local_5c = uVar11 - 2;
+          local_58[8] = local_50[8];
+          local_58[9] = uVar2;
+          local_58[10] = uVar4;
+          local_58[0xb] = uVar5;
+          local_64 = local_50 + 0x18;
+          uVar2 = local_50[0xd];
+          uVar4 = local_50[0xe];
+          uVar5 = local_50[0xf];
+          local_58[0xc] = local_50[0xc];
+          local_58[0xd] = uVar2;
+          local_58[0xe] = uVar4;
+          local_58[0xf] = uVar5;
+          local_60 = local_58 + 0x18;
+        }
+        local_5c = local_5c - 1;
+        uVar2 = local_64[-7];
+        uVar4 = local_64[-6];
+        uVar5 = local_64[-5];
+        local_60[-8] = local_64[-8];
+        local_60[-7] = uVar2;
+        local_60[-6] = uVar4;
+        local_60[-5] = uVar5;
+        uVar2 = local_64[-3];
+        uVar4 = local_64[-2];
+        uVar5 = local_64[-1];
+        local_60[-4] = local_64[-4];
+        local_60[-3] = uVar2;
+        local_60[-2] = uVar4;
+        local_60[-1] = uVar5;
+        local_64 = local_64 + 8;
+        local_60 = local_60 + 8;
+      }
+      local_5c = local_5c - 1;
+      puVar10 = local_64 + 8;
+      uVar2 = local_64[-7];
+      uVar4 = local_64[-6];
+      uVar5 = local_64[-5];
+      puVar6 = local_60 + 8;
+      local_60[-8] = local_64[-8];
+      local_60[-7] = uVar2;
+      local_60[-6] = uVar4;
+      local_60[-5] = uVar5;
+      uVar2 = local_64[-3];
+      uVar4 = local_64[-2];
+      uVar5 = local_64[-1];
+      local_60[-4] = local_64[-4];
+      local_60[-3] = uVar2;
+      local_60[-2] = uVar4;
+      local_60[-1] = uVar5;
+      if (local_5c == 0) goto LAB_00013958;
+    }
+    do {
+      uVar2 = puVar10[-7];
+      uVar4 = puVar10[-6];
+      uVar5 = puVar10[-5];
+      local_5c = local_5c - 4;
+      puVar6[-8] = puVar10[-8];
+      puVar6[-7] = uVar2;
+      puVar6[-6] = uVar4;
+      puVar6[-5] = uVar5;
+      uVar2 = puVar10[-3];
+      uVar4 = puVar10[-2];
+      uVar5 = puVar10[-1];
+      puVar6[-4] = puVar10[-4];
+      puVar6[-3] = uVar2;
+      puVar6[-2] = uVar4;
+      puVar6[-1] = uVar5;
+      uVar2 = puVar10[1];
+      uVar4 = puVar10[2];
+      uVar5 = puVar10[3];
+      *puVar6 = *puVar10;
+      puVar6[1] = uVar2;
+      puVar6[2] = uVar4;
+      puVar6[3] = uVar5;
+      uVar2 = puVar10[5];
+      uVar4 = puVar10[6];
+      uVar5 = puVar10[7];
+      puVar6[4] = puVar10[4];
+      puVar6[5] = uVar2;
+      puVar6[6] = uVar4;
+      puVar6[7] = uVar5;
+      uVar2 = puVar10[9];
+      uVar4 = puVar10[10];
+      uVar5 = puVar10[0xb];
+      puVar6[8] = puVar10[8];
+      puVar6[9] = uVar2;
+      puVar6[10] = uVar4;
+      puVar6[0xb] = uVar5;
+      uVar2 = puVar10[0xd];
+      uVar4 = puVar10[0xe];
+      uVar5 = puVar10[0xf];
+      puVar6[0xc] = puVar10[0xc];
+      puVar6[0xd] = uVar2;
+      puVar6[0xe] = uVar4;
+      puVar6[0xf] = uVar5;
+      uVar2 = puVar10[0x11];
+      uVar4 = puVar10[0x12];
+      uVar5 = puVar10[0x13];
+      puVar6[0x10] = puVar10[0x10];
+      puVar6[0x11] = uVar2;
+      puVar6[0x12] = uVar4;
+      puVar6[0x13] = uVar5;
+      uVar2 = puVar10[0x15];
+      uVar4 = puVar10[0x16];
+      uVar5 = puVar10[0x17];
+      puVar6[0x14] = puVar10[0x14];
+      puVar6[0x15] = uVar2;
+      puVar6[0x16] = uVar4;
+      puVar6[0x17] = uVar5;
+      puVar10 = puVar10 + 0x20;
+      puVar6 = puVar6 + 0x20;
+    } while (local_5c != 0);
+  }
+LAB_00013958:
+  puVar10 = local_58 + uVar11 * 8 + 8;
+  puVar6 = local_58 + uVar11 * 8;
+LAB_00013968:
+  puVar6[5] = uVar12;
+  puVar6[4] = uVar13;
+  *puVar6 = uVar8;
+  puVar6[1] = uVar8;
+  puVar6[2] = uVar8;
+  *(char *)(puVar6 + 6) = cVar1;
+  puVar6[7] = local_68;
+  puVar6[3] = 0;
+  if (local_50 != (undefined4 *)0x0) {
+    uVar11 = ((int)puVar7 - (int)local_50 >> 5) * 0x20;
+    if (uVar11 < 0x81) {
+      std::__node_alloc::_M_deallocate(local_50,uVar11);
+    }
+    else {
+      operator_delete(local_50);
+    }
+  }
+  *(undefined4 **)(param_1 + 0xac4) = puVar10;
+  *(undefined4 **)(param_1 + 0xac0) = local_58;
+  *(int *)(param_1 + 0xac8) = local_44;
+  return;
+}
+
+
+

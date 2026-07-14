@@ -251,6 +251,84 @@ $rippleStageHash = (Get-FileHash -LiteralPath $rippleLibrary -Algorithm SHA256).
 if ($rippleStageHash -notmatch "^[0-9A-F]{64}$") {
     throw "Water Ripple staged SHA-256 verification failed"
 }
+
+$watercolorNative = Join-Path $root "ports\watercolor\native"
+$watercolorCommonSource = Join-Path $watercolorNative "watercolor_arm64.c"
+$watercolorEffectSource = Join-Path $watercolorNative "watercolor_effect_stub.c"
+$watercolorCommonLibrary = Join-Path $arm64Stage "libsecveSrkCommon.so"
+$watercolorEffectLibrary = Join-Path $arm64Stage "libsecveWaterColor.so"
+foreach ($watercolorSource in @($watercolorCommonSource, $watercolorEffectSource)) {
+    if (-not (Test-Path -LiteralPath $watercolorSource)) {
+        throw "Missing Watercolor native source: $watercolorSource"
+    }
+}
+$watercolorCommonArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-Wl,--no-undefined", "-Wl,-soname,libsecveSrkCommon.so",
+    $watercolorCommonSource,
+    "-lGLESv2", "-llog", "-lm",
+    "-o", $watercolorCommonLibrary
+)
+Run $clang $watercolorCommonArgs
+$watercolorEffectArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-Wl,--no-undefined", "-Wl,-soname,libsecveWaterColor.so",
+    $watercolorEffectSource,
+    "-o", $watercolorEffectLibrary
+)
+Run $clang $watercolorEffectArgs
+foreach ($watercolorLibrary in @($watercolorCommonLibrary, $watercolorEffectLibrary)) {
+    $watercolorHeader = (& $readelf -h $watercolorLibrary) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $watercolorHeader -notmatch "Machine:\s+AArch64") {
+        throw "Watercolor library is not an AArch64 ELF: $watercolorLibrary"
+    }
+}
+$watercolorCommonDynamic = (& $readelf -d $watercolorCommonLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or
+        $watercolorCommonDynamic -notmatch "SONAME.*\[libsecveSrkCommon\.so\]" -or
+        $watercolorCommonDynamic -notmatch "NEEDED.*\[libGLESv2\.so\]" -or
+        $watercolorCommonDynamic -notmatch "NEEDED.*\[liblog\.so\]") {
+    throw "Watercolor common bridge dynamic dependency verification failed"
+}
+$watercolorEffectDynamic = (& $readelf -d $watercolorEffectLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or
+        $watercolorEffectDynamic -notmatch "SONAME.*\[libsecveWaterColor\.so\]") {
+    throw "Watercolor effect sentinel SONAME verification failed"
+}
+$watercolorCommonSymbols = (& $readelf -Ws $watercolorCommonLibrary) -join "`n"
+$expectedWatercolorExports = @(
+    "Java_com_samsung_android_visualeffect_lock_common_Native_loadEffect",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_loadTexture",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_init",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_draw",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_onTouch",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_showUnlock",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_showAffordance",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_clear",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_destroy",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_setParameters",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_loadModel",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_pauseAnimation",
+    "Java_com_samsung_android_visualeffect_lock_common_Native_resumeAnimation",
+    "JNI_OnLoad"
+)
+foreach ($export in $expectedWatercolorExports) {
+    if ($watercolorCommonSymbols -notmatch "\b$([regex]::Escape($export))\b") {
+        throw "Missing Watercolor JNI export: $export"
+    }
+}
+$watercolorEffectSymbols = (& $readelf -Ws $watercolorEffectLibrary) -join "`n"
+foreach ($export in @("createScene", "lle64_watercolor_effect_bridge_version")) {
+    if ($watercolorEffectSymbols -notmatch "\b$([regex]::Escape($export))\b") {
+        throw "Missing Watercolor effect sentinel export: $export"
+    }
+}
+$watercolorCommonStageHash = (Get-FileHash -LiteralPath $watercolorCommonLibrary `
+        -Algorithm SHA256).Hash
+$watercolorEffectStageHash = (Get-FileHash -LiteralPath $watercolorEffectLibrary `
+        -Algorithm SHA256).Hash
 Run "jar.exe" @("uf", $assembled, "-C", $nativeStage, "lib")
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
@@ -279,7 +357,9 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/libColourDropletEffect.so",
     "lib/arm64-v8a/libSparklingBubblesEffect.so",
     "lib/arm64-v8a/libstlport.so",
-    "lib/arm64-v8a/libWaterRipple.so"
+    "lib/arm64-v8a/libWaterRipple.so",
+    "lib/arm64-v8a/libsecveSrkCommon.so",
+    "lib/arm64-v8a/libsecveWaterColor.so"
 )
 $nativeDiff = Compare-Object ($nativeEntries | Sort-Object) ($expectedNativeEntries | Sort-Object)
 if ($nativeDiff) {
@@ -313,3 +393,5 @@ if ($IncludeRippleCoreProbe) {
 }
 Write-Host "Native entries: $($nativeEntries -join ', ')"
 Write-Host "Water Ripple SHA-256: $rippleStageHash"
+Write-Host "Watercolor common SHA-256: $watercolorCommonStageHash"
+Write-Host "Watercolor effect sentinel SHA-256: $watercolorEffectStageHash"
