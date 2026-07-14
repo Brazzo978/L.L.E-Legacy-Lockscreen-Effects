@@ -188,16 +188,68 @@ foreach ($library in $stableNote5StagedHashes.Keys) {
         throw "Unexpected staged SHA-256 for $library`: $stagedHash"
     }
 }
-if ($IncludeRippleCoreProbe) {
-    $rippleNative = Join-Path $root "ports\water-ripple\native"
-    Run $clang @(
-        "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
-        "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
-        "-Wl,-soname,libWaterRipple.so",
-        (Join-Path $rippleNative "ripple_core.c"),
-        (Join-Path $rippleNative "water_ripple_jni_core.c"),
-        "-lm", "-o", (Join-Path $arm64Stage "libWaterRipple.so")
-    )
+$rippleNative = Join-Path $root "ports\water-ripple\native"
+$rippleLibrary = Join-Path $arm64Stage "libWaterRipple.so"
+$rippleSources = @(
+    "ripple_core.c",
+    "water_ripple_jni_core.c",
+    "ripple_gles_shaders.c",
+    "ripple_gles_pipeline.c",
+    "ripple_gles_overlay_shader.c",
+    "ripple_gles_overlay.c",
+    "water_ripple_jni_lifecycle.c"
+) | ForEach-Object { Join-Path $rippleNative $_ }
+foreach ($rippleSource in $rippleSources) {
+    if (-not (Test-Path -LiteralPath $rippleSource)) {
+        throw "Missing Water Ripple native source: $rippleSource"
+    }
+}
+$rippleClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-Wl,--no-undefined", "-Wl,-soname,libWaterRipple.so"
+) + $rippleSources + @(
+    "-lGLESv2", "-ljnigraphics", "-llog", "-lm",
+    "-o", $rippleLibrary
+)
+Run $clang $rippleClangArgs
+$rippleHeader = (& $readelf -h $rippleLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $rippleHeader -notmatch "Machine:\s+AArch64") {
+    throw "Water Ripple library is not an AArch64 ELF"
+}
+$rippleDynamic = (& $readelf -d $rippleLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or
+        $rippleDynamic -notmatch "SONAME.*\[libWaterRipple\.so\]" -or
+        $rippleDynamic -notmatch "NEEDED.*\[libGLESv2\.so\]" -or
+        $rippleDynamic -notmatch "NEEDED.*\[libjnigraphics\.so\]" -or
+        $rippleDynamic -notmatch "NEEDED.*\[liblog\.so\]") {
+    throw "Water Ripple dynamic dependency verification failed"
+}
+$rippleSymbols = (& $readelf -Ws $rippleLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "Water Ripple dynamic symbol inspection failed"
+}
+$expectedRippleExports = @(
+    "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_initWaters",
+    "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_move",
+    "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_ripple",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeBridgeVersion",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeInitGpu",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeAbandonGpu",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeDestroyGpu",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeUploadBitmap",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeFreeTexture",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeRenderNormal",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeGetLastError"
+)
+foreach ($export in $expectedRippleExports) {
+    if ($rippleSymbols -notmatch "\b$([regex]::Escape($export))\b") {
+        throw "Missing Water Ripple JNI export: $export"
+    }
+}
+$rippleStageHash = (Get-FileHash -LiteralPath $rippleLibrary -Algorithm SHA256).Hash
+if ($rippleStageHash -notmatch "^[0-9A-F]{64}$") {
+    throw "Water Ripple staged SHA-256 verification failed"
 }
 Run "jar.exe" @("uf", $assembled, "-C", $nativeStage, "lib")
 
@@ -226,11 +278,9 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/liblle64marker.so",
     "lib/arm64-v8a/libColourDropletEffect.so",
     "lib/arm64-v8a/libSparklingBubblesEffect.so",
-    "lib/arm64-v8a/libstlport.so"
+    "lib/arm64-v8a/libstlport.so",
+    "lib/arm64-v8a/libWaterRipple.so"
 )
-if ($IncludeRippleCoreProbe) {
-    $expectedNativeEntries += "lib/arm64-v8a/libWaterRipple.so"
-}
 $nativeDiff = Compare-Object ($nativeEntries | Sort-Object) ($expectedNativeEntries | Sort-Object)
 if ($nativeDiff) {
     throw "Unexpected APK native entries: $($nativeEntries -join ', ')"
@@ -238,10 +288,28 @@ if ($nativeDiff) {
 if ($entries -match "armeabi|x86") {
     throw "Non-ARM64 ABI found in APK"
 }
+$rippleApkVerify = Join-Path $out "verify-ripple-entry"
+New-Item -ItemType Directory -Force -Path $rippleApkVerify | Out-Null
+Push-Location $rippleApkVerify
+try {
+    Run "jar.exe" @("xf", $signed, "lib/arm64-v8a/libWaterRipple.so")
+} finally {
+    Pop-Location
+}
+$rippleApkLibrary = Join-Path $rippleApkVerify "lib\arm64-v8a\libWaterRipple.so"
+if (-not (Test-Path -LiteralPath $rippleApkLibrary)) {
+    throw "Water Ripple APK entry is missing"
+}
+$rippleApkHash = (Get-FileHash -LiteralPath $rippleApkLibrary -Algorithm SHA256).Hash
+if ($rippleApkHash -ne $rippleStageHash) {
+    throw "Water Ripple APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $rippleApkVerify
 
 Write-Host "Built ARM64-only APK: $signed"
 Write-Warning "APK contains proprietary Samsung Note 5 firmware libraries."
 if ($IncludeRippleCoreProbe) {
-    Write-Warning "Probe build contains only the Water Ripple core JNI subset; GPU methods are intentionally absent."
+    Write-Warning "Ripple probe filename selected; it contains the same full Early Alpha Water Ripple library as the normal APK."
 }
 Write-Host "Native entries: $($nativeEntries -join ', ')"
+Write-Host "Water Ripple SHA-256: $rippleStageHash"

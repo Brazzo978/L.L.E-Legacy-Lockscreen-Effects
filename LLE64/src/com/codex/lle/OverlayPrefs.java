@@ -347,7 +347,7 @@ final class OverlayPrefs {
             case EFFECT_S4_GEOMETRIC_MOSAIC:
                 return "N4 Geometric Mosaic";
             case EFFECT_S3_RIPPLE_NATIVE:
-                return "S3 Ripple";
+                return "S3 Water Ripple (Early Alpha)";
             case EFFECT_TABS_BLIND_WIP:
                 return "TabS Blind (WIP)";
             case EFFECT_N3_INK_IN_WATER_WIP:
@@ -364,6 +364,7 @@ final class OverlayPrefs {
 
     static boolean isImplementedEffect(int effect) {
         return effect == EFFECT_S4_LENS_FLARE
+                || effect == EFFECT_S3_RIPPLE_NATIVE
                 || effect == EFFECT_S5_POPPING_COLOURS
                 || effect == EFFECT_N5_COLOUR_DROPLET
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO

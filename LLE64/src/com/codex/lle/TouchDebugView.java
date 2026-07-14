@@ -13,11 +13,14 @@ import android.view.View;
 public class TouchDebugView extends View {
     private static final String TAG = "LLEDebug";
     private static final long MOVE_LOG_INTERVAL_MS = 250L;
+    private static final int INVALID_POINTER_ID = -1;
 
     interface TouchTriggerListener {
         boolean onTouchStarted(float screenX, float screenY);
 
         void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY, float distance);
+
+        void onTouchRealigned(float screenX, float screenY);
 
         void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY, float distance);
 
@@ -38,8 +41,10 @@ public class TouchDebugView extends View {
     private float gestureStartScreenX = -1f;
     private float gestureStartScreenY = -1f;
     private int pointerCount;
+    private int activePointerId = INVALID_POINTER_ID;
     private boolean transparentMode = true;
     private boolean gestureActive;
+    private boolean multiTouchSuppressed;
     private boolean listeningEnabled = true;
     private int windowLeft;
     private int windowTop;
@@ -72,6 +77,8 @@ public class TouchDebugView extends View {
         }
         this.listeningEnabled = listeningEnabled;
         gestureActive = false;
+        multiTouchSuppressed = false;
+        activePointerId = INVALID_POINTER_ID;
     }
 
     @Override
@@ -84,18 +91,14 @@ public class TouchDebugView extends View {
         }
         int action = event.getActionMasked();
         lastAction = actionName(action);
-        lastX = event.getX();
-        lastY = event.getY();
-        lastRawX = event.getRawX();
-        lastRawY = event.getRawY();
+        pointerCount = event.getPointerCount();
+        int pointerIndex = resolvePointerIndex(event, action);
         if (action == MotionEvent.ACTION_DOWN || !gestureActive) {
             getLocationOnScreen(locationOnScreen);
             windowLeft = locationOnScreen[0];
             windowTop = locationOnScreen[1];
         }
-        lastScreenX = windowLeft + lastX;
-        lastScreenY = windowTop + lastY;
-        pointerCount = event.getPointerCount();
+        updatePointerCoordinates(event, pointerIndex);
         if (shouldLogTouch(action)) {
             Log.i(TAG, "action=" + lastAction
                     + " local=" + Math.round(lastX) + "," + Math.round(lastY)
@@ -105,37 +108,102 @@ public class TouchDebugView extends View {
                     + " pointers=" + pointerCount);
         }
 
+        if (action == MotionEvent.ACTION_POINTER_UP && pointerCount == 2) {
+            int remainingIndex = event.getActionIndex() == 0 ? 1 : 0;
+            activePointerId = event.getPointerId(remainingIndex);
+            updatePointerCoordinates(event, remainingIndex);
+            multiTouchSuppressed = false;
+            notifyRealigned();
+            invalidate();
+            return true;
+        }
+
+        if (pointerCount > 1) {
+            multiTouchSuppressed = true;
+            invalidate();
+            return true;
+        }
+
+        if (multiTouchSuppressed) {
+            multiTouchSuppressed = false;
+            if (action == MotionEvent.ACTION_CANCEL) {
+                cancelActiveGesture();
+                activePointerId = INVALID_POINTER_ID;
+                invalidate();
+                return true;
+            }
+            activePointerId = event.getPointerId(0);
+            notifyRealigned();
+        }
+
         switch (action) {
             case MotionEvent.ACTION_DOWN:
-                gestureStartScreenX = lastScreenX;
-                gestureStartScreenY = lastScreenY;
-                boolean accepted = touchTriggerListener == null
-                        || touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
-                if (!accepted) {
-                    gestureActive = false;
+                activePointerId = event.getPointerId(0);
+                if (!startGestureAtCurrentPoint()) {
                     invalidate();
                     return false;
                 }
-                gestureActive = true;
                 break;
             case MotionEvent.ACTION_MOVE:
                 notifyMove();
                 break;
             case MotionEvent.ACTION_UP:
                 notifyEnd();
+                activePointerId = INVALID_POINTER_ID;
                 performClick();
                 break;
             case MotionEvent.ACTION_CANCEL:
-                gestureActive = false;
-                if (touchTriggerListener != null) {
-                    touchTriggerListener.onTouchCancelled();
-                }
+                cancelActiveGesture();
+                activePointerId = INVALID_POINTER_ID;
                 break;
             default:
                 break;
         }
         invalidate();
         return true;
+    }
+
+    private int resolvePointerIndex(MotionEvent event, int action) {
+        if (action == MotionEvent.ACTION_DOWN || activePointerId == INVALID_POINTER_ID) {
+            return 0;
+        }
+        int index = event.findPointerIndex(activePointerId);
+        return index >= 0 ? index : 0;
+    }
+
+    private void updatePointerCoordinates(MotionEvent event, int pointerIndex) {
+        int safeIndex = Math.max(0, Math.min(pointerIndex, event.getPointerCount() - 1));
+        lastX = event.getX(safeIndex);
+        lastY = event.getY(safeIndex);
+        lastRawX = event.getRawX() + lastX - event.getX(0);
+        lastRawY = event.getRawY() + lastY - event.getY(0);
+        lastScreenX = windowLeft + lastX;
+        lastScreenY = windowTop + lastY;
+    }
+
+    private boolean startGestureAtCurrentPoint() {
+        gestureStartScreenX = lastScreenX;
+        gestureStartScreenY = lastScreenY;
+        boolean accepted = touchTriggerListener == null
+                || touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
+        gestureActive = accepted;
+        return accepted;
+    }
+
+    private void cancelActiveGesture() {
+        if (!gestureActive) {
+            return;
+        }
+        gestureActive = false;
+        if (touchTriggerListener != null) {
+            touchTriggerListener.onTouchCancelled();
+        }
+    }
+
+    private void notifyRealigned() {
+        if (gestureActive && touchTriggerListener != null) {
+            touchTriggerListener.onTouchRealigned(lastScreenX, lastScreenY);
+        }
     }
 
     @Override

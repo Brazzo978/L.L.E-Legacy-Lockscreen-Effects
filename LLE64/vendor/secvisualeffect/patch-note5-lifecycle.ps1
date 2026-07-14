@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $expectedDexSha256 = "206265D2719C5223E57412871B2B778DC56A088300B52B1FEDEB548BFB7EEDB0"
+$expectedPatchedDexSha256 = "C7829EB4AC3C3D0BC7EE2E29FAF26BB4D732C3D189EA3AFE9A1CC802EA8B165D"
 $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
 $repoRoot = Split-Path $lleRoot -Parent
@@ -40,6 +41,26 @@ function Replace-OneMethod(
         1)
 }
 
+function Replace-OneLiteral(
+        [string] $Text,
+        [string] $Needle,
+        [string] $Replacement,
+        [string] $Label) {
+    $first = $Text.IndexOf($Needle, [StringComparison]::Ordinal)
+    if ($first -lt 0) {
+        throw "Expected exactly one $Label block, found 0"
+    }
+    $second = $Text.IndexOf(
+            $Needle,
+            $first + $Needle.Length,
+            [StringComparison]::Ordinal)
+    if ($second -ge 0) {
+        throw "Expected exactly one $Label block, found more than 1"
+    }
+    return $Text.Substring(0, $first) + $Replacement +
+            $Text.Substring($first + $Needle.Length)
+}
+
 if (-not (Test-Path -LiteralPath $originalDex)) {
     throw "Missing original Samsung dex: $originalDex"
 }
@@ -65,6 +86,55 @@ if (-not (Test-Path -LiteralPath $targetSmali)) {
     throw "Missing disassembled GLThread: $targetSmali"
 }
 $smali = [IO.File]::ReadAllText($targetSmali)
+$smali = $smali.Replace("`r`n", "`n")
+
+$rendererAccessor = 'Lcom/samsung/android/visualeffect/common/GLTextureView;->access$700(Lcom/samsung/android/visualeffect/common/GLTextureView;)Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;'
+$rendererAccessorCount = [regex]::Matches(
+        $smali,
+        [regex]::Escape($rendererAccessor)).Count
+if ($rendererAccessorCount -ne 5) {
+    throw "Expected exactly five GLTextureView renderer accessor sites, found $rendererAccessorCount"
+}
+
+$unsafeRendererDestroy = @'
+    move-result-object v24
+
+    check-cast v24, Lcom/samsung/android/visualeffect/common/GLTextureView;
+
+    # getter for: Lcom/samsung/android/visualeffect/common/GLTextureView;->mRenderer:Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;
+    invoke-static/range {v24 .. v24}, Lcom/samsung/android/visualeffect/common/GLTextureView;->access$700(Lcom/samsung/android/visualeffect/common/GLTextureView;)Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;
+
+    move-result-object v24
+
+    invoke-interface/range {v24 .. v24}, Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;->onDestroy()V
+
+    .line 1149
+'@
+
+$safeRendererDestroy = @'
+    move-result-object v24
+
+    check-cast v24, Lcom/samsung/android/visualeffect/common/GLTextureView;
+
+    # LLE64: the TextureView may be collected after removeEffect() while its GL thread exits.
+    if-eqz v24, :lle64_skip_renderer_destroy
+
+    # getter for: Lcom/samsung/android/visualeffect/common/GLTextureView;->mRenderer:Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;
+    invoke-static/range {v24 .. v24}, Lcom/samsung/android/visualeffect/common/GLTextureView;->access$700(Lcom/samsung/android/visualeffect/common/GLTextureView;)Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;
+
+    move-result-object v24
+
+    invoke-interface/range {v24 .. v24}, Lcom/samsung/android/visualeffect/common/GLTextureView$Renderer;->onDestroy()V
+
+    :lle64_skip_renderer_destroy
+    .line 1149
+'@
+
+$smali = Replace-OneLiteral `
+        $smali `
+        $unsafeRendererDestroy `
+        $safeRendererDestroy `
+        "unsafe GLTextureView renderer destroy"
 
 $boundedOnPause = @'
 .method public onPause()V
@@ -213,6 +283,27 @@ foreach ($required in @(
     }
 }
 
+$verifiedAccessorCount = [regex]::Matches(
+        $verifiedSmali,
+        [regex]::Escape($rendererAccessor)).Count
+if ($verifiedAccessorCount -ne 5) {
+    throw "Patched dex verification failed: renderer accessor count=$verifiedAccessorCount"
+}
+$verifiedDestroyGuardPattern = '(?ms)check-cast v24, Lcom/samsung/android/visualeffect/common/GLTextureView;\s+if-eqz v24, (?<skip>:[^\s]+)\s+.*?invoke-static/range \{v24 \.\. v24\}, Lcom/samsung/android/visualeffect/common/GLTextureView;->access\$700\(Lcom/samsung/android/visualeffect/common/GLTextureView;\)Lcom/samsung/android/visualeffect/common/GLTextureView\$Renderer;\s+.*?invoke-interface/range \{v24 \.\. v24\}, Lcom/samsung/android/visualeffect/common/GLTextureView\$Renderer;->onDestroy\(\)V\s+\.line 1149\s+\k<skip>\s+monitor-exit v25'
+$verifiedDestroyGuardCount = [regex]::Matches(
+        $verifiedSmali,
+        $verifiedDestroyGuardPattern).Count
+if ($verifiedDestroyGuardCount -ne 1) {
+    throw "Patched dex verification failed: guarded renderer destroy count=$verifiedDestroyGuardCount"
+}
+
 $outputHash = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
+if ($outputHash -ne $expectedPatchedDexSha256) {
+    throw "Unexpected bounded Samsung lifecycle dex SHA-256: $outputHash"
+}
+$originalHashAfterPatch = (Get-FileHash -LiteralPath $originalDex -Algorithm SHA256).Hash
+if ($originalHashAfterPatch -ne $expectedDexSha256) {
+    throw "Reference Samsung dex changed during patch: $originalHashAfterPatch"
+}
 Write-Host "Built bounded Samsung lifecycle dex: $outputFullPath"
 Write-Host "SHA-256: $outputHash"

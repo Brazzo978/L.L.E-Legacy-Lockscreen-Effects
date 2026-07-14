@@ -1,35 +1,49 @@
 # Water Ripple AArch64 port
 
-This directory is an analysis/validation port and is deliberately not packaged in `LLE64-debug.apk` yet.
+Port app-owned dell'effetto S3 Water Ripple, integrato nell'APK ARM64 e selezionabile nel picker come `S3 Water Ripple (Early Alpha)`. Il target corrente è il comportamento S3 letterale; l'adattamento specifico ai display Fold resta una fase separata.
 
-## Implemented and confirmed
+## Implementato e verificato
 
-- JNI `ripple` core: mesh-to-detail mapping, radius-3 cone and accumulation order.
-- JNI `move` core: exact three-pass order, empty threshold, height clamp and in-place final Laplacian.
-- JNI `initWaters`, `move` and `ripple` entry points in an isolated `libWaterRipple.so` WIP.
-- AArch64 build with no legacy C++ runtime dependency.
+- Core JNI `initWaters`, `ripple` e `move`, inclusi ordine numerico, mapping trasposto e shear storico del bulk NEON ARM32.
+- Nove blob GLSL Samsung (otto sorgenti uniche) e pipeline GLES2 normal/ink/fluid/gravity; la view integrata usa Water Ripple normal.
+- Output Android premoltiplicato e trasparente fuori dall'onda, senza coprire la SystemUI.
+- Simulazione a 60 Hz indipendente dal refresh 60/120/144 Hz, con ordine draw-before-move Samsung.
+- Bounds solver S3 letterali: portrait `3,21,101,83`, landscape `21,3,83,101`.
+- Gesture originali: down `4x`, drag oltre 150 px con tre impulsi `3x` a `0/+20/+40 ms`, long-up oltre 600 ms `4x`.
+- Suoni originali `s3_ripple_down/up`, affordance silenzioso, input multi-touch soppresso e riallineato senza un secondo down artificiale.
+- Bridge JNI lifecycle, screenshot/background ownership, context recreation e cleanup bounded.
+- Build AArch64 senza STLport o altre runtime C++ legacy.
 
-Build and execute the deterministic core test on a connected ARM64 Android device:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build-port.ps1 -RunOnDevice
-```
-
-Fold7 reference result (2026-07-14):
+Test Fold7 superati:
 
 ```text
 PASS hash=59890e7812c02590 centerVelocity=2.50805116 centerHeight=7.21869993
+PASS Water Ripple GLSL constants and GL_SHORT quad
+PASS Water Ripple GLES2 programs=3,6,9,12,15 gravityDeadWaterBrightness=-1
+PASS overlay formula=vec4(mask*SamsungResult,mask) defaults=0.035/0.180/1.000 flatNonzero=0 impulseNonzero=154 centerNonzero=154 borderNonzero=0 rgbOverAlpha=0 maxAlpha=255
 ```
 
-The JNI core probe also passed inside ART on the Fold7 using the exact Samsung
-class name and method signatures:
+Artefatto integrato corrente:
 
 ```text
-PASS Water Ripple ARM64 initWaters/ripple/move through ART
+libWaterRipple.so: 55.232 byte
+SHA-256: E97948C72F48849776847EF4862EC75FEA4033736FC8E9DFCF157A202C2B37C7
+APK SHA-256: 966001872D9852D1C72314D4923F939E8E4300A58400EBCC824A451821D3C55C
 ```
 
-Build that isolated APK with `LLE64\build.ps1 -IncludeRippleCoreProbe`. The
-probe Activity is exported only in probe builds; the normal manifest keeps it
-private.
+La build installata è stata sottoposta a cinque transizioni Gyro/Ripple: PID invariato e crash buffer vuoto.
 
-The shared objects currently need only current Android platform libraries and do not depend on STLport. `libWaterRipple.so` is still an isolated core bridge and is not packaged by the app build: the remaining GPU/lifecycle JNI methods are deliberately absent. It is not a complete renderer; GLES pass order, shaders, textures and transparent delta composition remain gated by the reverse reports.
+## Divergenze ancora dichiarate
+
+- Samsung disegna il wallpaper fullscreen con alpha `1.0`; LLE deve invece sintetizzare alpha locale per convivere con la lockscreen reale.
+- LLE usa una screenshot SystemUI center-crop come color map. Wallpaper originale e compositing adattivo vengono valutati separatamente, non in questa build.
+- Il clock mantiene 60 Hz nominali ma limita a quattro step di recupero dopo jank, scelta moderna di stabilità.
+- Ink e gravity non sono esposti dalla view Early Alpha.
+- Parità raster bit-per-bit fra GPU S3 e Fold non è realisticamente garantibile; shader, costanti, mesh e state machine vengono però mantenuti quanto più fedeli possibile.
+
+Dettagli:
+
+- `IMPLEMENTATION-STATUS.md`: shader e pipeline GLES.
+- `IMPLEMENTATION-LIFECYCLE.md`: bridge JNI, view Java, input, ownership e cleanup.
+- `IMPLEMENTATION-OVERLAY.md`: variante trasparente e test EGL/glReadPixels.
+- `reverse/s3-water-ripple/`: mappe reverse canoniche.

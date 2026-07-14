@@ -25,15 +25,34 @@ void lle_ripple_init_waters(
         return;
     }
 
-    const float step_x = (float) mesh_width / (float) (surface_width - 1);
-    const float step_y = (float) mesh_height / (float) (surface_height - 1);
-    const float half_width = (float) mesh_width * 0.5f;
-    const float half_height = (float) mesh_height * 0.5f;
-    for (int vertex = 0; vertex < vertex_count; ++vertex) {
+    // Samsung's ARM32 mesh is intentionally transposed: the array row drives visual X,
+    // while the array column drives the negated visual Y. This is paired with the Java
+    // ripple(glY, glX, ...) call and must not be normalized to a conventional row/Y mesh.
+    //
+    // Its NEON bulk loop also keeps the fractional part of vertex / surface_width when
+    // calculating X. That produces a small historical shear (about 1% on the 100x100
+    // profile). Only the scalar tail truncates to an integer row. All known Samsung
+    // profiles have a vertex count divisible by four, but retaining the split reproduces
+    // the original behavior for diagnostic non-profile grids too.
+    const float row_step_x = (float) mesh_height / (float) (surface_height - 1);
+    const float column_step_y = (float) mesh_width / (float) (surface_width - 1);
+    const float half_x = (float) mesh_height * 0.5f;
+    const float half_y = (float) mesh_width * 0.5f;
+
+    const int bulk_vertex_count = vertex_count & ~3;
+    for (int vertex = 0; vertex < bulk_vertex_count; ++vertex) {
+        const float row_fraction = (float) vertex / (float) surface_width;
+        const int row = (int) row_fraction;
+        const int column = vertex - row * surface_width;
+        vertices[vertex * 3] = row_fraction * row_step_x - half_x;
+        vertices[vertex * 3 + 1] = -((float) column * column_step_y - half_y);
+        vertices[vertex * 3 + 2] = 0.0f;
+    }
+    for (int vertex = bulk_vertex_count; vertex < vertex_count; ++vertex) {
         const int row = vertex / surface_width;
         const int column = vertex % surface_width;
-        vertices[vertex * 3] = (float) column * step_x - half_width;
-        vertices[vertex * 3 + 1] = -((float) row * step_y - half_height);
+        vertices[vertex * 3] = (float) row * row_step_x - half_x;
+        vertices[vertex * 3 + 1] = -((float) column * column_step_y - half_y);
         vertices[vertex * 3 + 2] = 0.0f;
     }
 

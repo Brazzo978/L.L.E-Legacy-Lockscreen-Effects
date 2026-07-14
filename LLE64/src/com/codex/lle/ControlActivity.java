@@ -1453,6 +1453,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current));
         effects.addView(effectOption(
+                "S3 Water Ripple (Early Alpha)",
+                "ARM64 app-owned GLES port; transparent local waves over a cached lockscreen colormap.",
+                OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                current));
+        effects.addView(effectOption(
                 "S5 Popping Colours",
                 "Samsung dex renderer with screenshot-backed color map; no legacy .so required.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
