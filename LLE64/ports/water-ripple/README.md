@@ -43,6 +43,7 @@ La build installata è stata sottoposta a cinque transizioni Gyro/Ripple: PID in
 
 Dettagli:
 
+- `FIDELITY-SPEC.md`: specifica canonica completa di logica, fisica, mesh, gesture, rendering, lifecycle, test e divergenze.
 - `IMPLEMENTATION-STATUS.md`: shader e pipeline GLES.
 - `IMPLEMENTATION-LIFECYCLE.md`: bridge JNI, view Java, input, ownership e cleanup.
 - `IMPLEMENTATION-OVERLAY.md`: variante trasparente e test EGL/glReadPixels.

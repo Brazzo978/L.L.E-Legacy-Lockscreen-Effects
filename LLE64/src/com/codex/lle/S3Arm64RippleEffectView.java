@@ -36,7 +36,7 @@ import javax.microedition.khronos.opengles.GL10;
 /**
  * Isolated lifecycle host for the app-owned ARM64 S3 Water Ripple port.
  *
- * <p>This class is intentionally not selected by the stable effect picker yet. It serializes
+ * <p>This is the Early Alpha renderer selected by the LLE64 S3 picker entry. It serializes
  * simulation, bitmap upload and all GLES calls on the GLSurfaceView render thread. The original
  * process-global native semantics are preserved with an explicit single-owner gate.</p>
  */
