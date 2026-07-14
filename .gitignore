@@ -1,6 +1,8 @@
 /*
 !/.gitignore
 !/AGENTS.md
+!/LLE64/
+!/LLE64/**
 !/s3ripplereverse/
 /s3ripplereverse/*
 !/s3ripplereverse/*.md
