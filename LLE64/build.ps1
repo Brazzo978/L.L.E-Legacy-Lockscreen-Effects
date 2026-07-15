@@ -1,6 +1,8 @@
 param(
     [switch] $IncludeNote5Probe,
-    [switch] $IncludeRippleCoreProbe
+    [switch] $IncludeRippleCoreProbe,
+    [ValidateSet("Stable", "StockFeedback")]
+    [string] $WatercolorFeedbackMode = "Stable"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +42,8 @@ $signed = Join-Path $out $(if ($IncludeNote5Probe) {
     "LLE64-note5-probe.apk"
 } elseif ($IncludeRippleCoreProbe) {
     "LLE64-ripple-core-probe.apk"
+} elseif ($WatercolorFeedbackMode -eq "StockFeedback") {
+    "LLE64-watercolor-stock-feedback.apk"
 } else {
     "LLE64-debug.apk"
 })
@@ -265,7 +269,12 @@ foreach ($watercolorSource in @($watercolorCommonSource, $watercolorEffectSource
 $watercolorCommonArgs = @(
     "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
     "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
-    "-Wl,--no-undefined", "-Wl,-soname,libsecveSrkCommon.so",
+    "-Wl,--no-undefined", "-Wl,-soname,libsecveSrkCommon.so"
+)
+if ($WatercolorFeedbackMode -eq "StockFeedback") {
+    $watercolorCommonArgs += "-DLLE_WATERCOLOR_STOCK_FEEDBACK=1"
+}
+$watercolorCommonArgs += @(
     $watercolorCommonSource,
     "-lGLESv2", "-llog", "-lm",
     "-o", $watercolorCommonLibrary

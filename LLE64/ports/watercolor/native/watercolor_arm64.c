@@ -13,6 +13,9 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#ifndef LLE_WATERCOLOR_STOCK_FEEDBACK
+#define LLE_WATERCOLOR_STOCK_FEEDBACK 0
+#endif
 /* Literal classic S4/Note 4 Watercolor values recovered from ARM32. */
 static const float kRadialFboScale = 0.025f;
 static const float kDensityFboScale = 0.60f;
@@ -139,6 +142,7 @@ static GLuint create_noise_gradient_texture(const uint32_t *argb,
         int width, int height, int screen_width, int screen_height);
 
 static const char *kFullVertexShader =
+        "precision mediump float;\n"
         "attribute vec2 aPosition;\n"
         "attribute vec2 aTexUV;\n"
         "varying vec2 vTexUV;\n"
@@ -149,9 +153,10 @@ static const char *kFullVertexShader =
 
 /* FBO UV stays bottom-origin; Android ARGB upload needs one Y flip. */
 static const char *kAdvectVertexShader =
+        "precision mediump float;\n"
         "attribute vec2 aPosition;\n"
         "attribute vec2 aTexUV;\n"
-        "varying vec2 vTexUV;\n"
+        "varying highp vec2 vTexUV;\n"
         "varying vec2 vTexUVBG;\n"
         "void main() {\n"
         "  vTexUV = aTexUV;\n"
@@ -165,6 +170,7 @@ static const char *kAdvectVertexShader =
  * direction, B stores time step shaped by Tube.r, and A stores the mask fade.
  */
 static const char *kBrushVertexShader =
+        "precision mediump float;\n"
         "attribute vec2 aLocal;\n"
         "uniform vec2 uCenter;\n"
         "uniform vec2 uSize;\n"
@@ -212,18 +218,22 @@ static const char *kAdvectFragmentShader =
         "uniform sampler2D uOriginal;\n"
         "uniform float uNoiseVectorScalar;\n"
         "uniform float uRadialVectorScalar;\n"
-        "varying vec2 vTexUV;\n"
+        "varying highp vec2 vTexUV;\n"
         "varying vec2 vTexUVBG;\n"
         "void main() {\n"
         "  vec4 alphaColor = texture2D(uRadial, vTexUV);\n"
-        "  vec4 noiseVelocity = texture2D(uVelocity, vTexUVBG);\n"
-        "  vec2 densityUV = vTexUV + ((alphaColor.xy - 0.5) * 10.0\n"
-        "      * uRadialVectorScalar + (noiseVelocity.xy - 0.5)\n"
-        "      * uNoiseVectorScalar) * alphaColor.b * 0.0175 * 0.006;\n"
-        "  vec4 originalColor = texture2D(uOriginal, vTexUVBG);\n"
-        "  vec4 densityColor = texture2D(uDensity, densityUV);\n"
-        "  gl_FragColor = alphaColor.a != 0.0\n"
-        "      ? mix(densityColor, originalColor, 0.03) : originalColor;\n"
+        "  vec4 texColor;\n"
+        "  if (alphaColor.a != 0.0) {\n"
+        "    highp vec4 noiseVelocity = texture2D(uVelocity, vTexUVBG);\n"
+        "    vec2 densityUV = vTexUV + ((alphaColor.xy - 0.5) * 10.0\n"
+        "        * uRadialVectorScalar + (noiseVelocity.xy - 0.5)\n"
+        "        * uNoiseVectorScalar) * alphaColor.b * 0.0175 * 0.006;\n"
+        "    texColor = mix(texture2D(uDensity, densityUV),\n"
+        "        texture2D(uOriginal, vTexUVBG), 0.03);\n"
+        "  } else {\n"
+        "    texColor = texture2D(uOriginal, vTexUVBG);\n"
+        "  }\n"
+        "  gl_FragColor = texColor;\n"
         "}\n";
 
 /*
@@ -245,9 +255,12 @@ static const char *kMixFragmentShader =
         "void main() {\n"
         "  vec4 alphaColor = texture2D(uAlpha, vTexUV);\n"
         "  vec4 densityColor = texture2D(uDensity, vTexUV) * uBrightness;\n"
-        "  float p = sqrt(dot(densityColor.rgb * densityColor.rgb,\n"
-        "      vec3(uRedSaturation, uGreenSaturation, uBlueSaturation)));\n"
-        "  densityColor.rgb = p + (densityColor.rgb - p) * uSaturation;\n"
+        "  float p = sqrt(densityColor.r * densityColor.r * uRedSaturation\n"
+        "      + densityColor.g * densityColor.g * uGreenSaturation\n"
+        "      + densityColor.b * densityColor.b * uBlueSaturation);\n"
+        "  densityColor.r = p + (densityColor.r - p) * uSaturation;\n"
+        "  densityColor.g = p + (densityColor.g - p) * uSaturation;\n"
+        "  densityColor.b = p + (densityColor.b - p) * uSaturation;\n"
         "  float localAlpha = alphaColor.a;\n"
         "  gl_FragColor = vec4(densityColor.rgb * localAlpha, localAlpha);\n"
         "}\n";
@@ -515,9 +528,11 @@ static int initialize_gl(WatercolorState *state, int width, int height) {
     state->frame_number = 0;
     state->density_read_index = 0;
     state->density_seeded = 0;
-    LOGI("initialized size=%dx%d radial=%dx%d density=%dx%d",
+    LOGI("initialized size=%dx%d radial=%dx%d density=%dx%d feedback=%s",
             width, height, state->radial_width, state->radial_height,
-            state->density_width, state->density_height);
+            state->density_width, state->density_height,
+            LLE_WATERCOLOR_STOCK_FEEDBACK
+                    ? "stock-same-texture-ab" : "stable-ping-pong");
     return 1;
 }
 
@@ -779,18 +794,28 @@ static void seed_density(WatercolorState *state) {
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
-    /* The legacy driver rendered twice into one feedback texture. Two
-     * explicit ping-pong passes preserve the intended recurrence without
-     * sampling the active GLES attachment (undefined behavior). */
+    /* The legacy driver rendered twice into one feedback texture. Stable
+     * builds preserve the intended recurrence with defined ping-pong. The
+     * opt-in stock topology exists only for controlled A/B captures. */
+#if LLE_WATERCOLOR_STOCK_FEEDBACK
+    render_advection_pass(state, 0, 0);
+    render_advection_pass(state, 0, 0);
+#else
     render_advection_pass(state, 0, 1);
     render_advection_pass(state, 1, 0);
+#endif
     state->density_read_index = 0;
     state->density_seeded = 1;
 }
 
 static void render_advection(WatercolorState *state) {
+#if LLE_WATERCOLOR_STOCK_FEEDBACK
+    render_advection_pass(state,
+            state->density_read_index, state->density_read_index);
+#else
     int write_index = 1 - state->density_read_index;
     render_advection_pass(state, state->density_read_index, write_index);
+#endif
 }
 
 static void render_mix(WatercolorState *state) {
@@ -837,8 +862,10 @@ static GLuint upload_argb_texture(JNIEnv *env, jintArray pixels,
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    /* SPTextureManager defaults managed Mask/Tube/bg textures to mirrored
+     * repeat. Generated Noise and FBO textures remain clamp-to-edge. */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
             GL_RGBA, GL_UNSIGNED_BYTE, rgba);

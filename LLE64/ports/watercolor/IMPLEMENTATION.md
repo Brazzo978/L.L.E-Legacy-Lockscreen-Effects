@@ -1,6 +1,6 @@
 # Watercolor ARM64 implementation log
 
-Date: 2026-07-14
+Date: 2026-07-15
 
 ## Scope
 
@@ -104,6 +104,12 @@ All attribute and uniform locations are cached once after program link. The
 stamp hot path performs no `glGetUniformLocation` calls, removing hundreds of
 redundant driver lookups on long strokes without changing shader inputs.
 
+The residual blur/distortion audit restored the selected ARM32 shader's
+`highp` density UV/velocity qualifiers, conditional advection sampling,
+expanded mix operation order and managed `GL_MIRRORED_REPEAT` state. The
+evidence and controlled density-topology A/B protocol are recorded in
+`reverse/FIDELITY-AUDIT-2026-07-15.md`.
+
 ## Java and DEX integration
 
 - `OverlayPrefs.isImplementedEffect()` accepts N3 Watercolor and
@@ -138,13 +144,19 @@ redundant driver lookups on long strokes without changing shader inputs.
   panel switches dynamically between 60 and 120 Hz.
 - Post-fidelity process statistics were 5 ms median / 9 ms p95 with 2 ms
   median GPU time during the sampled session.
+- The 2026-07-15 residual-fidelity candidates both linked on Adreno
+  `E031.47.18.50`, loaded all assets, created `27x63` / `648x1512` targets and
+  completed their respective two-pass seed plus first frame without a GL,
+  native or Java failure. Stable ping-pong was reinstalled after the A/B.
 
 ## Current fidelity boundary
 
 This remains a clean-room reconstruction. The largest intentional difference
 is deterministic density ping-pong in place of original undefined
 single-texture feedback; literal feedback would make output driver-dependent
-and can corrupt rendering on modern GPUs. Remaining fidelity work is limited
-to paired frame captures, exact legacy RNG sequences, optional parameter/action
-paths and driver precision. The transparent boundary can only match stock
-exactly while the cached screenshot remains aligned with live SystemUI.
+and can corrupt rendering on modern GPUs. A separately named, compile-time A/B
+build can reproduce the literal command topology for controlled captures, but
+never replaces stable ping-pong automatically. Remaining fidelity work is
+limited to paired frame captures, exact legacy RNG sequences and optional
+parameter/action paths. The transparent boundary can only match stock exactly
+while the cached screenshot remains aligned with live SystemUI.
