@@ -60,6 +60,7 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    static final String FOLD_MODE = "fold_mode";
     static final String ROOT_DEBUG_ENABLED = "root_debug_enabled";
     static final String ROOT_TOUCH_CAPTURE_TEST_ENABLED = "root_touch_capture_test_enabled";
     static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
@@ -105,6 +106,7 @@ final class OverlayPrefs {
     static final String TOUCH_BOX_CAPTURE_RESULT_ID = "touch_box_capture_result_id";
     static final String TOUCH_BOX_CAPTURE_STATE = "touch_box_capture_state";
     static final String TOUCH_BOX_CAPTURE_ERROR = "touch_box_capture_error";
+    static final String TOUCH_BOX_CAPTURE_PROFILE = "touch_box_capture_profile";
     static final int TOUCH_BOX_CAPTURE_IDLE = 0;
     static final int TOUCH_BOX_CAPTURE_REQUESTED = 1;
     static final int TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN = 2;
@@ -152,6 +154,10 @@ final class OverlayPrefs {
 
     static boolean masterEnabled(Context context) {
         return get(context).getBoolean(MASTER_ENABLED, true);
+    }
+
+    static boolean foldModeEnabled(Context context) {
+        return get(context).getBoolean(FOLD_MODE, FoldDisplayTarget.isFoldDevice(context));
     }
 
     static boolean showAod(Context context) {
@@ -481,65 +487,120 @@ final class OverlayPrefs {
         return EFFECT_PROFILE_SAMPLED_TOKEN_PREFIX + effect;
     }
 
+    private static String touchBoxProfile(Context context) {
+        return FoldDisplayTarget.cacheProfileForContext(context);
+    }
+
+    private static String touchBoxKey(String base, String profile) {
+        return base + profileKeySuffix(profile);
+    }
+
+    static boolean isTouchBoxPreferenceKey(String key) {
+        return key != null && (key.startsWith(TOUCH_BOX_CONFIGURED)
+                || key.startsWith(TOUCH_BOX_LEFT)
+                || key.startsWith(TOUCH_BOX_TOP)
+                || key.startsWith(TOUCH_BOX_RIGHT)
+                || key.startsWith(TOUCH_BOX_BOTTOM)
+                || key.startsWith(TOUCH_BOX_REGIONS)
+                || key.startsWith(TOUCH_BOX_REFERENCE_WIDTH)
+                || key.startsWith(TOUCH_BOX_REFERENCE_HEIGHT));
+    }
+
     static boolean touchBoxConfigured(Context context) {
-        return get(context).getBoolean(TOUCH_BOX_CONFIGURED, false);
+        return touchBoxConfigured(context, touchBoxProfile(context));
+    }
+
+    static boolean touchBoxConfigured(Context context, String profile) {
+        return get(context).getBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, profile), false);
     }
 
     static int touchBoxLeft(Context context) {
+        return touchBoxLeft(context, touchBoxProfile(context));
+    }
+
+    static int touchBoxLeft(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                TOUCH_BOX_LEFT,
-                DEFAULT_TOUCH_BOX_LEFT));
+                touchBoxKey(TOUCH_BOX_LEFT, profile), DEFAULT_TOUCH_BOX_LEFT));
     }
 
     static int touchBoxTop(Context context) {
+        return touchBoxTop(context, touchBoxProfile(context));
+    }
+
+    static int touchBoxTop(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                TOUCH_BOX_TOP,
-                DEFAULT_TOUCH_BOX_TOP));
+                touchBoxKey(TOUCH_BOX_TOP, profile), DEFAULT_TOUCH_BOX_TOP));
     }
 
     static int touchBoxRight(Context context) {
+        return touchBoxRight(context, touchBoxProfile(context));
+    }
+
+    static int touchBoxRight(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                TOUCH_BOX_RIGHT,
-                DEFAULT_TOUCH_BOX_RIGHT));
+                touchBoxKey(TOUCH_BOX_RIGHT, profile), DEFAULT_TOUCH_BOX_RIGHT));
     }
 
     static int touchBoxBottom(Context context) {
+        return touchBoxBottom(context, touchBoxProfile(context));
+    }
+
+    static int touchBoxBottom(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                TOUCH_BOX_BOTTOM,
-                DEFAULT_TOUCH_BOX_BOTTOM));
+                touchBoxKey(TOUCH_BOX_BOTTOM, profile), DEFAULT_TOUCH_BOX_BOTTOM));
     }
 
     static void saveTouchBox(Context context, int left, int top, int right, int bottom) {
+        saveTouchBox(context, touchBoxProfile(context), left, top, right, bottom);
+    }
+
+    static void saveTouchBox(Context context, String profile, int left, int top, int right,
+            int bottom) {
         int[] displaySize = currentDisplaySize(context);
         get(context).edit()
-                .putBoolean(TOUCH_BOX_CONFIGURED, true)
-                .putInt(TOUCH_BOX_LEFT, roundTouchCoordinate(left))
-                .putInt(TOUCH_BOX_TOP, roundTouchCoordinate(top))
-                .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinate(right))
-                .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinate(bottom))
-                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
-                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
-                .remove(TOUCH_BOX_REGIONS)
+                .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, profile), true)
+                .putInt(touchBoxKey(TOUCH_BOX_LEFT, profile), roundTouchCoordinate(left))
+                .putInt(touchBoxKey(TOUCH_BOX_TOP, profile), roundTouchCoordinate(top))
+                .putInt(touchBoxKey(TOUCH_BOX_RIGHT, profile), roundTouchCoordinate(right))
+                .putInt(touchBoxKey(TOUCH_BOX_BOTTOM, profile), roundTouchCoordinate(bottom))
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, profile), displaySize[0])
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, profile), displaySize[1])
+                .remove(touchBoxKey(TOUCH_BOX_REGIONS, profile))
                 .apply();
     }
 
     static void saveTouchBoxOutward(Context context, int left, int top, int right, int bottom) {
+        saveTouchBoxOutward(context, touchBoxProfile(context), left, top, right, bottom);
+    }
+
+    static void saveTouchBoxOutward(Context context, String profile, int left, int top,
+            int right, int bottom) {
         int[] displaySize = currentDisplaySize(context);
         get(context).edit()
-                .putBoolean(TOUCH_BOX_CONFIGURED, true)
-                .putInt(TOUCH_BOX_LEFT, roundTouchCoordinateDown(left))
-                .putInt(TOUCH_BOX_TOP, roundTouchCoordinateDown(top))
-                .putInt(TOUCH_BOX_RIGHT, roundTouchCoordinateUp(right))
-                .putInt(TOUCH_BOX_BOTTOM, roundTouchCoordinateUp(bottom))
-                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
-                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
-                .remove(TOUCH_BOX_REGIONS)
+                .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, profile), true)
+                .putInt(touchBoxKey(TOUCH_BOX_LEFT, profile), roundTouchCoordinateDown(left))
+                .putInt(touchBoxKey(TOUCH_BOX_TOP, profile), roundTouchCoordinateDown(top))
+                .putInt(touchBoxKey(TOUCH_BOX_RIGHT, profile), roundTouchCoordinateUp(right))
+                .putInt(touchBoxKey(TOUCH_BOX_BOTTOM, profile), roundTouchCoordinateUp(bottom))
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, profile), displaySize[0])
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, profile), displaySize[1])
+                .remove(touchBoxKey(TOUCH_BOX_REGIONS, profile))
                 .apply();
     }
 
     static ArrayList<Rect> touchBoxRegions(Context context) {
+        return touchBoxRegions(context, touchBoxProfile(context));
+    }
+
+    static ArrayList<Rect> touchBoxRegions(Context context, String profile) {
+        int[] displaySize = currentDisplaySize(context);
+        return touchBoxRegions(context, profile, displaySize[0], displaySize[1]);
+    }
+
+    static ArrayList<Rect> touchBoxRegions(Context context, String profile, int targetWidth,
+            int targetHeight) {
         ArrayList<Rect> regions = new ArrayList<Rect>();
-        String encoded = get(context).getString(TOUCH_BOX_REGIONS, "");
+        String encoded = get(context).getString(touchBoxKey(TOUCH_BOX_REGIONS, profile), "");
         if (encoded != null && encoded.length() > 0) {
             String[] entries = encoded.split(";");
             for (String entry : entries) {
@@ -560,14 +621,14 @@ final class OverlayPrefs {
             }
         }
         if (regions.isEmpty()) {
-            regions.add(new Rect(touchBoxLeft(context), touchBoxTop(context),
-                    touchBoxRight(context), touchBoxBottom(context)));
+            regions.add(new Rect(touchBoxLeft(context, profile), touchBoxTop(context, profile),
+                    touchBoxRight(context, profile), touchBoxBottom(context, profile)));
         }
-        int[] displaySize = currentDisplaySize(context);
+        int[] displaySize = new int[]{Math.max(1, targetWidth), Math.max(1, targetHeight)};
         SharedPreferences prefs = get(context);
-        int referenceWidth = prefs.getInt(TOUCH_BOX_REFERENCE_WIDTH,
+        int referenceWidth = prefs.getInt(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, profile),
                 DEFAULT_TOUCH_BOX_RIGHT);
-        int referenceHeight = prefs.getInt(TOUCH_BOX_REFERENCE_HEIGHT, 2316);
+        int referenceHeight = prefs.getInt(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, profile), 2316);
         if (referenceWidth > 0 && referenceHeight > 0
                 && displaySize[0] > 0 && displaySize[1] > 0
                 && (referenceWidth != displaySize[0]
@@ -585,6 +646,16 @@ final class OverlayPrefs {
     }
 
     static void saveTouchBoxRegionsOutward(Context context, List<Rect> source) {
+        saveTouchBoxRegionsOutward(context, touchBoxProfile(context), source);
+    }
+
+    static void saveTouchBoxRegionsOutward(Context context, String profile, List<Rect> source) {
+        int[] displaySize = currentDisplaySize(context);
+        saveTouchBoxRegionsOutward(context, profile, source, displaySize[0], displaySize[1]);
+    }
+
+    static void saveTouchBoxRegionsOutward(Context context, String profile, List<Rect> source,
+            int referenceWidth, int referenceHeight) {
         if (source == null || source.isEmpty()) {
             return;
         }
@@ -617,29 +688,33 @@ final class OverlayPrefs {
             encoded.append(rect.left).append(',').append(rect.top).append(',')
                     .append(rect.right).append(',').append(rect.bottom);
         }
-        int[] displaySize = currentDisplaySize(context);
+        int[] displaySize = new int[]{Math.max(1, referenceWidth), Math.max(1, referenceHeight)};
         get(context).edit()
-                .putBoolean(TOUCH_BOX_CONFIGURED, true)
-                .putInt(TOUCH_BOX_LEFT, bounds.left)
-                .putInt(TOUCH_BOX_TOP, bounds.top)
-                .putInt(TOUCH_BOX_RIGHT, bounds.right)
-                .putInt(TOUCH_BOX_BOTTOM, bounds.bottom)
-                .putString(TOUCH_BOX_REGIONS, encoded.toString())
-                .putInt(TOUCH_BOX_REFERENCE_WIDTH, displaySize[0])
-                .putInt(TOUCH_BOX_REFERENCE_HEIGHT, displaySize[1])
+                .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, profile), true)
+                .putInt(touchBoxKey(TOUCH_BOX_LEFT, profile), bounds.left)
+                .putInt(touchBoxKey(TOUCH_BOX_TOP, profile), bounds.top)
+                .putInt(touchBoxKey(TOUCH_BOX_RIGHT, profile), bounds.right)
+                .putInt(touchBoxKey(TOUCH_BOX_BOTTOM, profile), bounds.bottom)
+                .putString(touchBoxKey(TOUCH_BOX_REGIONS, profile), encoded.toString())
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, profile), displaySize[0])
+                .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, profile), displaySize[1])
                 .apply();
     }
 
     static void clearTouchBox(Context context) {
+        clearTouchBox(context, touchBoxProfile(context));
+    }
+
+    static void clearTouchBox(Context context, String profile) {
         get(context).edit()
-                .putBoolean(TOUCH_BOX_CONFIGURED, false)
-                .remove(TOUCH_BOX_LEFT)
-                .remove(TOUCH_BOX_TOP)
-                .remove(TOUCH_BOX_RIGHT)
-                .remove(TOUCH_BOX_BOTTOM)
-                .remove(TOUCH_BOX_REGIONS)
-                .remove(TOUCH_BOX_REFERENCE_WIDTH)
-                .remove(TOUCH_BOX_REFERENCE_HEIGHT)
+                .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, profile), false)
+                .remove(touchBoxKey(TOUCH_BOX_LEFT, profile))
+                .remove(touchBoxKey(TOUCH_BOX_TOP, profile))
+                .remove(touchBoxKey(TOUCH_BOX_RIGHT, profile))
+                .remove(touchBoxKey(TOUCH_BOX_BOTTOM, profile))
+                .remove(touchBoxKey(TOUCH_BOX_REGIONS, profile))
+                .remove(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, profile))
+                .remove(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, profile))
                 .apply();
     }
 
@@ -650,18 +725,60 @@ final class OverlayPrefs {
     }
 
     static void migrateLegacyTouchBoxIfNeeded(Context context) {
-        if (!touchBoxConfigured(context)) {
+        migrateLegacyTouchBoxIfNeeded(context, touchBoxProfile(context));
+    }
+
+    static void migrateLegacyTouchBoxIfNeeded(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        SharedPreferences prefs = get(context);
+        if (!FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
+                && !touchBoxConfigured(context, normalized)
+                && prefs.getBoolean(TOUCH_BOX_CONFIGURED, false)) {
+            int referenceWidth = prefs.getInt(TOUCH_BOX_REFERENCE_WIDTH,
+                    DEFAULT_TOUCH_BOX_RIGHT);
+            int referenceHeight = prefs.getInt(TOUCH_BOX_REFERENCE_HEIGHT, 2316);
+            String legacyProfile = FoldDisplayTarget.profileForSize(
+                    referenceWidth, referenceHeight);
+            if (normalized.equals(legacyProfile)) {
+                SharedPreferences.Editor editor = prefs.edit()
+                        .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, normalized), true)
+                        .putInt(touchBoxKey(TOUCH_BOX_LEFT, normalized),
+                                prefs.getInt(TOUCH_BOX_LEFT, DEFAULT_TOUCH_BOX_LEFT))
+                        .putInt(touchBoxKey(TOUCH_BOX_TOP, normalized),
+                                prefs.getInt(TOUCH_BOX_TOP, DEFAULT_TOUCH_BOX_TOP))
+                        .putInt(touchBoxKey(TOUCH_BOX_RIGHT, normalized),
+                                prefs.getInt(TOUCH_BOX_RIGHT, DEFAULT_TOUCH_BOX_RIGHT))
+                        .putInt(touchBoxKey(TOUCH_BOX_BOTTOM, normalized),
+                                prefs.getInt(TOUCH_BOX_BOTTOM, DEFAULT_TOUCH_BOX_BOTTOM))
+                        .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_WIDTH, normalized),
+                                referenceWidth)
+                        .putInt(touchBoxKey(TOUCH_BOX_REFERENCE_HEIGHT, normalized),
+                                referenceHeight);
+                String regions = prefs.getString(TOUCH_BOX_REGIONS, "");
+                if (regions != null && regions.length() > 0) {
+                    editor.putString(touchBoxKey(TOUCH_BOX_REGIONS, normalized), regions);
+                }
+                editor.apply();
+                File legacyScreenshot = touchBoxScreenshotFile(
+                        context, FoldDisplayTarget.PROFILE_SINGLE);
+                File profileScreenshot = touchBoxScreenshotFile(context, normalized);
+                if (legacyScreenshot.exists() && !profileScreenshot.exists()) {
+                    legacyScreenshot.renameTo(profileScreenshot);
+                }
+            }
+        }
+        if (!touchBoxConfigured(context, normalized)) {
             return;
         }
-        int left = touchBoxLeft(context);
-        int top = touchBoxTop(context);
-        int right = touchBoxRight(context);
-        int bottom = touchBoxBottom(context);
+        int left = touchBoxLeft(context, normalized);
+        int top = touchBoxTop(context, normalized);
+        int right = touchBoxRight(context, normalized);
+        int bottom = touchBoxBottom(context, normalized);
         if (left == LEGACY_TOUCH_BOX_LEFT
                 && top == LEGACY_TOUCH_BOX_TOP
                 && right == LEGACY_TOUCH_BOX_RIGHT
                 && bottom == LEGACY_TOUCH_BOX_BOTTOM) {
-            saveTouchBox(context,
+            saveTouchBox(context, normalized,
                     DEFAULT_TOUCH_BOX_LEFT,
                     DEFAULT_TOUCH_BOX_TOP,
                     DEFAULT_TOUCH_BOX_RIGHT,
@@ -697,7 +814,14 @@ final class OverlayPrefs {
     }
 
     static File touchBoxScreenshotFile(Context context) {
-        return new File(context.getFilesDir(), "touch_box_lockscreen.png");
+        return touchBoxScreenshotFile(context, touchBoxProfile(context));
+    }
+
+    static File touchBoxScreenshotFile(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
+                ? "" : "_" + normalized;
+        return new File(context.getFilesDir(), "touch_box_lockscreen" + suffix + ".png");
     }
 
     static File effectBackgroundFile(Context context, int effect) {

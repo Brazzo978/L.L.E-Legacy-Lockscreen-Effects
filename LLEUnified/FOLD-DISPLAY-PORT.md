@@ -11,9 +11,14 @@ Android 16), Samsung keeps logical display ID `0` and changes its physical size:
 - main/inner profile: `1968x2184`.
 
 `FoldDisplayTarget` detects fold capability through the public hinge-angle
-feature, resolves the focused/active display, and classifies the current panel
-from its aspect ratio. Regular single-screen devices retain the old `single`
-profile and file names.
+feature or multiple built-in panels, resolves the focused/active display, and
+classifies the current panel from its aspect ratio. Regular single-screen
+devices retain the old `single` profile and file names.
+
+`FOLD MODE (dual panels)` is exposed in the lockscreen debug section. Its
+default is enabled when fold hardware is detected, while an explicitly saved
+toggle value wins for diagnostics. Disabling it returns screenshot and touch
+storage to the original `single` profile.
 
 ## Screenshot caches
 
@@ -32,6 +37,26 @@ The former `unlock_effect_background.png` remains the canonical path on normal
 phones. On a Fold it is copied once into the matching slot only when its
 dimensions match that panel. Legacy per-effect files follow the same guarded
 migration path.
+
+## Dual touch boxes
+
+With Fold mode enabled, touch geometry and wizard screenshots are independent:
+
+- preferences use the `_cover` and `_main` suffixes;
+- wizard images are `touch_box_lockscreen_cover.png` and
+  `touch_box_lockscreen_main.png`;
+- the editor exposes a `Cover <-> Main` switch and can edit either cached
+  screenshot without scaling its coordinates through the currently active
+  panel;
+- switching editor pages saves the page being left, so both boxes can be
+  drawn in one wizard session;
+- a missing wizard screenshot is captured only when its requested physical
+  panel is active.
+
+The old unsuffixed box and screenshot are migrated once into the profile whose
+aspect ratio matches their reference size. The other panel starts from its own
+safe default box until it is drawn. Screenshot callbacks validate both display
+ID and panel profile because Samsung can keep ID `0` across a fold transition.
 
 ## Panel transition
 
@@ -61,7 +86,12 @@ tested through closed -> opened -> closed transitions:
 - a service restart in inner mode loaded the main file from disk with
   `memoryCache=false`;
 - returning to cover selected the cover file again;
+- Fold mode auto-enabled on the Fold7 (`single -> cover` at service connect);
+- inner touch window mounted at `0,688 - 1968,1980` and an ADB gesture produced
+  `DOWN/MOVE/UP` plus `unlock effect gesture begin`;
+- cover touch window mounted independently at `0,730 - 1080,2100` and produced
+  the same complete gesture sequence;
 - no `AndroidRuntime` crash or accessibility-overlay token failure occurred.
 
-The device-state test override was reset to physical `CLOSED` state after the
-validation.
+The device-state test override was reset after validation; the phone then
+reported its current physical state `3` (`1968x2184`, inner panel).

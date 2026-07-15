@@ -2980,7 +2980,9 @@ public class ControlActivity extends Activity {
 
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
-        section.addView(outlineButton("Touch box screenshot wizard", new View.OnClickListener() {
+        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
+                ? "Dual touch box wizard"
+                : "Touch box screenshot wizard", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Intent intent = new Intent(ControlActivity.this, TouchBoxSetupActivity.class);
@@ -2988,7 +2990,9 @@ public class ControlActivity extends Activity {
                 startActivity(intent);
             }
         }));
-        section.addView(outlineButton("Reset touch box", new View.OnClickListener() {
+        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
+                ? "Reset active panel touch box"
+                : "Reset touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 OverlayPrefs.clearTouchBox(ControlActivity.this);
@@ -3016,6 +3020,8 @@ public class ControlActivity extends Activity {
                     }
         }));
         if (lockscreenDebugExpanded) {
+            section.addView(toggle("FOLD MODE (dual panels)", OverlayPrefs.FOLD_MODE,
+                    FoldDisplayTarget.isFoldDevice(this)));
             section.addView(screenshotServiceDebugControls());
             section.addView(effectProfilerControls());
             section.addView(rootDebugControls());
@@ -3228,6 +3234,15 @@ public class ControlActivity extends Activity {
         if (touchBoxSummary == null) {
             return;
         }
+        if (OverlayPrefs.foldModeEnabled(this)) {
+            String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
+            touchBoxSummary.setText(touchBoxProfileSummary("Cover",
+                    FoldDisplayTarget.PROFILE_COVER)
+                    + "\n" + touchBoxProfileSummary("Main",
+                    FoldDisplayTarget.PROFILE_MAIN)
+                    + "\nActive panel: " + activeProfile);
+            return;
+        }
         boolean configured = OverlayPrefs.touchBoxConfigured(this);
         int left = OverlayPrefs.touchBoxLeft(this);
         int top = OverlayPrefs.touchBoxTop(this);
@@ -3253,6 +3268,18 @@ public class ControlActivity extends Activity {
                 + left + "," + top + " - " + right + "," + bottom
                 + " (" + (right - left) + " x " + (bottom - top) + ")"
                 + "\n" + cache);
+    }
+
+    private String touchBoxProfileSummary(String label, String profile) {
+        boolean configured = OverlayPrefs.touchBoxConfigured(this, profile);
+        ArrayList<Rect> areas = OverlayPrefs.touchBoxRegions(this, profile);
+        File screenshot = OverlayPrefs.touchBoxScreenshotFile(this, profile);
+        String cache = screenshot.exists() && screenshot.length() > 0L
+                ? "cache ready"
+                : "no cache";
+        return label + ": " + (configured ? "custom" : "default")
+                + ", " + areas.size() + (areas.size() == 1 ? " area" : " areas")
+                + ", " + cache;
     }
 
     private View positionSlider(final String label, final String key, int defaultValue) {

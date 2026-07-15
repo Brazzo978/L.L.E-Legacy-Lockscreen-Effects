@@ -609,7 +609,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         lockSoundPlayer = new LockSoundPlayer(this);
         prefs = OverlayPrefs.get(this);
-        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeDisplayProfile);
         applyPerfDefaultsOnce();
         ensureInternalTouchAreaEnabled();
         prefs.registerOnSharedPreferenceChangeListener(this);
@@ -755,6 +755,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.MASTER_ENABLED.equals(key) && !OverlayPrefs.masterEnabled(this)) {
             stopAllRuntimeSurfaces();
         }
+        if (OverlayPrefs.FOLD_MODE.equals(key)) {
+            refreshActiveDisplayTarget("prefs_fold_mode");
+            OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeDisplayProfile);
+        }
         if (OverlayPrefs.EFFECT_BACKGROUND_REFRESH_TOKEN.equals(key)
                 || OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN.equals(key)) {
             invalidateUnlockEffectBackgroundSource();
@@ -813,14 +817,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 stopDebugLensLoop();
             }
         }
-        if ((OverlayPrefs.TOUCH_BOX_CONFIGURED.equals(key)
-                || OverlayPrefs.TOUCH_BOX_LEFT.equals(key)
-                || OverlayPrefs.TOUCH_BOX_TOP.equals(key)
-                || OverlayPrefs.TOUCH_BOX_RIGHT.equals(key)
-                || OverlayPrefs.TOUCH_BOX_BOTTOM.equals(key)
-                || OverlayPrefs.TOUCH_BOX_REGIONS.equals(key)
-                || OverlayPrefs.TOUCH_BOX_REFERENCE_WIDTH.equals(key)
-                || OverlayPrefs.TOUCH_BOX_REFERENCE_HEIGHT.equals(key))
+        if (OverlayPrefs.isTouchBoxPreferenceKey(key)
                 && touchDebugView != null) {
             syncTouchDebugOverlay();
         }
@@ -3497,6 +3494,15 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (touchBoxScreenshotInFlight) {
             return;
         }
+        String pendingProfile = pendingTouchBoxScreenshotProfile();
+        if (!pendingProfile.equals(activeDisplayProfile)) {
+            if (touchBoxScreenshotScheduled) {
+                touchBoxScreenshotScheduled = false;
+                handler.removeCallbacks(touchBoxScreenshotDelayRunnable);
+            }
+            markTouchBoxCaptureWaitingForLockscreen();
+            return;
+        }
         if (!interactive || !locked || blockedSurfaceActive) {
             if (touchBoxScreenshotScheduled) {
                 touchBoxScreenshotScheduled = false;
@@ -3516,12 +3522,18 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .apply();
         handler.postDelayed(touchBoxScreenshotDelayRunnable, TOUCH_BOX_SCREENSHOT_DELAY_MS);
         Log.i(TAG, "touch box screenshot scheduled reason=" + reason
+                + " profile=" + pendingProfile
                 + " delayMs=" + TOUCH_BOX_SCREENSHOT_DELAY_MS);
     }
 
     private void runTouchBoxScreenshotDelay() {
         touchBoxScreenshotScheduled = false;
         if (!isTouchBoxScreenshotPending()) {
+            return;
+        }
+        if (!pendingTouchBoxScreenshotProfile().equals(activeDisplayProfile)) {
+            markTouchBoxCaptureWaitingForLockscreen();
+            evaluateVisibility("touch_box_capture_wrong_panel", false);
             return;
         }
         if (!canCaptureTouchBoxScreenshot()) {
@@ -3544,7 +3556,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         removeTouchDebugOverlay();
         handler.postDelayed(touchBoxScreenshotCaptureRunnable,
                 TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS);
-        Log.i(TAG, "touch box screenshot capture armed");
+        Log.i(TAG, "touch box screenshot capture armed profile=" + activeDisplayProfile);
     }
 
     private void runTouchBoxScreenshotCapture() {
@@ -3558,6 +3570,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             evaluateVisibility("touch_box_capture_cancelled", false);
             return;
         }
+        if (!pendingTouchBoxScreenshotProfile().equals(activeDisplayProfile)) {
+            touchBoxScreenshotInFlight = false;
+            markTouchBoxCaptureWaitingForLockscreen();
+            evaluateVisibility("touch_box_capture_panel_changed", false);
+            return;
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             touchBoxScreenshotInFlight = false;
             failTouchBoxScreenshotCapture("Screenshot requires Android 11+");
@@ -3565,6 +3583,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
                 ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        final String captureProfile = activeDisplayProfile;
         try {
             takeScreenshot(captureDisplayId, mainExecutor, new TakeScreenshotCallback() {
                 @Override
@@ -3575,14 +3594,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                         failTouchBoxScreenshotCapture("Screenshot empty");
                         return;
                     }
-                    if (captureDisplayId != activeDisplayId) {
+                    if (captureDisplayId != activeDisplayId
+                            || !captureProfile.equals(activeDisplayProfile)
+                            || !captureProfile.equals(pendingTouchBoxScreenshotProfile())) {
                         bitmap.recycle();
-                        failTouchBoxScreenshotCapture("Display changed during screenshot");
+                        markTouchBoxCaptureWaitingForLockscreen();
                         evaluateVisibility("touch_box_capture_display_changed", false);
                         return;
                     }
-                    if (persistTouchBoxScreenshot(bitmap, "wizard")) {
-                        Log.i(TAG, "touch box screenshot capture ready");
+                    if (persistTouchBoxScreenshot(bitmap, "wizard", captureProfile)) {
+                        Log.i(TAG, "touch box screenshot capture ready profile="
+                                + captureProfile);
                     } else {
                         failTouchBoxScreenshotCapture("Screenshot save failed");
                     }
@@ -3638,6 +3660,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         return prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, 0);
     }
 
+    private String pendingTouchBoxScreenshotProfile() {
+        if (prefs == null) {
+            return activeDisplayProfile;
+        }
+        return FoldDisplayTarget.normalizeProfile(prefs.getString(
+                OverlayPrefs.TOUCH_BOX_CAPTURE_PROFILE, activeDisplayProfile));
+    }
+
     private void markTouchBoxCaptureWaitingForLockscreen() {
         if (!isTouchBoxScreenshotPending()) {
             return;
@@ -3662,24 +3692,20 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "touch box screenshot capture failed: " + message);
     }
 
-    private boolean persistTouchBoxScreenshot(Bitmap bitmap, String sourceName) {
-        return persistTouchBoxScreenshot(bitmap, sourceName, true);
-    }
-
     private boolean persistTouchBoxScreenshot(Bitmap bitmap, String sourceName,
-            boolean updateTouchBoxState) {
+            String profile) {
         if (bitmap == null || bitmap.isRecycled()) {
             return false;
         }
-        return writeTouchBoxScreenshotFile(bitmap, sourceName, updateTouchBoxState);
+        return writeTouchBoxScreenshotFile(bitmap, sourceName, profile, true);
     }
 
     private boolean writeTouchBoxScreenshotFile(Bitmap bitmap, String sourceName,
-            boolean updateTouchBoxState) {
+            String profile, boolean updateTouchBoxState) {
         if (bitmap == null || bitmap.isRecycled()) {
             return false;
         }
-        File file = OverlayPrefs.touchBoxScreenshotFile(this);
+        File file = OverlayPrefs.touchBoxScreenshotFile(this, profile);
         FileOutputStream output = null;
         try {
             output = new FileOutputStream(file);
@@ -3699,6 +3725,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 editor.apply();
             }
             Log.i(TAG, "touch box screenshot saved source=" + sourceName
+                    + " profile=" + FoldDisplayTarget.normalizeProfile(profile)
                     + " path=" + file.getAbsolutePath()
                     + " size=" + bitmap.getWidth() + "x" + bitmap.getHeight());
             return true;
@@ -4446,7 +4473,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         int screenHeight = Math.max(dp(48), metrics.heightPixels);
         int minSize = dp(48);
         ArrayList<Rect> boxes = new ArrayList<Rect>();
-        List<Rect> saved = OverlayPrefs.touchBoxRegions(rendererContext());
+        List<Rect> saved = OverlayPrefs.touchBoxRegions(
+                rendererContext(), activeDisplayProfile);
         for (Rect source : saved) {
             int left = clamp(source.left, 0, screenWidth - minSize);
             int top = clamp(source.top, 0, screenHeight - minSize);

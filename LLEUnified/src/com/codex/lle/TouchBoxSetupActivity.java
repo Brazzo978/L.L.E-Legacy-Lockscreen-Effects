@@ -23,7 +23,9 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -52,6 +54,8 @@ public class TouchBoxSetupActivity extends Activity {
     private TextView statusLabel;
     private TextView waitingStatusLabel;
     private boolean waitingForCapture;
+    private boolean foldMode;
+    private String selectedProfile = FoldDisplayTarget.PROFILE_SINGLE;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +68,12 @@ public class TouchBoxSetupActivity extends Activity {
             window.setNavigationBarColor(Color.TRANSPARENT);
         }
         setImmersive();
+
+        foldMode = OverlayPrefs.foldModeEnabled(this);
+        selectedProfile = foldMode
+                ? FoldDisplayTarget.cacheProfileForContext(this)
+                : FoldDisplayTarget.PROFILE_SINGLE;
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, selectedProfile);
 
         boolean startCapture = getIntent() == null
                 || getIntent().getBooleanExtra(EXTRA_START_CAPTURE, true);
@@ -129,7 +139,7 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private Bitmap loadCachedScreenshot() {
-        File file = OverlayPrefs.touchBoxScreenshotFile(this);
+        File file = OverlayPrefs.touchBoxScreenshotFile(this, selectedProfile);
         if (!file.exists() || file.length() <= 0L) {
             return null;
         }
@@ -145,6 +155,7 @@ public class TouchBoxSetupActivity extends Activity {
                 .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, nextRequestId)
                 .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
                         OverlayPrefs.TOUCH_BOX_CAPTURE_REQUESTED)
+                .putString(OverlayPrefs.TOUCH_BOX_CAPTURE_PROFILE, selectedProfile)
                 .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR)
                 .apply();
     }
@@ -153,12 +164,14 @@ public class TouchBoxSetupActivity extends Activity {
         waitingForCapture = true;
         LinearLayout root = graceRoot();
         root.addView(appBar("Lockscreen capture", "Touch box wizard"));
+        addProfileSlider(root);
 
         LinearLayout card = panel();
         TextView title = titleText("Capture needed");
         card.addView(title);
 
-        TextView body = bodyText("Lock the phone, show the lockscreen for about 2 seconds, then unlock and return here.");
+        TextView body = bodyText("Select the " + profileLabel(selectedProfile)
+                + " panel, lock the phone, show the lockscreen for about 2 seconds, then unlock and return here.");
         LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -234,7 +247,9 @@ public class TouchBoxSetupActivity extends Activity {
 
     private void showEditorView() {
         LinearLayout root = graceRoot();
-        root.addView(appBar("Touch box editor", "Lockscreen screenshot"));
+        root.addView(appBar("Touch box editor",
+                profileLabel(selectedProfile) + " lockscreen screenshot"));
+        addProfileSlider(root);
 
         editorView = new PinEditorView(this);
         LinearLayout.LayoutParams editorParams = new LinearLayout.LayoutParams(
@@ -316,7 +331,7 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private void startFreshCapture() {
-        File file = OverlayPrefs.touchBoxScreenshotFile(this);
+        File file = OverlayPrefs.touchBoxScreenshotFile(this, selectedProfile);
         if (file.exists()) {
             file.delete();
         }
@@ -331,10 +346,85 @@ public class TouchBoxSetupActivity extends Activity {
             Toast.makeText(this, "Add at least one area", Toast.LENGTH_SHORT).show();
             return;
         }
-        OverlayPrefs.saveTouchBoxRegionsOutward(this, boxes);
-        Toast.makeText(this, "Touch areas saved", Toast.LENGTH_SHORT).show();
+        OverlayPrefs.saveTouchBoxRegionsOutward(this, selectedProfile, boxes,
+                screenshotBitmap.getWidth(), screenshotBitmap.getHeight());
+        Toast.makeText(this, profileLabel(selectedProfile)
+                + " touch areas saved", Toast.LENGTH_SHORT).show();
         setResult(RESULT_OK);
         finish();
+    }
+
+    private void addProfileSlider(LinearLayout root) {
+        if (!foldMode) {
+            return;
+        }
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(dp(20), dp(8), dp(20), dp(8));
+        row.setBackgroundColor(Color.WHITE);
+
+        TextView cover = bodyText("Cover");
+        cover.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        row.addView(cover, new LinearLayout.LayoutParams(0, dp(48), 1f));
+
+        Switch slider = new Switch(this);
+        slider.setChecked(FoldDisplayTarget.PROFILE_MAIN.equals(selectedProfile));
+        slider.setContentDescription("Switch between cover and main touch boxes");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            slider.setShowText(false);
+        }
+        LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(
+                dp(72), dp(48));
+        sliderParams.setMargins(dp(12), 0, dp(12), 0);
+        row.addView(slider, sliderParams);
+
+        TextView main = bodyText("Main");
+        main.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        row.addView(main, new LinearLayout.LayoutParams(0, dp(48), 1f));
+
+        slider.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                switchProfile(isChecked
+                        ? FoldDisplayTarget.PROFILE_MAIN
+                        : FoldDisplayTarget.PROFILE_COVER);
+            }
+        });
+        root.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void switchProfile(String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        if (normalized.equals(selectedProfile)) {
+            return;
+        }
+        if (editorView != null && screenshotBitmap != null) {
+            ArrayList<Rect> boxes = editorView.currentRoundedBoxes();
+            if (boxes != null && !boxes.isEmpty()) {
+                OverlayPrefs.saveTouchBoxRegionsOutward(this, selectedProfile, boxes,
+                        screenshotBitmap.getWidth(), screenshotBitmap.getHeight());
+            }
+        }
+        selectedProfile = normalized;
+        editorView = null;
+        recycleScreenshot();
+        if (!showEditorFromCachedScreenshot()) {
+            requestScreenshotCapture();
+            showWaitingView();
+        }
+    }
+
+    private String profileLabel(String profile) {
+        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
+            return "cover";
+        }
+        if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
+            return "main";
+        }
+        return "current";
     }
 
     private LinearLayout graceRoot() {
@@ -652,7 +742,8 @@ public class TouchBoxSetupActivity extends Activity {
             int imageHeight = screenshotBitmap.getHeight();
             int minSize = dp(48);
             ArrayList<Rect> result = new ArrayList<Rect>();
-            for (Rect source : OverlayPrefs.touchBoxRegions(TouchBoxSetupActivity.this)) {
+            for (Rect source : OverlayPrefs.touchBoxRegions(TouchBoxSetupActivity.this,
+                    selectedProfile, imageWidth, imageHeight)) {
                 int left = clamp(source.left, 0, Math.max(0, imageWidth - minSize));
                 int top = clamp(source.top, 0, Math.max(0, imageHeight - minSize));
                 int right = clamp(source.right, left + minSize, imageWidth);

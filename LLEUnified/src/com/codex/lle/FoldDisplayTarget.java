@@ -81,8 +81,9 @@ final class FoldDisplayTarget {
                     PackageManager.FEATURE_SENSOR_HINGE_ANGLE);
         } catch (Throwable ignored) {
         }
-        boolean multiPanel = internalCount > 1 || hingeFold;
-        String profile = multiPanel ? panelProfile(size[0], size[1]) : PROFILE_SINGLE;
+        boolean multiPanel = (internalCount > 1 || hingeFold)
+                && OverlayPrefs.foldModeEnabled(service);
+        String profile = multiPanel ? profileForSize(size[0], size[1]) : PROFILE_SINGLE;
         return new FoldDisplayTarget(best, size[0], size[1], profile, multiPanel);
     }
 
@@ -114,20 +115,42 @@ final class FoldDisplayTarget {
     }
 
     static String cacheProfileForContext(Context context) {
-        if (context == null) {
-            return PROFILE_SINGLE;
-        }
-        boolean hingeFold = false;
-        try {
-            hingeFold = context.getPackageManager().hasSystemFeature(
-                    PackageManager.FEATURE_SENSOR_HINGE_ANGLE);
-        } catch (Throwable ignored) {
-        }
-        if (!hingeFold) {
+        if (context == null || !OverlayPrefs.foldModeEnabled(context)) {
             return PROFILE_SINGLE;
         }
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        return panelProfile(metrics.widthPixels, metrics.heightPixels);
+        return profileForSize(metrics.widthPixels, metrics.heightPixels);
+    }
+
+    static boolean isFoldDevice(Context context) {
+        if (context == null) {
+            return false;
+        }
+        try {
+            if (context.getPackageManager().hasSystemFeature(
+                    PackageManager.FEATURE_SENSOR_HINGE_ANGLE)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            DisplayManager manager = (DisplayManager) context.getSystemService(
+                    Context.DISPLAY_SERVICE);
+            Display defaultDisplay = manager == null
+                    ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+            String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
+            int internalCount = 0;
+            if (manager != null) {
+                for (Display display : manager.getDisplays()) {
+                    if (isBuiltInPanel(display, builtInName)) {
+                        internalCount++;
+                    }
+                }
+            }
+            return internalCount > 1;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static int focusedDisplayId(AccessibilityService service) {
@@ -211,7 +234,7 @@ final class FoldDisplayTarget {
                 Math.max(1, mode.getPhysicalHeight())};
     }
 
-    private static String panelProfile(int width, int height) {
+    static String profileForSize(int width, int height) {
         float ratio = Math.max(width, height) / (float) Math.max(1, Math.min(width, height));
         return ratio >= 1.55f ? PROFILE_COVER : PROFILE_MAIN;
     }
