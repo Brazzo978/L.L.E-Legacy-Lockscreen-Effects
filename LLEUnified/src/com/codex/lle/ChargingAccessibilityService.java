@@ -321,6 +321,16 @@ public class ChargingAccessibilityService extends AccessibilityService
             sampleActiveUnlockEffectProfile();
         }
     };
+    private final Runnable activeDisplayRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            boolean switched = refreshActiveDisplayTarget("display_callback");
+            if (!switched) {
+                markNativeRendererStaleForDisplaySize();
+            }
+            scheduleCandidateWakeRefreshes("display_changed");
+        }
+    };
     private final Runnable unlockEffectBenchmarkStepRunnable = new Runnable() {
         @Override
         public void run() {
@@ -328,6 +338,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     };
     private WindowManager windowManager;
+    private Context activeDisplayContext;
     private DisplayManager displayManager;
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
@@ -383,6 +394,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long nextContentAwarePollAt;
     private long lastWindowContentVisibilityAt;
     private long lastDisplayCandidateWakeRefreshAt;
+    private long lastActiveDisplayResolveAt;
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
     private long lastScreenOnAt;
@@ -432,25 +444,28 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
     private int unlockEffectRendererDisplayWidth;
     private int unlockEffectRendererDisplayHeight;
+    private int activeDisplayId = Display.INVALID_DISPLAY;
+    private int activeDisplayWidth;
+    private int activeDisplayHeight;
+    private String activeDisplayProfile = FoldDisplayTarget.PROFILE_SINGLE;
+    private String cachedUnlockEffectBackgroundProfile = "";
     private StringBuilder unlockEffectBenchmarkCsv;
 
     private final DisplayManager.DisplayListener displayListener =
             new DisplayManager.DisplayListener() {
                 @Override
                 public void onDisplayAdded(int displayId) {
+                    scheduleActiveDisplayRefresh();
                 }
 
                 @Override
                 public void onDisplayRemoved(int displayId) {
+                    scheduleActiveDisplayRefresh();
                 }
 
                 @Override
                 public void onDisplayChanged(int displayId) {
-                    if (displayId != Display.DEFAULT_DISPLAY) {
-                        return;
-                    }
-                    markNativeRendererStaleForDisplaySize();
-                    scheduleCandidateWakeRefreshes("display_changed");
+                    scheduleActiveDisplayRefresh();
                 }
             };
 
@@ -580,6 +595,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "connected abi=" + Lle64Abi.verify());
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         displayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+        refreshActiveDisplayTarget("connected");
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager != null) {
@@ -633,6 +649,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        refreshActiveDisplayTarget("accessibility_event");
         if (event != null && event.getPackageName() != null) {
             lastWindowPackage = event.getPackageName().toString();
         }
@@ -900,6 +917,108 @@ public class ChargingAccessibilityService extends AccessibilityService
         } catch (RuntimeException ignored) {
             // Service teardown can race registration state.
         }
+    }
+
+    private void scheduleActiveDisplayRefresh() {
+        handler.removeCallbacks(activeDisplayRefreshRunnable);
+        handler.postDelayed(activeDisplayRefreshRunnable, 64L);
+    }
+
+    private boolean refreshActiveDisplayTarget(String reason) {
+        if (displayManager == null) {
+            return false;
+        }
+        long now = SystemClock.uptimeMillis();
+        if ("accessibility_event".equals(reason)
+                && now - lastActiveDisplayResolveAt < 200L) {
+            return false;
+        }
+        lastActiveDisplayResolveAt = now;
+        FoldDisplayTarget target = FoldDisplayTarget.resolve(
+                this, displayManager, activeDisplayId);
+        if (target.display == null) {
+            return false;
+        }
+        boolean changed = target.displayId != activeDisplayId
+                || !target.cacheProfile.equals(activeDisplayProfile);
+        if (!changed && windowManager != null && activeDisplayContext != null) {
+            activeDisplayWidth = target.width;
+            activeDisplayHeight = target.height;
+            return false;
+        }
+
+        int previousDisplayId = activeDisplayId;
+        String previousProfile = activeDisplayProfile;
+        if (previousDisplayId != Display.INVALID_DISPLAY) {
+            stopDebugLensLoop();
+            cancelSeasonalUnlockPartnerGesture();
+            destroyUnlockEffectOverlay();
+            destroySeasonalUnlockPartnerOverlay();
+            destroyDoodleOverlay();
+            removeTouchDebugOverlay();
+            clearCachedUnlockEffectBackgroundBitmap();
+        }
+
+        Context displayContext = this;
+        try {
+            if (target.multiPanel && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                displayContext = createWindowContext(
+                        target.display,
+                        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                        null);
+            } else if (target.displayId != Display.DEFAULT_DISPLAY) {
+                displayContext = createDisplayContext(target.display);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "display context creation failed id=" + target.displayId, t);
+            displayContext = this;
+        }
+        WindowManager targetWindowManager =
+                (WindowManager) displayContext.getSystemService(WINDOW_SERVICE);
+        if (targetWindowManager == null) {
+            Log.w(TAG, "display window manager unavailable id=" + target.displayId);
+            return false;
+        }
+
+        activeDisplayContext = displayContext;
+        windowManager = targetWindowManager;
+        activeDisplayId = target.displayId;
+        activeDisplayWidth = target.width;
+        activeDisplayHeight = target.height;
+        activeDisplayProfile = target.cacheProfile;
+        unlockEffectBackgroundGeneration++;
+        colorScreenshotInFlight = false;
+        colorScreenshotAttemptedThisSession = false;
+        unlockEffectBackgroundCaptureSucceededThisSession = false;
+        unlockEffectBackgroundCapturedAt = 0L;
+        unlockEffectBackgroundEffect = -1;
+        unlockEffectBackgroundNextAttemptAt = 0L;
+        unlockEffectBackgroundCaptureAttempts = 0;
+        skipCachedEffectBackgroundLoad = false;
+        handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
+
+        Log.i(TAG, "active display target reason=" + reason
+                + " id=" + previousDisplayId + "->" + activeDisplayId
+                + " profile=" + previousProfile + "->" + activeDisplayProfile
+                + " physical=" + activeDisplayWidth + "x" + activeDisplayHeight);
+
+        if (previousDisplayId != Display.INVALID_DISPLAY) {
+            ensureDoodleLoaded();
+            if (!isChargingDoodleModeEnabled()) {
+                preloadUnlockEffectRenderer();
+            }
+            scheduleEffectBackgroundRefreshAlarm("display_target");
+            evaluateVisibility("display_target:" + reason, false);
+        }
+        return true;
+    }
+
+    private Context rendererContext() {
+        return activeDisplayContext == null ? this : activeDisplayContext;
+    }
+
+    private DisplayMetrics activeDisplayMetrics() {
+        return rendererContext().getResources().getDisplayMetrics();
     }
 
     private void profileDebugUnlockEffect(int effect) {
@@ -1476,7 +1595,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
             return;
         }
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        DisplayMetrics metrics = activeDisplayMetrics();
         int width = Math.max(1, metrics.widthPixels);
         int height = Math.max(1, metrics.heightPixels);
         if (unlockEffectRendererDisplayWidth <= 0 || unlockEffectRendererDisplayHeight <= 0) {
@@ -1938,7 +2057,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || !charging) {
             return;
         }
-        overlayView = new SeasonalDoodleView(this);
+        overlayView = new SeasonalDoodleView(rendererContext());
         applyOverlayPrefs();
         Log.i(TAG, "doodle view preloaded");
     }
@@ -2034,7 +2153,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (seasonalUnlockPartnerRenderer != null || !isSeasonalUnlockPartnerModeEnabled()) {
             return;
         }
-        seasonalUnlockPartnerRenderer = new SeasonalUnlockEffectView(this);
+        seasonalUnlockPartnerRenderer = new SeasonalUnlockEffectView(rendererContext());
         seasonalUnlockPartnerRenderer.setSeasonMode(OverlayPrefs.seasonMode(this));
         seasonalUnlockPartnerView = seasonalUnlockPartnerRenderer.asView();
         Log.i(TAG, "seasonal unlock partner preloaded");
@@ -2164,47 +2283,52 @@ public class ChargingAccessibilityService extends AccessibilityService
         long constructStartedAt = SystemClock.uptimeMillis();
         try {
             if (effect == OverlayPrefs.EFFECT_S4_LENS_FLARE) {
-                unlockEffectRenderer = new LensFlareEffectView(this);
+                unlockEffectRenderer = new LensFlareEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
                 if (EffectAvailability.is64BitProcess()) {
-                    S3Arm64RippleEffectView renderer = new S3Arm64RippleEffectView(this);
+                    S3Arm64RippleEffectView renderer =
+                            new S3Arm64RippleEffectView(rendererContext());
                     if (!renderer.isReady()) {
                         renderer.destroy();
                         throw new IllegalStateException("Water Ripple ARM64 renderer unavailable");
                     }
                     unlockEffectRenderer = renderer;
                 } else {
-                    unlockEffectRenderer = new S3NativeRippleEffectView(this);
+                    unlockEffectRenderer = new S3NativeRippleEffectView(rendererContext());
                 }
             } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
-                unlockEffectRenderer = SamsungLockBgEffectView.abstractTiles(this);
+                unlockEffectRenderer = SamsungLockBgEffectView.abstractTiles(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
-                unlockEffectRenderer = SamsungLockBgEffectView.geometricMosaic(this);
+                unlockEffectRenderer = SamsungLockBgEffectView.geometricMosaic(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
-                unlockEffectRenderer = new PoppingColoursEffectView(this);
+                unlockEffectRenderer = new PoppingColoursEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
-                WatercolorNativeEffectView renderer = new WatercolorNativeEffectView(this);
+                WatercolorNativeEffectView renderer =
+                        new WatercolorNativeEffectView(rendererContext());
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException("Watercolor native renderer unavailable");
                 }
                 unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
-                ColourDropletEffectView renderer = new ColourDropletEffectView(this, false);
+                ColourDropletEffectView renderer =
+                        new ColourDropletEffectView(rendererContext(), false);
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException("Colour Droplet native renderer unavailable");
                 }
                 unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO) {
-                ColourDropletEffectView renderer = new ColourDropletEffectView(this, true);
+                ColourDropletEffectView renderer =
+                        new ColourDropletEffectView(rendererContext(), true);
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException("Colour Droplet + Gyro native renderer unavailable");
                 }
                 unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-                SparklingBubblesEffectView renderer = new SparklingBubblesEffectView(this);
+                SparklingBubblesEffectView renderer =
+                        new SparklingBubblesEffectView(rendererContext());
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException("Sparkling Bubbles native renderer unavailable");
@@ -2237,7 +2361,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     .apply();
             unlockEffectRendererType = effect;
             try {
-                unlockEffectRenderer = new LensFlareEffectView(this);
+                unlockEffectRenderer = new LensFlareEffectView(rendererContext());
                 Log.w(TAG, "native renderer fell back to Lens Flare failedType="
                         + failedEffect);
             } catch (Throwable fallbackError) {
@@ -2271,7 +2395,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (isRecreatableNativeEffect(effect)) {
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            DisplayMetrics metrics = activeDisplayMetrics();
             unlockEffectRendererDisplayWidth = Math.max(1, metrics.widthPixels);
             unlockEffectRendererDisplayHeight = Math.max(1, metrics.heightPixels);
         } else {
@@ -2355,7 +2479,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         int width = unlockEffectView == null ? 0 : unlockEffectView.getWidth();
         int height = unlockEffectView == null ? 0 : unlockEffectView.getHeight();
         if (width <= 0 || height <= 0) {
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            DisplayMetrics metrics = activeDisplayMetrics();
             width = Math.max(dp(48), metrics.widthPixels);
             height = Math.max(dp(48), metrics.heightPixels);
         }
@@ -2459,6 +2583,9 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         final int captureEffect = effect;
         final int captureGeneration = ++unlockEffectBackgroundGeneration;
+        final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        final String captureProfile = activeDisplayProfile;
         colorScreenshotAttemptedThisSession = true;
         colorScreenshotInFlight = true;
         unlockEffectBackgroundCaptureAttempts++;
@@ -2470,10 +2597,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "unlock effect background screenshot requested reason=" + reason
                 + " sinceScreenOnMs=" + elapsedSinceScreenOn()
                 + " displayState=" + displayStateName(currentDisplayState())
+                + " displayId=" + captureDisplayId
+                + " profile=" + captureProfile
                 + " effect=" + captureEffect
                 + " pkg=" + lastWindowPackage);
         try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, new TakeScreenshotCallback() {
+            takeScreenshot(captureDisplayId, mainExecutor, new TakeScreenshotCallback() {
                 @Override
                 public void onSuccess(ScreenshotResult screenshotResult) {
                     colorScreenshotInFlight = false;
@@ -2488,6 +2617,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                         return;
                     }
                     if (captureGeneration != unlockEffectBackgroundGeneration
+                            || captureDisplayId != activeDisplayId
+                            || !captureProfile.equals(activeDisplayProfile)
                             || OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)
                             != captureEffect || !canCaptureUnlockEffectBackground()) {
                         Log.i(TAG, "unlock effect background screenshot discarded reason="
@@ -2517,7 +2648,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                         return;
                     }
                     long now = SystemClock.uptimeMillis();
-                    if (!isValidUnlockEffectBackgroundScreenshot(bitmap, captureEffect, reason)) {
+                    if (!isValidUnlockEffectBackgroundScreenshot(
+                            bitmap, captureEffect, captureProfile, reason)) {
                         Log.i(TAG, "unlock effect background screenshot rejected reason=" + reason
                                 + " effect=" + captureEffect);
                         bitmap.recycle();
@@ -2529,7 +2661,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                         return;
                     }
                     applyUnlockEffectBackgroundSource(bitmap, "accessibility_screenshot");
-                    persistEffectBackgroundScreenshotAsync(bitmap, captureGeneration, captureEffect);
+                    persistEffectBackgroundScreenshotAsync(
+                            bitmap, captureGeneration, captureEffect, captureProfile);
                     unlockEffectBackgroundCapturedAt = now;
                     unlockEffectBackgroundEffect = captureEffect;
                     unlockEffectBackgroundNextAttemptAt = 0L;
@@ -2538,6 +2671,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                     Log.i(TAG, "unlock effect background screenshot applied reason=" + reason
                             + " size=" + bitmap.getWidth() + "x" + bitmap.getHeight()
                             + " displayState=" + displayStateName(currentDisplayState())
+                            + " displayId=" + captureDisplayId
+                            + " profile=" + captureProfile
                             + " effect=" + captureEffect
                             + " pkg=" + lastWindowPackage);
                     bitmap.recycle();
@@ -2582,7 +2717,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (OverlayPrefs.effectBackgroundRefreshToken(this)
-                != OverlayPrefs.effectBackgroundHandledRefreshToken(this, effect)) {
+                != OverlayPrefs.effectBackgroundHandledRefreshToken(
+                        this, effect, activeDisplayProfile)) {
             return true;
         }
         if (!hasUsableEffectBackgroundCache(effect)) {
@@ -2599,7 +2735,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (effectUsesCachedScreenshotBackground(effect)
                 && OverlayPrefs.effectBackgroundRefreshToken(this)
-                != OverlayPrefs.effectBackgroundHandledRefreshToken(this, effect)) {
+                != OverlayPrefs.effectBackgroundHandledRefreshToken(
+                        this, effect, activeDisplayProfile)) {
             return true;
         }
         if (!hasBackground || unlockEffectBackgroundEffect != effect) {
@@ -2612,9 +2749,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + reason);
                 return false;
             }
-            long lastCapturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect);
+            long lastCapturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(
+                    this, effect, activeDisplayProfile);
             if (lastCapturedAt <= 0L) {
-                File file = OverlayPrefs.effectBackgroundFile(this, effect);
+                File file = OverlayPrefs.effectBackgroundFile(
+                        this, effect, activeDisplayProfile);
                 if (file.exists()) {
                     lastCapturedAt = file.lastModified();
                 }
@@ -2674,9 +2813,17 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean isValidUnlockEffectBackgroundScreenshot(Bitmap bitmap, int effect,
-            String reason) {
+            String profile, String reason) {
         if (bitmap == null || bitmap.isRecycled()
                 || bitmap.getWidth() < 100 || bitmap.getHeight() < 100) {
+            return false;
+        }
+        if (!FoldDisplayTarget.bitmapMatches(profile, bitmap.getWidth(), bitmap.getHeight(),
+                activeDisplayWidth, activeDisplayHeight)) {
+            Log.i(TAG, "background screenshot rejected: panel mismatch reason=" + reason
+                    + " profile=" + profile
+                    + " bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight()
+                    + " target=" + activeDisplayWidth + "x" + activeDisplayHeight);
             return false;
         }
         int displayState = currentDisplayState();
@@ -2840,8 +2987,9 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private long nextEffectBackgroundRefreshAt(int effect) {
         long now = System.currentTimeMillis();
-        long last = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect);
-        File file = OverlayPrefs.effectBackgroundFile(this, effect);
+        long last = OverlayPrefs.effectBackgroundLastCapturedAt(
+                this, effect, activeDisplayProfile);
+        File file = OverlayPrefs.effectBackgroundFile(this, effect, activeDisplayProfile);
         if (last <= 0L && file.exists()) {
             last = file.lastModified();
         }
@@ -2934,11 +3082,16 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private int currentDisplayState() {
-        if (windowManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT_WATCH) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT_WATCH) {
             return Display.STATE_UNKNOWN;
         }
         try {
-            Display display = windowManager.getDefaultDisplay();
+            Display display = displayManager == null ? null
+                    : displayManager.getDisplay(activeDisplayId == Display.INVALID_DISPLAY
+                    ? Display.DEFAULT_DISPLAY : activeDisplayId);
+            if (display == null && windowManager != null) {
+                display = windowManager.getDefaultDisplay();
+            }
             return display == null ? Display.STATE_UNKNOWN : display.getState();
         } catch (Throwable t) {
             return Display.STATE_UNKNOWN;
@@ -3041,13 +3194,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         repairSharedEffectBackgroundMetadataIfNeeded(effect, file);
-        boolean ownCache = file.equals(OverlayPrefs.effectBackgroundFile(this, effect));
         Bitmap bitmap = null;
         try {
             long fileLength = file.length();
             long fileModified = file.lastModified();
             boolean memoryCacheHit = hasCachedUnlockEffectBackground(
-                    effect, fileLength, fileModified);
+                    effect, activeDisplayProfile, fileLength, fileModified);
             long decodeStartedAt = SystemClock.uptimeMillis();
             if (memoryCacheHit) {
                 bitmap = cachedUnlockEffectBackgroundBitmap;
@@ -3058,7 +3210,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
                 if (bitmap != null && !bitmap.isRecycled()) {
                     replaceCachedUnlockEffectBackgroundBitmap(
-                            bitmap, effect, fileLength, fileModified);
+                            bitmap, effect, activeDisplayProfile, fileLength, fileModified);
                 }
             }
             long decodeMs = SystemClock.uptimeMillis() - decodeStartedAt;
@@ -3074,6 +3226,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             Log.i(TAG, "unlock effect background cache loaded size="
                     + bitmap.getWidth() + "x" + bitmap.getHeight()
                     + " effect=" + effect
+                    + " profile=" + activeDisplayProfile
+                    + " displayId=" + activeDisplayId
                     + " fileKb=" + Math.max(1L, fileLength / 1024L)
                     + " memoryCache=" + memoryCacheHit
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
@@ -3089,23 +3243,35 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private File findBestEffectBackgroundCacheFile(int effect) {
-        File shared = OverlayPrefs.effectBackgroundFile(this, effect);
-        if (isUsableEffectBackgroundCacheFile(shared)) {
-            return shared;
+        File profileFile = OverlayPrefs.effectBackgroundFile(
+                this, effect, activeDisplayProfile);
+        if (isUsableEffectBackgroundCacheFileForActiveProfile(profileFile)) {
+            return profileFile;
+        }
+        if (!FoldDisplayTarget.PROFILE_SINGLE.equals(activeDisplayProfile)) {
+            File oldShared = OverlayPrefs.effectBackgroundFile(this, effect);
+            if (isUsableEffectBackgroundCacheFileForActiveProfile(oldShared)
+                    && copyEffectBackgroundCacheFile(oldShared, profileFile)) {
+                Log.i(TAG, "effect background single cache migrated profile="
+                        + activeDisplayProfile);
+                return profileFile;
+            }
         }
         File legacy = findLatestLegacyEffectBackgroundCacheFile();
-        if (legacy != null && copyEffectBackgroundCacheFile(legacy, shared)) {
-            Log.i(TAG, "effect background legacy cache migrated to shared path");
-            return shared;
+        if (legacy != null && copyEffectBackgroundCacheFile(legacy, profileFile)) {
+            Log.i(TAG, "effect background legacy cache migrated profile="
+                    + activeDisplayProfile);
+            return profileFile;
         }
         return null;
     }
 
     private void repairSharedEffectBackgroundMetadataIfNeeded(int effect, File file) {
-        File shared = OverlayPrefs.effectBackgroundFile(this, effect);
+        File shared = OverlayPrefs.effectBackgroundFile(this, effect, activeDisplayProfile);
         int refreshToken = OverlayPrefs.effectBackgroundRefreshToken(this);
         if (file == null || !file.equals(shared) || refreshToken <= 0
-                || OverlayPrefs.effectBackgroundHandledRefreshToken(this, effect)
+                || OverlayPrefs.effectBackgroundHandledRefreshToken(
+                        this, effect, activeDisplayProfile)
                 == refreshToken) {
             return;
         }
@@ -3122,16 +3288,19 @@ public class ChargingAccessibilityService extends AccessibilityService
         };
         for (int candidate : effects) {
             if (candidate == effect
-                    || OverlayPrefs.effectBackgroundHandledRefreshToken(this, candidate)
+                    || OverlayPrefs.effectBackgroundHandledRefreshToken(
+                            this, candidate, activeDisplayProfile)
                     != refreshToken
-                    || OverlayPrefs.effectBackgroundLastCapturedAt(this, candidate) <= 0L) {
+                    || OverlayPrefs.effectBackgroundLastCapturedAt(
+                            this, candidate, activeDisplayProfile) <= 0L) {
                 continue;
             }
             OverlayPrefs.saveEffectBackgroundLastCapturedAt(
-                    this, effect, Math.max(1L, file.lastModified()));
-            OverlayPrefs.saveEffectBackgroundHandledRefreshToken(this, effect, refreshToken);
+                    this, effect, activeDisplayProfile, Math.max(1L, file.lastModified()));
+            OverlayPrefs.saveEffectBackgroundHandledRefreshToken(
+                    this, effect, activeDisplayProfile, refreshToken);
             Log.i(TAG, "shared effect background metadata repaired effect=" + effect
-                    + " token=" + refreshToken);
+                    + " profile=" + activeDisplayProfile + " token=" + refreshToken);
             return;
         }
     }
@@ -3151,7 +3320,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
-            if (!isUsableEffectBackgroundCacheFile(file)) {
+            if (!isUsableEffectBackgroundCacheFileForActiveProfile(file)) {
                 continue;
             }
             if (best == null || file.lastModified() > best.lastModified()) {
@@ -3209,10 +3378,35 @@ public class ChargingAccessibilityService extends AccessibilityService
         return file != null && file.exists() && file.length() > 0L;
     }
 
-    private boolean hasCachedUnlockEffectBackground(int effect, long fileLength,
+    private boolean isUsableEffectBackgroundCacheFileForActiveProfile(File file) {
+        if (!isUsableEffectBackgroundCacheFile(file)) {
+            return false;
+        }
+        if (FoldDisplayTarget.PROFILE_SINGLE.equals(activeDisplayProfile)) {
+            return true;
+        }
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+            return FoldDisplayTarget.bitmapMatches(
+                    activeDisplayProfile,
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    activeDisplayWidth,
+                    activeDisplayHeight);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean hasCachedUnlockEffectBackground(int effect, String profile, long fileLength,
             long fileModified) {
         return cachedUnlockEffectBackgroundBitmap != null
                 && !cachedUnlockEffectBackgroundBitmap.isRecycled()
+                && cachedUnlockEffectBackgroundEffect == effect
+                && FoldDisplayTarget.normalizeProfile(profile)
+                .equals(cachedUnlockEffectBackgroundProfile)
                 && cachedUnlockEffectBackgroundFileLength == fileLength
                 && cachedUnlockEffectBackgroundFileModified == fileModified;
     }
@@ -3220,10 +3414,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void replaceCachedUnlockEffectBackgroundBitmap(
             Bitmap bitmap,
             int effect,
+            String profile,
             long fileLength,
             long fileModified) {
         if (bitmap == cachedUnlockEffectBackgroundBitmap) {
             cachedUnlockEffectBackgroundEffect = effect;
+            cachedUnlockEffectBackgroundProfile =
+                    FoldDisplayTarget.normalizeProfile(profile);
             cachedUnlockEffectBackgroundFileLength = fileLength;
             cachedUnlockEffectBackgroundFileModified = fileModified;
             return;
@@ -3231,6 +3428,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         clearCachedUnlockEffectBackgroundBitmap();
         cachedUnlockEffectBackgroundBitmap = bitmap;
         cachedUnlockEffectBackgroundEffect = effect;
+        cachedUnlockEffectBackgroundProfile = FoldDisplayTarget.normalizeProfile(profile);
         cachedUnlockEffectBackgroundFileLength = fileLength;
         cachedUnlockEffectBackgroundFileModified = fileModified;
     }
@@ -3242,6 +3440,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         cachedUnlockEffectBackgroundBitmap = null;
         cachedUnlockEffectBackgroundEffect = -1;
+        cachedUnlockEffectBackgroundProfile = "";
         cachedUnlockEffectBackgroundFileLength = 0L;
         cachedUnlockEffectBackgroundFileModified = 0L;
     }
@@ -3258,7 +3457,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             copy.prepareToDraw();
             replaceCachedUnlockEffectBackgroundBitmap(copy, effect,
-                    file.length(), file.lastModified());
+                    activeDisplayProfile, file.length(), file.lastModified());
         } catch (Throwable t) {
             Log.d(TAG, "unlock effect memory background cache update failed", t);
         }
@@ -3364,14 +3563,22 @@ public class ChargingAccessibilityService extends AccessibilityService
             failTouchBoxScreenshotCapture("Screenshot requires Android 11+");
             return;
         }
+        final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
         try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, new TakeScreenshotCallback() {
+            takeScreenshot(captureDisplayId, mainExecutor, new TakeScreenshotCallback() {
                 @Override
                 public void onSuccess(ScreenshotResult screenshotResult) {
                     touchBoxScreenshotInFlight = false;
                     Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
                     if (bitmap == null) {
                         failTouchBoxScreenshotCapture("Screenshot empty");
+                        return;
+                    }
+                    if (captureDisplayId != activeDisplayId) {
+                        bitmap.recycle();
+                        failTouchBoxScreenshotCapture("Display changed during screenshot");
+                        evaluateVisibility("touch_box_capture_display_changed", false);
                         return;
                     }
                     if (persistTouchBoxScreenshot(bitmap, "wizard")) {
@@ -3510,7 +3717,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void persistEffectBackgroundScreenshotAsync(Bitmap bitmap, final int generation,
-            final int effect) {
+            final int effect, String profile) {
         if (bitmap == null || bitmap.isRecycled()) {
             return;
         }
@@ -3524,12 +3731,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (copy == null || copy.isRecycled()) {
             return;
         }
+        final String capturedProfile = FoldDisplayTarget.normalizeProfile(profile);
+        final int capturedRefreshToken = OverlayPrefs.effectBackgroundRefreshToken(this);
         try {
             ioExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
                     final File file = OverlayPrefs.effectBackgroundFile(
-                            ChargingAccessibilityService.this, effect);
+                            ChargingAccessibilityService.this, effect, capturedProfile);
                     final File temp = new File(file.getParentFile(), file.getName() + ".tmp");
                     boolean saved = writeBitmapPngFile(copy, temp);
                     if (saved) {
@@ -3546,21 +3755,24 @@ public class ChargingAccessibilityService extends AccessibilityService
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
+                            if (copy.isRecycled() || !file.exists()) {
+                                return;
+                            }
+                            markSharedEffectBackgroundCacheCurrent(
+                                    capturedProfile,
+                                    System.currentTimeMillis(),
+                                    capturedRefreshToken);
                             if (generation != unlockEffectBackgroundGeneration
-                                    || copy.isRecycled()
-                                    || !file.exists()) {
+                                    || !capturedProfile.equals(activeDisplayProfile)) {
                                 copy.recycle();
                                 return;
                             }
                             replaceCachedUnlockEffectBackgroundBitmap(
                                     copy,
                                     effect,
+                                    capturedProfile,
                                     file.length(),
                                     file.lastModified());
-                            markSharedEffectBackgroundCacheCurrent(
-                                    System.currentTimeMillis(),
-                                    OverlayPrefs.effectBackgroundRefreshToken(
-                                            ChargingAccessibilityService.this));
                             scheduleEffectBackgroundRefreshAlarm("cache_saved");
                         }
                     });
@@ -3572,7 +3784,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     }
 
-    private void markSharedEffectBackgroundCacheCurrent(long timestamp, int refreshToken) {
+    private void markSharedEffectBackgroundCacheCurrent(String profile, long timestamp,
+            int refreshToken) {
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
@@ -3587,10 +3800,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         SharedPreferences.Editor editor = OverlayPrefs.get(this).edit();
         for (int effect : effects) {
             editor.putLong(
-                    OverlayPrefs.EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect,
+                    OverlayPrefs.effectBackgroundLastCaptureKey(effect, profile),
                     Math.max(0L, timestamp));
             editor.putInt(
-                    OverlayPrefs.EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect,
+                    OverlayPrefs.effectBackgroundHandledRefreshTokenKey(effect, profile),
                     Math.max(0, refreshToken));
         }
         editor.apply();
@@ -3729,7 +3942,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         touchDebugTouchable = standbyTouchable;
         for (int i = 0; i < boxes.size(); i++) {
             Rect area = boxes.get(i);
-            TouchDebugView view = new TouchDebugView(this);
+            TouchDebugView view = new TouchDebugView(rendererContext());
             view.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
             view.setListeningEnabled(listening);
             view.setTouchTriggerListener(triggerListener);
@@ -4228,12 +4441,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private List<Rect> resolveTouchBoxes() {
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        DisplayMetrics metrics = activeDisplayMetrics();
         int screenWidth = Math.max(dp(48), metrics.widthPixels);
         int screenHeight = Math.max(dp(48), metrics.heightPixels);
         int minSize = dp(48);
         ArrayList<Rect> boxes = new ArrayList<Rect>();
-        List<Rect> saved = OverlayPrefs.touchBoxRegions(this);
+        List<Rect> saved = OverlayPrefs.touchBoxRegions(rendererContext());
         for (Rect source : saved) {
             int left = clamp(source.left, 0, screenWidth - minSize);
             int top = clamp(source.top, 0, screenHeight - minSize);
@@ -4870,7 +5083,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
 
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        DisplayMetrics metrics = activeDisplayMetrics();
         float x = metrics.widthPixels / 2f;
         float startY = metrics.heightPixels * 0.82f;
         float endY = metrics.heightPixels * 0.28f;
@@ -5348,7 +5561,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return Math.round(value * activeDisplayMetrics().density);
     }
 
     private int clamp(int value, int min, int max) {

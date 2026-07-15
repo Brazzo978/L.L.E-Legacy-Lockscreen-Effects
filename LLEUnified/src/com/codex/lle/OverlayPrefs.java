@@ -399,12 +399,23 @@ final class OverlayPrefs {
     }
 
     static long effectBackgroundLastCapturedAt(Context context, int effect) {
-        return get(context).getLong(EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect, 0L);
+        return effectBackgroundLastCapturedAt(context, effect, FoldDisplayTarget.PROFILE_SINGLE);
+    }
+
+    static long effectBackgroundLastCapturedAt(Context context, int effect, String profile) {
+        return get(context).getLong(effectBackgroundLastCaptureKey(effect, profile), 0L);
     }
 
     static void saveEffectBackgroundLastCapturedAt(Context context, int effect, long timestamp) {
+        saveEffectBackgroundLastCapturedAt(
+                context, effect, FoldDisplayTarget.PROFILE_SINGLE, timestamp);
+    }
+
+    static void saveEffectBackgroundLastCapturedAt(Context context, int effect, String profile,
+            long timestamp) {
         get(context).edit()
-                .putLong(EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect, Math.max(0L, timestamp))
+                .putLong(effectBackgroundLastCaptureKey(effect, profile),
+                        Math.max(0L, timestamp))
                 .apply();
     }
 
@@ -425,13 +436,37 @@ final class OverlayPrefs {
     }
 
     static int effectBackgroundHandledRefreshToken(Context context, int effect) {
-        return get(context).getInt(EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect, 0);
+        return effectBackgroundHandledRefreshToken(
+                context, effect, FoldDisplayTarget.PROFILE_SINGLE);
+    }
+
+    static int effectBackgroundHandledRefreshToken(Context context, int effect, String profile) {
+        return get(context).getInt(effectBackgroundHandledRefreshTokenKey(effect, profile), 0);
     }
 
     static void saveEffectBackgroundHandledRefreshToken(Context context, int effect, int token) {
+        saveEffectBackgroundHandledRefreshToken(
+                context, effect, FoldDisplayTarget.PROFILE_SINGLE, token);
+    }
+
+    static void saveEffectBackgroundHandledRefreshToken(Context context, int effect, String profile,
+            int token) {
         get(context).edit()
-                .putInt(EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect, Math.max(0, token))
+                .putInt(effectBackgroundHandledRefreshTokenKey(effect, profile), Math.max(0, token))
                 .apply();
+    }
+
+    static String effectBackgroundLastCaptureKey(int effect, String profile) {
+        return EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX + effect + profileKeySuffix(profile);
+    }
+
+    static String effectBackgroundHandledRefreshTokenKey(int effect, String profile) {
+        return EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect + profileKeySuffix(profile);
+    }
+
+    private static String profileKeySuffix(String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        return FoldDisplayTarget.PROFILE_SINGLE.equals(normalized) ? "" : "_" + normalized;
     }
 
     static File effectBenchmarkFile(Context context) {
@@ -666,7 +701,14 @@ final class OverlayPrefs {
     }
 
     static File effectBackgroundFile(Context context, int effect) {
-        return new File(context.getFilesDir(), "unlock_effect_background.png");
+        return effectBackgroundFile(context, effect, FoldDisplayTarget.PROFILE_SINGLE);
+    }
+
+    static File effectBackgroundFile(Context context, int effect, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
+                ? "" : "_" + normalized;
+        return new File(context.getFilesDir(), "unlock_effect_background" + suffix + ".png");
     }
 
     static File legacyEffectBackgroundFile(Context context, int effect) {

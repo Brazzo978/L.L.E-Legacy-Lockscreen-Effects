@@ -1618,16 +1618,17 @@ public class ControlActivity extends Activity {
         if (!effectUsesColormapCache(effect)) {
             return "Screenshot cache: not used by this effect.";
         }
+        String profile = FoldDisplayTarget.cacheProfileForContext(this);
         File file = colormapScreenshotFileForPreview(effect);
-        long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect);
+        long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect, profile);
         if (capturedAt <= 0L && file.exists()) {
             capturedAt = file.lastModified();
         }
         if (!file.exists() || file.length() <= 0L || capturedAt <= 0L) {
-            return "Screenshot cache: empty. The old map is kept until a valid recapture is saved.";
+            return "Screenshot cache (" + profile + "): empty. The old map is kept until a valid recapture is saved.";
         }
         long ageMs = Math.max(0L, System.currentTimeMillis() - capturedAt);
-        return "Screenshot cache: ready, age " + ageLabel(ageMs)
+        return "Screenshot cache (" + profile + "): ready, age " + ageLabel(ageMs)
                 + ". Expired cache stays active until a validated capture replaces it.";
     }
 
@@ -2555,8 +2556,14 @@ public class ControlActivity extends Activity {
     }
 
     private File colormapScreenshotFileForPreview(int effect) {
-        File shared = OverlayPrefs.effectBackgroundFile(this, effect);
+        String profile = FoldDisplayTarget.cacheProfileForContext(this);
+        File shared = OverlayPrefs.effectBackgroundFile(this, effect, profile);
         if (shared.exists() && shared.length() > 0L) {
+            return shared;
+        }
+        if (!FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
+            // The service validates dimensions before migrating a legacy screenshot.
+            // The settings preview must never copy a cover bitmap into the inner slot.
             return shared;
         }
         File legacy = latestLegacyColormapScreenshotFile();

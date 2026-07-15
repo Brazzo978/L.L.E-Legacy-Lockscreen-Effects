@@ -49,6 +49,11 @@ are alternative installations, not two applications that can coexist.
 The runtime decision is based on the bitness of the current process, not only
 on the ABIs supported by the device.
 
+## Fold displays
+
+Fold dual-panel behavior, cache separation and device validation are recorded
+in [`FOLD-DISPLAY-PORT.md`](FOLD-DISPLAY-PORT.md).
+
 ## Provenance
 
 The pre-unification state is preserved in Git tag
