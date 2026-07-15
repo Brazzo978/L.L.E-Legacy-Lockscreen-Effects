@@ -52,7 +52,7 @@ public class TouchDebugView extends View {
 
     public TouchDebugView(Context context) {
         super(context);
-        setWillNotDraw(false);
+        setWillNotDraw(true);
         setClickable(true);
     }
 
@@ -65,6 +65,7 @@ public class TouchDebugView extends View {
             return;
         }
         this.transparentMode = transparentMode;
+        setWillNotDraw(transparentMode);
         invalidate();
     }
 
@@ -114,13 +115,13 @@ public class TouchDebugView extends View {
             updatePointerCoordinates(event, remainingIndex);
             multiTouchSuppressed = false;
             notifyRealigned();
-            invalidate();
+            invalidateIfVisible();
             return true;
         }
 
         if (pointerCount > 1) {
             multiTouchSuppressed = true;
-            invalidate();
+            invalidateIfVisible();
             return true;
         }
 
@@ -129,7 +130,7 @@ public class TouchDebugView extends View {
             if (action == MotionEvent.ACTION_CANCEL) {
                 cancelActiveGesture();
                 activePointerId = INVALID_POINTER_ID;
-                invalidate();
+                invalidateIfVisible();
                 return true;
             }
             activePointerId = event.getPointerId(0);
@@ -140,7 +141,7 @@ public class TouchDebugView extends View {
             case MotionEvent.ACTION_DOWN:
                 activePointerId = event.getPointerId(0);
                 if (!startGestureAtCurrentPoint()) {
-                    invalidate();
+                    invalidateIfVisible();
                     return false;
                 }
                 break;
@@ -159,8 +160,14 @@ public class TouchDebugView extends View {
             default:
                 break;
         }
-        invalidate();
+        invalidateIfVisible();
         return true;
+    }
+
+    private void invalidateIfVisible() {
+        if (!transparentMode) {
+            invalidate();
+        }
     }
 
     private int resolvePointerIndex(MotionEvent event, int action) {

@@ -7,8 +7,8 @@ tree.
 
 | Product | SHA-256 | Native ABI |
 |---|---|---|
-| `LLE-armeabi-v7a-debug.apk` | `4E99C2979356C1E3FC1FDB10AE960A021E872503305AF7B93E39C0BAA7CC954E` | `armeabi-v7a` only |
-| `LLE-arm64-debug.apk` | `CD802B52F3DEC0B4D9181C352A38D586E9EF07BA6864A0E1120FCE5964AD6DE4` | `arm64-v8a` only |
+| `LLE-armeabi-v7a-debug.apk` | `F33E118455DF49E5A9DE860358DD2A7D5BB4E921A432E5D9BD38D16E842639A1` | `armeabi-v7a` only |
+| `LLE-arm64-debug.apk` | `EFFF6BDD2B3AC7C23D09ED58A1D4BC81A6510183AC07276DED0ADCBDFA794AEC` | `arm64-v8a` only |
 
 Both report package `com.codex.lle`, version code `13`, version name
 `1.1.0-unified-alpha.1` and signer certificate SHA-256
@@ -20,7 +20,7 @@ The packaged shared application artifacts are byte-identical:
 
 | APK entry | Size | SHA-256 |
 |---|---:|---|
-| `classes.dex` | 414,972 | `9B670CBBA983968812FBCABC7F0098D340D40476AA315D52FB3616F71A4E8A85` |
+| `classes.dex` | 440,272 | `010400D2E528AE3173443AABE9280BC6574D0DDC25F029159EA1C836B14748D1` |
 | `resources.arsc` | 16,524 | `126031D17C3A348773DD18D547B92FA2C9F8135494BE8D717C20D3F466B428E6` |
 | `AndroidManifest.xml` | 5,380 | `B18BAEEEF5B9D555C6D991F98FBCC3D916BA30BF29B4C950E55DC466CEA668B7` |
 
@@ -31,7 +31,8 @@ ARM32 additionally contains `classes3.dex` for the original S3 renderer.
 
 - ARM32 contains the eight expected `armeabi-v7a` libraries and no ARM64/x86
   entry. Its original Ripple, Watercolor, Abstract Tiles and Geometric Mosaic
-  transparency patches completed.
+  transparency patches completed. It now starts from the same bounded Samsung
+  lifecycle DEX as ARM64 before adding its two target-specific pacing methods.
 - ARM64 contains the seven expected `arm64-v8a` libraries and no ARM32/x86
   entry. ELF machine, SONAME, dependencies, JNI exports, staged hashes and
   bounded Samsung lifecycle dex checks completed.
@@ -40,8 +41,15 @@ ARM32 additionally contains `classes3.dex` for the original S3 renderer.
 
 ## Device status
 
-The intended Fold7 ARM64 smoke-test installation was attempted after the local
-validation, but the device disconnected from ADB before installation status
-could be observed. No device-runtime result is claimed for this unified APK yet.
-The prior `LLE64` ARM64 engines remain device-validated; the new shared picker
-and renderer routing still require a short smoke test when ADB is available.
+The final ARM64 APK was installed in place on the Fold7 with preferences and
+both panel caches preserved. The final accessibility service rebound as PID `32310`
+with event types `WINDOW_STATE`, `WINDOW_CONTENT`, `WINDOWS_CHANGED` and a
+`32 ms` notification timeout.
+
+On the closed Cover (`1080x2520`), Lens Flare loaded the exact shared screenshot
+cache with `decodeMs=0` and `applyMs=0-1`. Controlled Watercolor and Popping
+Colours preload/destroy cycles completed without a lifecycle timeout, fatal
+signal, recycled bitmap or orphan Samsung GL thread. Five Popping/Lens switch
+cycles plateaued rather than growing linearly; only the active LLE effect
+surface and the process RenderThread remained. ARM32 was build- and
+signature-validated but cannot be runtime-tested on this ARM64-only Fold.

@@ -72,6 +72,7 @@ final class OverlayPrefs {
             "effect_profile_diagnostic_summary";
     static final String EFFECT_PROFILE_LAST_CSV = "effect_profile_last_csv";
     static final String EFFECT_PROFILE_RUNNING = "effect_profile_running";
+    static final String EFFECT_PROFILE_SAMPLE_PENDING = "effect_profile_sample_pending";
     static final String EFFECT_PROFILE_SAMPLE_TOKEN = "effect_profile_sample_token";
     private static final String EFFECT_PROFILE_SAMPLED_TOKEN_PREFIX =
             "effect_profile_sampled_token_";

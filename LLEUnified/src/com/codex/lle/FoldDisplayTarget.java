@@ -23,6 +23,7 @@ final class FoldDisplayTarget {
     static final String PROFILE_SINGLE = "single";
     static final String PROFILE_COVER = "cover";
     static final String PROFILE_MAIN = "main";
+    private static volatile int cachedFoldDevice = -1;
 
     final Display display;
     final int displayId;
@@ -48,13 +49,23 @@ final class FoldDisplayTarget {
                 ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
         String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
         int internalCount = 0;
+        int activeInternalCount = 0;
+        Display soleActiveInternalDisplay = null;
         for (Display display : displays) {
             if (isBuiltInPanel(display, builtInName)) {
                 internalCount++;
+                int state = display.getState();
+                if (state == Display.STATE_ON || state == Display.STATE_DOZE
+                        || state == Display.STATE_DOZE_SUSPEND) {
+                    activeInternalCount++;
+                    soleActiveInternalDisplay = display;
+                }
             }
         }
 
-        int focusedDisplayId = focusedDisplayId(service);
+        int focusedDisplayId = activeInternalCount == 1
+                ? soleActiveInternalDisplay.getDisplayId()
+                : focusedDisplayId(service);
         Display best = null;
         int bestScore = Integer.MIN_VALUE;
         for (Display display : displays) {
@@ -126,14 +137,23 @@ final class FoldDisplayTarget {
         if (context == null) {
             return false;
         }
+        int cached = cachedFoldDevice;
+        if (cached >= 0) {
+            return cached == 1;
+        }
+        boolean detected = false;
         try {
             if (context.getPackageManager().hasSystemFeature(
                     PackageManager.FEATURE_SENSOR_HINGE_ANGLE)) {
-                return true;
+                detected = true;
             }
         } catch (Throwable ignored) {
         }
         try {
+            if (detected) {
+                cachedFoldDevice = 1;
+                return true;
+            }
             DisplayManager manager = (DisplayManager) context.getSystemService(
                     Context.DISPLAY_SERVICE);
             Display defaultDisplay = manager == null
@@ -147,10 +167,11 @@ final class FoldDisplayTarget {
                     }
                 }
             }
-            return internalCount > 1;
+            detected = internalCount > 1;
         } catch (Throwable ignored) {
-            return false;
         }
+        cachedFoldDevice = detected ? 1 : 0;
+        return detected;
     }
 
     private static int focusedDisplayId(AccessibilityService service) {

@@ -92,6 +92,7 @@ public class LensFlareEffectView extends FrameLayout
     private final int unlockSound;
     private final FlareContentView flareContentView;
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private String backgroundSource = "none";
     private RuntimeShader additiveCompositeShader;
     private BitmapShader backgroundShader;
@@ -322,10 +323,16 @@ public class LensFlareEffectView extends FrameLayout
         if (destroyed || source == null || source.isRecycled()) {
             return;
         }
-        Bitmap next = createCenterCropBitmap(source, getRenderWidth(), getRenderHeight());
+        int width = getRenderWidth();
+        int height = getRenderHeight();
+        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
         next.prepareToDraw();
+        clearAdditiveComposite();
         recycleBackgroundBitmap();
         backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName == null ? "external" : sourceName;
         configureAdditiveComposite();
         Log.i(TAG, "lens flare additive background ready source=" + backgroundSource
@@ -336,10 +343,15 @@ public class LensFlareEffectView extends FrameLayout
 
     @Override
     public void clearBackgroundSourceBitmap() {
+        clearAdditiveComposite();
         recycleBackgroundBitmap();
         backgroundSource = "none";
-        clearAdditiveComposite();
         invalidateEffect();
+    }
+
+    @Override
+    public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
+        return bitmap != null && backgroundBitmap == bitmap;
     }
 
     @Override
@@ -380,8 +392,10 @@ public class LensFlareEffectView extends FrameLayout
                 && (backgroundBitmap.getWidth() != width
                 || backgroundBitmap.getHeight() != height)) {
             Bitmap resized = createCenterCropBitmap(backgroundBitmap, width, height);
+            clearAdditiveComposite();
             recycleBackgroundBitmap();
             backgroundBitmap = resized;
+            ownsBackgroundBitmap = true;
             backgroundBitmap.prepareToDraw();
         }
         configureAdditiveComposite();
@@ -839,10 +853,12 @@ public class LensFlareEffectView extends FrameLayout
     }
 
     private void recycleBackgroundBitmap() {
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
+        if (ownsBackgroundBitmap
+                && backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
             backgroundBitmap.recycle();
         }
         backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 
     private float currentFogAnimationValue(long now) {

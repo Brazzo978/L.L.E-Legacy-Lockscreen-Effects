@@ -24,7 +24,9 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,10 +52,12 @@ public class TouchBoxSetupActivity extends Activity {
     };
 
     private Bitmap screenshotBitmap;
+    private final ArrayList<Bitmap> overviewBitmaps = new ArrayList<Bitmap>();
     private PinEditorView editorView;
     private TextView statusLabel;
     private TextView waitingStatusLabel;
     private boolean waitingForCapture;
+    private boolean showingFoldOverview;
     private boolean foldMode;
     private String selectedProfile = FoldDisplayTarget.PROFILE_SINGLE;
 
@@ -77,6 +81,13 @@ public class TouchBoxSetupActivity extends Activity {
 
         boolean startCapture = getIntent() == null
                 || getIntent().getBooleanExtra(EXTRA_START_CAPTURE, true);
+        if (foldMode && !isCapturePending()) {
+            showFoldOverview();
+            return;
+        }
+        if (foldMode && isCapturePending()) {
+            selectedProfile = pendingCaptureProfile();
+        }
         if (!showEditorFromCachedScreenshot() && startCapture) {
             requestScreenshotCapture();
             showWaitingView();
@@ -91,6 +102,8 @@ public class TouchBoxSetupActivity extends Activity {
         setImmersive();
         if (waitingForCapture) {
             refreshWaitingState();
+        } else if (showingFoldOverview) {
+            showFoldOverview();
         }
     }
 
@@ -104,7 +117,18 @@ public class TouchBoxSetupActivity extends Activity {
     protected void onDestroy() {
         handler.removeCallbacks(waitingPollRunnable);
         recycleScreenshot();
+        recycleOverviewBitmaps();
         super.onDestroy();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (foldMode && !showingFoldOverview) {
+            cancelPendingCaptureForSelectedProfile();
+            showFoldOverview();
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
@@ -139,7 +163,7 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private Bitmap loadCachedScreenshot() {
-        File file = OverlayPrefs.touchBoxScreenshotFile(this, selectedProfile);
+        File file = bestWizardScreenshotFile(selectedProfile);
         if (!file.exists() || file.length() <= 0L) {
             return null;
         }
@@ -161,6 +185,8 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private void showWaitingView() {
+        showingFoldOverview = false;
+        recycleOverviewBitmaps();
         waitingForCapture = true;
         LinearLayout root = graceRoot();
         root.addView(appBar("Lockscreen capture", "Touch box wizard"));
@@ -194,7 +220,7 @@ public class TouchBoxSetupActivity extends Activity {
         buttons.addView(materialButton("Cancel", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                finish();
+                cancelOrReturnToOverview();
             }
         }), weightedParams(false));
         buttons.addView(materialButton("Retry", true, new View.OnClickListener() {
@@ -246,6 +272,8 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private void showEditorView() {
+        showingFoldOverview = false;
+        recycleOverviewBitmaps();
         LinearLayout root = graceRoot();
         root.addView(appBar("Touch box editor",
                 profileLabel(selectedProfile) + " lockscreen screenshot"));
@@ -316,7 +344,7 @@ public class TouchBoxSetupActivity extends Activity {
         rowThree.addView(materialButton("Cancel", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                finish();
+                cancelOrReturnToOverview();
             }
         }), weightedParams(false));
         rowThree.addView(materialButton("Save areas", true, new View.OnClickListener() {
@@ -351,7 +379,11 @@ public class TouchBoxSetupActivity extends Activity {
         Toast.makeText(this, profileLabel(selectedProfile)
                 + " touch areas saved", Toast.LENGTH_SHORT).show();
         setResult(RESULT_OK);
-        finish();
+        if (foldMode) {
+            showFoldOverview();
+        } else {
+            finish();
+        }
     }
 
     private void addProfileSlider(LinearLayout root) {
@@ -401,6 +433,9 @@ public class TouchBoxSetupActivity extends Activity {
         if (normalized.equals(selectedProfile)) {
             return;
         }
+        if (waitingForCapture) {
+            cancelPendingCaptureForSelectedProfile();
+        }
         if (editorView != null && screenshotBitmap != null) {
             ArrayList<Rect> boxes = editorView.currentRoundedBoxes();
             if (boxes != null && !boxes.isEmpty()) {
@@ -415,6 +450,239 @@ public class TouchBoxSetupActivity extends Activity {
             requestScreenshotCapture();
             showWaitingView();
         }
+    }
+
+    private void showFoldOverview() {
+        waitingForCapture = false;
+        showingFoldOverview = true;
+        editorView = null;
+        handler.removeCallbacks(waitingPollRunnable);
+        recycleScreenshot();
+        recycleOverviewBitmaps();
+
+        LinearLayout root = graceRoot();
+        root.addView(appBar("Dual touch box setup", "Cover + main panel"));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(18), dp(18), dp(22));
+        scroll.addView(content, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        TextView explanation = bodyText("Each panel has its own lockscreen image and touch areas. "
+                + "Configure either panel below; captures only run when that physical panel is active and locked.");
+        explanation.setBackground(overviewInfoBackground());
+        explanation.setPadding(dp(16), dp(14), dp(16), dp(14));
+        content.addView(explanation, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        content.addView(profileOverviewCard("Cover panel", FoldDisplayTarget.PROFILE_COVER),
+                overviewCardParams());
+        content.addView(profileOverviewCard("Main panel", FoldDisplayTarget.PROFILE_MAIN),
+                overviewCardParams());
+        content.addView(materialButton("Close", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        }), overviewButtonParams());
+        setContentView(root);
+    }
+
+    private View profileOverviewCard(String label, final String profile) {
+        LinearLayout card = panel();
+        card.addView(titleText(label));
+
+        final File dedicatedScreenshot = OverlayPrefs.touchBoxScreenshotFile(this, profile);
+        final File screenshot = bestWizardScreenshotFile(profile);
+        final boolean hasScreenshot = screenshot.exists() && screenshot.length() > 0L;
+        ArrayList<Rect> areas = OverlayPrefs.touchBoxRegions(this, profile);
+        TextView status = bodyText(profileOverviewStatus(
+                screenshot, dedicatedScreenshot.equals(screenshot), areas));
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        statusParams.setMargins(0, dp(6), 0, dp(10));
+        card.addView(status, statusParams);
+
+        Bitmap preview = hasScreenshot ? decodeOverviewBitmap(screenshot) : null;
+        if (preview != null) {
+            overviewBitmaps.add(preview);
+            ImageView image = new ImageView(this);
+            image.setBackgroundColor(Color.BLACK);
+            image.setAdjustViewBounds(true);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setImageBitmap(preview);
+            LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(210));
+            imageParams.setMargins(0, 0, 0, dp(12));
+            card.addView(image, imageParams);
+        }
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(buttons, rowParams());
+        if (hasScreenshot) {
+            buttons.addView(materialButton("Edit areas", true, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    openProfile(profile, false);
+                }
+            }), weightedParams(false));
+            buttons.addView(materialButton("New shot", false, new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    openProfile(profile, true);
+                }
+            }), weightedParams(true));
+        } else {
+            buttons.addView(materialButton("Capture " + profileLabel(profile), true,
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            openProfile(profile, true);
+                        }
+                    }), new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        }
+        return card;
+    }
+
+    private LinearLayout.LayoutParams overviewCardParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(16), 0, 0);
+        return params;
+    }
+
+    private LinearLayout.LayoutParams overviewButtonParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        params.setMargins(0, dp(16), 0, 0);
+        return params;
+    }
+
+    private String profileOverviewStatus(File screenshot, boolean dedicated,
+            ArrayList<Rect> areas) {
+        String areaStatus = areas.size() + (areas.size() == 1 ? " touch area" : " touch areas");
+        if (screenshot == null || !screenshot.exists() || screenshot.length() <= 0L) {
+            return "No screenshot yet | " + areaStatus;
+        }
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(screenshot.getAbsolutePath(), bounds);
+        String dimensions = bounds.outWidth > 0 && bounds.outHeight > 0
+                ? bounds.outWidth + " x " + bounds.outHeight
+                : "unreadable image";
+        return (dedicated ? "Wizard screenshot: " : "Effect screenshot reused: ")
+                + dimensions + " | " + areaStatus;
+    }
+
+    private File bestWizardScreenshotFile(String profile) {
+        File dedicated = OverlayPrefs.touchBoxScreenshotFile(this, profile);
+        if (dedicated.exists() && dedicated.length() > 0L) {
+            return dedicated;
+        }
+        File effectCache = OverlayPrefs.effectBackgroundFile(
+                this, OverlayPrefs.unlockEffect(this), profile);
+        if (effectCache.exists() && effectCache.length() > 0L) {
+            return effectCache;
+        }
+        return dedicated;
+    }
+
+    private Bitmap decodeOverviewBitmap(File file) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+        int sample = 1;
+        int largest = Math.max(bounds.outWidth, bounds.outHeight);
+        while (largest / sample > 720) {
+            sample *= 2;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = sample;
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    }
+
+    private void openProfile(String profile, boolean freshCapture) {
+        selectedProfile = FoldDisplayTarget.normalizeProfile(profile);
+        showingFoldOverview = false;
+        recycleOverviewBitmaps();
+        if (freshCapture) {
+            File file = OverlayPrefs.touchBoxScreenshotFile(this, selectedProfile);
+            if (file.exists() && !file.delete()) {
+                Toast.makeText(this, "Could not replace old screenshot", Toast.LENGTH_SHORT).show();
+            }
+            requestScreenshotCapture();
+            showWaitingView();
+            return;
+        }
+        if (!showEditorFromCachedScreenshot()) {
+            requestScreenshotCapture();
+            showWaitingView();
+        }
+    }
+
+    private void cancelOrReturnToOverview() {
+        cancelPendingCaptureForSelectedProfile();
+        if (foldMode) {
+            showFoldOverview();
+        } else {
+            finish();
+        }
+    }
+
+    private boolean isCapturePending() {
+        SharedPreferences prefs = OverlayPrefs.get(this);
+        int state = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE,
+                OverlayPrefs.TOUCH_BOX_CAPTURE_IDLE);
+        int requestId = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, 0);
+        int resultId = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_RESULT_ID, 0);
+        return requestId > 0 && requestId != resultId
+                && (state == OverlayPrefs.TOUCH_BOX_CAPTURE_REQUESTED
+                || state == OverlayPrefs.TOUCH_BOX_CAPTURE_WAITING_LOCKSCREEN
+                || state == OverlayPrefs.TOUCH_BOX_CAPTURE_CAPTURING);
+    }
+
+    private String pendingCaptureProfile() {
+        return FoldDisplayTarget.normalizeProfile(OverlayPrefs.get(this).getString(
+                OverlayPrefs.TOUCH_BOX_CAPTURE_PROFILE, selectedProfile));
+    }
+
+    private void cancelPendingCaptureForSelectedProfile() {
+        if (!isCapturePending() || !selectedProfile.equals(pendingCaptureProfile())) {
+            return;
+        }
+        SharedPreferences prefs = OverlayPrefs.get(this);
+        int requestId = prefs.getInt(OverlayPrefs.TOUCH_BOX_CAPTURE_REQUEST_ID, 0);
+        prefs.edit()
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_RESULT_ID, requestId)
+                .putInt(OverlayPrefs.TOUCH_BOX_CAPTURE_STATE, OverlayPrefs.TOUCH_BOX_CAPTURE_IDLE)
+                .remove(OverlayPrefs.TOUCH_BOX_CAPTURE_ERROR)
+                .apply();
+        waitingForCapture = false;
+        handler.removeCallbacks(waitingPollRunnable);
+    }
+
+    private void recycleOverviewBitmaps() {
+        for (Bitmap bitmap : overviewBitmaps) {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+        }
+        overviewBitmaps.clear();
     }
 
     private String profileLabel(String profile) {
@@ -471,6 +739,14 @@ public class TouchBoxSetupActivity extends Activity {
         panel.setBackground(background);
         panel.setElevation(dp(2));
         return panel;
+    }
+
+    private GradientDrawable overviewInfoBackground() {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setCornerRadius(dp(8));
+        background.setStroke(dp(1), Color.rgb(224, 229, 235));
+        return background;
     }
 
     private TextView titleText(String text) {

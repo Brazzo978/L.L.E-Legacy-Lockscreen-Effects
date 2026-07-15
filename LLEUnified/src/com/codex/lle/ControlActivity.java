@@ -1566,7 +1566,9 @@ public class ControlActivity extends Activity {
                         Toast.LENGTH_SHORT).show();
             }
         }));
-        section.addView(outlineButton("View colormap screenshot", new View.OnClickListener() {
+        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
+                ? "View both panel screenshots"
+                : "View colormap screenshot", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 applyPendingUnlockEffect();
@@ -1619,13 +1621,23 @@ public class ControlActivity extends Activity {
             return "Screenshot cache: not used by this effect.";
         }
         String profile = FoldDisplayTarget.cacheProfileForContext(this);
-        File file = colormapScreenshotFileForPreview(effect);
+        if (OverlayPrefs.foldModeEnabled(this)) {
+            return effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_COVER)
+                    + "\n"
+                    + effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_MAIN)
+                    + "\nActive panel: " + profile;
+        }
+        return effectBackgroundProfileStatus(effect, profile);
+    }
+
+    private String effectBackgroundProfileStatus(int effect, String profile) {
+        File file = colormapScreenshotFileForPreview(effect, profile);
         long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect, profile);
         if (capturedAt <= 0L && file.exists()) {
             capturedAt = file.lastModified();
         }
         if (!file.exists() || file.length() <= 0L || capturedAt <= 0L) {
-            return "Screenshot cache (" + profile + "): empty. The old map is kept until a valid recapture is saved.";
+            return "Screenshot cache (" + profile + "): empty.";
         }
         long ageMs = Math.max(0L, System.currentTimeMillis() - capturedAt);
         return "Screenshot cache (" + profile + "): ready, age " + ageLabel(ageMs)
@@ -1751,6 +1763,7 @@ public class ControlActivity extends Activity {
         String effectName = OverlayPrefs.effectLabel(effect);
         prefs.edit()
                 .remove(OverlayPrefs.effectProfileSampledTokenKey(effect))
+                .putBoolean(OverlayPrefs.EFFECT_PROFILE_SAMPLE_PENDING, true)
                 .putBoolean(OverlayPrefs.EFFECT_PROFILE_RUNNING, false)
                 .putString(OverlayPrefs.EFFECT_PROFILE_LAST_SUMMARY,
                         "Next " + effectName + " run will be sampled."
@@ -1781,7 +1794,7 @@ public class ControlActivity extends Activity {
         if (summary == null || summary.trim().isEmpty()) {
             summary = effectName
                     + "\nNo real-run sample yet."
-                    + "\nThe first lockscreen gesture will be sampled automatically.";
+                    + "\nTap Sample next run to profile one lockscreen gesture.";
         }
         if (sampledToken != token) {
             summary += "\nPending sample: next " + effectName + " run.";
@@ -1804,6 +1817,10 @@ public class ControlActivity extends Activity {
 
     private void showEffectBackgroundScreenshot() {
         int effect = OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.foldModeEnabled(this)) {
+            showFoldEffectBackgroundScreenshots(effect);
+            return;
+        }
         File screenshot = colormapScreenshotFileForPreview(effect);
         if (!screenshot.exists() || screenshot.length() <= 0L) {
             Toast.makeText(this, "No colormap screenshot yet", Toast.LENGTH_SHORT).show();
@@ -1866,6 +1883,108 @@ public class ControlActivity extends Activity {
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT);
         }
+    }
+
+    private void showFoldEffectBackgroundScreenshots(int effect) {
+        final ArrayList<Bitmap> previews = new ArrayList<Bitmap>();
+        File cover = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_COVER);
+        File main = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_MAIN);
+        if ((!cover.exists() || cover.length() <= 0L)
+                && (!main.exists() || main.length() <= 0L)) {
+            Toast.makeText(this, "No Fold screenshots yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("Fold colormap screenshots"));
+        root.addView(infoText("The cover and main caches are independent. Missing panels are shown explicitly."));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        rowParams.setMargins(0, dp(10), 0, dp(10));
+        root.addView(row, rowParams);
+        row.addView(foldScreenshotPreview("Cover", cover, previews),
+                foldScreenshotColumnParams(false));
+        row.addView(foldScreenshotPreview("Main", main, previews),
+                foldScreenshotColumnParams(true));
+
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                for (Bitmap bitmap : previews) {
+                    if (bitmap != null && !bitmap.isRecycled()) {
+                        bitmap.recycle();
+                    }
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private View foldScreenshotPreview(String label, File file, ArrayList<Bitmap> previews) {
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(dp(10), dp(10), dp(10), dp(10));
+        column.setBackground(infoBackground());
+        column.addView(sectionLabel(label + " panel"));
+        if (file == null || !file.exists() || file.length() <= 0L) {
+            TextView missing = infoText("No screenshot cached");
+            missing.setGravity(Gravity.CENTER);
+            column.addView(missing, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+            return column;
+        }
+        Bitmap bitmap = decodeFoldPreviewBitmap(file);
+        if (bitmap == null || bitmap.isRecycled()) {
+            TextView missing = infoText("Screenshot unreadable");
+            missing.setGravity(Gravity.CENTER);
+            column.addView(missing, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+            return column;
+        }
+        previews.add(bitmap);
+        column.addView(infoText(bitmap.getWidth() + " x " + bitmap.getHeight()
+                + " preview | " + Math.max(1L, file.length() / 1024L) + " KB"));
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, 0);
+        column.addView(image, imageParams);
+        return column;
+    }
+
+    private LinearLayout.LayoutParams foldScreenshotColumnParams(boolean withLeftMargin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+        if (withLeftMargin) {
+            params.setMargins(dp(8), 0, 0, 0);
+        }
+        return params;
     }
 
     private void showEffectPreviewBubble(View anchor, int effect, String title,
@@ -2557,6 +2676,11 @@ public class ControlActivity extends Activity {
 
     private File colormapScreenshotFileForPreview(int effect) {
         String profile = FoldDisplayTarget.cacheProfileForContext(this);
+        return colormapScreenshotFileForPreview(effect, profile);
+    }
+
+    private File colormapScreenshotFileForPreview(int effect, String profile) {
+        profile = FoldDisplayTarget.normalizeProfile(profile);
         File shared = OverlayPrefs.effectBackgroundFile(this, effect, profile);
         if (shared.exists() && shared.length() > 0L) {
             return shared;
@@ -2652,6 +2776,23 @@ public class ControlActivity extends Activity {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
         options.inSampleSize = previewSampleSize(bounds.outWidth, bounds.outHeight);
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    }
+
+    private Bitmap decodeFoldPreviewBitmap(File file) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+        int sample = 1;
+        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > 960) {
+            sample *= 2;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = sample;
         return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
     }
 
@@ -3274,9 +3415,16 @@ public class ControlActivity extends Activity {
         boolean configured = OverlayPrefs.touchBoxConfigured(this, profile);
         ArrayList<Rect> areas = OverlayPrefs.touchBoxRegions(this, profile);
         File screenshot = OverlayPrefs.touchBoxScreenshotFile(this, profile);
-        String cache = screenshot.exists() && screenshot.length() > 0L
-                ? "cache ready"
-                : "no cache";
+        File effectScreenshot = OverlayPrefs.effectBackgroundFile(
+                this, OverlayPrefs.unlockEffect(this), profile);
+        String cache;
+        if (screenshot.exists() && screenshot.length() > 0L) {
+            cache = "wizard cache ready";
+        } else if (effectScreenshot.exists() && effectScreenshot.length() > 0L) {
+            cache = "effect screenshot reusable";
+        } else {
+            cache = "no cache";
+        }
         return label + ": " + (configured ? "custom" : "default")
                 + ", " + areas.size() + (areas.size() == 1 ? " area" : " areas")
                 + ", " + cache;

@@ -39,7 +39,9 @@ public class PoppingColoursEffectView extends FrameLayout
     private Method handleTouchEvent;
     private Method handleCustomEvent;
     private Method clearScreen;
+    private Method removeEffect;
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
     private String lastSentBackgroundSource = "";
@@ -227,10 +229,7 @@ public class PoppingColoursEffectView extends FrameLayout
         backgroundSource = "none";
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
-        }
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         sendBackgroundBitmap();
     }
 
@@ -240,17 +239,39 @@ public class PoppingColoursEffectView extends FrameLayout
     }
 
     @Override
+    public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
+        return bitmap != null && backgroundBitmap == bitmap;
+    }
+
+    @Override
     public void destroy() {
         if (destroyed) {
             return;
         }
         resetEffect();
         destroyed = true;
+        ready = false;
         soundPool.release();
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
+        if (removeEffect != null && effectView != null) {
+            try {
+                removeEffect.invoke(effectView);
+            } catch (Throwable t) {
+                Log.d(TAG, "removeEffect ignored", t);
+            }
         }
-        backgroundBitmap = null;
+        removeAllViews();
+        gestureActive = false;
+        externalColorSource = false;
+        backgroundSource = "none";
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSource = "";
+        releaseBackgroundBitmap();
+        effectView = null;
+        effectViewAsView = null;
+        handleTouchEvent = null;
+        handleCustomEvent = null;
+        clearScreen = null;
+        removeEffect = null;
     }
 
     @Override
@@ -288,6 +309,7 @@ public class PoppingColoursEffectView extends FrameLayout
                 int.class,
                 HashMap.class);
         clearScreen = effectViewClass.getMethod("clearScreen");
+        removeEffect = effectViewClass.getMethod("removeEffect");
 
         Object data = dataClass.getConstructor().newInstance();
         dataClass.getMethod("setEffect", int.class).invoke(data, SAMSUNG_EFFECT_ID);
@@ -351,10 +373,9 @@ public class PoppingColoursEffectView extends FrameLayout
                 && backgroundBitmap.getHeight() == height) {
             return backgroundBitmap;
         }
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
-        }
+        releaseBackgroundBitmap();
         backgroundBitmap = createWhiteBitmap(width, height);
+        ownsBackgroundBitmap = true;
         backgroundSource = "white_fallback";
         externalColorSource = false;
         backgroundBitmap.prepareToDraw();
@@ -367,12 +388,13 @@ public class PoppingColoursEffectView extends FrameLayout
     private void replaceBackgroundBitmap(Bitmap source, String sourceName) {
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        Bitmap next = createCenterCropBitmap(source, width, height);
+        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
         next.prepareToDraw();
-        if (backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
-            backgroundBitmap.recycle();
-        }
+        releaseBackgroundBitmap();
         backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName;
         externalColorSource = true;
         Log.i(TAG, "BGBitmap replaced source=" + backgroundSource
@@ -411,6 +433,15 @@ public class PoppingColoursEffectView extends FrameLayout
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         bitmap.eraseColor(Color.WHITE);
         return bitmap;
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap
+                && backgroundBitmap != null && !backgroundBitmap.isRecycled()) {
+            backgroundBitmap.recycle();
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 
     private void forwardTouch(int action, float screenX, float screenY) {

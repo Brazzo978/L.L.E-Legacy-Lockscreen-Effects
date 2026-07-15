@@ -18,6 +18,7 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.TextureView;
@@ -50,6 +51,7 @@ public class ColourDropletEffectView extends FrameLayout
     private final AudioManager audioManager;
     private final SensorManager sensorManager;
     private final Sensor accelerometer;
+    private final Display sensorDisplay;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int lockSound;
@@ -66,6 +68,7 @@ public class ColourDropletEffectView extends FrameLayout
     private Bitmap normalResourceBitmap;
     private Bitmap edgeDensityResourceBitmap;
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
     private String lastSentBackgroundSource = "";
@@ -107,6 +110,10 @@ public class ColourDropletEffectView extends FrameLayout
         accelerometer = !gyroEnabled || sensorManager == null
                 ? null
                 : sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        WindowManager windowManager = gyroEnabled
+                ? (WindowManager) context.getSystemService(Context.WINDOW_SERVICE)
+                : null;
+        sensorDisplay = windowManager == null ? null : windowManager.getDefaultDisplay();
         long startedAt = SystemClock.uptimeMillis();
         setWillNotDraw(false);
         setClipChildren(false);
@@ -304,8 +311,7 @@ public class ColourDropletEffectView extends FrameLayout
         backgroundSource = "none";
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         if (!destroyed) {
             sendBackgroundBitmap();
         }
@@ -338,14 +344,18 @@ public class ColourDropletEffectView extends FrameLayout
         backgroundSource = "none";
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         recycle(normalResourceBitmap);
         recycle(edgeDensityResourceBitmap);
         normalResourceBitmap = null;
         edgeDensityResourceBitmap = null;
         cleanupSamsungState();
         Log.i(TAG, "END colour droplet destroy");
+    }
+
+    @Override
+    public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
+        return bitmap != null && backgroundBitmap == bitmap;
     }
 
     @Override
@@ -524,8 +534,9 @@ public class ColourDropletEffectView extends FrameLayout
                 && backgroundBitmap.getHeight() == height) {
             return backgroundBitmap;
         }
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = createWhiteBitmap(width, height);
+        ownsBackgroundBitmap = true;
         backgroundSource = "white_fallback";
         externalColorSource = false;
         backgroundBitmap.prepareToDraw();
@@ -537,10 +548,13 @@ public class ColourDropletEffectView extends FrameLayout
     private void replaceBackgroundBitmap(Bitmap source, String sourceName) {
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        Bitmap next = createCenterCropBitmap(source, width, height);
+        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
         next.prepareToDraw();
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName;
         externalColorSource = true;
         Log.i(TAG, "colour droplet background replaced source=" + backgroundSource
@@ -738,11 +752,9 @@ public class ColourDropletEffectView extends FrameLayout
         float z = event.values[2];
         float rotatedX = x;
         float rotatedY = y;
-        WindowManager windowManager =
-                (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        int rotation = windowManager == null
+        int rotation = sensorDisplay == null
                 ? Surface.ROTATION_0
-                : windowManager.getDefaultDisplay().getRotation();
+                : sensorDisplay.getRotation();
         if (rotation == Surface.ROTATION_90) {
             rotatedX = -y;
             rotatedY = x;
@@ -761,9 +773,10 @@ public class ColourDropletEffectView extends FrameLayout
                     rotatedY,
                     z);
             long now = SystemClock.uptimeMillis();
-            if (now - lastSensorLogAt >= SENSOR_LOG_INTERVAL_MS) {
+            if (Log.isLoggable(TAG, Log.DEBUG)
+                    && now - lastSensorLogAt >= SENSOR_LOG_INTERVAL_MS) {
                 lastSensorLogAt = now;
-                Log.i(TAG, "colour droplet gyro sample x="
+                Log.d(TAG, "colour droplet gyro sample x="
                         + roundSensor(rotatedX)
                         + " y=" + roundSensor(rotatedY)
                         + " z=" + roundSensor(z));
@@ -859,5 +872,13 @@ public class ColourDropletEffectView extends FrameLayout
         if (bitmap != null && !bitmap.isRecycled()) {
             bitmap.recycle();
         }
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap) {
+            recycle(backgroundBitmap);
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 }

@@ -63,6 +63,7 @@ public class SamsungLockBgEffectView extends FrameLayout
     private Method clearScreen;
     private Method removeEffect;
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
     private String lastSentBackgroundSource = "";
@@ -314,9 +315,13 @@ public class SamsungLockBgEffectView extends FrameLayout
         externalColorSource = false;
         backgroundSource = "none";
         invalidateSentBackground();
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         sendBackgroundBitmap();
+    }
+
+    @Override
+    public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
+        return bitmap != null && backgroundBitmap == bitmap;
     }
 
     @Override
@@ -340,8 +345,7 @@ public class SamsungLockBgEffectView extends FrameLayout
                 Log.d(TAG, "removeEffect ignored", t);
             }
         }
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
         backgroundSource = "none";
@@ -526,8 +530,9 @@ public class SamsungLockBgEffectView extends FrameLayout
                 && backgroundBitmap.getHeight() == height) {
             return backgroundBitmap;
         }
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = createTransparentBitmap(width, height);
+        ownsBackgroundBitmap = true;
         backgroundSource = "transparent_fallback";
         externalColorSource = false;
         backgroundBitmap.prepareToDraw();
@@ -541,13 +546,17 @@ public class SamsungLockBgEffectView extends FrameLayout
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
         long cropStartedAt = SystemClock.uptimeMillis();
-        Bitmap next = createCenterCropBitmap(source, width, height);
+        boolean borrow = backgroundGain == 1f
+                && BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
         long cropMs = SystemClock.uptimeMillis() - cropStartedAt;
         long prepareStartedAt = SystemClock.uptimeMillis();
         next.prepareToDraw();
         long prepareMs = SystemClock.uptimeMillis() - prepareStartedAt;
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName;
         externalColorSource = true;
         invalidateSentBackground();
@@ -759,5 +768,13 @@ public class SamsungLockBgEffectView extends FrameLayout
         if (bitmap != null && !bitmap.isRecycled()) {
             bitmap.recycle();
         }
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap) {
+            recycle(backgroundBitmap);
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 }

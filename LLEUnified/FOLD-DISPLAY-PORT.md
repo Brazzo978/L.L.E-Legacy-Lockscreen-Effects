@@ -58,6 +58,15 @@ aspect ratio matches their reference size. The other panel starts from its own
 safe default box until it is drawn. Screenshot callbacks validate both display
 ID and panel profile because Samsung can keep ID `0` across a fold transition.
 
+The wizard now opens on a dual-panel dashboard with a thumbnail, dimensions,
+saved-area status and independent edit/capture actions for each panel. If a
+dedicated `touch_box_lockscreen_<profile>.png` is missing, the editor reuses the
+validated `unlock_effect_background_<profile>.png` instead of incorrectly
+showing `Capture needed`. This was device-validated for the Main `1968x2184`
+cache. Cancelling while a capture is armed clears the service request token and
+returns to the dashboard, so a later request cannot be completed by a stale
+callback.
+
 ## Panel transition
 
 Display callbacks and coalesced accessibility events trigger a target refresh.
@@ -92,6 +101,9 @@ tested through closed -> opened -> closed transitions:
 - cover touch window mounted independently at `0,730 - 1080,2100` and produced
   the same complete gesture sequence;
 - no `AndroidRuntime` crash or accessibility-overlay token failure occurred.
+- the dual dashboard showed Cover `1080x2520` and reused the existing Main
+  effect screenshot at `1968x2184`, eliminating the false Main capture warning;
+- the combined screenshot viewer displayed both cached panel slots explicitly.
 
 The device-state test override was reset after validation; the phone then
 reported its current physical state `3` (`1968x2184`, inner panel).

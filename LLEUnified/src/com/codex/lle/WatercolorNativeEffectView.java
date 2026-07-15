@@ -44,6 +44,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
     private Method clearScreen;
     private Method removeEffect;
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
     private String lastSentBackgroundSource = "";
@@ -206,10 +207,15 @@ public final class WatercolorNativeEffectView extends FrameLayout
         if (destroyed || source == null || source.isRecycled()) {
             return;
         }
-        Bitmap next = centerCrop(source, getRenderWidth(), getRenderHeight());
+        int width = getRenderWidth();
+        int height = getRenderHeight();
+        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : centerCrop(source, width, height);
         next.prepareToDraw();
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName == null ? "external" : sourceName;
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
@@ -222,9 +228,13 @@ public final class WatercolorNativeEffectView extends FrameLayout
     public void clearBackgroundSourceBitmap() {
         lastSentBackgroundBitmap = null;
         lastSentBackgroundSource = "";
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         backgroundSource = "none";
+    }
+
+    @Override
+    public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
+        return bitmap != null && backgroundBitmap == bitmap;
     }
 
     @Override
@@ -242,8 +252,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
             }
         }
         soundPool.release();
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
     }
 
     @Override
@@ -405,5 +414,13 @@ public final class WatercolorNativeEffectView extends FrameLayout
         if (bitmap != null && !bitmap.isRecycled()) {
             bitmap.recycle();
         }
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap) {
+            recycle(backgroundBitmap);
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 }

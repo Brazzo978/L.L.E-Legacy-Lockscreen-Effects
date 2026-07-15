@@ -19,9 +19,7 @@ $keystore = Join-Path $root ".keys\debug.keystore"
 $sourceKeystore = Join-Path $repoRoot "unlock-effects-test\demo-apk\debug.keystore"
 $keystoreDir = Split-Path -Parent $keystore
 $classesJar = Join-Path $out "classes.jar"
-$patchedSamsungVisualEffectDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
-$stockSamsungVisualEffectDex = Join-Path $repoRoot "unlock-effects-test\extracted\secvisualeffect_hybrid_dex\classes.dex"
-$samsungVisualEffectDex = if (Test-Path $patchedSamsungVisualEffectDex) { $patchedSamsungVisualEffectDex } else { $stockSamsungVisualEffectDex }
+$samsungVisualEffectDex = Join-Path $out "classes-note5-bounded.dex"
 $samsungVisualEffectSmaliStage = Join-Path $out "smali_secvisualeffect_lle"
 $samsungVisualEffectDexStage = Join-Path $out "classes2.dex"
 $nativeLibs = Join-Path $root "native-libs"
@@ -52,6 +50,11 @@ function Run($exe, $arguments) {
 
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out, $classes, $dex, $resStage | Out-Null
+& (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
+    -OutputPath $samsungVisualEffectDex
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $samsungVisualEffectDex)) {
+    throw "Bounded Samsung visual-effect dex generation failed"
+}
 
 # Stage resources from the tracked canonical Samsung assets. Geometric Mosaic
 # uses the Brilliant Cut interaction trio on stock S4/Note4; Watercolor uses
@@ -89,19 +92,6 @@ Run "jar.exe" @("uf", $aligned, "-C", $dex, "classes.dex")
 if (Test-Path $samsungVisualEffectDex) {
     $smaliCp = (Get-ChildItem -LiteralPath (Join-Path $repoRoot "unlock-effects-test\tools\java") -Filter "*.jar" | ForEach-Object { $_.FullName }) -join [IO.Path]::PathSeparator
     Run "java.exe" @("-cp", $smaliCp, "org.jf.baksmali.Main", "disassemble", $samsungVisualEffectDex, "-o", $samsungVisualEffectSmaliStage)
-    # Samsung's GLTextureView defaults to RGB888 with alphaSize=0. Watercolor is
-    # hosted as a non-opaque TextureView, so request RGBA8888 before its renderer
-    # creates the EGL context; otherwise even alpha-zero shader output is opaque.
-    $eglChooserSmali = Join-Path $samsungVisualEffectSmaliStage "com\samsung\android\visualeffect\common\GLTextureView`$SimpleEGLConfigChooser.smali"
-    $eglChooserContent = Get-Content -LiteralPath $eglChooserSmali -Raw
-    $eglAlphaNeedle = "    const/4 v5, 0x0"
-    $eglAlphaPatch = "    const/16 v5, 0x8"
-    if (-not $eglChooserContent.Contains($eglAlphaNeedle)) {
-        throw "Unexpected Samsung GLTextureView EGL chooser: alpha patch point not found"
-    }
-    $eglChooserContent = $eglChooserContent.Replace($eglAlphaNeedle, $eglAlphaPatch)
-    [IO.File]::WriteAllText($eglChooserSmali, $eglChooserContent, (New-Object Text.UTF8Encoding($false)))
-
     # Abstract Tiles advances its physics once per rendered frame. The stock S4
     # renderer runs at ~30 fps even though the panel is 60 Hz; without pacing a
     # modern 120 Hz device consumes the animation about four times too quickly.
@@ -163,34 +153,6 @@ if (Test-Path $samsungVisualEffectDex) {
     $insertAt = $lastMethodEnd + $abstractRendererEnd.Length
     $geometricRendererContent = $geometricRendererContent.Insert($insertAt, $geometricPacedDraw)
     [IO.File]::WriteAllText($geometricRendererSmali, $geometricRendererContent, (New-Object Text.UTF8Encoding($false)))
-
-    # Watercolor is also frame-stepped. Stock runs it at 60 Hz; cap only its
-    # renderer so a 120 Hz panel cannot consume the wake hint three times too fast.
-    $watercolorRendererSmali = Join-Path $samsungVisualEffectSmaliStage "com\samsung\android\visualeffect\lock\watercolor\WaterColorRenderer.smali"
-    $watercolorRendererContent = Get-Content -LiteralPath $watercolorRendererSmali -Raw
-    $watercolorPacedDraw = @"
-
-.method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
-    .registers 2
-    .param p1, "gl"    # Ljavax/microedition/khronos/opengles/GL10;
-
-    invoke-static {}, Lcom/codex/lle/WatercolorNativeEffectView;->paceOriginalFrame()V
-
-    invoke-super {p0, p1}, Lcom/samsung/android/visualeffect/lock/common/GLTextureViewRenderer;->onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
-
-    return-void
-.end method
-"@
-    if ($watercolorRendererContent.Contains(".method public onDrawFrame(")) {
-        throw "Unexpected WaterColorRenderer: pacing override already present"
-    }
-    $lastMethodEnd = $watercolorRendererContent.LastIndexOf($abstractRendererEnd)
-    if ($lastMethodEnd -lt 0) {
-        throw "Unexpected WaterColorRenderer: constructor end not found"
-    }
-    $insertAt = $lastMethodEnd + $abstractRendererEnd.Length
-    $watercolorRendererContent = $watercolorRendererContent.Insert($insertAt, $watercolorPacedDraw)
-    [IO.File]::WriteAllText($watercolorRendererSmali, $watercolorRendererContent, (New-Object Text.UTF8Encoding($false)))
 
     Run "java.exe" @("-cp", $smaliCp, "org.jf.smali.Main", "assemble", $samsungVisualEffectSmaliStage, "-o", $samsungVisualEffectDexStage)
     Run "jar.exe" @("uf", $aligned, "-C", $out, "classes2.dex")
