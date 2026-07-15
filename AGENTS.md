@@ -3,20 +3,41 @@
 ## Repository and branches
 - Git root: `D:\New project`.
 - GitHub: `https://github.com/Brazzo978/unlock-effects-test` private repo.
-- Active work branch: `codex/charging-touch-advanced`.
+- Active work branch: `codex/lle-unified`.
 - Stable validated tag: `charging-lock-stable-perfect-2026-06-30`.
 - Touch baseline tag: `charging-touch-advanced-baseline-2026-06-30`.
+
+## Unified LLE trunk (2026-07-15)
+- Canonical application path: `LLEUnified`.
+- Package: `com.codex.lle`.
+- All new Java logic, resources, preferences and UI changes must be made in
+  `LLEUnified`; do not implement them separately in the frozen ARM32/ARM64 trees.
+- Frozen pre-unification tag: `lle-pre-unification-2026-07-15`.
+- Frozen reference trees:
+  - ARM32: `unlock-effects-test\charging-touch-test-apk`.
+  - ARM64: `LLE64`.
+- Unified build commands:
+  - both: `powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1`;
+  - ARM32: add `-Target Arm32`;
+  - ARM64: add `-Target Arm64`.
+- Outputs:
+  - `LLEUnified\build\armeabi-v7a\LLE-armeabi-v7a-debug.apk`;
+  - `LLEUnified\build\arm64-v8a\LLE-arm64-debug.apk`.
+- Runtime availability must use `EffectAvailability` and actual process bitness.
+  Never load an ARM32 library from an ARM64 process or vice versa.
 
 ## Legacy apps
 - Old app modules must not be revived or targeted by PRs.
 - Legacy charging-only app modules were removed from the active repo.
 - Port useful code into LLE manually instead of merging/cherry-picking legacy app changes.
 
-## LLE app
+## Frozen pre-unification ARM32 LLE reference
 - Path: `unlock-effects-test\charging-touch-test-apk`.
 - Package: `com.codex.lle`.
 - Current APK: `unlock-effects-test\charging-touch-test-apk\build\LLE-debug.apk`.
 - LLE means Legacy Lockscreen Effect; it is the experimental branch for touch listening and unlock FX.
+- This path is historical after 2026-07-15; port useful findings into
+  `LLEUnified` instead of developing here.
 
 ## LSE app
 - Path: `unlock-effects-test\demo-apk`.
@@ -63,7 +84,7 @@
   - 2026-07-03 mesh renderer pass: picker value `1` now routes to `S3RippleMeshEffectView`, a transparent app-owned `TextureView`/GLES renderer. It keeps the confirmed CPU simulation but renders a Samsung-shaped `100x100` projected mesh with `aPosition + aHeights`, using the recovered normal S3 vertex/fragment shader math. `S3RippleEffectView` remains in source only as the older Canvas fallback/reference.
   - The mesh renderer requires a live accessibility screenshot/background texture before drawing. It intentionally avoids the fallback wallpaper for visible output because source-over base-cancel math only works if the sampled base matches the real lockscreen pixel.
 
-## Build and install
+## Frozen ARM32 reference build and install
 - Build LLE:
   `powershell -ExecutionPolicy Bypass -File .\unlock-effects-test\charging-touch-test-apk\build.ps1`
 - Install LLE:
