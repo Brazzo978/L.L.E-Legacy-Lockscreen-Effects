@@ -114,11 +114,20 @@ Both reported radial `27x63`, density `648x1512`, generated velocity
 `362x642`, and no Java/native crash, shader error or GL error in the sampled
 run. The stable APK was reinstalled after the A/B run and is the final device
 state. The accessibility service is enabled/bound and Watercolor remains the
-selected effect for visual review.
+selected effect. A subsequent real-use visual check judged this corrected
+stable build materially closer to the ARM32 reference. The post-use audit
+found the process alive, no Java/native crash, ANR, EGL/GL error or failed
+framebuffer, and no crash exit record; recorded exits were package replacement
+or an intentional force-stop during development.
 
 ## Readiness verdict
 
-Native compilation, APK packaging and runtime shader/FBO validation pass for
-both modes. Final Watercolor readiness is intentionally pending only the paired
-visual judgment of blur/distortion on the target. No change in this audit
-justifies declaring the undefined feedback build stable.
+Native compilation, APK packaging, runtime shader/FBO validation and the
+target-device visual check pass. Watercolor is accepted at the current
+early-alpha fidelity target with deterministic ping-pong as the shipping
+implementation. The literal same-texture build remains diagnostic only: its
+GLES2 feedback is undefined, so successful execution on this device does not
+justify declaring it stable. Exact frame identity with a legacy GPU remains
+outside what can be guaranteed, but this audit found no further deterministic
+shader, texture-state, geometry, cadence, touch or lifecycle delta responsible
+for the previously reported blur/distortion difference.

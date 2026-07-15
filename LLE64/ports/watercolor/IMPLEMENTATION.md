@@ -148,6 +148,10 @@ evidence and controlled density-topology A/B protocol are recorded in
   `E031.47.18.50`, loaded all assets, created `27x63` / `648x1512` targets and
   completed their respective two-pass seed plus first frame without a GL,
   native or Java failure. Stable ping-pong was reinstalled after the A/B.
+- Real-use visual review found the corrected stable build materially closer to
+  the ARM32 reference. A post-use check found the process and accessibility
+  service healthy, no crash/ANR/EGL/GL failure, and only expected package-update
+  or intentional force-stop entries in Android's process-exit history.
 
 ## Current fidelity boundary
 
@@ -156,7 +160,8 @@ is deterministic density ping-pong in place of original undefined
 single-texture feedback; literal feedback would make output driver-dependent
 and can corrupt rendering on modern GPUs. A separately named, compile-time A/B
 build can reproduce the literal command topology for controlled captures, but
-never replaces stable ping-pong automatically. Remaining fidelity work is
-limited to paired frame captures, exact legacy RNG sequences and optional
+never replaces stable ping-pong automatically. The current stable build is
+accepted for the project's early-alpha fidelity target. Further comparison can
+still use paired frame captures for exact legacy RNG sequences and optional
 parameter/action paths. The transparent boundary can only match stock exactly
 while the cached screenshot remains aligned with live SystemUI.
