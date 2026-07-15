@@ -256,6 +256,79 @@ if ($rippleStageHash -notmatch "^[0-9A-F]{64}$") {
     throw "Water Ripple staged SHA-256 verification failed"
 }
 
+$abstractTilesNative = Join-Path $root "ports\abstract-tiles\native"
+$abstractTilesLibrary = Join-Path $arm64Stage "libsecveAbstractTile.so"
+$abstractTilesSources = @(
+    "abstract_tiles_core.c",
+    "abstract_tiles_gles.c",
+    "abstract_tiles_jni.c"
+) | ForEach-Object { Join-Path $abstractTilesNative $_ }
+foreach ($abstractTilesSource in $abstractTilesSources) {
+    if (-not (Test-Path -LiteralPath $abstractTilesSource)) {
+        throw "Missing Abstract Tiles native source: $abstractTilesSource"
+    }
+}
+$abstractTilesClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-Wl,--no-undefined", "-Wl,-soname,libsecveAbstractTile.so"
+) + $abstractTilesSources + @(
+    "-Wl,--no-as-needed",
+    "-lGLESv2", "-ljnigraphics", "-llog", "-lm",
+    "-o", $abstractTilesLibrary
+)
+Run $clang $abstractTilesClangArgs
+$abstractTilesHeader = (& $readelf -h $abstractTilesLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $abstractTilesHeader -notmatch "Machine:\s+AArch64") {
+    throw "Abstract Tiles library is not an AArch64 ELF"
+}
+$abstractTilesDynamic = (& $readelf -d $abstractTilesLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 -or
+        $abstractTilesDynamic -notmatch "SONAME.*\[libsecveAbstractTile\.so\]" -or
+        $abstractTilesDynamic -notmatch "NEEDED.*\[libGLESv2\.so\]" -or
+        $abstractTilesDynamic -notmatch "NEEDED.*\[libjnigraphics\.so\]" -or
+        $abstractTilesDynamic -notmatch "NEEDED.*\[liblog\.so\]" -or
+        $abstractTilesDynamic -notmatch "NEEDED.*\[libm\.so\]") {
+    throw "Abstract Tiles dynamic dependency verification failed"
+}
+if ($abstractTilesDynamic -match
+        "NEEDED.*\[(libsecveSrkCommon|libstlport|libstdc\+\+|libsecveAbstractTile)\.so\]") {
+    throw "Abstract Tiles unexpectedly depends on a Samsung legacy runtime"
+}
+$abstractTilesSymbols = (& $readelf -Ws $abstractTilesLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "Abstract Tiles dynamic symbol inspection failed"
+}
+$expectedAbstractTilesExports = @(
+    "Java_com_codex_lle_AbstractTilesNative_nativeBridgeVersion",
+    "Java_com_codex_lle_AbstractTilesNative_nativeInitGpu",
+    "Java_com_codex_lle_AbstractTilesNative_nativeAbandonGpu",
+    "Java_com_codex_lle_AbstractTilesNative_nativeDestroyGpu",
+    "Java_com_codex_lle_AbstractTilesNative_nativeUploadBitmap",
+    "Java_com_codex_lle_AbstractTilesNative_nativeClearBitmap",
+    "Java_com_codex_lle_AbstractTilesNative_nativeReset",
+    "Java_com_codex_lle_AbstractTilesNative_nativeTouch",
+    "Java_com_codex_lle_AbstractTilesNative_nativeRealign",
+    "Java_com_codex_lle_AbstractTilesNative_nativeAffordance",
+    "Java_com_codex_lle_AbstractTilesNative_nativeUnlock",
+    "Java_com_codex_lle_AbstractTilesNative_nativeStep",
+    "Java_com_codex_lle_AbstractTilesNative_nativeDraw",
+    "Java_com_codex_lle_AbstractTilesNative_nativeIsIdle",
+    "Java_com_codex_lle_AbstractTilesNative_nativeGetLastError"
+)
+foreach ($export in $expectedAbstractTilesExports) {
+    $definedExportPattern = "(?m)^\s*\d+:\s+\S+\s+\d+\s+FUNC\s+GLOBAL\s+DEFAULT\s+\d+\s+" `
+            + [regex]::Escape($export) + "\s*$"
+    if ($abstractTilesSymbols -notmatch $definedExportPattern) {
+        throw "Missing Abstract Tiles JNI export: $export"
+    }
+}
+$abstractTilesStageHash = (Get-FileHash -LiteralPath $abstractTilesLibrary `
+        -Algorithm SHA256).Hash
+if ($abstractTilesStageHash -notmatch "^[0-9A-F]{64}$") {
+    throw "Abstract Tiles staged SHA-256 verification failed"
+}
+
 $watercolorNative = Join-Path $root "ports\watercolor\native"
 $watercolorCommonSource = Join-Path $watercolorNative "watercolor_arm64.c"
 $watercolorEffectSource = Join-Path $watercolorNative "watercolor_effect_stub.c"
@@ -367,6 +440,7 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/libSparklingBubblesEffect.so",
     "lib/arm64-v8a/libstlport.so",
     "lib/arm64-v8a/libWaterRipple.so",
+    "lib/arm64-v8a/libsecveAbstractTile.so",
     "lib/arm64-v8a/libsecveSrkCommon.so",
     "lib/arm64-v8a/libsecveWaterColor.so"
 )
@@ -395,6 +469,26 @@ if ($rippleApkHash -ne $rippleStageHash) {
 }
 Remove-Item -Recurse -Force $rippleApkVerify
 
+$abstractTilesApkVerify = Join-Path $out "verify-abstract-tiles-entry"
+New-Item -ItemType Directory -Force -Path $abstractTilesApkVerify | Out-Null
+Push-Location $abstractTilesApkVerify
+try {
+    Run "jar.exe" @("xf", $signed, "lib/arm64-v8a/libsecveAbstractTile.so")
+} finally {
+    Pop-Location
+}
+$abstractTilesApkLibrary = Join-Path $abstractTilesApkVerify `
+        "lib\arm64-v8a\libsecveAbstractTile.so"
+if (-not (Test-Path -LiteralPath $abstractTilesApkLibrary)) {
+    throw "Abstract Tiles APK entry is missing"
+}
+$abstractTilesApkHash = (Get-FileHash -LiteralPath $abstractTilesApkLibrary `
+        -Algorithm SHA256).Hash
+if ($abstractTilesApkHash -ne $abstractTilesStageHash) {
+    throw "Abstract Tiles APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $abstractTilesApkVerify
+
 Write-Host "Built ARM64-only APK: $signed"
 Write-Warning "APK contains proprietary Samsung Note 5 firmware libraries."
 if ($IncludeRippleCoreProbe) {
@@ -402,5 +496,6 @@ if ($IncludeRippleCoreProbe) {
 }
 Write-Host "Native entries: $($nativeEntries -join ', ')"
 Write-Host "Water Ripple SHA-256: $rippleStageHash"
+Write-Host "Abstract Tiles SHA-256: $abstractTilesStageHash"
 Write-Host "Watercolor common SHA-256: $watercolorCommonStageHash"
 Write-Host "Watercolor effect sentinel SHA-256: $watercolorEffectStageHash"

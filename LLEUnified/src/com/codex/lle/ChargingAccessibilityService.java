@@ -242,12 +242,19 @@ public class ChargingAccessibilityService extends AccessibilityService
     private final Runnable rippleRendererReadinessRunnable = new Runnable() {
         @Override
         public void run() {
-            if (unlockEffectRendererType != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
-                    || !(unlockEffectRenderer instanceof S3Arm64RippleEffectView)) {
-                return;
-            }
-            if (!((S3Arm64RippleEffectView) unlockEffectRenderer).isReady()) {
-                fallBackFromFailedRippleRenderer("async_gl_init_or_render");
+            if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                    && unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
+                if (!((S3Arm64RippleEffectView) unlockEffectRenderer).isReady()) {
+                    fallBackFromFailedRippleRenderer("async_gl_init_or_render");
+                    return;
+                }
+            } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                    && unlockEffectRenderer instanceof AbstractTilesArm64EffectView) {
+                if (!((AbstractTilesArm64EffectView) unlockEffectRenderer).isReady()) {
+                    fallBackFromFailedAbstractTilesRenderer("async_gl_init_or_render");
+                    return;
+                }
+            } else {
                 return;
             }
             handler.postDelayed(this, 1000L);
@@ -1626,7 +1633,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void markNativeRendererStaleForDisplaySize() {
         int effect = unlockEffectRendererType;
-        if (effect != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+        boolean arm64AbstractTiles = EffectAvailability.is64BitProcess()
+                && effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES;
+        if (!arm64AbstractTiles
+                && effect != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 && effect != OverlayPrefs.EFFECT_WATERCOLOUR
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
@@ -2354,7 +2364,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                     unlockEffectRenderer = new S3NativeRippleEffectView(rendererContext());
                 }
             } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
-                unlockEffectRenderer = SamsungLockBgEffectView.abstractTiles(rendererContext());
+                if (EffectAvailability.is64BitProcess()) {
+                    AbstractTilesArm64EffectView renderer =
+                            new AbstractTilesArm64EffectView(rendererContext());
+                    if (!renderer.isReady()) {
+                        renderer.destroy();
+                        throw new IllegalStateException(
+                                "Abstract Tiles ARM64 renderer unavailable");
+                    }
+                    unlockEffectRenderer = renderer;
+                } else {
+                    unlockEffectRenderer =
+                            SamsungLockBgEffectView.abstractTiles(rendererContext());
+                }
             } else if (effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
                 unlockEffectRenderer = SamsungLockBgEffectView.geometricMosaic(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
@@ -2473,8 +2495,12 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void scheduleRippleRendererReadinessCheck() {
         handler.removeCallbacks(rippleRendererReadinessRunnable);
-        if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
-                && unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
+        boolean ripple = unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                && unlockEffectRenderer instanceof S3Arm64RippleEffectView;
+        boolean abstractTiles =
+                unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                && unlockEffectRenderer instanceof AbstractTilesArm64EffectView;
+        if (ripple || abstractTiles) {
             handler.postDelayed(rippleRendererReadinessRunnable, 250L);
         }
     }
@@ -2492,6 +2518,21 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .apply();
         preloadUnlockEffectRenderer();
         evaluateVisibility("ripple_renderer_failed", false);
+    }
+
+    private void fallBackFromFailedAbstractTilesRenderer(String reason) {
+        if (unlockEffectRendererType != OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
+            return;
+        }
+        Log.e(TAG, "Abstract Tiles ARM64 failed; falling back to Lens Flare reason="
+                + reason);
+        handler.removeCallbacks(rippleRendererReadinessRunnable);
+        destroyUnlockEffectOverlay();
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.UNLOCK_EFFECT, OverlayPrefs.EFFECT_S4_LENS_FLARE)
+                .apply();
+        preloadUnlockEffectRenderer();
+        evaluateVisibility("abstract_tiles_renderer_failed", false);
     }
 
     private boolean canRecreateStaleLockBgRenderer() {
@@ -4081,6 +4122,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 }
                 if (unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
                     ((S3Arm64RippleEffectView) unlockEffectRenderer).realignGesture(
+                            screenX, screenY);
+                } else if (unlockEffectRenderer instanceof AbstractTilesArm64EffectView) {
+                    ((AbstractTilesArm64EffectView) unlockEffectRenderer).realignGesture(
                             screenX, screenY);
                 }
             }

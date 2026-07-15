@@ -1,0 +1,1247 @@
+
+============================================================
+requested=00013a1c
+entry=00013a1c
+name=FUN_00013a1c
+body=[[00013a1c, 00013a6f]]
+decompileCompleted=true
+
+void FUN_00013a1c(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                 undefined4 param_5)
+
+{
+  int iVar1;
+  undefined4 *puVar2;
+  int iVar3;
+
+  iVar1 = DAT_00013a78;
+  iVar3 = DAT_00013a70 + 0x13a34;
+  puVar2 = *(undefined4 **)(iVar3 + DAT_00013a74);
+  *puVar2 = param_2;
+  puVar2[1] = param_3;
+  puVar2 = *(undefined4 **)(iVar3 + iVar1);
+  *puVar2 = param_4;
+  puVar2[1] = param_5;
+  glViewport(param_2,param_3,param_4,param_5);
+  return;
+}
+
+
+
+============================================================
+requested=00019ee0
+entry=00019ee0
+name=FUN_00019ee0
+body=[[00019ee0, 00019f33]]
+decompileCompleted=true
+
+void FUN_00019ee0(int param_1,float *param_2)
+
+{
+  float fVar1;
+  float fVar2;
+
+  fVar2 = param_2[1];
+  fVar1 = *param_2;
+  *(float *)(param_1 + 0x4c) = fVar1;
+  *(float *)(param_1 + 0x44) = fVar1;
+  fVar2 = fVar2 + *(float *)(param_1 + 0xe4) * 0.5;
+  *(float *)(param_1 + 0x50) = fVar2;
+  *(float *)(param_1 + 0x48) = fVar2;
+  *(float *)(param_1 + 0xf8) = (fVar2 + fVar2) - 1.0;
+  *(float *)(param_1 + 0xf4) = (fVar1 + fVar1) - 1.0;
+  FUN_00019c88(param_1,0x40000000,0x3f000000,0x3e99999a);
+  return;
+}
+
+
+
+============================================================
+requested=0002169c
+entry=0002169c
+name=FUN_0002169c
+body=[[0002169c, 00021adf] [00021b34, 00021df3]]
+decompileCompleted=true
+
+/* WARNING: Restarted to delay deadcode elimination for space: stack */
+
+void FUN_0002169c(int *param_1)
+
+{
+  char *pcVar1;
+  int iVar2;
+  int iVar3;
+  uint uVar4;
+  int iVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  int **ppiVar8;
+  int **ppiVar9;
+  undefined4 uVar10;
+  undefined4 *puVar11;
+  int iVar12;
+  int iVar13;
+  int **ppiVar14;
+  int *piVar15;
+  uint *puVar16;
+  undefined4 *puVar17;
+  undefined4 *puVar18;
+  int *piVar19;
+  undefined4 *puVar20;
+  undefined4 *puVar21;
+  int iVar22;
+  int **ppiVar23;
+  uint uVar24;
+  int *piVar25;
+  undefined4 *puStack_60;
+  undefined4 *puStack_58;
+  uint auStack_50 [2];
+  int *piStack_48;
+  undefined4 uStack_44;
+  undefined4 uStack_40;
+  int *piStack_3c;
+  int *piStack_38;
+  undefined4 uStack_34;
+
+  iVar22 = DAT_00021ae4;
+  (**(code **)(*param_1 + 0x24))(param_1,param_1 + 0x49);
+  puVar16 = (uint *)(iVar22 + 0x216d0);
+  FUN_00016ef4(param_1);
+  FUN_00020bd4(param_1,0x3f800000,0x40000000,0,0x3f4ccccd,0x41a00000,0x3f666667);
+  iVar22 = DAT_00021aec;
+  uVar4 = *puVar16;
+  piVar19 = param_1 + 0x17b;
+  iVar13 = DAT_00021ae8 + 0x21724;
+  *piVar19 = 0;
+  iVar12 = param_1[0x20];
+  piVar25 = (int *)**(undefined4 **)(iVar13 + iVar22);
+  if (((uVar4 & 1) == 0) &&
+     (iVar5 = __cxa_guard_acquire(puVar16), iVar3 = DAT_00021b14, iVar2 = DAT_00021b10,
+     iVar13 = DAT_00021b0c, iVar22 = DAT_00021b08, iVar5 != 0)) {
+    piVar15 = (int *)(DAT_00021b08 + 0x21a24);
+    *(undefined4 *)(DAT_00021b08 + 0x21a28) = 0;
+    *(undefined4 *)(iVar22 + 0x21a2c) = 0;
+    *(undefined4 *)(iVar22 + 0x21a30) = 0;
+    *piVar15 = iVar13 + 0x21a38;
+    __cxa_guard_release(puVar16);
+    __aeabi_atexit(piVar15,iVar2 + 0x21a50,iVar3 + 0x21a54);
+  }
+  if (*(char *)(DAT_00021af0 + 0x21744) != '\0') {
+    piStack_48 = (int *)(DAT_00021af8 + 0x219c0);
+    puVar16 = (uint *)(DAT_00021afc + 0x219c8);
+    *(char *)(DAT_00021af0 + 0x21744) = '\0';
+    FUN_0001ef54(iVar12 + 4,&piStack_48);
+    if (((*puVar16 & 1) == 0) &&
+       (iVar13 = __cxa_guard_acquire(puVar16), iVar12 = DAT_00021b1c, iVar22 = DAT_00021b18,
+       iVar13 != 0)) {
+      puVar20 = (undefined4 *)(DAT_00021b18 + 0x21a7c);
+      *puVar20 = 0;
+      *(undefined4 *)(iVar22 + 0x21a80) = 0;
+      *(undefined4 *)(iVar22 + 0x21a84) = 0;
+      __cxa_guard_release(puVar16);
+      __aeabi_atexit(puVar20,DAT_00021b20 + 0x21a9c,iVar12 + 0x21a98);
+    }
+    piStack_48 = (int *)(DAT_00021b00 + 0x219f4);
+    FUN_0001ef54(DAT_00021b04 + 0x219fc,&piStack_48);
+  }
+  iVar12 = DAT_00021b24;
+  piStack_48 = piVar19;
+  piStack_38 = (int *)((float)piVar25 + DAT_00021ae0);
+  iVar13 = 0;
+  ppiVar14 = *(int ***)(DAT_00021af4 + 0x2176c);
+  puVar20 = *(undefined4 **)(DAT_00021af4 + 0x21770);
+  piStack_3c = piVar25;
+  uStack_44 = 0;
+  uStack_34._0_1_ = 0;
+  uStack_34._1_1_ = 1;
+  uStack_34 = (int *)CONCAT22(uStack_34._2_2_,0x100);
+  iVar22 = (int)puVar20 - (int)ppiVar14 >> 3;
+  uStack_40 = 0x3f800000;
+  uVar4 = iVar22 * -0x55555555;
+  if (uVar4 != 0) {
+    ppiVar23 = ppiVar14;
+    if (*(char *)((int)ppiVar14 + 0x15) != '\0') {
+      uVar24 = uVar4 - 1 & 7;
+      ppiVar9 = ppiVar14 + 6;
+      if (uVar24 != 0) {
+        ppiVar9 = ppiVar14 + 0xc;
+        iVar13 = 1;
+        ppiVar23 = ppiVar14 + 6;
+        if (*(char *)((int)ppiVar14 + 0x2d) == '\0') goto LAB_00021968;
+        if (uVar24 != 1) {
+          ppiVar8 = ppiVar9;
+          if (uVar24 != 2) {
+            if (uVar24 != 3) {
+              if (uVar24 != 4) {
+                if (uVar24 != 5) {
+                  if (uVar24 != 6) {
+                    iVar13 = 2;
+                    ppiVar8 = ppiVar14 + 0x12;
+                    ppiVar23 = ppiVar9;
+                    if (*(char *)((int)ppiVar14 + 0x45) == '\0') goto LAB_00021968;
+                  }
+                  iVar13 = iVar13 + 1;
+                  ppiVar9 = ppiVar8 + 6;
+                  ppiVar23 = ppiVar8;
+                  if (*(char *)((int)ppiVar8 + 0x15) == '\0') goto LAB_00021968;
+                }
+                iVar13 = iVar13 + 1;
+                ppiVar8 = ppiVar9 + 6;
+                ppiVar23 = ppiVar9;
+                if (*(char *)((int)ppiVar9 + 0x15) == '\0') goto LAB_00021968;
+              }
+              iVar13 = iVar13 + 1;
+              ppiVar9 = ppiVar8 + 6;
+              ppiVar23 = ppiVar8;
+              if (*(char *)((int)ppiVar8 + 0x15) == '\0') goto LAB_00021968;
+            }
+            iVar13 = iVar13 + 1;
+            ppiVar8 = ppiVar9 + 6;
+            ppiVar23 = ppiVar9;
+            if (*(char *)((int)ppiVar9 + 0x15) == '\0') goto LAB_00021968;
+          }
+          ppiVar9 = ppiVar8 + 6;
+          iVar13 = iVar13 + 1;
+          ppiVar23 = ppiVar8;
+          if (*(char *)((int)ppiVar8 + 0x15) == '\0') goto LAB_00021968;
+        }
+      }
+      do {
+        uVar24 = iVar13 + 1;
+        ppiVar14 = ppiVar9 + 0x2a;
+        iVar13 = iVar13 + 8;
+        if (uVar4 == uVar24) goto LAB_00021aa8;
+        ppiVar23 = ppiVar9;
+      } while (((((*(char *)((int)ppiVar9 + 0x15) != '\0') &&
+                 (ppiVar23 = ppiVar9 + 6, *(char *)((int)ppiVar9 + 0x2d) != '\0')) &&
+                (ppiVar23 = ppiVar9 + 0xc, *(char *)((int)ppiVar9 + 0x45) != '\0')) &&
+               ((ppiVar23 = ppiVar9 + 0x12, *(char *)((int)ppiVar9 + 0x5d) != '\0' &&
+                (ppiVar23 = ppiVar9 + 0x18, *(char *)((int)ppiVar9 + 0x75) != '\0')))) &&
+              ((ppiVar23 = ppiVar9 + 0x1e, *(char *)((int)ppiVar9 + 0x8d) != '\0' &&
+               ((ppiVar23 = ppiVar9 + 0x24, *(char *)((int)ppiVar9 + 0xa5) != '\0' &&
+                (pcVar1 = (char *)((int)ppiVar9 + 0xbd), ppiVar9 = ppiVar9 + 0x30,
+                ppiVar23 = ppiVar14, *pcVar1 != '\0'))))));
+    }
+LAB_00021968:
+    if (ppiVar23 != &piStack_48) {
+      *ppiVar23 = piVar19;
+      ppiVar23[1] = (int *)0x0;
+      ppiVar23[2] = (int *)0x3f800000;
+      ppiVar23[3] = piVar25;
+      ppiVar23[4] = piStack_38;
+      ppiVar23[5] = uStack_34;
+    }
+    goto LAB_00021994;
+  }
+LAB_00021aa8:
+  if (puVar20 != *(undefined4 **)(DAT_00021b24 + 0x21ac0)) {
+    *puVar20 = piVar19;
+    puVar20[1] = 0;
+    puVar20[2] = 0x3f800000;
+    puVar20[3] = piVar25;
+    *(undefined4 **)(iVar12 + 0x21abc) = puVar20 + 6;
+    puVar20[4] = piStack_38;
+    puVar20[5] = uStack_34;
+    goto LAB_00021994;
+  }
+  if (uVar4 == 0) {
+    uVar24 = 1;
+  }
+  else {
+    uVar24 = iVar22 * 0x55555556;
+  }
+  if ((uVar24 < 0xaaaaaab) && (uVar4 <= uVar24)) {
+    if (uVar24 != 0) {
+      auStack_50[0] = uVar24 * 0x18;
+      if (0x80 < auStack_50[0]) goto LAB_00021b5c;
+      puStack_60 = (undefined4 *)std::__node_alloc::_M_allocate(auStack_50);
+      goto LAB_00021b68;
+    }
+    puVar11 = (undefined4 *)0x18;
+    puStack_60 = (undefined4 *)0x0;
+    puStack_58 = (undefined4 *)0x0;
+  }
+  else {
+    auStack_50[0] = 0xfffffff0;
+LAB_00021b5c:
+    puStack_60 = operator_new(auStack_50[0]);
+LAB_00021b68:
+    puVar11 = puStack_60 + 6;
+    puStack_58 = puStack_60 + (auStack_50[0] / 0x18) * 6;
+  }
+  puVar17 = *(undefined4 **)(DAT_00021b28 + 0x21b9c);
+  iVar22 = (int)puVar20 - (int)puVar17 >> 3;
+  iVar12 = iVar22 * -0x55555555;
+  puVar20 = puStack_60;
+  if (0 < iVar12) {
+    uVar4 = iVar12 - 1;
+    uVar24 = uVar4 & 3;
+    uVar6 = puVar17[1];
+    uVar7 = puVar17[2];
+    uVar10 = puVar17[3];
+    puVar11 = puVar17 + 0xc;
+    *puStack_60 = *puVar17;
+    puStack_60[1] = uVar6;
+    puStack_60[2] = uVar7;
+    puStack_60[3] = uVar10;
+    puVar20 = puStack_60 + 0xc;
+    uVar6 = puVar17[5];
+    puStack_60[4] = puVar17[4];
+    puStack_60[5] = uVar6;
+    if (uVar4 != 0) {
+      puVar18 = puVar20;
+      puVar21 = puVar11;
+      if (uVar24 != 0) {
+        if (uVar24 != 1) {
+          if (uVar24 != 2) {
+            uVar4 = iVar12 - 2;
+            puVar21 = puVar17 + 0x12;
+            puVar18 = puStack_60 + 0x12;
+            uVar6 = puVar17[7];
+            uVar7 = puVar17[8];
+            uVar10 = puVar17[9];
+            puStack_60[6] = puVar17[6];
+            puStack_60[7] = uVar6;
+            puStack_60[8] = uVar7;
+            puStack_60[9] = uVar10;
+            uVar6 = puVar17[0xb];
+            puStack_60[10] = puVar17[10];
+            puStack_60[0xb] = uVar6;
+          }
+          uVar4 = uVar4 - 1;
+          puVar11 = puVar21 + 6;
+          uVar6 = puVar21[-5];
+          uVar7 = puVar21[-4];
+          uVar10 = puVar21[-3];
+          puVar20 = puVar18 + 6;
+          puVar18[-6] = puVar21[-6];
+          puVar18[-5] = uVar6;
+          puVar18[-4] = uVar7;
+          puVar18[-3] = uVar10;
+          uVar6 = puVar21[-1];
+          puVar18[-2] = puVar21[-2];
+          puVar18[-1] = uVar6;
+        }
+        uVar4 = uVar4 - 1;
+        puVar21 = puVar11 + 6;
+        uVar6 = puVar11[-5];
+        uVar7 = puVar11[-4];
+        uVar10 = puVar11[-3];
+        puVar18 = puVar20 + 6;
+        puVar20[-6] = puVar11[-6];
+        puVar20[-5] = uVar6;
+        puVar20[-4] = uVar7;
+        puVar20[-3] = uVar10;
+        uVar6 = puVar11[-1];
+        puVar20[-2] = puVar11[-2];
+        puVar20[-1] = uVar6;
+        if (uVar4 == 0) goto LAB_00021d08;
+      }
+      do {
+        uVar6 = puVar21[-5];
+        uVar7 = puVar21[-4];
+        uVar10 = puVar21[-3];
+        uVar4 = uVar4 - 4;
+        puVar18[-6] = puVar21[-6];
+        puVar18[-5] = uVar6;
+        puVar18[-4] = uVar7;
+        puVar18[-3] = uVar10;
+        uVar6 = puVar21[-1];
+        puVar18[-2] = puVar21[-2];
+        puVar18[-1] = uVar6;
+        uVar6 = puVar21[1];
+        uVar7 = puVar21[2];
+        uVar10 = puVar21[3];
+        *puVar18 = *puVar21;
+        puVar18[1] = uVar6;
+        puVar18[2] = uVar7;
+        puVar18[3] = uVar10;
+        uVar6 = puVar21[5];
+        puVar18[4] = puVar21[4];
+        puVar18[5] = uVar6;
+        uVar6 = puVar21[7];
+        uVar7 = puVar21[8];
+        uVar10 = puVar21[9];
+        puVar18[6] = puVar21[6];
+        puVar18[7] = uVar6;
+        puVar18[8] = uVar7;
+        puVar18[9] = uVar10;
+        uVar6 = puVar21[0xb];
+        puVar18[10] = puVar21[10];
+        puVar18[0xb] = uVar6;
+        uVar6 = puVar21[0xd];
+        uVar7 = puVar21[0xe];
+        uVar10 = puVar21[0xf];
+        puVar18[0xc] = puVar21[0xc];
+        puVar18[0xd] = uVar6;
+        puVar18[0xe] = uVar7;
+        puVar18[0xf] = uVar10;
+        uVar6 = puVar21[0x11];
+        puVar18[0x10] = puVar21[0x10];
+        puVar18[0x11] = uVar6;
+        puVar18 = puVar18 + 0x18;
+        puVar21 = puVar21 + 0x18;
+      } while (uVar4 != 0);
+    }
+LAB_00021d08:
+    puVar11 = puStack_60 + iVar22 * 2 + 6;
+    puVar20 = puStack_60 + iVar22 * 2;
+  }
+  iVar22 = *(int *)(DAT_00021b2c + 0x21d3c);
+  *puVar20 = piStack_48;
+  puVar20[1] = uStack_44;
+  puVar20[2] = uStack_40;
+  puVar20[3] = piStack_3c;
+  puVar20[4] = piStack_38;
+  puVar20[5] = uStack_34;
+  if (puVar17 != (undefined4 *)0x0) {
+    uVar4 = (iVar22 - (int)puVar17 >> 3) * 8;
+    if (uVar4 < 0x81) {
+      std::__node_alloc::_M_deallocate(puVar17,uVar4);
+    }
+    else {
+      operator_delete(puVar17);
+    }
+  }
+  iVar22 = DAT_00021b30;
+  *(undefined4 **)(DAT_00021b30 + 0x21d94) = puVar11;
+  *(undefined4 **)(iVar22 + 0x21d90) = puStack_60;
+  *(undefined4 **)(iVar22 + 0x21d98) = puStack_58;
+LAB_00021994:
+  *(undefined1 *)(param_1 + 0x4b) = 1;
+  return;
+}
+
+
+
+============================================================
+requested=000286c0
+entry=000286c0
+name=FUN_000286c0
+body=[[00027e20, 0002865f] [000286c0, 000286e7]]
+decompileCompleted=true
+
+void FUN_000286c0(int param_1)
+
+{
+  int *piVar1;
+  Background *this;
+  ShaderProgram *pSVar2;
+  Renderer *pRVar3;
+  int iVar4;
+  int *piVar5;
+  int iVar6;
+  size_t sVar7;
+  Texture *unaff_r6;
+  size_t sVar8;
+  int iVar9;
+  Texture *pTVar10;
+  size_t sVar11;
+  string *psVar12;
+  uint uVar13;
+  int iVar14;
+  undefined8 uVar15;
+  undefined4 uVar16;
+  Texture *pTStack_84;
+  uint auStack_74 [11];
+  Texture aTStack_48 [16];
+  int iStack_38;
+  void *pvStack_34;
+  int iStack_2c;
+
+  uVar15 = DAT_000286f0;
+  *(undefined8 *)(param_1 + 0xd8) = DAT_000286e8;
+  uVar15 = FloatVectorMult(*(undefined8 *)(param_1 + 0xe0),uVar15,2,0x20);
+  *(undefined8 *)(param_1 + 0xe8) = uVar15;
+  piVar5 = *(int **)(DAT_00028660 + 0x27e30 + DAT_00028664);
+  iStack_2c = *piVar5;
+  FUN_00017a18();
+  FUN_00016b4c(param_1);
+  pTVar10 = *(Texture **)(param_1 + 0x94);
+  if (pTVar10 != (Texture *)0x0) {
+    unaff_r6 = pTVar10;
+    pTStack_84 = pTVar10;
+  }
+  *(float *)(param_1 + 0x594) =
+       SQRT(*(float *)(param_1 + 0xe0) * *(float *)(param_1 + 0xe0) +
+            *(float *)(param_1 + 0xe4) * *(float *)(param_1 + 0xe4)) * 10.0;
+  if (pTVar10 == (Texture *)0x0) {
+    unaff_r6 = (Texture *)FUN_00019f68(param_1);
+    pTStack_84 = unaff_r6;
+  }
+  unaff_r6[0x1a] = (Texture)0x0;
+  unaff_r6[0x1b] = (Texture)0x0;
+  glBindTexture(0xde1,*(undefined4 *)(unaff_r6 + 8));
+  glTexParameteri(0xde1,0x2803,0x812f);
+  glTexParameteri(0xde1,0x2802,0x812f);
+  this = operator_new(0x160);
+  vi::Background::Background(this,pTStack_84);
+  *(Background **)(param_1 + 0x544) = this;
+  vi::Background::setScreenSize((uint)this,*(uint *)(param_1 + 0x20));
+  FUN_00024ee4((Drawable *)(param_1 + 0x130),*(undefined4 *)(param_1 + 0xe0),
+               *(undefined4 *)(param_1 + 0xe4),*(undefined4 *)(param_1 + 0xd8),
+               *(undefined4 *)(param_1 + 0xdc));
+  FUN_00024ee4((Drawable *)(param_1 + 0x288),*(undefined4 *)(param_1 + 0xe0),
+               *(undefined4 *)(param_1 + 0xe4),*(undefined4 *)(param_1 + 0xd8),
+               *(undefined4 *)(param_1 + 0xdc));
+  FUN_00023f70(param_1);
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x59c,*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3,auStack_74);
+  iVar6 = *(int *)(param_1 + 0x5ac);
+  auStack_74[0] = auStack_74[0] & 0xffffff00;
+  auStack_74[1] = 0;
+  iVar14 = iVar6 - *(int *)(param_1 + 0x5a8) >> 2;
+  auStack_74[2] = 0;
+  auStack_74[3] = 0;
+  auStack_74[4] = 0;
+  uVar13 = (uint)(*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3) / 3;
+  auStack_74[5] = 0;
+  auStack_74[6] = 0;
+  auStack_74[7] = 0;
+  auStack_74[8] = 0;
+  auStack_74[9] = 0;
+  auStack_74[10] = 0;
+  if (uVar13 < (uint)(iVar14 * -0x45d1745d)) {
+    iVar14 = uVar13 * 0x2c + *(int *)(param_1 + 0x5a8);
+    if (iVar6 != iVar14) {
+      *(int *)(param_1 + 0x5ac) = iVar14;
+    }
+  }
+  else {
+    FUN_00027480(param_1 + 0x5a8,iVar6,uVar13 + iVar14 * 0x45d1745d,auStack_74);
+    uVar13 = (uint)(*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3) / 3;
+  }
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x564,uVar13,auStack_74);
+  iVar9 = DAT_00028668 + 0x2801c;
+  memset(*(void **)(param_1 + 0x2d0),0,
+         *(int *)(param_1 + 0x2d4) - (int)*(void **)(param_1 + 0x2d0) & 0xfffffffc);
+  memset(*(void **)(param_1 + 0x59c),0,
+         *(int *)(param_1 + 0x5a0) - (int)*(void **)(param_1 + 0x59c) & 0xfffffffc);
+  iVar14 = *(int *)(param_1 + 0xdc) + 1;
+  auStack_74[0] = 0;
+  iVar14 = (*(int *)(param_1 + 0xd8) * iVar14 + iVar14) * 0xc;
+  FUN_00024e58(param_1 + 0x558,iVar14,auStack_74);
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x57c,iVar14,auStack_74);
+  *(undefined4 *)(param_1 + 0x130) = 4;
+  *(undefined4 *)(param_1 + 0x288) = 4;
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_0002866c + 0x280bc),(string *)(DAT_00028670 + 0x280c0),0);
+  *(ShaderProgram **)(param_1 + 0x548) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x548),(Drawable *)(param_1 + 0x130));
+  *(Renderer **)(param_1 + 0x538) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar9,auStack_74);
+  uVar16 = 1;
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x160),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  iVar6 = DAT_00028674 + 0x2812c;
+  FUN_00017eb4(aTStack_48,iVar6,auStack_74,iVar6,uVar16);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x178),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  FUN_00017eb4(aTStack_48,DAT_00028678 + 0x2816c,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x558),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  FUN_00017eb4(aTStack_48,DAT_0002867c + 0x281a4,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x57c),true);
+  FUN_00019f34(aTStack_48);
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_00028684 + 0x281e8),(string *)(DAT_00028680 + 0x281e4),0);
+  *(ShaderProgram **)(param_1 + 0x54c) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  iVar14 = DAT_00028688;
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x54c),(Drawable *)(param_1 + 0x288));
+  *(Renderer **)(param_1 + 0x53c) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar9,auStack_74);
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x2b8),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,iVar14 + 0x2824c,auStack_74);
+  uVar16 = vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x2e8),true);
+  *(undefined4 *)(param_1 + 0x5b4) = uVar16;
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,iVar6,auStack_74);
+  uVar16 = 0;
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x2d0),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,DAT_0002868c + 0x282c4,auStack_74,DAT_0002868c,uVar16);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x59c),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,DAT_00028690 + 0x282fc,auStack_74);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  FUN_00017eb4(aTStack_48,DAT_00028694 + 0x28328,auStack_74);
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) != 0) {
+    sVar8 = iStack_38 - (int)pvStack_34;
+    iVar6 = iVar14;
+    iVar9 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar11 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar7 = sVar8;
+        }
+        iVar4 = memcmp(*(void **)(iVar9 + 0x24),pvStack_34,sVar7);
+        if (iVar4 != 0) break;
+        if ((int)sVar11 < (int)sVar8) goto LAB_0002835c;
+LAB_00028394:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar6 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_000283a4;
+      }
+      if (-1 < iVar4) goto LAB_00028394;
+LAB_0002835c:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_000283a4:
+    if (iVar14 != iVar6) {
+      sVar11 = *(int *)(iVar6 + 0x20) - (int)*(void **)(iVar6 + 0x24);
+      sVar7 = sVar11;
+      if ((int)sVar8 <= (int)sVar11) {
+        sVar7 = sVar8;
+      }
+      iVar14 = memcmp(pvStack_34,*(void **)(iVar6 + 0x24),sVar7);
+      if (iVar14 == 0) {
+        if ((int)sVar11 <= (int)sVar8) {
+LAB_000283e0:
+          iVar14 = *(int *)(iVar6 + 0x28);
+          if (iVar14 == 0) {
+            iVar14 = *(int *)(param_1 + 0x90);
+          }
+          goto LAB_000283ec;
+        }
+      }
+      else if (-1 < iVar14) goto LAB_000283e0;
+    }
+  }
+  __android_log_print(6,DAT_000286b4 + 0x28604,DAT_000286b8 + 0x28608,pvStack_34);
+  iVar14 = *(int *)(param_1 + 0x90);
+LAB_000283ec:
+  *(int *)(param_1 + 0x5c4) = iVar14;
+  FUN_00019f34(aTStack_48);
+  iVar14 = DAT_00028698;
+  iVar6 = *(int *)(param_1 + 0x5c4);
+  *(undefined1 *)(iVar6 + 0x1c) = 1;
+  glBindTexture(0xde1,*(undefined4 *)(iVar6 + 8));
+  glTexParameteri(0xde1,0x2800,0x2601);
+  glTexParameteri(0xde1,0x2801,0x2601);
+  iVar6 = *(int *)(param_1 + 0x5c4);
+  *(undefined1 *)(iVar6 + 0x1a) = 0;
+  *(undefined1 *)(iVar6 + 0x1b) = 0;
+  glBindTexture(0xde1,*(undefined4 *)(iVar6 + 8));
+  glTexParameteri(0xde1,0x2803,0x812f);
+  glTexParameteri(0xde1,0x2802,0x812f);
+  FUN_0001cc08(param_1);
+  FUN_00016be8(param_1);
+  *(undefined4 *)(param_1 + 0x3e0) = 4;
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_0002869c + 0x284a0),(string *)(iVar14 + 0x284a4),0);
+  *(ShaderProgram **)(param_1 + 0x550) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x550),(Drawable *)(param_1 + 0x3e0));
+  iVar14 = DAT_000286a0;
+  *(Renderer **)(param_1 + 0x540) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar14 + 0x284dc,auStack_74);
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x410),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286a4 + 0x28510,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x5c8),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286a8 + 0x2854c,auStack_74);
+  uVar16 = 0;
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x5d4),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286ac + 0x28580,auStack_74,DAT_000286ac,uVar16);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286b0 + 0x285b4,auStack_74);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  if (iStack_2c == *piVar5) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+
+
+
+============================================================
+requested=000286f8
+entry=000286f8
+name=FUN_000286f8
+body=[[000286f8, 0002871f]]
+decompileCompleted=true
+
+void FUN_000286f8(int param_1)
+
+{
+  int *piVar1;
+  Background *this;
+  ShaderProgram *pSVar2;
+  Renderer *pRVar3;
+  int iVar4;
+  int *piVar5;
+  int iVar6;
+  size_t sVar7;
+  Texture *unaff_r6;
+  size_t sVar8;
+  int iVar9;
+  Texture *pTVar10;
+  size_t sVar11;
+  string *psVar12;
+  uint uVar13;
+  int iVar14;
+  undefined8 uVar15;
+  undefined4 uVar16;
+  Texture *pTStack_84;
+  uint auStack_74 [11];
+  Texture aTStack_48 [16];
+  int iStack_38;
+  void *pvStack_34;
+  int iStack_2c;
+
+  uVar15 = DAT_00028720;
+  *(undefined8 *)(param_1 + 0xd8) = 0x800000008;
+  uVar15 = FloatVectorMult(*(undefined8 *)(param_1 + 0xe0),uVar15,2,0x20);
+  *(undefined8 *)(param_1 + 0xe8) = uVar15;
+  piVar5 = *(int **)(DAT_00028660 + 0x27e30 + DAT_00028664);
+  iStack_2c = *piVar5;
+  FUN_00017a18();
+  FUN_00016b4c(param_1);
+  pTVar10 = *(Texture **)(param_1 + 0x94);
+  if (pTVar10 != (Texture *)0x0) {
+    unaff_r6 = pTVar10;
+    pTStack_84 = pTVar10;
+  }
+  *(float *)(param_1 + 0x594) =
+       SQRT(*(float *)(param_1 + 0xe0) * *(float *)(param_1 + 0xe0) +
+            *(float *)(param_1 + 0xe4) * *(float *)(param_1 + 0xe4)) * 10.0;
+  if (pTVar10 == (Texture *)0x0) {
+    unaff_r6 = (Texture *)FUN_00019f68(param_1);
+    pTStack_84 = unaff_r6;
+  }
+  unaff_r6[0x1a] = (Texture)0x0;
+  unaff_r6[0x1b] = (Texture)0x0;
+  glBindTexture(0xde1,*(undefined4 *)(unaff_r6 + 8));
+  glTexParameteri(0xde1,0x2803,0x812f);
+  glTexParameteri(0xde1,0x2802,0x812f);
+  this = operator_new(0x160);
+  vi::Background::Background(this,pTStack_84);
+  *(Background **)(param_1 + 0x544) = this;
+  vi::Background::setScreenSize((uint)this,*(uint *)(param_1 + 0x20));
+  FUN_00024ee4((Drawable *)(param_1 + 0x130),*(undefined4 *)(param_1 + 0xe0),
+               *(undefined4 *)(param_1 + 0xe4),*(undefined4 *)(param_1 + 0xd8),
+               *(undefined4 *)(param_1 + 0xdc));
+  FUN_00024ee4((Drawable *)(param_1 + 0x288),*(undefined4 *)(param_1 + 0xe0),
+               *(undefined4 *)(param_1 + 0xe4),*(undefined4 *)(param_1 + 0xd8),
+               *(undefined4 *)(param_1 + 0xdc));
+  FUN_00023f70(param_1);
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x59c,*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3,auStack_74);
+  iVar6 = *(int *)(param_1 + 0x5ac);
+  auStack_74[0] = auStack_74[0] & 0xffffff00;
+  auStack_74[1] = 0;
+  iVar14 = iVar6 - *(int *)(param_1 + 0x5a8) >> 2;
+  auStack_74[2] = 0;
+  auStack_74[3] = 0;
+  auStack_74[4] = 0;
+  uVar13 = (uint)(*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3) / 3;
+  auStack_74[5] = 0;
+  auStack_74[6] = 0;
+  auStack_74[7] = 0;
+  auStack_74[8] = 0;
+  auStack_74[9] = 0;
+  auStack_74[10] = 0;
+  if (uVar13 < (uint)(iVar14 * -0x45d1745d)) {
+    iVar14 = uVar13 * 0x2c + *(int *)(param_1 + 0x5a8);
+    if (iVar6 != iVar14) {
+      *(int *)(param_1 + 0x5ac) = iVar14;
+    }
+  }
+  else {
+    FUN_00027480(param_1 + 0x5a8,iVar6,uVar13 + iVar14 * 0x45d1745d,auStack_74);
+    uVar13 = (uint)(*(int *)(param_1 + 700) - *(int *)(param_1 + 0x2b8) >> 3) / 3;
+  }
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x564,uVar13,auStack_74);
+  iVar9 = DAT_00028668 + 0x2801c;
+  memset(*(void **)(param_1 + 0x2d0),0,
+         *(int *)(param_1 + 0x2d4) - (int)*(void **)(param_1 + 0x2d0) & 0xfffffffc);
+  memset(*(void **)(param_1 + 0x59c),0,
+         *(int *)(param_1 + 0x5a0) - (int)*(void **)(param_1 + 0x59c) & 0xfffffffc);
+  iVar14 = *(int *)(param_1 + 0xdc) + 1;
+  auStack_74[0] = 0;
+  iVar14 = (*(int *)(param_1 + 0xd8) * iVar14 + iVar14) * 0xc;
+  FUN_00024e58(param_1 + 0x558,iVar14,auStack_74);
+  auStack_74[0] = 0;
+  FUN_00024e58(param_1 + 0x57c,iVar14,auStack_74);
+  *(undefined4 *)(param_1 + 0x130) = 4;
+  *(undefined4 *)(param_1 + 0x288) = 4;
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_0002866c + 0x280bc),(string *)(DAT_00028670 + 0x280c0),0);
+  *(ShaderProgram **)(param_1 + 0x548) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x548),(Drawable *)(param_1 + 0x130));
+  *(Renderer **)(param_1 + 0x538) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar9,auStack_74);
+  uVar16 = 1;
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x160),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  iVar6 = DAT_00028674 + 0x2812c;
+  FUN_00017eb4(aTStack_48,iVar6,auStack_74,iVar6,uVar16);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x178),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  FUN_00017eb4(aTStack_48,DAT_00028678 + 0x2816c,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x558),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x538);
+  FUN_00017eb4(aTStack_48,DAT_0002867c + 0x281a4,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x57c),true);
+  FUN_00019f34(aTStack_48);
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_00028684 + 0x281e8),(string *)(DAT_00028680 + 0x281e4),0);
+  *(ShaderProgram **)(param_1 + 0x54c) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  iVar14 = DAT_00028688;
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x54c),(Drawable *)(param_1 + 0x288));
+  *(Renderer **)(param_1 + 0x53c) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar9,auStack_74);
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x2b8),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,iVar14 + 0x2824c,auStack_74);
+  uVar16 = vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x2e8),true);
+  *(undefined4 *)(param_1 + 0x5b4) = uVar16;
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,iVar6,auStack_74);
+  uVar16 = 0;
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x2d0),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,DAT_0002868c + 0x282c4,auStack_74,DAT_0002868c,uVar16);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x59c),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x53c);
+  FUN_00017eb4(aTStack_48,DAT_00028690 + 0x282fc,auStack_74);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  FUN_00017eb4(aTStack_48,DAT_00028694 + 0x28328,auStack_74);
+  iVar14 = *(int *)(param_1 + 4);
+  if (*(int *)(iVar14 + 4) != 0) {
+    sVar8 = iStack_38 - (int)pvStack_34;
+    iVar6 = iVar14;
+    iVar9 = *(int *)(iVar14 + 4);
+    do {
+      while( true ) {
+        sVar11 = *(int *)(iVar9 + 0x20) - (int)*(void **)(iVar9 + 0x24);
+        sVar7 = sVar11;
+        if ((int)sVar8 <= (int)sVar11) {
+          sVar7 = sVar8;
+        }
+        iVar4 = memcmp(*(void **)(iVar9 + 0x24),pvStack_34,sVar7);
+        if (iVar4 != 0) break;
+        if ((int)sVar11 < (int)sVar8) goto LAB_0002835c;
+LAB_00028394:
+        piVar1 = (int *)(iVar9 + 8);
+        iVar6 = iVar9;
+        iVar9 = *piVar1;
+        if (*piVar1 == 0) goto LAB_000283a4;
+      }
+      if (-1 < iVar4) goto LAB_00028394;
+LAB_0002835c:
+      iVar9 = *(int *)(iVar9 + 0xc);
+    } while (iVar9 != 0);
+LAB_000283a4:
+    if (iVar14 != iVar6) {
+      sVar11 = *(int *)(iVar6 + 0x20) - (int)*(void **)(iVar6 + 0x24);
+      sVar7 = sVar11;
+      if ((int)sVar8 <= (int)sVar11) {
+        sVar7 = sVar8;
+      }
+      iVar14 = memcmp(pvStack_34,*(void **)(iVar6 + 0x24),sVar7);
+      if (iVar14 == 0) {
+        if ((int)sVar11 <= (int)sVar8) {
+LAB_000283e0:
+          iVar14 = *(int *)(iVar6 + 0x28);
+          if (iVar14 == 0) {
+            iVar14 = *(int *)(param_1 + 0x90);
+          }
+          goto LAB_000283ec;
+        }
+      }
+      else if (-1 < iVar14) goto LAB_000283e0;
+    }
+  }
+  __android_log_print(6,DAT_000286b4 + 0x28604,DAT_000286b8 + 0x28608,pvStack_34);
+  iVar14 = *(int *)(param_1 + 0x90);
+LAB_000283ec:
+  *(int *)(param_1 + 0x5c4) = iVar14;
+  FUN_00019f34(aTStack_48);
+  iVar14 = DAT_00028698;
+  iVar6 = *(int *)(param_1 + 0x5c4);
+  *(undefined1 *)(iVar6 + 0x1c) = 1;
+  glBindTexture(0xde1,*(undefined4 *)(iVar6 + 8));
+  glTexParameteri(0xde1,0x2800,0x2601);
+  glTexParameteri(0xde1,0x2801,0x2601);
+  iVar6 = *(int *)(param_1 + 0x5c4);
+  *(undefined1 *)(iVar6 + 0x1a) = 0;
+  *(undefined1 *)(iVar6 + 0x1b) = 0;
+  glBindTexture(0xde1,*(undefined4 *)(iVar6 + 8));
+  glTexParameteri(0xde1,0x2803,0x812f);
+  glTexParameteri(0xde1,0x2802,0x812f);
+  FUN_0001cc08(param_1);
+  FUN_00016be8(param_1);
+  *(undefined4 *)(param_1 + 0x3e0) = 4;
+  pSVar2 = operator_new(0x3c);
+  vi::ShaderProgram::ShaderProgram
+            (pSVar2,(string *)(DAT_0002869c + 0x284a0),(string *)(iVar14 + 0x284a4),0);
+  *(ShaderProgram **)(param_1 + 0x550) = pSVar2;
+  pRVar3 = operator_new(0x44);
+  vi::Renderer::Renderer(pRVar3,*(ShaderProgram **)(param_1 + 0x550),(Drawable *)(param_1 + 0x3e0));
+  iVar14 = DAT_000286a0;
+  *(Renderer **)(param_1 + 0x540) = pRVar3;
+  FUN_00017eb4(aTStack_48,iVar14 + 0x284dc,auStack_74);
+  vi::Renderer::addAttribute((string *)pRVar3,aTStack_48,*(uint *)(param_1 + 0x410),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286a4 + 0x28510,auStack_74);
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x5c8),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286a8 + 0x2854c,auStack_74);
+  uVar16 = 0;
+  vi::Renderer::addAttribute(psVar12,aTStack_48,*(uint *)(param_1 + 0x5d4),true);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286ac + 0x28580,auStack_74,DAT_000286ac,uVar16);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  psVar12 = *(string **)(param_1 + 0x540);
+  FUN_00017eb4(aTStack_48,DAT_000286b0 + 0x285b4,auStack_74);
+  vi::Renderer::addTexture(psVar12,aTStack_48);
+  FUN_00019f34(aTStack_48);
+  if (iStack_2c == *piVar5) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+
+
+
+============================================================
+requested=0002af7c
+entry=0002af7c
+name=FUN_0002af7c
+body=[[0002af7c, 0002b027]]
+decompileCompleted=true
+
+void FUN_0002af7c(int param_1,float *param_2)
+
+{
+  float fVar1;
+  float fVar2;
+
+  if (*(char *)(param_1 + 300) != '\0') {
+    return;
+  }
+  fVar1 = param_2[1];
+  *(float *)(param_1 + 0x124) = *param_2;
+  fVar2 = *param_2;
+  *(float *)(param_1 + 0x128) = fVar1;
+  fVar1 = param_2[1];
+  *(float *)(param_1 + 0xf4) = (fVar2 + fVar2) - 1.0;
+  *(float *)(param_1 + 0xf8) = (fVar1 + fVar1) - 1.0;
+  FUN_00017b14();
+  if (*(char *)(param_1 + 0x599) == '\0') {
+    FUN_0001b628(param_1);
+  }
+  FUN_0002a710(param_1);
+  FUN_00019c88(param_1,0x3f19999a,0x3f000000,0x3f000000);
+  *(undefined1 *)(param_1 + 0x599) = 0;
+  *(undefined1 *)(param_1 + 0x120) = 1;
+  if (*(char *)(param_1 + 0x554) != '\0') {
+    return;
+  }
+  FUN_000200f8(param_1);
+  return;
+}
+
+
+
+============================================================
+requested=000179fc
+entry=000179fc
+name=FUN_000179fc
+body=[[000179fc, 00017a17]]
+decompileCompleted=true
+
+void FUN_000179fc(int param_1)
+
+{
+  if (*(char *)(param_1 + 300) != '\0') {
+    return;
+  }
+  *(undefined1 *)(param_1 + 0x555) = 0;
+  *(undefined1 *)(param_1 + 0x120) = 1;
+  FUN_00016ef4();
+  return;
+}
+
+
+
+============================================================
+requested=00013a7c
+entry=00013a7c
+name=FUN_00013a7c
+body=[[00013a7c, 00013b0f]]
+decompileCompleted=true
+
+void FUN_00013a7c(int param_1,float *param_2)
+
+{
+  undefined8 uVar1;
+  float fVar2;
+  float fVar3;
+  float fVar4;
+
+  if (*(char *)(param_1 + 300) == '\0') {
+    if (*(char *)(param_1 + 0x74) != '\0') {
+      uVar1 = FloatVectorAdd(*(undefined8 *)param_2,*(undefined8 *)param_2,2);
+      uVar1 = FloatVectorSub(uVar1,0x3f8000003f800000,2,0x20);
+      *(undefined8 *)(param_1 + 0xf4) = uVar1;
+      *(undefined1 *)(param_1 + 0x555) = 1;
+    }
+    fVar4 = param_2[1];
+    fVar2 = (*(float *)(param_1 + 0x124) - *param_2) * *(float *)(param_1 + 0x3c);
+    fVar3 = (*(float *)(param_1 + 0x128) - fVar4) * *(float *)(param_1 + 0x40);
+    if (*(float *)(param_1 + 0xe4) * *(float *)(param_1 + 0xe4) * 0.25 <
+        fVar2 * fVar2 + fVar3 * fVar3) {
+      *(float *)(param_1 + 0x124) = *param_2;
+      *(float *)(param_1 + 0x128) = fVar4;
+      *(undefined1 *)(param_1 + 0x120) = 1;
+    }
+    return;
+  }
+  return;
+}
+
+
+
+============================================================
+requested=00011e60
+entry=00011e60
+name=FUN_00011e60
+body=[[00011e60, 00011e63]]
+decompileCompleted=true
+
+void FUN_00011e60(void)
+
+{
+  return;
+}
+
+
+
+============================================================
+requested=0001ef38
+entry=0001ef38
+name=FUN_0001ef38
+body=[[0001ef38, 0001ef53]]
+decompileCompleted=true
+
+void * FUN_0001ef38(void *param_1)
+
+{
+  FUN_0001e450();
+  operator_delete(param_1);
+  return param_1;
+}
+
+
+
+============================================================
+requested=00015028
+entry=00015028
+name=FUN_00015028
+body=[[00015028, 0001514f]]
+decompileCompleted=true
+
+void FUN_00015028(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  undefined4 uVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  float *pfVar7;
+  undefined4 *puVar8;
+  undefined4 uVar9;
+  undefined4 *puVar10;
+  uint in_fpscr;
+  float fVar11;
+  float fVar12;
+
+  iVar2 = DAT_0001515c;
+  iVar1 = DAT_00015158;
+  fVar11 = (float)VectorSignedToFloat(*(undefined4 *)(param_1 + 0x20),(byte)(in_fpscr >> 0x16) & 3);
+  iVar4 = DAT_00015150 + 0x15050;
+  pfVar7 = *(float **)(iVar4 + DAT_00015154);
+  fVar12 = (float)VectorSignedToFloat(*(undefined4 *)(param_1 + 0x24),(byte)(in_fpscr >> 0x16) & 3);
+  pfVar7[1] = 0.0;
+  pfVar7[2] = 0.0;
+  pfVar7[3] = 0.0;
+  pfVar7[4] = 0.0;
+  pfVar7[10] = -0.001;
+  pfVar7[6] = 0.0;
+  pfVar7[7] = 0.0;
+  pfVar7[8] = 0.0;
+  pfVar7[9] = 0.0;
+  pfVar7[0xb] = 0.0;
+  pfVar7[0xe] = 0.0;
+  pfVar7[0xf] = 1.0;
+  pfVar7[0xc] = fVar11 / -fVar11;
+  *pfVar7 = 2.0 / fVar11;
+  pfVar7[5] = 2.0 / fVar12;
+  pfVar7[0xd] = fVar12 / -fVar12;
+  puVar10 = *(undefined4 **)(iVar4 + iVar1);
+  puVar8 = *(undefined4 **)(iVar4 + iVar2);
+  uVar5 = puVar10[1];
+  uVar6 = puVar10[2];
+  uVar3 = puVar10[3];
+  *puVar8 = *puVar10;
+  puVar8[1] = uVar5;
+  uVar9 = puVar10[4];
+  uVar5 = puVar10[5];
+  puVar8[2] = uVar6;
+  puVar8[3] = uVar3;
+  puVar8[4] = uVar9;
+  puVar8[5] = uVar5;
+  uVar3 = puVar10[7];
+  uVar9 = puVar10[8];
+  uVar5 = puVar10[10];
+  puVar8[6] = puVar10[6];
+  uVar6 = puVar10[9];
+  puVar8[7] = uVar3;
+  puVar8[8] = uVar9;
+  puVar8[9] = uVar6;
+  uVar6 = puVar10[0xc];
+  puVar8[10] = uVar5;
+  uVar5 = puVar10[0xd];
+  uVar3 = puVar10[0xe];
+  uVar9 = puVar10[0xf];
+  puVar8[0xb] = puVar10[0xb];
+  puVar8[0xc] = uVar6;
+  puVar8[0xd] = uVar5;
+  puVar8[0xe] = uVar3;
+  puVar8[0xf] = uVar9;
+  return;
+}
+
+
+
+============================================================
+requested=00014ef0
+entry=00014ef0
+name=FUN_00014ef0
+body=[[00014ef0, 00015013]]
+decompileCompleted=true
+
+void FUN_00014ef0(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  undefined4 uVar3;
+  int iVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  float *pfVar7;
+  undefined4 uVar8;
+  undefined4 *puVar9;
+  undefined4 *puVar10;
+  undefined4 uVar11;
+  undefined4 uVar12;
+  undefined4 uVar13;
+  float fVar14;
+
+  iVar2 = DAT_00015024;
+  iVar1 = DAT_00015020;
+  fVar14 = *(float *)(param_1 + 0x38) * DAT_00015014;
+  iVar4 = DAT_00015018 + 0x14f10;
+  pfVar7 = *(float **)(iVar4 + DAT_0001501c);
+  pfVar7[5] = 1.792591;
+  pfVar7[1] = 0.0;
+  pfVar7[2] = 0.0;
+  pfVar7[3] = 0.0;
+  pfVar7[4] = 0.0;
+  pfVar7[6] = 0.0;
+  pfVar7[7] = 0.0;
+  pfVar7[8] = 0.0;
+  pfVar7[9] = 0.0;
+  pfVar7[0xc] = 0.0;
+  pfVar7[0xd] = 0.0;
+  pfVar7[0xf] = 0.0;
+  pfVar7[0xb] = -1.0;
+  pfVar7[10] = -1.0002;
+  pfVar7[0xe] = -2.0002;
+  *pfVar7 = 1.0 / fVar14;
+  puVar10 = *(undefined4 **)(iVar4 + iVar1);
+  puVar9 = *(undefined4 **)(iVar4 + iVar2);
+  uVar5 = puVar10[1];
+  uVar6 = puVar10[2];
+  uVar11 = puVar10[3];
+  uVar12 = puVar10[4];
+  uVar3 = puVar10[5];
+  *puVar9 = *puVar10;
+  uVar8 = puVar10[6];
+  puVar9[1] = uVar5;
+  puVar9[2] = uVar6;
+  puVar9[3] = uVar11;
+  puVar9[4] = uVar12;
+  puVar9[5] = uVar3;
+  puVar9[6] = uVar8;
+  uVar3 = puVar10[8];
+  uVar12 = puVar10[9];
+  puVar9[7] = puVar10[7];
+  puVar9[8] = uVar3;
+  uVar13 = puVar10[10];
+  uVar3 = puVar10[0xb];
+  uVar8 = puVar10[0xc];
+  uVar6 = puVar10[0xd];
+  uVar5 = puVar10[0xe];
+  uVar11 = puVar10[0xf];
+  puVar9[9] = uVar12;
+  puVar9[10] = uVar13;
+  puVar9[0xb] = uVar3;
+  puVar9[0xc] = uVar8;
+  puVar9[0xd] = uVar6;
+  puVar9[0xe] = uVar5;
+  puVar9[0xf] = uVar11;
+  return;
+}

@@ -26,8 +26,8 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
-                return true;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return true;
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
                 return !ARM64_PROCESS;
             case OverlayPrefs.EFFECT_TABS_BLIND_WIP:

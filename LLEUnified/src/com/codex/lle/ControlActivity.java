@@ -1483,7 +1483,9 @@ public class ControlActivity extends Activity {
                 current);
         addEffectOptionIfAvailable(effects,
                 "N4 Abstract Tiles",
-                "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
+                EffectAvailability.is64BitProcess()
+                        ? "ARM64 GLES reconstruction of Samsung Abstract Tiles with transparent screenshot composition."
+                        : "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 current);
         addEffectOptionIfAvailable(effects,

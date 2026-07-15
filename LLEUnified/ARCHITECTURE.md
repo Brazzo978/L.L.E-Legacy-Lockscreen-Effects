@@ -16,7 +16,7 @@ matching native libraries.
 | N5 Colored Droplet | original patched ARM32 engine | Note 5 ARM64 engine |
 | N5 Colored Droplet + Gyro | original patched ARM32 engine | Note 5 ARM64 engine |
 | N5 Sparkling Bubbles | original patched ARM32 engine | Note 5 ARM64 engine |
-| N4 Abstract Tiles | original patched ARM32 engine | unavailable/hidden |
+| N4 Abstract Tiles | original patched ARM32 engine | reconstructed ARM64 GLES engine |
 | N4 Geometric Mosaic | original patched ARM32 engine | unavailable/hidden |
 
 Unimplemented WIP slots are hidden on both targets.
