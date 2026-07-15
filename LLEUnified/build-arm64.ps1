@@ -1,6 +1,7 @@
 param(
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
+    [switch] $Companion,
     [ValidateSet("Stable", "StockFeedback")]
     [string] $WatercolorFeedbackMode = "Stable"
 )
@@ -8,6 +9,9 @@ param(
 $ErrorActionPreference = "Stop"
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
+}
+if ($Companion -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
+    throw "The co-installable ARM64 companion does not support native probe variants"
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -30,7 +34,11 @@ $readelf = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-read
 $objdump = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-objdump.exe"
 $strings = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strings.exe"
 
-$out = Join-Path $root "build\arm64-v8a"
+$out = Join-Path $root $(if ($Companion) {
+    "build\arm64-v8a-dev"
+} else {
+    "build\arm64-v8a"
+})
 $classes = Join-Path $out "classes"
 $dex = Join-Path $out "dex"
 $resStage = Join-Path $out "res"
@@ -38,7 +46,9 @@ $resZip = Join-Path $out "res.zip"
 $unsigned = Join-Path $out "LLE-arm64-unsigned.apk"
 $assembled = Join-Path $out "LLE-arm64-assembled.apk"
 $zipaligned = Join-Path $out "LLE-arm64-zipaligned.apk"
-$signed = Join-Path $out $(if ($IncludeNote5Probe) {
+$signed = Join-Path $out $(if ($Companion) {
+    "LLE-arm64-dev.apk"
+} elseif ($IncludeNote5Probe) {
     "LLE-arm64-note5-probe.apk"
 } elseif ($IncludeRippleCoreProbe) {
     "LLE-arm64-ripple-core-probe.apk"
@@ -53,7 +63,8 @@ $arm64Stage = Join-Path $nativeStage "lib\arm64-v8a"
 $marker = Join-Path $arm64Stage "liblle64marker.so"
 $keystore = Join-Path $root ".keys\debug.keystore"
 $sourceKeystore = Join-Path $root "..\unlock-effects-test\demo-apk\debug.keystore"
-$manifest = Join-Path $root "AndroidManifest.xml"
+$canonicalManifest = Join-Path $root "AndroidManifest.xml"
+$manifest = $canonicalManifest
 
 function Run($exe, $arguments) {
     if (-not (Test-Path -LiteralPath $exe) -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) {
@@ -70,16 +81,35 @@ New-Item -ItemType Directory -Force -Path $out, $classes, $dex, $resStage, $arm6
 
 Copy-Item -Path (Join-Path $root "res\*") -Destination $resStage -Recurse -Force
 Run (Join-Path $buildTools "aapt2.exe") @("compile", "--dir", $resStage, "-o", $resZip)
-if ($IncludeNote5Probe -or $IncludeRippleCoreProbe) {
-    $probeManifest = Join-Path $out "AndroidManifest.xml"
-    $manifestText = [System.IO.File]::ReadAllText($manifest)
-    $probePattern = '(?s)(android:name="\.Note5NativeProbeActivity".*?android:exported=")false(")'
-    $probeManifestText = [regex]::Replace($manifestText, $probePattern, '${1}true$2')
-    if ($probeManifestText -eq $manifestText) {
-        throw "Note5NativeProbeActivity manifest patch point not found"
+if ($Companion -or $IncludeNote5Probe -or $IncludeRippleCoreProbe) {
+    $generatedManifest = Join-Path $out "AndroidManifest.xml"
+    $manifestText = [System.IO.File]::ReadAllText($canonicalManifest)
+    $generatedManifestText = $manifestText
+    if ($Companion) {
+        $generatedManifestText = $generatedManifestText.Replace(
+                'package="com.codex.lle"',
+                'package="com.codex.lle.arm64dev"')
+        $generatedManifestText = [regex]::Replace(
+                $generatedManifestText,
+                'android:name="\.([A-Za-z0-9_$.]+)"',
+                'android:name="com.codex.lle.$1"')
+        if ($generatedManifestText -eq $manifestText -or
+                $generatedManifestText -notmatch 'package="com\.codex\.lle\.arm64dev"' -or
+                $generatedManifestText -match 'android:name="\.') {
+            throw "ARM64 companion manifest patch failed"
+        }
     }
-    [System.IO.File]::WriteAllText($probeManifest, $probeManifestText)
-    $manifest = $probeManifest
+    if ($IncludeNote5Probe -or $IncludeRippleCoreProbe) {
+        $probePattern = '(?s)(android:name="\.Note5NativeProbeActivity".*?android:exported=")false(")'
+        $probeManifestText = [regex]::Replace(
+                $generatedManifestText, $probePattern, '${1}true$2')
+        if ($probeManifestText -eq $generatedManifestText) {
+            throw "Note5NativeProbeActivity manifest patch point not found"
+        }
+        $generatedManifestText = $probeManifestText
+    }
+    [System.IO.File]::WriteAllText($generatedManifest, $generatedManifestText)
+    $manifest = $generatedManifest
 }
 $linkArgs = @(
     "link", "-o", $unsigned,
@@ -89,6 +119,11 @@ $linkArgs = @(
     "--java", (Join-Path $out "gen"),
     "--auto-add-overlay"
 )
+if ($Companion) {
+    # Keep Java/JNI classes under com.codex.lle while the installed application
+    # ID is com.codex.lle.arm64dev. This preserves all native JNI entry points.
+    $linkArgs += @("--custom-package", "com.codex.lle")
+}
 if (Test-Path (Join-Path $root "assets")) {
     $linkArgs += @("-A", (Join-Path $root "assets"))
 }
@@ -432,6 +467,18 @@ Run (Join-Path $buildTools "apksigner.bat") @(
 )
 Run (Join-Path $buildTools "apksigner.bat") @("verify", "--verbose", $signed)
 
+$badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "APK badging inspection failed"
+}
+$expectedPackage = if ($Companion) { "com.codex.lle.arm64dev" } else { "com.codex.lle" }
+if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
+    throw "Unexpected APK package; expected $expectedPackage"
+}
+if ($Companion -and $badging -notmatch "application-label:'L\.L\.E\.'") {
+    throw "ARM64 companion label verification failed"
+}
+
 $entries = @(& "jar.exe" tf $signed)
 $nativeEntries = @($entries | Where-Object { $_ -like "lib/*" -and -not $_.EndsWith("/") })
 $expectedNativeEntries = @(
@@ -490,6 +537,7 @@ if ($abstractTilesApkHash -ne $abstractTilesStageHash) {
 Remove-Item -Recurse -Force $abstractTilesApkVerify
 
 Write-Host "Built ARM64-only APK: $signed"
+Write-Host "Application ID: $expectedPackage"
 Write-Warning "APK contains proprietary Samsung Note 5 firmware libraries."
 if ($IncludeRippleCoreProbe) {
     Write-Warning "Ripple probe filename selected; it contains the same full Early Alpha Water Ripple library as the normal APK."

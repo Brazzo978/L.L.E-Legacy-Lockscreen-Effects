@@ -2509,7 +2509,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRendererType != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
             return;
         }
-        Log.e(TAG, "Water Ripple Early Alpha failed; falling back to Lens Flare reason="
+        Log.e(TAG, "Water Ripple failed; falling back to Lens Flare reason="
                 + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();

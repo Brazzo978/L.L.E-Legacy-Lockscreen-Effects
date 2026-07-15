@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.codex.lle"
-    android:versionCode="13"
-    android:versionName="1.1.0-unified-alpha.1">
+    android:versionCode="14"
+    android:versionName="1.0.1-beta.1">
 
     <uses-sdk
         android:minSdkVersion="23"

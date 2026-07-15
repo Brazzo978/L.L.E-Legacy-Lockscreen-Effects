@@ -1,18 +1,20 @@
 # L.L.E. Unified
 
 **L.L.E. - Legacy Lockscreen Effects** restores selected Samsung lockscreen
-effects inside a modern Android accessibility overlay. The application package
-is `com.codex.lle`.
+effects inside a modern Android accessibility overlay. The ARM32 application ID
+is `com.codex.lle`; the co-installable ARM64 Beta uses
+`com.codex.lle.arm64dev`. Java and JNI classes remain in `com.codex.lle`.
 
 This repository is the canonical, shared source tree for both ARM32 and ARM64.
 Java logic, resources, preferences, Fold routing, touch geometry, background
 capture and the application UI are developed once. Each APK then packages the
 native engines appropriate for its process architecture.
 
-> **Early Alpha:** this project contains reconstructed renderers, patched
+> **Beta:** this project contains reconstructed renderers, patched
 > legacy binaries and device-specific lockscreen integration. Back up anything
 > important, keep another unlock method available and expect visual or
-> lifecycle differences between Android/One UI versions.
+> lifecycle differences between Android/One UI versions. ARM64 Abstract Tiles
+> remains explicitly Alpha.
 
 ## Contents
 
@@ -26,20 +28,21 @@ native engines appropriate for its process architecture.
 - [Screenshot capture and touch-box setup](#screenshot-capture-and-touch-box-setup)
 - [Update, switch ABI or uninstall](#update-switch-abi-or-uninstall)
 - [Troubleshooting](#troubleshooting)
-- [Early-Alpha limitations](#early-alpha-limitations)
+- [Beta limitations](#beta-limitations)
 - [Build from source](#build-from-source)
 - [Technical documentation](#technical-documentation)
 - [Firmware and redistribution warning](#firmware-and-redistribution-warning)
 
 ## Choose an APK
 
-L.L.E. produces two alternative APKs with the same package name, version,
-preferences and signing identity. They cannot be installed side by side.
+The Beta release produces a normal ARM32 package and a co-installable ARM64
+package. Both have the launcher label **L.L.E.**, but keep separate preferences
+and screenshot caches.
 
 | APK | Use it when | Native ABI |
 |---|---|---|
-| `LLE-armeabi-v7a-debug.apk` | The device supports 32-bit ARM applications and you want the original Samsung ARM32 engines, including Geometric Mosaic | `armeabi-v7a` |
-| `LLE-arm64-debug.apk` | The device is ARM64-only, or you want the ARM64 ports and Note 5 ARM64 engines | `arm64-v8a` |
+| `LLE-1.0.1-Beta-1-32-bit.apk` | The device supports 32-bit ARM applications and you want the original Samsung ARM32 engines, including Geometric Mosaic | `armeabi-v7a` |
+| `LLE-1.0.1-Beta-1-64-bit.apk` | The device is ARM64-only, or you want the ARM64 ports and Note 5 ARM64 engines | `arm64-v8a` |
 
 The decision is about the **application process**, not merely the first value
 reported by `ro.product.cpu.abilist`. A modern 32/64-bit device can run either
@@ -63,7 +66,7 @@ renderer construction paths in `ChargingAccessibilityService`.
 | N3 Watercolor | 3 | Available - original patched Samsung ARM32 engine | Available - reconstructed ARM64 GLES engine |
 | N5 Colored Droplet | 4 | Available - original patched Samsung ARM32 engine | Available - Note 5 ARM64 engine with overlay integration |
 | N5 Sparkling Bubbles | 5 | Available - original patched Samsung ARM32 engine | Available - Note 5 ARM64 engine with overlay integration |
-| N4 Abstract Tiles | 7 | Available - original patched Samsung ARM32 engine | Available - reconstructed ARM64 GLES engine |
+| N4 Abstract Tiles | 7 | Available - original patched Samsung ARM32 engine | **Alpha** - reconstructed ARM64 GLES engine |
 | N4 Geometric Mosaic | 8 | Available - original patched Samsung ARM32 engine | Unavailable and hidden |
 | N5 Colored Droplet + Gyro | 9 | Available - original patched Samsung ARM32 engine | Available - Note 5 ARM64 engine with accelerometer gravity |
 | S3 Water Ripple | 10 | Available - original patched Samsung ARM32 engine | Available - reconstructed ARM64 GLES engine |
@@ -130,7 +133,7 @@ touch box.
 
 Use **Dual touch box wizard** to capture and draw both touch regions. A capture
 request must be completed while the requested physical panel is active. Fold
-detection and panel classification are still Early Alpha and should be checked
+detection and panel classification are still experimental and should be checked
 after an OS update.
 
 See [Fold dual-panel port](FOLD-DISPLAY-PORT.md) for the runtime model and the
@@ -174,22 +177,23 @@ adb devices
 
 Use `adb -s SERIAL ...` on every command if more than one device is listed.
 
-Install the ARM64 product:
+Install the ARM64 Beta release product:
 
 ```shell
-adb install -r "build/arm64-v8a/LLE-arm64-debug.apk"
+adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
 ```
 
-Or install the ARM32 product:
+Install the ARM32 Beta release product:
 
 ```shell
-adb install -r "build/armeabi-v7a/LLE-armeabi-v7a-debug.apk"
+adb install --no-incremental -r "LLE-1.0.1-Beta-1-32-bit.apk"
 ```
 
-Launch the control application:
+Launch the ARM32 or ARM64 control application respectively:
 
 ```shell
 adb shell am start -n com.codex.lle/.ControlActivity
+adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
 ```
 
 `INSTALL_FAILED_NO_MATCHING_ABIS` means the device cannot run the selected
@@ -200,7 +204,7 @@ APK. Use the other product only if its ABI appears in the device ABI list.
 1. Open L.L.E.
 2. Tap the accessibility status badge in the header. Android opens
    Accessibility settings.
-3. Find **L.L.E. 64** (the current application label) and enable its
+3. Find **L.L.E.** and enable its
    accessibility service. Read Android's warning
    and continue only if you understand the access granted to the application.
 4. Return to L.L.E. and enable the master switch in the header if it is off.
@@ -255,29 +259,47 @@ delete the panel screenshot cache.
 Install the newer APK with `-r`:
 
 ```shell
-adb install -r "path/to/new/LLE-arm64-debug.apk"
+adb install --no-incremental -r "path/to/new/LLE-1.0.1-Beta-1-64-bit.apk"
 ```
 
 An in-place update preserves preferences, touch boxes and screenshot caches
 when the package is signed with the same certificate.
 
-### Switch ARM32/ARM64
+### Co-install ARM32 and ARM64 Beta
 
-The two products share `com.codex.lle`, so install the other APK as a
-replacement, not as a second app:
+The release products use separate application IDs, so installing one does not
+replace the other:
 
 ```shell
-adb install -r "build/armeabi-v7a/LLE-armeabi-v7a-debug.apk"
+adb install --no-incremental -r "LLE-1.0.1-Beta-1-32-bit.apk"
+adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
 ```
 
-If Android refuses an ABI replacement, uninstalling first is the reliable
-fallback, but it removes all L.L.E. application data. Record or back up the
-touch/capture setup before doing so.
+Their preferences and caches remain separate. Enable only the service belonging
+to the build you are actively testing.
+
+### Build the ARM64 companion from source
+
+For side-by-side phone testing, build the ARM64-only companion variant:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1 -Companion
+adb install --no-incremental -r ".\LLEUnified\build\arm64-v8a-dev\LLE-arm64-dev.apk"
+adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
+```
+
+The companion installs as `com.codex.lle.arm64dev` with the same launcher label
+**L.L.E.**. Its preferences, screenshot caches and process ABI are
+separate from the normal `com.codex.lle` installation. Keep only one L.L.E.
+accessibility service enabled at a time: two enabled render services would both
+listen to the lockscreen and could create competing overlays. This internal
+variant is used for the co-installable ARM64 beta artifact.
 
 ### Uninstall
 
 ```shell
 adb uninstall com.codex.lle
+adb uninstall com.codex.lle.arm64dev
 ```
 
 This removes the application, preferences and private screenshot caches. You
@@ -329,11 +351,13 @@ or Samsung's battery settings if appropriate for your device.
 - Re-capture and redraw only the panel reported by the wizard.
 - Collect `adb logcat -d -s ChargingA11y:V '*:S'` before changing more state.
 
-## Early-Alpha limitations
+## Beta limitations
 
-- ARM64 Water Ripple, Watercolor and Abstract Tiles are reconstructions. Their
-  recovered geometry, timing and shader behavior target the originals, but
-  byte-for-byte or pixel-for-pixel parity across GPUs is not expected.
+- ARM64 Water Ripple and Watercolor are beta reconstructions. Their recovered
+  geometry, timing and shader behavior target the originals, but byte-for-byte
+  or pixel-for-pixel parity across GPUs is not expected.
+- ARM64 Abstract Tiles remains Alpha while its original scatter channels and
+  animation curves receive another fidelity pass.
 - Transparent lockscreen composition intentionally differs from Samsung's
   original opaque wallpaper framebuffer.
 - High-refresh displays, power-saving refresh changes, GPU drivers and One UI
@@ -342,14 +366,14 @@ or Samsung's battery settings if appropriate for your device.
   replacement capture succeeds.
 - Fold panel detection relies on public display/hinge information plus aspect
   classification and may need adjustment for untested models.
-- The two ABI APKs cannot coexist because they use one package and one
-  preference schema.
+- The co-installable APKs keep separate preferences and screenshot caches. Do
+  not enable both accessibility render services at the same time.
 - Geometric Mosaic is ARM32-only. Tabs Blind and Ink in Water are registered
   WIP slots but are hidden on both ABIs.
 - ARM32 engines cannot run on ARM64-only devices.
 - Diagnostic/root controls are not part of the normal setup and should remain
   disabled unless a test explicitly requires them.
-- Current APKs are debug-signed Early Alpha artifacts, not production releases.
+- Current APKs are debug-signed Beta artifacts, not production releases.
 
 ## Build from source
 
@@ -364,12 +388,14 @@ Build one target:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target Arm32
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target Arm64
+powershell -ExecutionPolicy Bypass -File .\build-arm64.ps1 -Companion
 ```
 
 Outputs:
 
 - `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`
 - `build/arm64-v8a/LLE-arm64-debug.apk`
+- `build/arm64-v8a-dev/LLE-arm64-dev.apk` (co-installable ARM64 release base)
 
 Advanced ARM64 diagnostic switches are exposed by `build.ps1` and
 `build-arm64.ps1`, including the Note 5/Ripple probes and Watercolor feedback
@@ -384,7 +410,8 @@ exports. After shared Java, resource or lifecycle changes, build both targets.
 
 Core architecture and validation:
 
-- [Early Alpha release notes and proposed GitHub release](docs/RELEASE_NOTES_EARLY_ALPHA.md)
+- [Historical Early Alpha release notes](docs/RELEASE_NOTES_EARLY_ALPHA.md)
+- [1.0.1 Beta 1 release notes](docs/RELEASE_NOTES_1.0.1_BETA_1.md)
 - [Unified ARM32/ARM64 architecture](ARCHITECTURE.md)
 - [Fold dual-panel port](FOLD-DISPLAY-PORT.md)
 - [Performance optimization and lifecycle](PERFORMANCE-OPTIMIZATION-2026-07-15.md)

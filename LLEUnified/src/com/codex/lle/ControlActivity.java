@@ -1459,9 +1459,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current);
         addEffectOptionIfAvailable(effects,
-                EffectAvailability.is64BitProcess()
-                        ? "S3 Water Ripple (Early Alpha)"
-                        : "S3 Water Ripple",
+                "S3 Water Ripple",
                 EffectAvailability.is64BitProcess()
                         ? "ARM64 app-owned GLES port; transparent local waves over a cached lockscreen colormap."
                         : "Original Samsung ARM32 ripple engine with transparent lockscreen composition.",
@@ -1473,16 +1471,16 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current);
         addEffectOptionIfAvailable(effects,
-                EffectAvailability.is64BitProcess()
-                        ? "N3 Watercolor (Early Alpha)"
-                        : "N3 Watercolor",
+                "N3 Watercolor",
                 EffectAvailability.is64BitProcess()
                         ? "ARM64 GLES port of Samsung Watercolor with a transparent screenshot-backed brush."
                         : "Original Samsung ARM32 Watercolor engine with transparent lockscreen composition.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N4 Abstract Tiles",
+                EffectAvailability.is64BitProcess()
+                        ? "N4 Abstract Tiles (Alpha)"
+                        : "N4 Abstract Tiles",
                 EffectAvailability.is64BitProcess()
                         ? "ARM64 GLES reconstruction of Samsung Abstract Tiles with transparent screenshot composition."
                         : "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
@@ -3298,7 +3296,7 @@ public class ControlActivity extends Activity {
                 runRootDebugAction("Applying root keepalive", new RootTask() {
                     @Override
                     public RootDebugTools.Result run() {
-                        return RootDebugTools.applyKeepAlivePlan();
+                        return RootDebugTools.applyKeepAlivePlan(ControlActivity.this);
                     }
                 });
             }
@@ -3312,7 +3310,7 @@ public class ControlActivity extends Activity {
                 runRootDebugAction("Reverting root keepalive", new RootTask() {
                     @Override
                     public RootDebugTools.Result run() {
-                        return RootDebugTools.revertKeepAlivePlan();
+                        return RootDebugTools.revertKeepAlivePlan(ControlActivity.this);
                     }
                 });
             }

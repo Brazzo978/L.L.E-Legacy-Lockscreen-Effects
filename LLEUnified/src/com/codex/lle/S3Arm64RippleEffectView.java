@@ -36,7 +36,7 @@ import javax.microedition.khronos.opengles.GL10;
 /**
  * Isolated lifecycle host for the app-owned ARM64 S3 Water Ripple port.
  *
- * <p>This is the Early Alpha renderer selected by the LLE64 S3 picker entry. It serializes
+ * <p>This is the ARM64 beta renderer selected by the S3 picker entry. It serializes
  * simulation, bitmap upload and all GLES calls on the GLSurfaceView render thread. The original
  * process-global native semantics are preserved with an explicit single-owner gate.</p>
  */
@@ -104,7 +104,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
     @Override
     public String effectName() {
-        return "S3 ripple Early Alpha";
+        return "S3 Water Ripple ARM64";
     }
 
     /**

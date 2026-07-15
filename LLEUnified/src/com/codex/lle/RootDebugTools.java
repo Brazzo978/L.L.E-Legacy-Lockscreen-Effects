@@ -86,10 +86,11 @@ final class RootDebugTools {
     }
 
     static Result writeDebugReport(Context context) {
+        String packageName = context.getPackageName();
         File file = new File(context.getFilesDir(), "root_debug_report.txt");
         StringBuilder report = new StringBuilder();
         report.append("LLE root debug report\n");
-        report.append("package=com.codex.lle\n");
+        report.append("package=").append(packageName).append("\n");
         report.append("time_ms=").append(System.currentTimeMillis()).append("\n\n");
 
         appendCommand(report, "id", 3000L);
@@ -97,13 +98,13 @@ final class RootDebugTools {
         appendCommand(report, "getprop ro.product.manufacturer", 3000L);
         appendCommand(report, "getprop ro.product.model", 3000L);
         appendCommand(report, "settings get secure enabled_accessibility_services", 3000L);
-        appendCommand(report, "dumpsys activity services com.codex.lle", 4000L);
+        appendCommand(report, "dumpsys activity services " + packageName, 4000L);
         appendCommand(report, "dumpsys window policy", 4000L);
         appendCommand(report, "dumpsys power", 4000L);
         appendCommand(report, "dumpsys input", 4000L);
         appendCommand(report, "dumpsys deviceidle", 4000L);
-        appendCommand(report, "cmd appops get com.codex.lle", 4000L);
-        appendCommand(report, "dumpsys gfxinfo com.codex.lle framestats", 5000L);
+        appendCommand(report, "cmd appops get " + packageName, 4000L);
+        appendCommand(report, "dumpsys gfxinfo " + packageName + " framestats", 5000L);
 
         try {
             writeText(file, report.toString());
@@ -114,22 +115,29 @@ final class RootDebugTools {
     }
 
     static Result writeKeepAlivePlan(Context context) {
+        String packageName = context.getPackageName();
         File file = new File(context.getFilesDir(), "root_keepalive_plan.txt");
         StringBuilder body = new StringBuilder();
         body.append("LLE optional root keepalive plan\n\n");
         body.append("These commands are intentionally not auto-applied by the app.\n");
         body.append("Apply only during an explicit root/ADB test, then revert if needed.\n\n");
         body.append("Enable:\n");
-        body.append("su -c 'dumpsys deviceidle whitelist +com.codex.lle'\n");
-        body.append("su -c 'cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND allow'\n");
-        body.append("su -c 'cmd appops set com.codex.lle RUN_IN_BACKGROUND allow'\n");
-        body.append("su -c 'cmd appops set com.codex.lle WAKE_LOCK allow'\n");
-        body.append("su -c 'am set-inactive com.codex.lle false'\n\n");
+        body.append("su -c 'dumpsys deviceidle whitelist +").append(packageName).append("'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" RUN_ANY_IN_BACKGROUND allow'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" RUN_IN_BACKGROUND allow'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" WAKE_LOCK allow'\n");
+        body.append("su -c 'am set-inactive ").append(packageName).append(" false'\n\n");
         body.append("Revert:\n");
-        body.append("su -c 'dumpsys deviceidle whitelist -com.codex.lle'\n");
-        body.append("su -c 'cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND default'\n");
-        body.append("su -c 'cmd appops set com.codex.lle RUN_IN_BACKGROUND default'\n");
-        body.append("su -c 'cmd appops set com.codex.lle WAKE_LOCK default'\n");
+        body.append("su -c 'dumpsys deviceidle whitelist -").append(packageName).append("'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" RUN_ANY_IN_BACKGROUND default'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" RUN_IN_BACKGROUND default'\n");
+        body.append("su -c 'cmd appops set ").append(packageName)
+                .append(" WAKE_LOCK default'\n");
         try {
             writeText(file, body.toString());
         } catch (IOException e) {
@@ -138,12 +146,13 @@ final class RootDebugTools {
         return Result.ok("Root keepalive plan saved: " + file.getAbsolutePath(), file);
     }
 
-    static Result applyKeepAlivePlan() {
-        String command = "dumpsys deviceidle whitelist +com.codex.lle"
-                + "; cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND allow"
-                + "; cmd appops set com.codex.lle RUN_IN_BACKGROUND allow"
-                + "; cmd appops set com.codex.lle WAKE_LOCK allow"
-                + "; am set-inactive com.codex.lle false";
+    static Result applyKeepAlivePlan(Context context) {
+        String packageName = context.getPackageName();
+        String command = "dumpsys deviceidle whitelist +" + packageName
+                + "; cmd appops set " + packageName + " RUN_ANY_IN_BACKGROUND allow"
+                + "; cmd appops set " + packageName + " RUN_IN_BACKGROUND allow"
+                + "; cmd appops set " + packageName + " WAKE_LOCK allow"
+                + "; am set-inactive " + packageName + " false";
         CommandResult result = runSuCommand(command, MAX_TEXT_BYTES, DEFAULT_TIMEOUT_MS);
         String out = text(result.stdout).trim();
         String err = text(result.stderr).trim();
@@ -155,12 +164,13 @@ final class RootDebugTools {
                 + commandSummary(result, out, err), null);
     }
 
-    static Result revertKeepAlivePlan() {
-        String command = "dumpsys deviceidle whitelist -com.codex.lle"
-                + "; cmd appops set com.codex.lle RUN_ANY_IN_BACKGROUND default"
-                + "; cmd appops set com.codex.lle RUN_IN_BACKGROUND default"
-                + "; cmd appops set com.codex.lle WAKE_LOCK default"
-                + "; am set-inactive com.codex.lle false";
+    static Result revertKeepAlivePlan(Context context) {
+        String packageName = context.getPackageName();
+        String command = "dumpsys deviceidle whitelist -" + packageName
+                + "; cmd appops set " + packageName + " RUN_ANY_IN_BACKGROUND default"
+                + "; cmd appops set " + packageName + " RUN_IN_BACKGROUND default"
+                + "; cmd appops set " + packageName + " WAKE_LOCK default"
+                + "; am set-inactive " + packageName + " false";
         CommandResult result = runSuCommand(command, MAX_TEXT_BYTES, DEFAULT_TIMEOUT_MS);
         String out = text(result.stdout).trim();
         String err = text(result.stderr).trim();

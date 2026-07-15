@@ -390,11 +390,13 @@ final class OverlayPrefs {
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return "N5 Sparkling Bubbles";
             case EFFECT_S4_ABSTRACT_TILES:
-                return "N4 Abstract Tiles";
+                return EffectAvailability.is64BitProcess()
+                        ? "N4 Abstract Tiles (Alpha)"
+                        : "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
                 return "N4 Geometric Mosaic";
             case EFFECT_S3_RIPPLE_NATIVE:
-                return "S3 Water Ripple (Early Alpha)";
+                return "S3 Water Ripple";
             case EFFECT_TABS_BLIND_WIP:
                 return "TabS Blind (WIP)";
             case EFFECT_N3_INK_IN_WATER_WIP:
