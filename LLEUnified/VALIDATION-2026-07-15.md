@@ -7,8 +7,8 @@ tree.
 
 | Product | SHA-256 | Native ABI |
 |---|---|---|
-| `LLE-armeabi-v7a-debug.apk` | `F33E118455DF49E5A9DE860358DD2A7D5BB4E921A432E5D9BD38D16E842639A1` | `armeabi-v7a` only |
-| `LLE-arm64-debug.apk` | `EFFF6BDD2B3AC7C23D09ED58A1D4BC81A6510183AC07276DED0ADCBDFA794AEC` | `arm64-v8a` only |
+| `LLE-armeabi-v7a-debug.apk` | `58BE6EC1C097479D250D43D8183FAB4DA6B0F3227E05DE230EBFD4C440E32349` | `armeabi-v7a` only |
+| `LLE-arm64-debug.apk` | `582BEF3E9C0C69999DE911F9B9A62CB132D8507177394286AE9CB44EC96FDC70` | `arm64-v8a` only |
 
 Both report package `com.codex.lle`, version code `13`, version name
 `1.1.0-unified-alpha.1` and signer certificate SHA-256
@@ -20,7 +20,7 @@ The packaged shared application artifacts are byte-identical:
 
 | APK entry | Size | SHA-256 |
 |---|---:|---|
-| `classes.dex` | 440,272 | `010400D2E528AE3173443AABE9280BC6574D0DDC25F029159EA1C836B14748D1` |
+| `classes.dex` | 442,932 | `8CA0A45D51164E992DB73ED6CC85AC0054D88F12740E0A8504F717957DF27815` |
 | `resources.arsc` | 16,524 | `126031D17C3A348773DD18D547B92FA2C9F8135494BE8D717C20D3F466B428E6` |
 | `AndroidManifest.xml` | 5,380 | `B18BAEEEF5B9D555C6D991F98FBCC3D916BA30BF29B4C950E55DC466CEA668B7` |
 
@@ -53,3 +53,18 @@ signal, recycled bitmap or orphan Samsung GL thread. Five Popping/Lens switch
 cycles plateaued rather than growing linearly; only the active LLE effect
 surface and the process RenderThread remained. ARM32 was build- and
 signature-validated but cannot be runtime-tested on this ARM64-only Fold.
+
+The final ARM32 and ARM64 products were then tested on a Galaxy S23 Ultra
+(`SM-S918B`, Android 16) whose runtime reports both `arm64-v8a` and
+`armeabi-v7a`. The first ARM32 launch exposed a unified-bootstrap defect:
+`Lle64Abi` attempted to load the intentionally ARM64-only marker library in a
+32-bit process. Runtime detection now uses `Process.is64Bit()`; ARM64 still
+loads and validates the native marker, while ARM32 reports `armeabi-v7a`
+without requesting it. The corrected ARM32 accessibility service rebound with
+`connected abi=armeabi-v7a` and Android reported no crashed service.
+
+All seven effects shared by the products completed normalized screen-off
+prearm samples without a fatal signal, ANR, recycled-bitmap failure or bounded
+lifecycle timeout. The full PSS, Graphics, latency and thread comparison is in
+`ABI-COMPARISON-S23U-2026-07-15.md`. The S23 Ultra was restored to the final
+ARM64 APK with S4 Lens Flare selected after testing.

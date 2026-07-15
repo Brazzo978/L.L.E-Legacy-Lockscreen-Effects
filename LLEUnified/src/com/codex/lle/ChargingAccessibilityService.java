@@ -794,7 +794,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.SHOW_DOODLE.equals(key)
                 || OverlayPrefs.SEASONAL_UNLOCK_PARTNER.equals(key)) {
             if (isChargingDoodleModeEnabled()) {
-                unloadUnlockEffectsForDoodleMode("prefs:" + key);
+                unloadUnlockEffects("doodle:prefs:" + key);
+            } else {
+                preloadUnlockEffectRenderer();
+            }
+        }
+        if (OverlayPrefs.isFoldPanelRoutingKey(key)) {
+            if (isChargingDoodleModeEnabled()) {
+                ensureDoodleLoaded();
+            } else {
+                destroySeasonalUnlockPartnerOverlay();
+                destroyDoodleOverlay();
+            }
+        }
+        if (OverlayPrefs.UNLOCK_EFFECT_ENABLED.equals(key)
+                || OverlayPrefs.isFoldPanelRoutingKey(key)) {
+            if (!isUnlockEffectEnabledForActivePanel() || isChargingDoodleModeEnabled()) {
+                unloadUnlockEffects("routing:prefs:" + key);
             } else {
                 preloadUnlockEffectRenderer();
             }
@@ -1377,7 +1393,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (locked) {
             scheduleTimeWindowRefresh();
         }
-        if (!locked || !OverlayPrefs.unlockEffectAllowedNow(this)) {
+        if (!locked || !isUnlockEffectAllowedNowForActivePanel()) {
             return;
         }
         holdHotWakeLock("interactive_wake:" + reason);
@@ -1543,7 +1559,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && OverlayPrefs.masterEnabled(this)
                 && !showDoodle
                 && !isCallSurfaceActive()
-                && OverlayPrefs.unlockEffectAllowedNow(this)
+                && isUnlockEffectAllowedNowForActivePanel()
                 && OverlayPrefs.debugTouchArea(this);
     }
 
@@ -1826,8 +1842,15 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible || callSurface;
         boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
         boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
+        boolean unlockEffectAllowedForActivePanel =
+                isUnlockEffectAllowedNowForActivePanel();
+        if (!unlockEffectAllowedForActivePanel
+                && OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
+            completeForcedEffectBackgroundRefresh("panel_effect_disabled");
+        }
         boolean hideOverlaysForBackgroundCapture =
-                (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
+                unlockEffectAllowedForActivePanel
+                        && (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
                         || colorScreenshotInFlight) && interactive && locked;
         syncTouchBoxScreenshotCapture(reason, interactive, locked, blockedSurfaceActive);
         boolean aodSurface = AOD_PACKAGE.equals(lastWindowPackage);
@@ -1868,7 +1891,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean showFx = runtimeSurfaceAllowed
                 && !showDoodle
                 && !suppressUnlockFxAfterDoodleDisconnect
-                && OverlayPrefs.unlockEffectAllowedNow(this);
+                && unlockEffectAllowedForActivePanel;
 
         if (!showDoodle
                 && shouldRunUnlockEffectBackgroundPreflight(interactive, displayOn, locked,
@@ -1960,6 +1983,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             Log.i(TAG, "visibility reason=" + reason
                     + " showDoodle=" + showDoodle
                     + " showFx=" + showFx
+                    + " panelEffect=" + isUnlockEffectEnabledForActivePanel()
+                    + " panelDoodle="
+                    + OverlayPrefs.foldPanelDoodleEnabled(this, activeDisplayProfile)
                     + " charging=" + charging
                     + " seasonalPartner=" + isSeasonalUnlockPartnerModeEnabled()
                     + " seasonalHold=" + seasonalSurfaceHoldActive
@@ -2080,7 +2106,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void ensureDoodleLoaded() {
         if (overlayView != null
                 || !OverlayPrefs.masterEnabled(this)
-                || !OverlayPrefs.doodleAllowedNow(this)
+                || !isDoodleAllowedNowForActivePanel()
                 || !charging) {
             return;
         }
@@ -2281,8 +2307,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void preloadUnlockEffectRenderer() {
+        if (!isUnlockEffectEnabledForActivePanel()) {
+            unloadUnlockEffects("panel_effect_disabled:" + activeDisplayProfile);
+            return;
+        }
         if (isChargingDoodleModeEnabled()) {
-            unloadUnlockEffectsForDoodleMode("preload_blocked");
+            unloadUnlockEffects("doodle:preload_blocked");
             return;
         }
         long startedAt = SystemClock.uptimeMillis();
@@ -2565,6 +2595,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void refreshUnlockEffectBackgroundSourceIfNeeded(final String reason) {
+        if (!isUnlockEffectAllowedNowForActivePanel()) {
+            return;
+        }
         int effect = OverlayPrefs.unlockEffect(this);
         if (!effectUsesScreenshotBackground(effect)
                 || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
@@ -2755,7 +2788,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             boolean blockedSurfaceActive) {
         if (!interactive || !displayOn || !locked || aodSurface
                 || hideOverlaysForTouchBoxCapture || hideOverlaysForBackgroundCapture
-                || blockedSurfaceActive || !OverlayPrefs.unlockEffectAllowedNow(this)) {
+                || blockedSurfaceActive || !isUnlockEffectAllowedNowForActivePanel()) {
             return false;
         }
         int effect = OverlayPrefs.unlockEffect(this);
@@ -4207,7 +4240,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         seasonalUnlockPartnerView = null;
     }
 
-    private void unloadUnlockEffectsForDoodleMode(String reason) {
+    private void unloadUnlockEffects(String reason) {
         boolean hadRuntimeState = hasUnlockEffectRuntimeState();
         handler.removeCallbacks(pinEntryRunnable);
         handler.removeCallbacks(pinEntrySwipeRunnable);
@@ -4230,7 +4263,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         destroyUnlockEffectOverlay();
         clearCachedUnlockEffectBackgroundBitmap();
         removeTouchDebugOverlay();
-        Log.i(TAG, "unlock effects unloaded for charging doodle mode reason=" + reason);
+        Log.i(TAG, "unlock effects unloaded reason=" + reason);
     }
 
     private boolean hasUnlockEffectRuntimeState() {
@@ -4774,7 +4807,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 false,
                 blockedSurfaceActive)
                 && !showDoodle
-                && OverlayPrefs.unlockEffectAllowedNow(this);
+                && isUnlockEffectAllowedNowForActivePanel();
     }
 
     private boolean isLockscreenLocked(boolean contentAware) {
@@ -4823,7 +4856,26 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean isChargingDoodleModeEnabled() {
         return OverlayPrefs.masterEnabled(this)
                 && charging
-                && OverlayPrefs.doodleAllowedNow(this);
+                && isDoodleAllowedNowForActivePanel();
+    }
+
+    private boolean isDoodleAllowedNowForActivePanel() {
+        return OverlayPrefs.doodleAllowedNow(this)
+                && OverlayPrefs.foldPanelDoodleEnabled(this, activeDisplayProfile);
+    }
+
+    private boolean isUnlockEffectEnabledForActivePanel() {
+        return OverlayPrefs.unlockEffectEnabled(this)
+                && OverlayPrefs.foldPanelUnlockEffectEnabled(this, activeDisplayProfile);
+    }
+
+    private boolean isUnlockEffectAllowedNowForActivePanel() {
+        return isUnlockEffectEnabledForActivePanel()
+                && OverlayPrefs.isImplementedEffect(OverlayPrefs.unlockEffect(this))
+                && OverlayPrefs.timeWindowAllows(this,
+                OverlayPrefs.UNLOCK_EFFECT_TIME_ENABLED,
+                OverlayPrefs.UNLOCK_EFFECT_TIME_START,
+                OverlayPrefs.UNLOCK_EFFECT_TIME_END);
     }
 
     private void playLockSoundForScreenOff() {
@@ -4850,7 +4902,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             lockSoundPlayer.playSeasonalLock(OverlayPrefs.seasonMode(this));
             return;
         }
-        if (OverlayPrefs.unlockEffectEnabled(this)
+        if (isUnlockEffectEnabledForActivePanel()
                 && OverlayPrefs.isImplementedEffect(OverlayPrefs.unlockEffect(this))
                 && OverlayPrefs.lockscreenLockSoundAllowedNow(this)) {
             lastLockSoundPlayedAt = now;
@@ -5610,7 +5662,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             ensureDoodleLoaded();
         }
         if (isChargingDoodleModeEnabled()) {
-            unloadUnlockEffectsForDoodleMode("charging");
+            unloadUnlockEffects("doodle:charging");
             if (isSeasonalUnlockPartnerModeEnabled()) {
                 ensureSeasonalUnlockPartnerLoaded();
             }

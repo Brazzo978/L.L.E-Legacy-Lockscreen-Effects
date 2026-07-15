@@ -1292,6 +1292,9 @@ public class ControlActivity extends Activity {
                 doodleTiming,
                 doodleExtras));
         root.addView(controls);
+        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            root.addView(foldPanelRoutingControls());
+        }
         root.addView(seasonalEffectsCard());
         root.addView(positionControls());
         root.addView(doodleDebugMenu());
@@ -1437,6 +1440,9 @@ public class ControlActivity extends Activity {
                 effectTiming,
                 effectExtras));
         root.addView(controls);
+        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            root.addView(foldPanelRoutingControls());
+        }
 
         LinearLayout effects = verticalGroup();
         LinearLayout.LayoutParams effectsParams = new LinearLayout.LayoutParams(
@@ -3140,6 +3146,31 @@ public class ControlActivity extends Activity {
                 updateTouchBoxSummary();
             }
         }));
+        return section;
+    }
+
+    private View foldPanelRoutingControls() {
+        LinearLayout section = verticalGroup();
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(12));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(sectionTitle("Fold panels"));
+        section.addView(infoText("These switches are combined with the global controls. "
+                + "Disabling a panel leaves its saved screenshot and touch areas intact. "
+                + "Active panel: " + FoldDisplayTarget.cacheProfileForContext(this) + "."));
+        section.addView(sectionLabel("Cover screen"));
+        section.addView(toggle("Allow lockscreen effect on Cover",
+                OverlayPrefs.FOLD_COVER_UNLOCK_EFFECT_ENABLED, true));
+        section.addView(toggle("Allow charging doodle on Cover",
+                OverlayPrefs.FOLD_COVER_DOODLE_ENABLED, true));
+        section.addView(sectionLabel("Main screen"));
+        section.addView(toggle("Allow lockscreen effect on Main",
+                OverlayPrefs.FOLD_MAIN_UNLOCK_EFFECT_ENABLED, true));
+        section.addView(toggle("Allow charging doodle on Main",
+                OverlayPrefs.FOLD_MAIN_DOODLE_ENABLED, true));
         return section;
     }
 

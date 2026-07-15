@@ -38,6 +38,29 @@ phones. On a Fold it is copied once into the matching slot only when its
 dimensions match that panel. Legacy per-effect files follow the same guarded
 migration path.
 
+## Per-panel feature routing
+
+Fold mode exposes four independent switches in both the lockscreen-effect and
+charging-doodle control pages:
+
+- unlock effect on Cover;
+- charging doodle on Cover;
+- unlock effect on Main;
+- charging doodle on Main.
+
+All four default to enabled and are combined with their existing global
+controls. For example, disabling the Main unlock effect leaves Cover behavior
+unchanged, but the Main panel does not create an effect renderer or touch
+surface, load its screenshot into RAM, play the effect lock sound, or schedule
+an automatic background recapture. Disabling a panel's doodle destroys its
+active doodle surface and keeps the existing effect/doodle priority rules.
+
+Panel routing is intentionally non-destructive: persistent screenshots, touch
+boxes and preferences remain saved, so re-enabling a panel restores its setup.
+Scheduled refresh entry points and delayed capture callbacks revalidate the
+active profile and panel gate before doing work; a fold transition therefore
+cannot complete stale work for a panel that has just been disabled.
+
 ## Dual touch boxes
 
 With Fold mode enabled, touch geometry and wizard screenshots are independent:

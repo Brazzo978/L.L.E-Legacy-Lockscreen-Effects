@@ -14,6 +14,12 @@ public class EffectBackgroundRefreshReceiver extends BroadcastReceiver {
                 || !OverlayPrefs.effectBackgroundForceRecapture(context)) {
             return;
         }
+        String profile = FoldDisplayTarget.cacheProfileForContext(context);
+        if (!OverlayPrefs.unlockEffectEnabled(context)
+                || !OverlayPrefs.foldPanelUnlockEffectEnabled(context, profile)) {
+            Log.i(TAG, "effect background refresh skipped for disabled panel=" + profile);
+            return;
+        }
         OverlayPrefs.get(context).edit()
                 .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, true)
                 .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, true)

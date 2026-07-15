@@ -149,3 +149,12 @@ Further Samsung optimizations should also stay in a separate phase:
 - ARM32 stress testing on real 32-bit hardware, which the Fold7 cannot run;
 - 20 physical fold cycles and 60/120 Hz gesture runs on both panels.
 
+## Same-device ABI comparison
+
+`ABI-COMPARISON-S23U-2026-07-15.md` records a normalized ARM32/ARM64 run on an
+S23 Ultra that natively supports both ABIs. ARM64 had lower resident PSS for
+all seven common effects. Graphics allocation was effectively equal for most
+Samsung renderers; Watercolor ARM64 was about 33.2 MiB lower, while the
+app-owned Ripple ARM64 was about 35.8 MiB higher than the original ARM32
+renderer. Ripple buffer ownership therefore remains the first native-memory
+optimization target.

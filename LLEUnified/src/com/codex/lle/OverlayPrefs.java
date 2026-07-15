@@ -61,6 +61,12 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String FOLD_MODE = "fold_mode";
+    static final String FOLD_COVER_UNLOCK_EFFECT_ENABLED =
+            "fold_cover_unlock_effect_enabled";
+    static final String FOLD_COVER_DOODLE_ENABLED = "fold_cover_doodle_enabled";
+    static final String FOLD_MAIN_UNLOCK_EFFECT_ENABLED =
+            "fold_main_unlock_effect_enabled";
+    static final String FOLD_MAIN_DOODLE_ENABLED = "fold_main_doodle_enabled";
     static final String ROOT_DEBUG_ENABLED = "root_debug_enabled";
     static final String ROOT_TOUCH_CAPTURE_TEST_ENABLED = "root_touch_capture_test_enabled";
     static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
@@ -159,6 +165,35 @@ final class OverlayPrefs {
 
     static boolean foldModeEnabled(Context context) {
         return get(context).getBoolean(FOLD_MODE, FoldDisplayTarget.isFoldDevice(context));
+    }
+
+    static boolean foldPanelUnlockEffectEnabled(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+            return true;
+        }
+        String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
+                ? FOLD_MAIN_UNLOCK_EFFECT_ENABLED
+                : FOLD_COVER_UNLOCK_EFFECT_ENABLED;
+        return get(context).getBoolean(key, true);
+    }
+
+    static boolean foldPanelDoodleEnabled(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+            return true;
+        }
+        String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
+                ? FOLD_MAIN_DOODLE_ENABLED
+                : FOLD_COVER_DOODLE_ENABLED;
+        return get(context).getBoolean(key, true);
+    }
+
+    static boolean isFoldPanelRoutingKey(String key) {
+        return FOLD_COVER_UNLOCK_EFFECT_ENABLED.equals(key)
+                || FOLD_COVER_DOODLE_ENABLED.equals(key)
+                || FOLD_MAIN_UNLOCK_EFFECT_ENABLED.equals(key)
+                || FOLD_MAIN_DOODLE_ENABLED.equals(key);
     }
 
     static boolean showAod(Context context) {

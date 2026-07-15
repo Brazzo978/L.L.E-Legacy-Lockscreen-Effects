@@ -14,6 +14,12 @@ public class EffectBackgroundWakeActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        String profile = FoldDisplayTarget.cacheProfileForContext(this);
+        if (!OverlayPrefs.unlockEffectEnabled(this)
+                || !OverlayPrefs.foldPanelUnlockEffectEnabled(this, profile)) {
+            finish();
+            return;
+        }
         int effect = getIntent().getIntExtra("effect", -1);
         if (effect >= 0) {
             OverlayPrefs.get(this).edit()
