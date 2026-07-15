@@ -31,7 +31,7 @@ device.
 | S3 Water Ripple | Available | Available |
 | S5 Popping Colours | Available | Available |
 | N3 Watercolor | Available | Available |
-| N4 Abstract Tiles | Available | **Alpha** |
+| N4 Abstract Tiles | Available | **Alpha - refinement pending** |
 | N4 Geometric Mosaic | Available | Unavailable |
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |

@@ -1479,7 +1479,7 @@ public class ControlActivity extends Activity {
                 current);
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.is64BitProcess()
-                        ? "N4 Abstract Tiles (Alpha)"
+                        ? "N4 Abstract Tiles (Alpha - Refinement pending)"
                         : "N4 Abstract Tiles",
                 EffectAvailability.is64BitProcess()
                         ? "ARM64 GLES reconstruction of Samsung Abstract Tiles with transparent screenshot composition."

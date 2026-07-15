@@ -65,7 +65,7 @@ adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
 | S3 Water Ripple | Yes | Yes |
 | S5 Popping Colours | Yes | Yes |
 | N3 Watercolor | Yes | Yes |
-| N4 Abstract Tiles | Yes | **Alpha** |
+| N4 Abstract Tiles | Yes | **Alpha - refinement pending** |
 | N4 Geometric Mosaic | Yes | No |
 | N5 Colored Droplet | Yes | Yes |
 | N5 Colored Droplet + Gyro | Yes | Yes |
