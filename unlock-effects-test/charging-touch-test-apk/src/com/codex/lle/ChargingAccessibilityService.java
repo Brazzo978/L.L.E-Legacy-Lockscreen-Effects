@@ -86,8 +86,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
     private static final long SCREEN_ON_REFRESH_FAST_MS = 35L;
     private static final long SCREEN_ON_REFRESH_SETTLE_MS = 140L;
-    private static final long LOCKSCREEN_SESSION_FAST_POLL_MS = 10L;
-    private static final long LOCKSCREEN_SESSION_CONTENT_POLL_MS = 40L;
+    private static final long LOCKSCREEN_SESSION_FAST_WINDOW_MS = 1200L;
+    private static final long LOCKSCREEN_SESSION_FAST_POLL_MS = 16L;
+    private static final long LOCKSCREEN_SESSION_STABLE_POLL_MS = 50L;
+    private static final long LOCKSCREEN_SESSION_CONTENT_POLL_MS = 80L;
+    private static final long LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS = 200L;
+    private static final long WINDOW_CONTENT_EVENT_MIN_INTERVAL_MS = 32L;
+    private static final long DISPLAY_CANDIDATE_WAKE_COALESCE_MS = 32L;
     private static final long LOCKSCREEN_EXIT_FAST_POLL_MS = 20L;
     private static final long LOCKSCREEN_EXIT_FOLLOWUP_MS = 1600L;
     private static final long LOCKSCREEN_EXIT_FOLLOWUP_ARM_WINDOW_MS = 700L;
@@ -360,7 +365,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean seasonalUnlockPartnerGestureActive;
     private boolean suppressUnlockFxAfterDoodleDisconnect;
     private boolean lockscreenSessionPolling;
+    private long lockscreenSessionPollingStartedAt;
     private long nextContentAwarePollAt;
+    private long lastWindowContentVisibilityAt;
+    private long lastDisplayCandidateWakeRefreshAt;
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
     private long lastScreenOnAt;
@@ -407,6 +415,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int unlockEffectBenchmarkIndex;
     private int unlockEffectBenchmarkOriginalEffect;
     private int candidateWakeGeneration;
+    private int lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
     private StringBuilder unlockEffectBenchmarkCsv;
 
     private final DisplayManager.DisplayListener displayListener =
@@ -444,6 +453,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 interactiveSessionWasUnlocked = false;
                 lastInteractive = false;
                 lastScreenOffAt = SystemClock.uptimeMillis();
+                lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
                 seasonalUnlockSurfaceHoldUntil = 0L;
                 suppressUnlockFxAfterDoodleDisconnect = false;
                 handler.removeCallbacks(forcedEffectBackgroundTimeoutRunnable);
@@ -659,7 +669,21 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
         }
-        evaluateVisibility("event:" + eventTypeName(event));
+        String eventReason = "event:" + eventTypeName(event);
+        if (event != null
+                && event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastWindowContentVisibilityAt < WINDOW_CONTENT_EVENT_MIN_INTERVAL_MS) {
+                return;
+            }
+            lastWindowContentVisibilityAt = now;
+            // Pin entry, notification shade and call surfaces were handled above. Generic
+            // content churn only needs a cheap state pass; the session poll performs the
+            // bounded node scan separately.
+            evaluateVisibility(eventReason, false);
+            return;
+        }
+        evaluateVisibility(eventReason);
     }
 
     @Override
@@ -1166,6 +1190,14 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void scheduleCandidateWakeRefreshes(final String reason) {
+        if ("display_changed".equals(reason)) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastDisplayCandidateWakeRefreshAt
+                    < DISPLAY_CANDIDATE_WAKE_COALESCE_MS) {
+                return;
+            }
+            lastDisplayCandidateWakeRefreshAt = now;
+        }
         holdHotWakeLock(reason);
         final int generation = ++candidateWakeGeneration;
         evaluateVisibility(reason + ":0ms", false);
@@ -1234,6 +1266,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         lockscreenSessionPolling = true;
+        lockscreenSessionPollingStartedAt = SystemClock.uptimeMillis();
         nextContentAwarePollAt = 0L;
         handler.removeCallbacks(lockscreenSessionPollRunnable);
         handler.post(lockscreenSessionPollRunnable);
@@ -1241,6 +1274,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void stopLockscreenSessionPolling() {
         lockscreenSessionPolling = false;
+        lockscreenSessionPollingStartedAt = 0L;
         lockscreenExitFollowupUntil = 0L;
         handler.removeCallbacks(lockscreenSessionPollRunnable);
     }
@@ -1267,13 +1301,22 @@ public class ChargingAccessibilityService extends AccessibilityService
 
         lastLockscreenSessionSeenAt = now;
         lockscreenExitFollowupUntil = 0L;
+        long sessionAgeMs = lockscreenSessionPollingStartedAt <= 0L
+                ? 0L
+                : now - lockscreenSessionPollingStartedAt;
+        boolean fastWindow = sessionAgeMs < LOCKSCREEN_SESSION_FAST_WINDOW_MS;
+        long contentPollMs = fastWindow
+                ? LOCKSCREEN_SESSION_CONTENT_POLL_MS
+                : LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS;
         boolean contentAware = now >= nextContentAwarePollAt;
         if (contentAware) {
-            nextContentAwarePollAt = now + LOCKSCREEN_SESSION_CONTENT_POLL_MS;
+            nextContentAwarePollAt = now + contentPollMs;
         }
         evaluateVisibility(contentAware ? "lockscreen_poll_content" : "lockscreen_poll_fast",
                 contentAware);
-        handler.postDelayed(lockscreenSessionPollRunnable, LOCKSCREEN_SESSION_FAST_POLL_MS);
+        handler.postDelayed(lockscreenSessionPollRunnable, fastWindow
+                ? LOCKSCREEN_SESSION_FAST_POLL_MS
+                : LOCKSCREEN_SESSION_STABLE_POLL_MS);
     }
 
     private boolean shouldContinueLockscreenExitFollowup(long now) {
@@ -1299,6 +1342,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             parkUnlockEffectOverlayForScreenOff();
             syncTouchDebugOverlay(true, false);
+            lastScreenOffPrearmDisplayState = currentDisplayState();
             Log.i(TAG, "unlock effect and touch box cached for screen off"
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
                     + " overlayAttached=" + unlockEffectOverlayAttached
@@ -1313,6 +1357,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (interactive || !shouldPrearmUnlockEffectForScreenOff()) {
             return;
         }
+        int displayState = currentDisplayState();
+        if (displayState == lastScreenOffPrearmDisplayState
+                && unlockEffectOverlayAttached
+                && touchDebugView != null) {
+            return;
+        }
+        lastScreenOffPrearmDisplayState = displayState;
         holdHotWakeLock("screen_off_prearm");
         syncUnlockEffectOverlay(false);
         scheduleUnlockEffectWarmBurst("screen_off_prearm");
