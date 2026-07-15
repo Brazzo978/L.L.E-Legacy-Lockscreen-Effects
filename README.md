@@ -1,113 +1,95 @@
 # L.L.E. - Legacy Lockscreen Effects
 
-L.L.E. brings selected legacy Samsung lockscreen effects to modern Android
-devices through an accessibility overlay. One shared source tree serves the
-ARM32 daily package and the co-installable ARM64 beta package.
+L.L.E. brings a collection of legacy lockscreen effects to modern Android
+devices. The project is currently available as a co-installable ARM32 and ARM64
+Beta.
 
-> **Beta:** expect device-specific visual and lifecycle differences. The ARM64
-> Abstract Tiles reconstruction remains explicitly **Alpha**.
-> Keep another unlock method available. These builds also consume proprietary
-> Samsung firmware-derived components; see the redistribution notice below.
+> **Beta:** behavior can vary between devices and Android versions. Keep another
+> unlock method available. ARM64 Abstract Tiles is still marked **Alpha**.
 
-## Choose the correct APK
+## Download
 
-The Beta 1 release APKs use separate application IDs and can coexist. They
-share the launcher label **L.L.E.**; their filenames identify the ABI.
+Download the APKs from the
+[L.L.E. 1.0.1 Beta 1 release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.1-beta.1).
 
-| Release asset | Use it when |
+| APK | Choose it when |
 |---|---|
-| `LLE-1.0.1-Beta-1-64-bit.apk` | The device is ARM64-only, or you want the reconstructed ARM64 effects and Note 5 ARM64 engines |
-| `LLE-1.0.1-Beta-1-32-bit.apk` | The device supports 32-bit ARM applications and you want the original patched Samsung ARM32 engines, including Geometric Mosaic |
+| `LLE-1.0.1-Beta-1-32-bit.apk` | The device supports 32-bit ARM applications; this is the recommended daily build on compatible phones |
+| `LLE-1.0.1-Beta-1-64-bit.apk` | The device is ARM64-only or you want to test the ARM64 Beta |
 
-Check the supported ABIs:
+Check the device ABI list with:
 
 ```shell
 adb shell getprop ro.product.cpu.abilist
 ```
 
-## Quick install
-
-Download one APK from the GitHub release, connect exactly the intended Android
-device with USB debugging enabled, then run one of:
-
-```shell
-adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
-```
+## Install
 
 ```shell
 adb install --no-incremental -r "LLE-1.0.1-Beta-1-32-bit.apk"
 ```
 
-Open the ARM32 control application:
+```shell
+adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
+```
+
+Both applications appear as **L.L.E.** and can remain installed together.
+Keep only one L.L.E. accessibility service enabled at a time.
+
+Open the ARM32 application:
 
 ```shell
 adb shell am start -n com.codex.lle/.ControlActivity
 ```
 
-Or open the co-installed ARM64 control application:
+Open the ARM64 application:
 
 ```shell
 adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
 ```
 
-Then:
+## First setup
 
-1. Enable the intended **L.L.E.** accessibility service. If both APKs are
-   installed, keep only one of their services enabled.
-2. Enable the lockscreen effect master switch.
-3. Select an effect and wait for its two-second apply delay.
-4. Capture the lockscreen background from the Screenshot service section.
-5. Configure the lockscreen touch box or the dual-panel Fold wizard.
+1. Open L.L.E. and enable its accessibility service.
+2. Enable the main switch and **Unlock effect on lockscreen**.
+3. Select an effect and wait for it to be applied.
+4. Capture the lockscreen background from **Screenshot service**.
+5. Configure the touch box or the Fold dual-panel wizard.
 6. Lock and wake the device, then test inside the saved touch region.
 
-`INSTALL_FAILED_NO_MATCHING_ABIS` means that the selected APK cannot run on
-that device.
+## Effect availability
 
-### Side-by-side ARM32 daily and ARM64 beta
+| Effect | ARM32 | ARM64 |
+|---|:---:|:---:|
+| S4 Lens Flare | Yes | Yes |
+| S3 Water Ripple | Yes | Yes |
+| S5 Popping Colours | Yes | Yes |
+| N3 Watercolor | Yes | Yes |
+| N4 Abstract Tiles | Yes | **Alpha** |
+| N4 Geometric Mosaic | Yes | No |
+| N5 Colored Droplet | Yes | Yes |
+| N5 Colored Droplet + Gyro | Yes | Yes |
+| N5 Sparkling Bubbles | Yes | Yes |
 
-The ARM32 build installs as `com.codex.lle`; the co-installable ARM64 build uses
-`com.codex.lle.arm64dev` while retaining the same Java/JNI namespace:
+Water Ripple and Watercolor are Beta effects. Geometric Mosaic is currently
+available only in the ARM32 build.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1 -Companion
-adb install --no-incremental -r ".\LLEUnified\build\arm64-v8a-dev\LLE-arm64-dev.apk"
-```
+## Fold support
 
-It installs as `com.codex.lle.arm64dev` and appears as **L.L.E.**. Keep
-only the daily or development accessibility service enabled, never both at the
-same time.
-
-## Current scope
-
-- One shared Java/UI/preference trunk for both products.
-- Original patched Samsung engines on compatible ARM32 processes.
-- App-owned ARM64 Water Ripple and Watercolor beta ports.
-- ARM64 Abstract Tiles reconstruction, currently marked Alpha in the picker.
-- Note 5 ARM64 Colored Droplet, Gyro and Sparkling Bubbles integration.
-- Transparent screenshot-backed lockscreen composition.
-- Fold Cover/Main screenshot caches, touch boxes and per-panel effect/doodle
-  routing.
-- ABI-aware picker with safe Lens Flare fallback.
-
-Geometric Mosaic remains ARM32-only. Blind and Ink in Water remain hidden WIP
-slots. ARM64 reconstructions target recovered Samsung behavior but are not yet
-claimed to be pixel-identical.
+Fold mode provides separate Cover and Main screenshot caches, touch boxes and
+per-panel switches. Effects and doodles can be enabled independently for each
+screen.
 
 ## Documentation
 
-- [Complete setup, effect matrix and troubleshooting](LLEUnified/README.md)
-- [Unified architecture](LLEUnified/ARCHITECTURE.md)
-- [Fold dual-panel port](LLEUnified/FOLD-DISPLAY-PORT.md)
-- [Abstract Tiles ARM64 port specification](LLEUnified/ports/abstract-tiles/docs/ABSTRACT_TILES_ARM64_PORT_SPEC.md)
-- [Historical Early Alpha release notes](LLEUnified/docs/RELEASE_NOTES_EARLY_ALPHA.md)
+- [Complete setup and troubleshooting](LLEUnified/README.md)
 - [1.0.1 Beta 1 release notes](LLEUnified/docs/RELEASE_NOTES_1.0.1_BETA_1.md)
+- [Developer documentation](LLEUnified/)
 
-The canonical application source and build scripts live in `LLEUnified/`.
-Frozen pre-unification trees are retained only as historical references.
+## Third-party components
 
-## Firmware and redistribution notice
-
-The project uses proprietary Samsung firmware-derived native libraries,
-bytecode, sounds and/or assets. The repository does not grant redistribution
-rights for those components. Anyone publishing forks or binary builds is
-responsible for establishing the necessary rights separately.
+Some builds contain **legacy third-party compatibility components**. Rights in
+those components remain with their respective owners. This project does not
+claim ownership of them and is not affiliated with or endorsed by their
+owners. Anyone redistributing binary builds is responsible for confirming the
+applicable permissions.
