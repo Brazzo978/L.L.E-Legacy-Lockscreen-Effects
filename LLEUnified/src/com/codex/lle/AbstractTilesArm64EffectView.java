@@ -38,7 +38,10 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer {
     private static final String TAG = "LLE64AbstractTiles";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
-    private static final long FRAME_INTERVAL_MS = 33L;
+    /* The legacy renderer presents the 400 ms Line track at roughly 60 fps.
+     * A 33 ms request loop sampled it at only twelve visible steps and made the
+     * otherwise exact cosine movement look different on both 60 and 120 Hz panels. */
+    private static final long FRAME_INTERVAL_MS = 16L;
     private static final long DRAG_SOUND_LONG_PRESS_MS = 411L;
     private static final long DRAG_SOUND_FADE_STEP_MS = 10L;
     private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
@@ -54,6 +57,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsNativeSlot;
+    private final boolean lineEnabled;
     private final SoundPool soundPool;
     private final AudioManager audioManager;
     private final int tapSound;
@@ -98,6 +102,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
     public AbstractTilesArm64EffectView(Context context) {
         super(context);
+        lineEnabled = OverlayPrefs.abstractTilesLineEnabled(context);
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -141,7 +146,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     }
 
     boolean isReady() {
-        return ownsNativeSlot
+        return ownsCurrentNativeSlot()
                 && !destroyed
                 && AbstractTilesNative.isAvailable()
                 && !tileRenderer.hasInitializationFailed();
@@ -154,7 +159,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
     @Override
     public String effectName() {
-        return "N4 Abstract Tiles ARM64";
+        return "N4 Abstract Tiles ARM64 · Line " + (lineEnabled ? "ON" : "OFF");
     }
 
     @Override
@@ -347,6 +352,10 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             serial = ++backgroundSerial;
         }
         externalBackground = false;
+        if (paused) {
+            tileRenderer.stageBackground(mapped, serial);
+            return;
+        }
         try {
             queueEvent(new Runnable() {
                 @Override
@@ -418,7 +427,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
     @Override
     public void onResume() {
-        if (destroyed || !ownsNativeSlot || !paused) {
+        if (destroyed || !ownsCurrentNativeSlot() || !paused) {
             return;
         }
         super.onResume();
@@ -441,7 +450,12 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     }
 
     private boolean canAcceptCommands() {
-        return !destroyed && !paused && ownsNativeSlot && AbstractTilesNative.isAvailable();
+        return !destroyed && !paused && ownsCurrentNativeSlot()
+                && AbstractTilesNative.isAvailable();
+    }
+
+    private boolean ownsCurrentNativeSlot() {
+        return ownsNativeSlot && NATIVE_OWNER.get() == this;
     }
 
     private boolean canRenderEffect() {
@@ -522,10 +536,12 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             if (finalDestroy) {
                 // The GL thread may already be gone after window removal. The bridge contract
                 // makes final destruction safe in that state as well.
-                try {
-                    AbstractTilesNative.nativeDestroyGpu();
-                } catch (Throwable error) {
-                    Log.w(TAG, "Native final cleanup after pause failed", error);
+                if (ownsCurrentNativeSlot()) {
+                    try {
+                        AbstractTilesNative.nativeDestroyGpu();
+                    } catch (Throwable error) {
+                        Log.w(TAG, "Native final cleanup after pause failed", error);
+                    }
                 }
                 tileRenderer.releaseBitmapReferences();
             }
@@ -534,10 +550,12 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
         if (!tileRenderer.hasGlThread()) {
             if (finalDestroy) {
-                try {
-                    AbstractTilesNative.nativeDestroyGpu();
-                } catch (Throwable error) {
-                    Log.w(TAG, "Native cleanup before first surface failed", error);
+                if (ownsCurrentNativeSlot()) {
+                    try {
+                        AbstractTilesNative.nativeDestroyGpu();
+                    } catch (Throwable error) {
+                        Log.w(TAG, "Native cleanup before first surface failed", error);
+                    }
                 }
                 tileRenderer.releaseBitmapReferences();
                 try {
@@ -761,7 +779,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             simulationClock.reset();
             clearTransparent();
 
-            bridgeAvailable = ownsNativeSlot && AbstractTilesNative.isAvailable();
+            bridgeAvailable = ownsCurrentNativeSlot() && AbstractTilesNative.isAvailable();
             if (!bridgeAvailable) {
                 initializationFailed = true;
                 Log.w(TAG, "Abstract Tiles ARM64 bridge is not packaged in this build");
@@ -769,7 +787,9 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             }
             try {
                 AbstractTilesNative.nativeAbandonGpu();
-                ensureLineMask();
+                if (lineEnabled) {
+                    ensureLineMask();
+                }
             } catch (Throwable error) {
                 bridgeAvailable = false;
                 initializationFailed = true;
@@ -785,7 +805,8 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 return;
             }
             try {
-                if (!AbstractTilesNative.nativeInitGpu(surfaceWidth, surfaceHeight)) {
+                if (!AbstractTilesNative.nativeInitGpu(
+                        surfaceWidth, surfaceHeight, lineEnabled)) {
                     initializationFailed = true;
                     logNativeError("GLES init failed");
                     return;
@@ -794,9 +815,9 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 initializationFailed = false;
                 initializedGeneration = contextGeneration;
                 remapBackgroundForSurface(surfaceWidth, surfaceHeight);
-                lineMaskReady = lineMask != null
+                lineMaskReady = !lineEnabled || (lineMask != null
                         && AbstractTilesNative.nativeUploadBitmap(
-                        AbstractTilesNative.TEXTURE_LINE_MASK, lineMask);
+                        AbstractTilesNative.TEXTURE_LINE_MASK, lineMask));
                 backgroundReady = activeBackground != null
                         && AbstractTilesNative.nativeUploadBitmap(
                         AbstractTilesNative.TEXTURE_BACKGROUND, activeBackground);
@@ -820,7 +841,8 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         @Override
         public void onDrawFrame(GL10 gl) {
             clearTransparent();
-            if (!surfaceReady || !gpuReady || !backgroundReady || !lineMaskReady
+            if (!surfaceReady || !gpuReady || !backgroundReady
+                    || (lineEnabled && !lineMaskReady)
                     || destroyed) {
                 idle = true;
                 return;
@@ -898,6 +920,23 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             }
         }
 
+        void stageBackground(Bitmap bitmap, long serial) {
+            if (serial != currentBackgroundSerial()) {
+                recycleOwnedBitmap(bitmap);
+                return;
+            }
+            if (borrowedBackgroundPending == bitmap) {
+                borrowedBackgroundPending = null;
+            }
+            Bitmap previous = activeBackground;
+            activeBackground = bitmap;
+            if (previous != bitmap) {
+                recycleOwnedBitmap(previous);
+            }
+            backgroundReady = false;
+            externalBackground = false;
+        }
+
         void clearBackground(long serial) {
             if (serial != currentBackgroundSerial()) {
                 return;
@@ -922,7 +961,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             stopAnimation();
             clearTransparent();
             try {
-                if (bridgeAvailable) {
+                if (bridgeAvailable && ownsCurrentNativeSlot()) {
                     if (finalDestroy) {
                         AbstractTilesNative.nativeDestroyGpu();
                     } else {

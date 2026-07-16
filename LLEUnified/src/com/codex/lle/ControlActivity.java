@@ -1478,14 +1478,17 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current);
         addEffectOptionIfAvailable(effects,
+                "N4 Abstract Tiles",
                 EffectAvailability.is64BitProcess()
-                        ? "N4 Abstract Tiles (Alpha - Refinement pending)"
-                        : "N4 Abstract Tiles",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 GLES reconstruction of Samsung Abstract Tiles with transparent screenshot composition."
+                        ? "ARM64 GLES reconstruction with transparent screenshot composition."
                         : "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 current);
+        if (EffectAvailability.is64BitProcess()) {
+            effects.addView(toggle("Abstract Tiles · Line layer",
+                    OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED,
+                    true));
+        }
         addEffectOptionIfAvailable(effects,
                 "N4 Geometric Mosaic",
                 "Original Samsung ARM32 LockBG mosaic renderer with transparent screenshot composition.",

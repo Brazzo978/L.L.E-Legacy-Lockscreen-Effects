@@ -225,7 +225,8 @@ try {
                 "shell", "screencap", "-p", $remote)
     }
 
-    Wait-AdbProcess -Process $swipeProcess -Description "420 ms Abstract Tiles swipe"
+    Wait-AdbProcess -Process $swipeProcess `
+            -Description "$GestureDurationMs ms Abstract Tiles swipe"
     for ($index = 0; $index -lt $captureProcesses.Count; $index++) {
         Wait-AdbProcess -Process $captureProcesses[$index] `
                 -Description "frame $($index + 1) screencap"
@@ -313,7 +314,8 @@ try {
         }
         pid_before = $pidBefore
         pid_after = $pidAfter
-        process_survived = -not [string]::IsNullOrWhiteSpace($pidAfter)
+        process_survived = -not [string]::IsNullOrWhiteSpace($pidAfter) `
+                -and $pidAfter -eq $pidBefore
         crash_gl_finding_count = $findings.Count
         frames = $frameResults
         meminfo = $meminfoPath
@@ -326,6 +328,9 @@ try {
 
     if ([string]::IsNullOrWhiteSpace($pidAfter)) {
         $failure = "$packageName process disappeared during smoke"
+    } elseif ($pidAfter -ne $pidBefore) {
+        $failure = "$packageName process restarted during smoke " +
+                "(before=$pidBefore after=$pidAfter)"
     } elseif ($findings.Count -gt 0) {
         $failure = "Crash/GL findings detected: $($findings.Count)"
     }

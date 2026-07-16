@@ -3,7 +3,12 @@
 Status: reverse-engineering baseline complete
 Target: LLE Unified, `arm64-v8a`
 Effect: Samsung Abstract Tiles / `libsecveAbstractTile.so`
-Last verified: 2026-07-15
+Last verified: 2026-07-16
+
+The exhaustive Line-layer reverse, including raw Ghidra evidence, all 22
+portrait/landscape definitions, host adaptations and the original-device
+comparison protocol, is preserved in
+[`ABSTRACT_TILES_LINE_PORT_TRANSCRIPT_2026-07-16.md`](ABSTRACT_TILES_LINE_PORT_TRANSCRIPT_2026-07-16.md).
 
 This document is the implementation contract for the app-owned ARM64 reconstruction. It records the behavior recovered from the original ARM32 engine and explicitly separates OEM behavior from the changes required by LLE's transparent accessibility overlay. Values marked as OEM below should not be tuned by eye without first proving that the reverse is wrong.
 
@@ -390,13 +395,13 @@ the OEM quads are visually neutral only because they exactly cover its opaque
 Background, whereas drawing them over the live lockscreen exposes stale UI
 pixels.
 
-Shipping note: the unified host currently provides only a complete lockscreen
-capture from `AccessibilityService.takeScreenshot()`, not a wallpaper-only
-texture. Moving the exact eleven Line slabs therefore duplicates clock, weather
-and status UI. ARM32 discards this pass for the same reason. ARM64 retains the
-fully recovered geometry and UV implementation but keeps Line disabled until a
-clean wallpaper source is available; changing tuple positions cannot solve this
-input/compositing mismatch.
+Host note: the unified host currently provides a complete lockscreen capture
+from `AccessibilityService.takeScreenshot()`, not a wallpaper-only texture.
+Moving the exact eleven Line slabs therefore also displaces clock, weather and
+status pixels. That displacement is accepted for ARM64 fidelity and the recovered
+Line pass is enabled during unlock. At progress zero it remains gated to avoid a
+second, static copy of those pixels on LLE's transparent overlay. ARM32 still has
+its older discard patch and must be validated separately before changing it.
 
 ### 9.2 Stock draw order and state
 
@@ -599,7 +604,7 @@ The core should expose debug snapshots for tests: orientation, vertex/triangle c
 | Line input | Wallpaper-only texture over identical opaque Background | Disabled until the host can provide wallpaper without lockscreen UI |
 | Scatter alpha | White RGB with alpha 1 | Additive local RGB without making white opaque tiles |
 | Runtime | Samsung common library, C++/stlport | App-owned C/JNI/GLES implementation |
-| Frame scheduling | Animator manager; elapsed-time physics | Same elapsed-time physics; optional 30 fps request cap |
+| Frame scheduling | Animator manager; elapsed-time physics | Same elapsed-time physics; ~60 fps presentation request independent of 60/120 Hz panel mode |
 | CANCEL | Not routed to scene | May be mapped to UP for safety |
 | Realignment | No app-specific hook | Allowed to recover overlay/screenshot coordinate changes |
 | Fold support | Not present in original engine | Host chooses active display/cache; core math unchanged |

@@ -6,7 +6,7 @@ import android.graphics.Bitmap;
 final class AbstractTilesNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_LINE_MASK = 1;
-    static final int BRIDGE_VERSION = 1;
+    static final int BRIDGE_VERSION = 2;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -41,7 +41,7 @@ final class AbstractTilesNative {
     static native int nativeBridgeVersion();
 
     /** Creates or resizes GPU state. A GLES2 context must be current. */
-    static native boolean nativeInitGpu(int width, int height);
+    static native boolean nativeInitGpu(int width, int height, boolean lineEnabled);
 
     /** Forgets names belonging to a lost GLES context while preserving CPU simulation state. */
     static native void nativeAbandonGpu();

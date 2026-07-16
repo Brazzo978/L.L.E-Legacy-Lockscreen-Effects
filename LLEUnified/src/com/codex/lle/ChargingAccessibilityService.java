@@ -876,6 +876,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.UNLOCK_EFFECT.equals(key) && unlockEffectRenderer != null) {
             destroyUnlockEffectOverlay();
         }
+        if (OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED.equals(key)
+                && unlockEffectRenderer != null
+                && OverlayPrefs.unlockEffect(this) == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
+            // Line ON/OFF changes the GLES resource graph, so rebuild the one renderer
+            // instead of leaving a half-configured mask/program set in the current context.
+            destroyUnlockEffectOverlay();
+        }
         scheduleTimeWindowRefresh();
         evaluateVisibility("prefs:" + key);
     }
@@ -1951,7 +1958,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (showFx) {
             if (!unlockFxVisible) {
                 unlockFxVisible = true;
-                unlockAffordanceShownThisWake = false;
+                /* AOD/SystemUI can alternate as the reported foreground package while the
+                 * same lockscreen wake is still active. That transient visibility edge must
+                 * not start a second affordance: nativeAffordance intentionally resets the
+                 * entire effect scene. Screen-off/wake boundaries own this session flag. */
             }
             boolean parkFxIdle = shouldParkUnlockEffectOverlayWhenIdle();
             if (!unlockAffordancePending && !unlockAffordanceShownThisWake) {

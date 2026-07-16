@@ -73,6 +73,7 @@ final class OverlayPrefs {
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
     static final String EFFECT_PROFILE_LAST_SUMMARY = "effect_profile_last_summary";
     static final String EFFECT_PROFILE_DIAGNOSTIC_SUMMARY =
             "effect_profile_diagnostic_summary";
@@ -361,6 +362,10 @@ final class OverlayPrefs {
         return get(context).getBoolean(LOCK_SOUND_ENABLED, true);
     }
 
+    static boolean abstractTilesLineEnabled(Context context) {
+        return get(context).getBoolean(ABSTRACT_TILES_LINE_ENABLED, true);
+    }
+
     static int unlockEffect(Context context) {
         int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
         // Values 1 and 6 belonged to superseded ripple experiments in early builds.
@@ -390,9 +395,7 @@ final class OverlayPrefs {
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return "N5 Sparkling Bubbles";
             case EFFECT_S4_ABSTRACT_TILES:
-                return EffectAvailability.is64BitProcess()
-                        ? "N4 Abstract Tiles (Alpha - Refinement pending)"
-                        : "N4 Abstract Tiles";
+                return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
                 return "N4 Geometric Mosaic";
             case EFFECT_S3_RIPPLE_NATIVE:

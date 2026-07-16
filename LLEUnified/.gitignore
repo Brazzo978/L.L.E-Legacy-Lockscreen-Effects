@@ -3,6 +3,7 @@
 /ports/water-ripple/build/
 /tools/dlopen-probe/build/
 /ports/abstract-tiles/tests/results/
+/ports/abstract-tiles/tests/hint_restart_probe_*/
 /ports/abstract-tiles/tests/lse_abstract_baseline*.png
 /ports/abstract-tiles/tests/lse_selector.*
 /ports/abstract-tiles/tests/lse_abstract_idle_unlocked.png

@@ -4,8 +4,8 @@ L.L.E. restores a collection of legacy lockscreen effects on modern Android.
 The ARM32 and ARM64 applications share one project and can be installed
 together. Both use the launcher name **L.L.E.**.
 
-> **Beta:** expect some device-specific differences. ARM64 Abstract Tiles is
-> still Alpha. Keep another unlock method available while testing.
+> **Beta:** expect some device-specific differences. Keep another unlock method
+> available while testing.
 
 ## APK selection
 
@@ -31,7 +31,7 @@ device.
 | S3 Water Ripple | Available | Available |
 | S5 Popping Colours | Available | Available |
 | N3 Watercolor | Available | Available |
-| N4 Abstract Tiles | Available | **Alpha - refinement pending** |
+| N4 Abstract Tiles | Available | **Beta** |
 | N4 Geometric Mosaic | Available | Unavailable |
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |
@@ -39,6 +39,9 @@ device.
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
+
+On ARM64, Abstract Tiles also provides a **Line layer** switch. Keep it enabled
+for the fuller visual effect, or disable it for the clean tiles-only variant.
 
 ## Requirements
 
@@ -138,7 +141,7 @@ screenshot and touch box separately.
 
 ## Known limitations
 
-- ARM64 Abstract Tiles is Alpha.
+- ARM64 Abstract Tiles Line movement can still differ slightly across devices.
 - Beta effects can differ slightly across GPUs, refresh rates and Android
   versions.
 - Screenshot capture can fail on protected or unusual lockscreen surfaces.

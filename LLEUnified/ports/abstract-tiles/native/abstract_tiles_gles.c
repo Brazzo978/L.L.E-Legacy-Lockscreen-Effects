@@ -188,7 +188,7 @@ void at_gles_destroy(AtGles *gles) {
     at_gles_abandon(gles);
 }
 
-bool at_gles_init(AtGles *gles, char *error, size_t error_size) {
+bool at_gles_init(AtGles *gles, bool line_enabled, char *error, size_t error_size) {
     if (gles == NULL) {
         at_set_error(error, error_size, "GLES state is null");
         return false;
@@ -196,12 +196,15 @@ bool at_gles_init(AtGles *gles, char *error, size_t error_size) {
     at_clear_error(error, error_size);
     at_drain_errors();
     at_gles_abandon(gles);
+    gles->line_enabled = line_enabled;
     gles->tile_program = at_create_program(
             AT_TILE_VERTEX_SHADER, AT_TILE_FRAGMENT_SHADER, "tile", error, error_size);
     if (gles->tile_program == 0U) goto fail;
-    gles->line_program = at_create_program(
-            AT_LINE_VERTEX_SHADER, AT_LINE_FRAGMENT_SHADER, "line", error, error_size);
-    if (gles->line_program == 0U) goto fail;
+    if (gles->line_enabled) {
+        gles->line_program = at_create_program(
+                AT_LINE_VERTEX_SHADER, AT_LINE_FRAGMENT_SHADER, "line", error, error_size);
+        if (gles->line_program == 0U) goto fail;
+    }
     gles->scatter_program = at_create_program(
             AT_SCATTER_VERTEX_SHADER,
             AT_SCATTER_FRAGMENT_SHADER,
@@ -213,10 +216,12 @@ bool at_gles_init(AtGles *gles, char *error, size_t error_size) {
     if (gles->vertex_buffer == 0U || !at_capture_error("glGenBuffers", error, error_size)) {
         goto fail;
     }
-    glGenBuffers(1, &gles->line_buffer);
-    if (gles->line_buffer == 0U
-            || !at_capture_error("glGenBuffers(line)", error, error_size)) {
-        goto fail;
+    if (gles->line_enabled) {
+        glGenBuffers(1, &gles->line_buffer);
+        if (gles->line_buffer == 0U
+                || !at_capture_error("glGenBuffers(line)", error, error_size)) {
+            goto fail;
+        }
     }
     gles->ready = true;
     return true;
@@ -243,6 +248,10 @@ bool at_gles_upload_bitmap(
     GLuint *texture = at_texture_slot(gles, slot);
     if (gles == NULL || !gles->ready || env == NULL || bitmap == NULL || texture == NULL) {
         at_set_error(error, error_size, "Bitmap upload has invalid state or slot=%d", slot);
+        return false;
+    }
+    if (slot == 1 && !gles->line_enabled) {
+        at_set_error(error, error_size, "Line mask upload requested while Line is disabled");
         return false;
     }
     AndroidBitmapInfo info;
@@ -360,11 +369,11 @@ static void at_disable_attribute(GLuint program, const char *name) {
 #define AT_SEAM_COUNT 11
 #define AT_LINE_VERTICES_PER_SEAM 6
 #define AT_FLOATS_PER_LINE_VERTEX 7
-/* The recovered pass requires a wallpaper-only texture. LLE currently caches
- * the complete lockscreen, so enabling it duplicates clock/status UI in eleven
- * large moving slabs. Keep the exact implementation dormant until the host can
- * supply a clean wallpaper source; ARM32 applies the same shipping boundary. */
-#define AT_TRANSPARENT_LINE_AVAILABLE 0
+/* The OEM pass intentionally displaces eleven large background slabs. LLE feeds
+ * it the cached lockscreen rather than wallpaper-only content, so clock/status
+ * pixels move with those slabs as well. Keep that fidelity behavior enabled;
+ * the p=0 gate below prevents only non-animated transparent-overlay overdraw. */
+#define AT_TRANSPARENT_LINE_AVAILABLE 1
 
 typedef struct AtSeamDefinition {
     uint16_t atlas_x;
@@ -530,8 +539,11 @@ bool at_gles_draw(
         char *error,
         size_t error_size) {
     if (gles == NULL || scene == NULL || !gles->ready
-            || gles->background_texture == 0U || gles->line_mask_texture == 0U) {
-        at_set_error(error, error_size, "Draw called without programs and both textures");
+            || gles->background_texture == 0U
+            || (gles->line_enabled && gles->line_mask_texture == 0U)) {
+        at_set_error(error, error_size,
+                "Draw called without required programs/textures line=%d",
+                gles != NULL && gles->line_enabled ? 1 : 0);
         return false;
     }
     float vertices[AT_MAX_VERTICES * AT_FLOATS_PER_VERTEX];
@@ -547,16 +559,19 @@ bool at_gles_draw(
         at_set_error(error, error_size, "No Abstract Tiles vertices");
         return false;
     }
-    int line_vertex_count = at_build_line_vertices(
-            scene,
-            vertex_count,
-            gles->background_width,
-            gles->background_height,
-            line_vertices,
-            sizeof(line_vertices) / sizeof(line_vertices[0]));
-    if (line_vertex_count != AT_SEAM_COUNT * AT_LINE_VERTICES_PER_SEAM) {
-        at_set_error(error, error_size, "Could not build the eleven OEM seam strips");
-        return false;
+    int line_vertex_count = 0;
+    if (gles->line_enabled) {
+        line_vertex_count = at_build_line_vertices(
+                scene,
+                vertex_count,
+                gles->background_width,
+                gles->background_height,
+                line_vertices,
+                sizeof(line_vertices) / sizeof(line_vertices[0]));
+        if (line_vertex_count != AT_SEAM_COUNT * AT_LINE_VERTICES_PER_SEAM) {
+            at_set_error(error, error_size, "Could not build the eleven OEM seam strips");
+            return false;
+        }
     }
 
     at_clear_error(error, error_size);
@@ -594,51 +609,53 @@ bool at_gles_draw(
     at_disable_attribute(gles->tile_program, "aAlpha");
     at_disable_attribute(gles->tile_program, "aBrightness");
 
-    /* OEM line pass: exactly eleven atlas-backed strips, after Tile and before Scatter. */
-    glBindBuffer(GL_ARRAY_BUFFER, gles->line_buffer);
-    glBufferData(
-            GL_ARRAY_BUFFER,
-            (GLsizeiptr) ((size_t) line_vertex_count
-                    * AT_FLOATS_PER_LINE_VERTEX * sizeof(float)),
-            line_vertices,
-            GL_DYNAMIC_DRAW);
-    glUseProgram(gles->line_program);
-    at_enable_attribute(
-            gles->line_program,
-            "aPosition",
-            2,
-            AT_FLOATS_PER_LINE_VERTEX,
-            0U);
-    at_enable_attribute(
-            gles->line_program,
-            "aLineTextureCoord",
-            2,
-            AT_FLOATS_PER_LINE_VERTEX,
-            2U);
-    at_enable_attribute(
-            gles->line_program,
-            "aBgTextureCoord",
-            2,
-            AT_FLOATS_PER_LINE_VERTEX,
-            4U);
-    at_enable_attribute(
-            gles->line_program,
-            "aAlpha",
-            1,
-            AT_FLOATS_PER_LINE_VERTEX,
-            6U);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gles->background_texture);
-    glUniform1i(glGetUniformLocation(gles->line_program, "uBackground"), 0);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, gles->line_mask_texture);
-    glUniform1i(glGetUniformLocation(gles->line_program, "uLineMask"), 1);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glDrawArrays(GL_TRIANGLES, 0, line_vertex_count);
-    at_disable_attribute(gles->line_program, "aPosition");
-    at_disable_attribute(gles->line_program, "aLineTextureCoord");
-    at_disable_attribute(gles->line_program, "aBgTextureCoord");
-    at_disable_attribute(gles->line_program, "aAlpha");
+    if (gles->line_enabled) {
+        /* OEM line pass: exactly eleven atlas-backed strips, after Tile and before Scatter. */
+        glBindBuffer(GL_ARRAY_BUFFER, gles->line_buffer);
+        glBufferData(
+                GL_ARRAY_BUFFER,
+                (GLsizeiptr) ((size_t) line_vertex_count
+                        * AT_FLOATS_PER_LINE_VERTEX * sizeof(float)),
+                line_vertices,
+                GL_DYNAMIC_DRAW);
+        glUseProgram(gles->line_program);
+        at_enable_attribute(
+                gles->line_program,
+                "aPosition",
+                2,
+                AT_FLOATS_PER_LINE_VERTEX,
+                0U);
+        at_enable_attribute(
+                gles->line_program,
+                "aLineTextureCoord",
+                2,
+                AT_FLOATS_PER_LINE_VERTEX,
+                2U);
+        at_enable_attribute(
+                gles->line_program,
+                "aBgTextureCoord",
+                2,
+                AT_FLOATS_PER_LINE_VERTEX,
+                4U);
+        at_enable_attribute(
+                gles->line_program,
+                "aAlpha",
+                1,
+                AT_FLOATS_PER_LINE_VERTEX,
+                6U);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, gles->background_texture);
+        glUniform1i(glGetUniformLocation(gles->line_program, "uBackground"), 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, gles->line_mask_texture);
+        glUniform1i(glGetUniformLocation(gles->line_program, "uLineMask"), 1);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        glDrawArrays(GL_TRIANGLES, 0, line_vertex_count);
+        at_disable_attribute(gles->line_program, "aPosition");
+        at_disable_attribute(gles->line_program, "aLineTextureCoord");
+        at_disable_attribute(gles->line_program, "aBgTextureCoord");
+        at_disable_attribute(gles->line_program, "aAlpha");
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, gles->vertex_buffer);
     glUseProgram(gles->scatter_program);

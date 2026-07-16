@@ -1,9 +1,12 @@
 # Abstract Tiles deep fidelity findings (2026-07-15)
 
 This record preserves the high-confidence ARM32 binary findings recovered after
-the ARM64 Alpha implementation was frozen for L.L.E. 1.0.1 Beta 1. It was
-updated during the 2026-07-16 fidelity pass to record the behavior now mirrored
-by the app-owned ARM64 engine. Visual parity still requires an LSE device replay.
+the initial ARM64 implementation. It was updated during the 2026-07-16 fidelity
+pass to record the behavior now mirrored by the app-owned ARM64 engine. Visual
+parity still requires an original-device side-by-side replay.
+
+The complete Line-layer transcript and reproducible Ghidra evidence index are
+in [`ABSTRACT_TILES_LINE_PORT_TRANSCRIPT_2026-07-16.md`](ABSTRACT_TILES_LINE_PORT_TRANSCRIPT_2026-07-16.md).
 
 ## Confidence and scope
 
@@ -216,8 +219,8 @@ the final displaced value. A reconstruction from canonical geometry must use
 `uv = start - min(progress, threshold) * delta`; rebuilding it as `start` in the
 post-threshold branch produces incorrect screenshot content at unlock endpoint.
 Because a static stock Line is neutral only over the engine's identical opaque
-Background, the recovered pass is retained but disabled in shipping builds until
-the host can supply a wallpaper-only texture.
+Background, LLE gates the pass at progress zero. The recovered pass remains
+enabled during unlock, where its large slab displacement is intentional.
 
 Device comparison established a harder boundary: LSE's OEM host samples a clean
 gallery/wallpaper image and renders its demo UI separately, while LLE's only
@@ -225,23 +228,48 @@ available Fold-aware source is the complete accessibility screenshot. Exact Line
 slabs consequently move lockscreen clock/status/weather pixels and look corrupt
 even with correct geometry. The S23 LSE install also lacks the external legacy
 resource package that supplied the line mask, so it cannot provide a visual Line
-reference. The shipping ARM32 pass was already disabled for this reason; ARM64
-now preserves the exact dormant implementation but also ships Line off pending a
-wallpaper-only host source.
+reference. ARM32 still carries its older discard patch. For ARM64, moving the UI
+pixels contained in the cached screenshot is accepted as the closest available
+host behavior, so the exact Line implementation ships enabled during unlock.
+
+Repeated-hint probing on 2026-07-16 isolated an independent host lifecycle bug:
+the reported foreground package alternated from SystemUI to AOD and back during
+one interactive lockscreen session. The temporary `showFx=false` edge cleared
+`unlockAffordanceShownThisWake`, scheduling another affordance later in the same
+wake. Because `nativeAffordance` correctly performs a full OEM scene reset, this
+looked like an engine restart. The session flag is now reset only by real
+screen-off/wake boundaries, not transient overlay visibility.
 
 The ARM64 safety cap of 48 entries per ray has no known visual effect because
 the recovered `d^2 >= 0.8` stop normally terminates first; the OEM vector itself
 is dynamically sized. MOVE proximity's stock `+0.3` per draw remains the one
 intentional physics normalization (`9 * dt`) for consistent 60/120 Hz behavior.
 
+The 2026-07-16 Line audit found a separate presentation-cadence error in the
+Android host. The renderer requested a frame every 33 ms, exposing only about
+12 samples of the exact 400 ms Line track. It now requests every 16 ms, matching
+the legacy ~60 fps presentation cadence while still using monotonic elapsed time.
+This does not speed up the effect on 120 Hz displays: the scalar remains exactly
+0 to 1 over 0.4 seconds on both 60 and 120 Hz panels.
+
+ARM64 now exposes one Abstract Tiles effect with two runtime resource modes:
+
+- Line ON (default): compile/upload/draw the recovered Line pass;
+- Line OFF: skip the Line shader, VBO, mask texture, vertex build and draw pass.
+
+Line OFF is therefore a real tiles-only renderer, not a transparent Line draw.
+ARM32 retains its existing pass-discard behavior and does not expose the toggle.
+
 ## 2026-07-16 build and device validation
 
 - ARM64 companion APK: `build/arm64-v8a-dev/LLE-arm64-dev.apk`, SHA-256
-  `68B3B9FC87328DB79838EAF90C955F7C3AC8A31660E7A80E9F8772193E43C9C7`.
+  `F1EE41032EA909B3B49A7731AB3CAD012C11975C9016EA1E7B32C69D61F44D20`.
 - ARM32 APK: `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`, SHA-256
-  `C14294BC159DE622970FA7E066ED7C2FE1F9C881954ADE57636AA2A50F5EAB06`.
-- S23 Ultra smoke run `abstract_tiles_20260716_121618_898`: process survived,
-  six post-gesture captures completed and crash/GLES finding count was zero.
+  `6BA78024348E93B1E9EC5C0AF51AD63ABFFB2EA2176256CB16DEE0889F65B69E`.
+- S23 Ultra final-build unlock-window smoke run `abstract_tiles_20260716_130436_455`:
+  PID remained exactly `18485` before and after the run, five captures covered
+  approximately unlock +20/+80/+160/+240/+400 ms, and crash/GLES finding count
+  was zero. PID equality is required: a respawn no longer counts as survival.
 - The installed ARM64 companion remained co-installable with the ARM32 daily
   package, and the enabled accessibility list remained Bitwarden plus the ARM64
   companion service.

@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define AT_LOG_TAG "LLE64AbstractTiles"
-#define AT_BRIDGE_VERSION 1
+#define AT_BRIDGE_VERSION 2
 #define AT_ERROR_SIZE 512
 
 static AtScene g_scene;
@@ -37,7 +37,7 @@ Java_com_codex_lle_AbstractTilesNative_nativeBridgeVersion(JNIEnv *env, jclass c
 
 JNIEXPORT jboolean JNICALL
 Java_com_codex_lle_AbstractTilesNative_nativeInitGpu(
-        JNIEnv *env, jclass clazz, jint width, jint height) {
+        JNIEnv *env, jclass clazz, jint width, jint height, jboolean line_enabled) {
     (void) env;
     (void) clazz;
     if (width <= 0 || height <= 0) {
@@ -54,17 +54,18 @@ Java_com_codex_lle_AbstractTilesNative_nativeInitGpu(
     }
     /* A resize can re-enter init in the same current context. Reclaim that generation. */
     if (g_gles.ready) at_gles_destroy(&g_gles);
-    if (!at_gles_init(&g_gles, g_error, sizeof(g_error))) {
+    if (!at_gles_init(&g_gles, line_enabled == JNI_TRUE, g_error, sizeof(g_error))) {
         __android_log_print(ANDROID_LOG_ERROR, AT_LOG_TAG, "GLES init: %s", g_error);
         return JNI_FALSE;
     }
     __android_log_print(
             ANDROID_LOG_INFO,
             AT_LOG_TAG,
-            "Initialized %dx%d triangles=%d",
+            "Initialized %dx%d triangles=%d line=%s",
             width,
             height,
-            g_scene.triangle_count);
+            g_scene.triangle_count,
+            line_enabled == JNI_TRUE ? "on" : "off");
     return JNI_TRUE;
 }
 

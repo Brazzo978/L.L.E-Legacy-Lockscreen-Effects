@@ -87,6 +87,7 @@ typedef struct AtGles {
     GLuint line_mask_texture;
     int background_width;
     int background_height;
+    bool line_enabled;
     bool ready;
 } AtGles;
 
@@ -105,7 +106,7 @@ int at_scene_build_vertices(
         float *vertices,
         size_t vertex_capacity);
 
-bool at_gles_init(AtGles *gles, char *error, size_t error_size);
+bool at_gles_init(AtGles *gles, bool line_enabled, char *error, size_t error_size);
 void at_gles_abandon(AtGles *gles);
 void at_gles_destroy(AtGles *gles);
 bool at_gles_upload_bitmap(
