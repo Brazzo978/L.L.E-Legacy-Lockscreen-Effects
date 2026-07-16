@@ -140,7 +140,8 @@ Unlock behavior:
 - duration: `0.9 s`;
 - stagger: zero;
 - probability: `0.8` inside the activation region, `0.016` outside it;
-- squared distance cutoff: `20 * 0.1406 = 2.812`.
+- squared distance cutoff: `20 * 0.1406 = 2.812`, measured in `[0,1]`
+  normalized coordinates rather than `[-1,1]` clip coordinates.
 
 Recovered cleanup constants are `0.08 s` and `0.3 s`. Release does not immediately reset the entire mesh: delayed animations that have not started are removed, while animations already in progress are allowed to complete and restore their own geometry.
 
@@ -154,7 +155,7 @@ r = hy * sqrt(abs((2*wx - hy) / (2*wx + hy)))
 
 The engine also retains `r*r`, `2*r` and `35*r`.
 
-The extended proximity threshold depends on display aspect ratio:
+The extended ray-candidate threshold depends on display aspect ratio:
 
 ```text
 extendedRadiusSquared = (screenWidth / screenHeight < 0.82)
@@ -212,13 +213,17 @@ landscape: scaleX = width/height,       scaleY = 1
 d2 = ((x1 - x2) * scaleX)^2 + ((y1 - y2) * scaleY)^2
 ```
 
-MOVE advances the trail anchor only if:
+MOVE advances the accepted trail point only if:
 
 ```text
-d2(oldAnchor, currentTouch) > 0.25 * hy*hy
+normalized d2(oldAccepted, currentTouch) > 0.25 * hy*hy
+clip-space d2(oldAccepted, currentTouch) > hy*hy
 ```
 
-The live center still follows every MOVE while the gesture is active. The threshold governs advancement of the batch/trail anchor, not whether the visible center is allowed to update.
+The live center and MOVE flag still update on every MOVE while the gesture is
+active. The handler does not directly launch a pop batch or rebuild rays. The
+threshold only advances the accepted trail point; the `0.16 s` scheduler uses
+the live center.
 
 ### 5.3 Repeated batches while held
 
@@ -250,7 +255,11 @@ Recovered constants:
 - ray reach `10 * sqrt(wx*wx + hy*hy)`
 - traversal aspect-distance-squared stop threshold `0.8`
 
-Random pivot and permutation selection use 1024-entry precomputed tables in the OEM engine. An app-owned port can use an equivalent 1024-entry shuffled/permutation source, but replacing all randomness with one fixed pattern is a fidelity regression. For reproducible tests, expose a debug-only seed while keeping time-based seeding in normal runtime.
+Random pivot and permutation selection use independent 1024-entry precomputed
+tables. They are filled from Bionic `rand()` starting at seed 1: all float values
+first, then all unsigned values. Both cursors pre-increment and wrap. Before
+each Tile permutation, the unsigned cursor resets to zero; every slot swaps with
+`nextUIntLUT() % triangleCount`. Scene ray generation then uses `srand(time)`.
 
 ## 7. Scatter scheduler and affordance
 
@@ -370,6 +379,13 @@ vec4(alpha, alpha, alpha, 1.0)
 ```
 
 The line vertex stage consumes position, line-atlas UV and background UV. The stock line fragment samples the line mask, discards zero-alpha texels, and outputs background RGB with the mask alpha.
+
+Unlock drives a separate cosine scalar from 0 to 1 over `0.4 s`. For each Line
+vertex, progress below its recovered binary threshold keeps position fixed and
+scrolls background UV by `-progress * delta`; at/above the threshold position is
+`start + (progress - threshold) * delta`. Line uses full `mask.a`, not Tile alpha.
+On LLE's transparent surface only, one shared active-scene gate suppresses the
+otherwise persistent eleven idle seams.
 
 ### 9.2 Stock draw order and state
 
@@ -528,7 +544,7 @@ The core should expose debug snapshots for tests: orientation, vertex/triangle c
 
 - [ ] Raw Y is converted to GL-up exactly once.
 - [ ] Distance tests use aspect-corrected normalized coordinates, not pixels.
-- [ ] MOVE anchor threshold is `0.25 * hy^2` while the live center still follows continuously.
+- [ ] MOVE threshold is normalized `0.25 * hy^2` (clip-space `hy^2`) while the live center still follows continuously.
 - [ ] Held touch repeats batches every `0.16 s`, including when stationary.
 - [ ] Animation progress uses real elapsed seconds at 60, 120 and 144 Hz.
 - [ ] UP does not immediately snap all geometry back.
@@ -540,6 +556,7 @@ The core should expose debug snapshots for tests: orientation, vertex/triangle c
 - [ ] Unlock uses `s = 1.0/2.0`, duration `0.9 s`, no stagger.
 - [ ] Near/far probability is `0.8/0.016`.
 - [ ] Eight randomized rays are present and vary between scene constructions.
+- [ ] The 48-entry ARM64 ray guard is never reached before the recovered `d^2 >= 0.8` stop.
 - [ ] Exactly eleven seam strips are drawn, using the orientation-specific tuples.
 - [ ] The 56x62 line mask is loaded without density scaling.
 - [ ] Background sampling is center-cropped with the recovered UV formula.
@@ -568,6 +585,7 @@ The core should expose debug snapshots for tests: orientation, vertex/triangle c
 | Scene background | Opaque screenshot Background pass | Skip pass; real lockscreen stays visible |
 | Surface clear | Opaque scene | RGBA transparent clear |
 | Tile/Line RGB | Written into an already opaque target | Premultiply for Android translucent composition |
+| Idle Line | Always hidden by the identical opaque Background | Shared scene gate prevents seams on a transparent idle overlay |
 | Scatter alpha | White RGB with alpha 1 | Additive local RGB without making white opaque tiles |
 | Runtime | Samsung common library, C++/stlport | App-owned C/JNI/GLES implementation |
 | Frame scheduling | Animator manager; elapsed-time physics | Same elapsed-time physics; optional 30 fps request cap |

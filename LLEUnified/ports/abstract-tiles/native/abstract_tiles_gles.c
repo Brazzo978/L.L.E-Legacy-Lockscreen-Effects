@@ -1,5 +1,6 @@
 #include "abstract_tiles_internal.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,18 +66,20 @@ static const char *AT_LINE_FRAGMENT_SHADER =
 
 static const char *AT_SCATTER_VERTEX_SHADER =
         "attribute vec2 aPosition;\n"
-        "attribute float aScatter;\n"
+        "attribute float aProximity;\n"
+        "attribute float aRandom;\n"
+        "attribute float aRay;\n"
         "varying float vScatter;\n"
         "void main(){\n"
         "  gl_Position=vec4(aPosition,0.0,1.0);\n"
-        "  vScatter=aScatter;\n"
+        "  vScatter=aProximity+aRandom+aRay;\n"
         "}\n";
 
 static const char *AT_SCATTER_FRAGMENT_SHADER =
         "precision mediump float;\n"
         "varying float vScatter;\n"
         "void main(){\n"
-        "  float alpha=clamp(vScatter,0.0,1.0)*0.22;\n"
+        "  float alpha=clamp(vScatter,0.0,1.0);\n"
         /* Additive light must not make the Android overlay's alpha opaque. */
         "  gl_FragColor=vec4(vec3(alpha),0.0);\n"
         "}\n";
@@ -364,68 +367,109 @@ typedef struct AtSeamDefinition {
     uint16_t index_b;
     uint16_t index_c;
     uint16_t index_d;
+    uint16_t delta_from[4];
+    uint16_t delta_to[4];
+    uint8_t threshold_mask;
 } AtSeamDefinition;
 
 static const AtSeamDefinition AT_PORTRAIT_SEAMS[AT_SEAM_COUNT] = {
-        {26, 171,  16,  19, 173},
-        {18, 103, 267, 268, 101},
-        {46, 441, 290, 288, 443},
-        { 2, 952, 918, 881, 951},
-        { 6, 962, 856, 857, 961},
-        {14, 603, 374, 372, 605},
-        {34, 531, 638, 636, 533},
-        {22, 243, 309, 310, 245},
-        {30, 747, 854, 852, 749},
-        {38, 909, 794, 792, 911},
-        {42, 773, 576, 578, 771}
+        {26, 171,  16,  19, 173, {171, 171, 171, 171}, { 16,  16,  16,  16}, 0x0},
+        {18, 103, 267, 268, 101, {103, 103, 101, 103}, {301, 301, 268, 301}, 0x6},
+        {46, 441, 290, 288, 443, {290, 290, 290, 290}, {441, 441, 441, 441}, 0x9},
+        { 2, 952, 918, 881, 951, {881, 881, 881, 881}, {951, 951, 951, 951}, 0x0},
+        { 6, 962, 856, 857, 961, {857, 857, 857, 857}, {961, 961, 961, 961}, 0x0},
+        {14, 603, 374, 372, 605, {374, 374, 374, 374}, {603, 603, 603, 603}, 0x0},
+        {34, 531, 638, 636, 533, {531, 531, 531, 531}, {638, 638, 638, 638}, 0x6},
+        {22, 243, 309, 310, 245, {310, 310, 310, 310}, {245, 245, 245, 245}, 0x0},
+        {30, 747, 854, 852, 749, {854, 854, 854, 854}, {747, 747, 747, 747}, 0x0},
+        {38, 909, 794, 792, 911, {792, 792, 792, 792}, {911, 911, 911, 911}, 0x9},
+        {42, 773, 576, 578, 771, {773, 773, 773, 773}, {576, 576, 576, 576}, 0x0}
 };
 
 static const AtSeamDefinition AT_LANDSCAPE_SEAMS[AT_SEAM_COUNT] = {
-        {26,  10, 216, 218,  13},
-        {18,   4, 236, 235,   6},
-        {46, 880, 732, 679, 883},
-        { 2, 481, 423, 364, 373},
-        { 6, 211, 208,  94, 103},
-        {14,  34, 238, 237,  37},
-        {34,  28, 202, 205,  31},
-        {22,  16,  80,  79,  19},
-        {30, 886, 544, 547, 889},
-        {38, 892, 640, 643, 895},
-        {42, 910, 682, 685, 913}
+        {26,  10, 216, 218,  13, { 13,  13,  13,  13}, {218, 218, 218, 218}, 0x0},
+        {18,   4, 236, 235,   6, {  4,   4,   4,   4}, {236, 236, 236, 236}, 0x6},
+        {46, 880, 732, 679, 883, {880, 880, 880, 880}, {732, 732, 732, 732}, 0x6},
+        { 2, 481, 423, 364, 373, {364, 364, 364, 364}, {373, 373, 373, 373}, 0x0},
+        { 6, 211, 208,  94, 103, { 94,  94,  94,  94}, {103, 103, 103, 103}, 0x0},
+        {14,  34, 238, 237,  37, {237, 237, 237, 237}, { 37,  37,  37,  37}, 0x0},
+        {34,  28, 202, 205,  31, { 28,  28,  28,  28}, {202, 202, 202, 202}, 0x6},
+        {22,  16,  80,  79,  19, { 80,  80,  80,  80}, { 16,  16,  16,  16}, 0x0},
+        {30, 886, 544, 547, 889, {544, 544, 544, 544}, {886, 886, 886, 886}, 0x0},
+        {38, 892, 640, 643, 895, {892, 892, 892, 892}, {640, 640, 640, 640}, 0x6},
+        {42, 910, 682, 685, 913, {682, 682, 682, 682}, {910, 910, 910, 910}, 0x0}
 };
 
 static void at_write_line_vertex(
         float *output,
-        const float *tile_vertices,
+        const AtScene *scene,
         uint16_t source_index,
+        uint16_t delta_from_index,
+        uint16_t delta_to_index,
+        float threshold,
+        float progress,
+        float crop_x,
+        float crop_y,
         float atlas_u,
-        float atlas_v) {
-    const float *source = tile_vertices
-            + (size_t) source_index * AT_FLOATS_PER_VERTEX;
-    output[0] = source[0];
-    output[1] = source[1];
+        float atlas_v,
+        float line_alpha) {
+    const AtTriangle *source_triangle = &scene->triangles[source_index / 3U];
+    const AtTriangle *delta_from_triangle = &scene->triangles[delta_from_index / 3U];
+    const AtTriangle *delta_to_triangle = &scene->triangles[delta_to_index / 3U];
+    const int source_vertex = (int) (source_index % 3U);
+    const int delta_from_vertex = (int) (delta_from_index % 3U);
+    const int delta_to_vertex = (int) (delta_to_index % 3U);
+    const float start_x = source_triangle->base[source_vertex * 2];
+    const float start_y = source_triangle->base[source_vertex * 2 + 1];
+    const float delta_x = delta_to_triangle->base[delta_to_vertex * 2]
+            - delta_from_triangle->base[delta_from_vertex * 2];
+    const float delta_y = delta_to_triangle->base[delta_to_vertex * 2 + 1]
+            - delta_from_triangle->base[delta_from_vertex * 2 + 1];
+    float uv_x = start_x;
+    float uv_y = start_y;
+    if (progress < threshold) {
+        /* Before its threshold the legacy track keeps this line vertex fixed,
+         * but scrolls its background sample in the opposite direction. */
+        uv_x -= progress * delta_x;
+        uv_y -= progress * delta_y;
+        output[0] = start_x;
+        output[1] = start_y;
+    } else {
+        output[0] = start_x + (progress - threshold) * delta_x;
+        output[1] = start_y + (progress - threshold) * delta_y;
+    }
     output[2] = atlas_u;
     output[3] = atlas_v;
-    /* Tile UVs are generated from undeformed geometry by the CPU core. */
-    output[4] = source[2];
-    output[5] = source[3];
-    output[6] = source[7];
+    output[4] = crop_x + (1.0f - 2.0f * crop_x) * (1.0f + uv_x) * 0.5f;
+    output[5] = crop_y + (1.0f - 2.0f * crop_y) * (1.0f - uv_y) * 0.5f;
+    /* The OEM Line shader has no per-tile alpha: every seam uses mask.a.
+     * LLE only adds a shared scene gate so an otherwise transparent overlay
+     * does not retain eleven seam ghosts after the effect becomes idle. */
+    output[6] = line_alpha;
 }
 
 static int at_build_line_vertices(
         const AtScene *scene,
-        const float *tile_vertices,
         int tile_vertex_count,
+        int texture_width,
+        int texture_height,
         float *line_vertices,
         size_t line_float_capacity) {
     const size_t required = AT_SEAM_COUNT * AT_LINE_VERTICES_PER_SEAM
             * AT_FLOATS_PER_LINE_VERTEX;
-    if (scene == NULL || tile_vertices == NULL || line_vertices == NULL
+    if (scene == NULL || line_vertices == NULL
+            || texture_width <= 0 || texture_height <= 0
             || line_float_capacity < required) {
         return 0;
     }
     const AtSeamDefinition *seams = scene->columns == 5
             ? AT_PORTRAIT_SEAMS : AT_LANDSCAPE_SEAMS;
+    const float sx = (float) scene->width / (float) texture_width;
+    const float sy = (float) scene->height / (float) texture_height;
+    const float crop_x = sy > sx ? fabsf(sx / sy - 1.0f) * 0.5f : 0.0f;
+    const float crop_y = sy <= sx ? fabsf(sy / sx - 1.0f) * 0.5f : 0.0f;
+    const float progress = fminf(fmaxf(scene->unlock_line_progress, 0.0f), 1.0f);
+    const float line_alpha = at_scene_is_idle(scene) ? 0.0f : 1.0f;
     int emitted = 0;
     for (int seam_index = 0; seam_index < AT_SEAM_COUNT; ++seam_index) {
         const AtSeamDefinition *seam = &seams[seam_index];
@@ -434,21 +478,37 @@ static int at_build_line_vertices(
                 || seam->index_d >= tile_vertex_count) {
             return 0;
         }
+        for (int logical_vertex = 0; logical_vertex < 4; ++logical_vertex) {
+            if (seam->delta_from[logical_vertex] >= tile_vertex_count
+                    || seam->delta_to[logical_vertex] >= tile_vertex_count) {
+                return 0;
+            }
+        }
         const float atlas_u = (float) seam->atlas_x / 56.0f;
         const uint16_t indices[AT_LINE_VERTICES_PER_SEAM] = {
                 seam->index_a, seam->index_c, seam->index_d,
                 seam->index_a, seam->index_b, seam->index_c
         };
+        const uint8_t logical_indices[AT_LINE_VERTICES_PER_SEAM] = {0, 2, 3, 0, 1, 2};
         const float atlas_v[AT_LINE_VERTICES_PER_SEAM] = {
-                0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f
+                0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f
         };
         for (int vertex = 0; vertex < AT_LINE_VERTICES_PER_SEAM; ++vertex) {
+            const uint8_t logical_index = logical_indices[vertex];
             at_write_line_vertex(
                     line_vertices + (size_t) emitted * AT_FLOATS_PER_LINE_VERTEX,
-                    tile_vertices,
+                    scene,
                     indices[vertex],
+                    seam->delta_from[logical_index],
+                    seam->delta_to[logical_index],
+                    (seam->threshold_mask & (uint8_t) (1U << logical_index)) != 0U
+                            ? 1.0f : 0.0f,
+                    progress,
+                    crop_x,
+                    crop_y,
                     atlas_u,
-                    atlas_v[vertex]);
+                    atlas_v[vertex],
+                    line_alpha);
             ++emitted;
         }
     }
@@ -482,8 +542,9 @@ bool at_gles_draw(
     }
     int line_vertex_count = at_build_line_vertices(
             scene,
-            vertices,
             vertex_count,
+            gles->background_width,
+            gles->background_height,
             line_vertices,
             sizeof(line_vertices) / sizeof(line_vertices[0]));
     if (line_vertex_count != AT_SEAM_COUNT * AT_LINE_VERTICES_PER_SEAM) {
@@ -575,13 +636,19 @@ bool at_gles_draw(
     glBindBuffer(GL_ARRAY_BUFFER, gles->vertex_buffer);
     glUseProgram(gles->scatter_program);
     at_enable_attribute(
-            gles->scatter_program, "aPosition", 2, AT_FLOATS_PER_VERTEX, 0U);
+            gles->scatter_program, "aPosition", 2, AT_FLOATS_PER_VERTEX, 4U);
     at_enable_attribute(
-            gles->scatter_program, "aScatter", 1, AT_FLOATS_PER_VERTEX, 9U);
+            gles->scatter_program, "aProximity", 1, AT_FLOATS_PER_VERTEX, 9U);
+    at_enable_attribute(
+            gles->scatter_program, "aRandom", 1, AT_FLOATS_PER_VERTEX, 10U);
+    at_enable_attribute(
+            gles->scatter_program, "aRay", 1, AT_FLOATS_PER_VERTEX, 11U);
     glBlendFunc(GL_ONE, GL_ONE);
     glDrawArrays(GL_TRIANGLES, 0, vertex_count);
     at_disable_attribute(gles->scatter_program, "aPosition");
-    at_disable_attribute(gles->scatter_program, "aScatter");
+    at_disable_attribute(gles->scatter_program, "aProximity");
+    at_disable_attribute(gles->scatter_program, "aRandom");
+    at_disable_attribute(gles->scatter_program, "aRay");
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glActiveTexture(GL_TEXTURE1);

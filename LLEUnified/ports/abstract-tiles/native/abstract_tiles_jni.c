@@ -13,6 +13,8 @@
 static AtScene g_scene;
 static AtGles g_gles;
 static char g_error[AT_ERROR_SIZE];
+static uint16_t g_preserved_float_lut_cursor;
+static bool g_restore_float_lut_cursor;
 
 static void at_jni_error(const char *format, ...) {
     va_list args;
@@ -44,6 +46,12 @@ Java_com_codex_lle_AbstractTilesNative_nativeInitGpu(
     }
     at_jni_clear_error();
     at_scene_init(&g_scene, width, height);
+    if (g_restore_float_lut_cursor) {
+        /* The OEM LUT and cursors live at DSO scope and survive scene teardown.
+         * Tile rebuild resets/consumes the uint cursor, but not the float one. */
+        g_scene.float_lut_cursor = g_preserved_float_lut_cursor;
+        g_restore_float_lut_cursor = false;
+    }
     /* A resize can re-enter init in the same current context. Reclaim that generation. */
     if (g_gles.ready) at_gles_destroy(&g_gles);
     if (!at_gles_init(&g_gles, g_error, sizeof(g_error))) {
@@ -74,6 +82,10 @@ Java_com_codex_lle_AbstractTilesNative_nativeDestroyGpu(JNIEnv *env, jclass claz
     (void) clazz;
     /* This API is also legal after the GL thread/context has already disappeared. */
     at_gles_abandon(&g_gles);
+    if (g_scene.lookup_tables_ready) {
+        g_preserved_float_lut_cursor = g_scene.float_lut_cursor;
+        g_restore_float_lut_cursor = true;
+    }
     memset(&g_scene, 0, sizeof(g_scene));
     at_jni_clear_error();
 }

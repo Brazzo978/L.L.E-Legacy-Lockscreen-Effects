@@ -1,9 +1,9 @@
 # Abstract Tiles deep fidelity findings (2026-07-15)
 
 This record preserves the high-confidence ARM32 binary findings recovered after
-the ARM64 Alpha implementation was frozen for L.L.E. 1.0.1 Beta 1. It is an
-implementation brief for the next fidelity pass, not a claim that the current
-ARM64 renderer already contains every item below.
+the ARM64 Alpha implementation was frozen for L.L.E. 1.0.1 Beta 1. It was
+updated during the 2026-07-16 fidelity pass to record the behavior now mirrored
+by the app-owned ARM64 engine. Visual parity still requires an LSE device replay.
 
 ## Confidence and scope
 
@@ -40,8 +40,11 @@ The helper accumulates delay on the current time.
 
 ## Pop gesture (`FUN_200F8`)
 
-Accepted tiles are processed in mesh scan order. There is no Fisher-Yates or
-other stock tile shuffle.
+The stock Tile position and UV records are permuted together after mesh/Line
+construction and on every clear/rebuild. `FUN_16BE8` resets the unsigned LUT
+cursor to zero, then for every Tile slot `i` swaps it with
+`nextUIntLUT() % triangleCount`. This is not descending Fisher-Yates. Pop and
+unlock scan this permuted Tile order; Scatter and Line retain canonical geometry.
 
 For every accepted tile:
 
@@ -59,6 +62,10 @@ For every accepted tile:
 9. Increase stagger by 0.02 seconds only when a tile was actually activated.
 
 The next batch is eligible after 0.16 seconds.
+
+Pop and unlock probability distances are measured after converting clip
+coordinates to normalized `[0,1]` coordinates. Using their recovered constants
+directly in `[-1,1]` clip space makes the effective radius half as large.
 
 Geometry update uses delta progress, not absolute reconstruction:
 
@@ -150,10 +157,12 @@ Build eight paths. Initial angle for path `k` is:
 theta = k * pi / 4 + random * (pi / 4)
 ```
 
-Candidate selection uses capsule/triangle intersection with radius squared at
-`+0x118`. The selected candidate is appended. Stop once aspect-corrected
-distance squared reaches 0.8; the tile crossing that threshold remains in the
-path. After the third element, deviations alternate between:
+Candidate selection tests the ray segment against a circle at each canonical
+triangle centroid, using the extended radius squared at `+0x118`; it does not
+expand the complete triangle outline. The second-nearest hit is appended because
+the nearest is normally the current tile. Stop once aspect-corrected distance
+squared reaches 0.8; the tile crossing that threshold remains in the path. After
+the third element, deviations alternate between:
 
 - wide: `theta - pi/2 + random * pi`
 - narrow: `theta - pi/8 + random * pi/4`
@@ -181,18 +190,42 @@ is scheduled and is reset only when `FUN_2A710` rebuilds the paths, not on UP.
 - Trigonometric LUT entry `i` stores
   `{sin(i * 2*pi/1024), cos(i * 2*pi/1024)}`.
 
-Static initialization creates the LUTs before the scene constructor calls
-`srand(time)`. Exact bytes therefore depend on libc state, but the layout and
-distribution are confirmed.
+Static initialization uses Bionic's default `rand()` sequence (seed 1), so the
+tables begin from the well-known values `1804289383, 846930886, ...`. The port
+seeds this explicitly before filling the float table and then the unsigned table.
+The scene subsequently calls `srand(time)`. Ray-angle multiplication retains the
+single-rounding ARM constants `0x2fc90fdb` (`pi/4 / RAND_MAX`) and `0x30c90fdb`
+(`pi / RAND_MAX`).
 
-## Next implementation order
+## Touch ordering recovered in the final pass
 
-1. Remove tile shuffle and change per-tile geometry to ease-out cubic.
-2. Replace radial scatter amplitude and scheduling with the recovered formula.
-3. Split scatter into proximity, radial and ray alpha channels and sum them in
-   the scatter vertex shader.
-4. Implement the eight ray paths and 100 ms stagger.
-5. Implement the 1024-entry independent LUT cursors.
-6. Normalize only the refresh-dependent MOVE increment for stable 60/120 Hz
-   behavior, retaining recovered timing everywhere else.
-7. Re-run transparent-composition, lifecycle and visual differential tests.
+- DOWN cancels old ray tails, builds eight paths with C `rand()`, schedules the
+  initial radial group, schedules the pop group, then schedules ray alpha.
+- MOVE updates the live center and MOVE flag but does not directly create pop or
+  ray groups. It advances the accepted trail point only after the normalized
+  threshold; in clip space that threshold is `hy^2`.
+- Held pop batches alone run every `0.16 s` and use the live touch center.
+- UP clears the MOVE flag and removes only delayed pop records whose start is in
+  the future.
+- The remaining release gate is a same-gesture visual differential against LSE,
+  especially Scatter intensity and transparent Line composition.
+
+The ARM64 safety cap of 48 entries per ray has no known visual effect because
+the recovered `d^2 >= 0.8` stop normally terminates first; the OEM vector itself
+is dynamically sized. MOVE proximity's stock `+0.3` per draw remains the one
+intentional physics normalization (`9 * dt`) for consistent 60/120 Hz behavior.
+
+## 2026-07-16 build and device validation
+
+- ARM64 companion APK: `build/arm64-v8a-dev/LLE-arm64-dev.apk`, SHA-256
+  `D637B9C21625E2C63C6BE945084B8F208C01C3C09A5E7C29176EDCFFDFFCA78F`.
+- ARM32 APK: `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`, SHA-256
+  `A0B207A40F51284CD5BE089F46383AB4880F80FDE5E99A7EEE291B3B3F4560BD`.
+- S23 Ultra smoke run `abstract_tiles_20260716_114911_156`: process survived,
+  six post-gesture captures completed and crash/GLES finding count was zero.
+- The installed ARM64 companion remained co-installable with the ARM32 daily
+  package, and the enabled accessibility list remained Bitwarden plus the ARM64
+  companion service.
+- A valid same-gesture LSE capture was not produced while the secure keyguard
+  was locked/dozing. Earlier selector captures in the test folder are not valid
+  Abstract Tiles reference frames. Do not declare visual parity from them.

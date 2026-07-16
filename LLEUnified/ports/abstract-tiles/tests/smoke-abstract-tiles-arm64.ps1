@@ -7,7 +7,7 @@ Plan:
   1. Confirm that one target device and com.codex.lle are reachable.
   2. Add a unique logcat marker, wake through EffectBackgroundWakeActivity and select effect 7.
   3. Inject one panel-local swipe shorter than 450 ms.
-  4. Start three device-side PNG captures near 80/240/410 ms of the gesture.
+  4. Start device-side PNG captures at the requested offsets (80/240/410 ms by default).
   5. Pull the frames, remove only this run's /data/local/tmp files, then collect filtered
      crash/GLES logcat and dumpsys meminfo.
   6. Emit summary.json and fail the smoke if the process disappears or a crash/GL failure
@@ -29,6 +29,8 @@ query. Run this only while the device is not being controlled by another test.
 param(
     [string] $Serial = "",
     [string] $Adb = "adb",
+    [string] $PackageName = "com.codex.lle",
+    [string] $ActivityComponent = "",
     [string] $OutputDirectory = "",
     [ValidateRange(1, 449)]
     [int] $GestureDurationMs = 420,
@@ -39,13 +41,35 @@ param(
     [ValidateRange(-1, 64)]
     [int] $RestoreEffect = -1,
     [ValidateRange(250, 10000)]
-    [int] $WakeSettleMs = 1500
+    [int] $WakeSettleMs = 3000,
+    [ValidateRange(100, 5000)]
+    [int] $LockscreenSettleMs = 800,
+    [int[]] $CaptureOffsetsMs = @(80, 240, 410)
 )
 
 $ErrorActionPreference = "Stop"
-$packageName = "com.codex.lle"
+$packageName = $PackageName
+$wakeComponent = if ([string]::IsNullOrWhiteSpace($ActivityComponent)) {
+    "$packageName/com.codex.lle.EffectBackgroundWakeActivity"
+} else {
+    $ActivityComponent
+}
 $effectId = 7
 $runId = "abstract_tiles_" + (Get-Date -Format "yyyyMMdd_HHmmss_fff")
+
+if ($CaptureOffsetsMs.Count -eq 0) {
+    throw "CaptureOffsetsMs must contain at least one offset"
+}
+$previousCaptureOffset = -1
+foreach ($captureOffset in $CaptureOffsetsMs) {
+    if ($captureOffset -lt 0 -or $captureOffset -gt 5000) {
+        throw "Capture offset $captureOffset is outside 0..5000 ms"
+    }
+    if ($captureOffset -le $previousCaptureOffset) {
+        throw "CaptureOffsetsMs must be strictly increasing"
+    }
+    $previousCaptureOffset = $captureOffset
+}
 
 $adbCommand = Get-Command $Adb -ErrorAction Stop
 $adbExe = $adbCommand.Source
@@ -159,7 +183,7 @@ foreach ($coordinate in @($StartY, $EndY)) {
 $remoteFrames = @()
 $localFrames = @()
 $captureProcesses = @()
-$frameOffsetsMs = @(80, 240, 410)
+$frameOffsetsMs = @($CaptureOffsetsMs)
 $startedAt = Get-Date
 $failure = $null
 
@@ -169,9 +193,13 @@ try {
     [void](Invoke-AdbText -Arguments @("shell", "input", "keyevent", "KEYCODE_WAKEUP"))
     [void](Invoke-AdbText -Arguments @(
             "shell", "am", "start", "-W",
-            "-n", "$packageName/.EffectBackgroundWakeActivity",
+            "-n", $wakeComponent,
             "--ei", "effect", "$effectId"))
     Start-Sleep -Milliseconds $WakeSettleMs
+    # The helper intentionally prepares the cached overlay around a screen-off cycle.
+    # Wake once more and let the real lockscreen become interactive before injection.
+    [void](Invoke-AdbText -Arguments @("shell", "input", "keyevent", "KEYCODE_WAKEUP"))
+    Start-Sleep -Milliseconds $LockscreenSettleMs
 
     $pidBefore = ((Invoke-AdbText -Arguments @(
             "shell", "pidof", $packageName) -AllowFailure) -join " ").Trim()
@@ -220,8 +248,9 @@ try {
 
     [void](Invoke-AdbText -Arguments @(
             "shell", "log", "-p", "i", "-t", "LLESmoke", "END_$runId"))
+    $logStart = $startedAt.ToString("MM-dd HH:mm:ss.fff")
     $logcat = Invoke-AdbText -Arguments @(
-            "logcat", "-d", "-v", "threadtime", "-s",
+            "logcat", "-d", "-T", $logStart, "-v", "threadtime", "-s",
             "LLESmoke:I", "ChargingA11y:V", "LLE64AbstractTiles:V",
             "AndroidRuntime:E", "libc:F", "DEBUG:F", "OpenGLRenderer:E",
             "GLConsumer:E", "EGL:E", "ActivityManager:E", "*:S")
@@ -239,12 +268,18 @@ try {
     $logPath = Join-Path $OutputDirectory "logcat-filtered.txt"
     $runLog | Set-Content -LiteralPath $logPath -Encoding UTF8
 
-    $failurePattern = "(?i)(FATAL EXCEPTION|Fatal signal|ANR in com\.codex\.lle|" +
+    $escapedPackage = [regex]::Escape($packageName)
+    $escapedPid = [regex]::Escape($pidBefore)
+    $targetLogPrefix = "(?i)^\d{2}-\d{2}\s+\S+\s+$escapedPid\s+\d+\s+"
+    $explicitFailure = "(?i)(ANR in $escapedPackage|Process:\s*$escapedPackage|" +
             "LLE64AbstractTiles.*(failed|error|unavailable)|" +
-            "ChargingA11y.*Abstract Tiles ARM64 failed|" +
-            "\bEGL.*(?:error|failed)|\bGL(?:_| )?ERROR\b|" +
-            "OpenGLRenderer.*(?:error|failed))"
-    $findings = @($runLog | Where-Object { $_ -match $failurePattern })
+            "ChargingA11y.*Abstract Tiles ARM64 failed)"
+    $targetFailure = "(?i)(FATAL EXCEPTION|Fatal signal|\bEGL.*(?:error|failed)|" +
+            "\bGL(?:_| )?ERROR\b|OpenGLRenderer.*(?:error|failed))"
+    $findings = @($runLog | Where-Object {
+            $_ -match $explicitFailure -or
+            ($_ -match $targetLogPrefix -and $_ -match $targetFailure)
+    })
     $findingsPath = Join-Path $OutputDirectory "crash-gl-findings.txt"
     if ($findings.Count -eq 0) {
         @("No crash/GL failure matched after BEGIN_$runId") |
@@ -302,7 +337,7 @@ try {
     if ($RestoreEffect -ge 0) {
         [void](Invoke-AdbText -Arguments @(
                 "shell", "am", "start",
-                "-n", "$packageName/.EffectBackgroundWakeActivity",
+                "-n", $wakeComponent,
                 "--ei", "effect", "$RestoreEffect") -AllowFailure)
     }
 }
