@@ -360,6 +360,11 @@ static void at_disable_attribute(GLuint program, const char *name) {
 #define AT_SEAM_COUNT 11
 #define AT_LINE_VERTICES_PER_SEAM 6
 #define AT_FLOATS_PER_LINE_VERTEX 7
+/* The recovered pass requires a wallpaper-only texture. LLE currently caches
+ * the complete lockscreen, so enabling it duplicates clock/status UI in eleven
+ * large moving slabs. Keep the exact implementation dormant until the host can
+ * supply a clean wallpaper source; ARM32 applies the same shipping boundary. */
+#define AT_TRANSPARENT_LINE_AVAILABLE 0
 
 typedef struct AtSeamDefinition {
     uint16_t atlas_x;
@@ -425,19 +430,15 @@ static void at_write_line_vertex(
             - delta_from_triangle->base[delta_from_vertex * 2];
     const float delta_y = delta_to_triangle->base[delta_to_vertex * 2 + 1]
             - delta_from_triangle->base[delta_from_vertex * 2 + 1];
-    float uv_x = start_x;
-    float uv_y = start_y;
-    if (progress < threshold) {
-        /* Before its threshold the legacy track keeps this line vertex fixed,
-         * but scrolls its background sample in the opposite direction. */
-        uv_x -= progress * delta_x;
-        uv_y -= progress * delta_y;
-        output[0] = start_x;
-        output[1] = start_y;
-    } else {
-        output[0] = start_x + (progress - threshold) * delta_x;
-        output[1] = start_y + (progress - threshold) * delta_y;
-    }
+    /* FUN_13B10 updates background UV only before the per-corner threshold.
+     * Its persistent OEM buffer keeps the last displaced UV afterwards; an
+     * absolute reconstruction must therefore clamp, not reset it to start. */
+    const float uv_progress = fminf(progress, threshold);
+    const float position_progress = fmaxf(progress - threshold, 0.0f);
+    const float uv_x = start_x - uv_progress * delta_x;
+    const float uv_y = start_y - uv_progress * delta_y;
+    output[0] = start_x + position_progress * delta_x;
+    output[1] = start_y + position_progress * delta_y;
     output[2] = atlas_u;
     output[3] = atlas_v;
     output[4] = crop_x + (1.0f - 2.0f * crop_x) * (1.0f + uv_x) * 0.5f;
@@ -469,7 +470,13 @@ static int at_build_line_vertices(
     const float crop_x = sy > sx ? fabsf(sx / sy - 1.0f) * 0.5f : 0.0f;
     const float crop_y = sy <= sx ? fabsf(sy / sx - 1.0f) * 0.5f : 0.0f;
     const float progress = fminf(fmaxf(scene->unlock_line_progress, 0.0f), 1.0f);
-    const float line_alpha = at_scene_is_idle(scene) ? 0.0f : 1.0f;
+    /* At p=0 the stock Line is visually neutral because it is drawn over its
+     * identical opaque Background. On LLE's live transparent underlay those
+     * static quads expose stale UI pixels, so gate only the unlock track. */
+    const float line_alpha = AT_TRANSPARENT_LINE_AVAILABLE
+                    && !at_scene_is_idle(scene)
+                    && progress > 0.0f
+            ? 1.0f : 0.0f;
     int emitted = 0;
     for (int seam_index = 0; seam_index < AT_SEAM_COUNT; ++seam_index) {
         const AtSeamDefinition *seam = &seams[seam_index];

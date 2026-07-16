@@ -210,6 +210,25 @@ single-rounding ARM constants `0x2fc90fdb` (`pi/4 / RAND_MAX`) and `0x30c90fdb`
 - The remaining release gate is a same-gesture visual differential against LSE,
   especially Scatter intensity and transparent Line composition.
 
+The Line arrays are persistent in the ARM32 scene. When progress reaches a
+corner's threshold, `FUN_13B10` stops writing its background UV, so the UV keeps
+the final displaced value. A reconstruction from canonical geometry must use
+`uv = start - min(progress, threshold) * delta`; rebuilding it as `start` in the
+post-threshold branch produces incorrect screenshot content at unlock endpoint.
+Because a static stock Line is neutral only over the engine's identical opaque
+Background, the recovered pass is retained but disabled in shipping builds until
+the host can supply a wallpaper-only texture.
+
+Device comparison established a harder boundary: LSE's OEM host samples a clean
+gallery/wallpaper image and renders its demo UI separately, while LLE's only
+available Fold-aware source is the complete accessibility screenshot. Exact Line
+slabs consequently move lockscreen clock/status/weather pixels and look corrupt
+even with correct geometry. The S23 LSE install also lacks the external legacy
+resource package that supplied the line mask, so it cannot provide a visual Line
+reference. The shipping ARM32 pass was already disabled for this reason; ARM64
+now preserves the exact dormant implementation but also ships Line off pending a
+wallpaper-only host source.
+
 The ARM64 safety cap of 48 entries per ray has no known visual effect because
 the recovered `d^2 >= 0.8` stop normally terminates first; the OEM vector itself
 is dynamically sized. MOVE proximity's stock `+0.3` per draw remains the one
@@ -218,10 +237,10 @@ intentional physics normalization (`9 * dt`) for consistent 60/120 Hz behavior.
 ## 2026-07-16 build and device validation
 
 - ARM64 companion APK: `build/arm64-v8a-dev/LLE-arm64-dev.apk`, SHA-256
-  `D637B9C21625E2C63C6BE945084B8F208C01C3C09A5E7C29176EDCFFDFFCA78F`.
+  `68B3B9FC87328DB79838EAF90C955F7C3AC8A31660E7A80E9F8772193E43C9C7`.
 - ARM32 APK: `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`, SHA-256
-  `A0B207A40F51284CD5BE089F46383AB4880F80FDE5E99A7EEE291B3B3F4560BD`.
-- S23 Ultra smoke run `abstract_tiles_20260716_114911_156`: process survived,
+  `C14294BC159DE622970FA7E066ED7C2FE1F9C881954ADE57636AA2A50F5EAB06`.
+- S23 Ultra smoke run `abstract_tiles_20260716_121618_898`: process survived,
   six post-gesture captures completed and crash/GLES finding count was zero.
 - The installed ARM64 companion remained co-installable with the ARM32 daily
   package, and the enabled accessibility list remained Bitwarden plus the ARM64

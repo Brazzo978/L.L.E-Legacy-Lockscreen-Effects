@@ -383,9 +383,20 @@ The line vertex stage consumes position, line-atlas UV and background UV. The st
 Unlock drives a separate cosine scalar from 0 to 1 over `0.4 s`. For each Line
 vertex, progress below its recovered binary threshold keeps position fixed and
 scrolls background UV by `-progress * delta`; at/above the threshold position is
-`start + (progress - threshold) * delta`. Line uses full `mask.a`, not Tile alpha.
-On LLE's transparent surface only, one shared active-scene gate suppresses the
-otherwise persistent eleven idle seams.
+`start + (progress - threshold) * delta`, while background UV retains the value
+reached at the threshold. Line uses full `mask.a`, not Tile alpha. On LLE's
+transparent surface the pass is gated to `unlockProgress > 0`: at progress zero
+the OEM quads are visually neutral only because they exactly cover its opaque
+Background, whereas drawing them over the live lockscreen exposes stale UI
+pixels.
+
+Shipping note: the unified host currently provides only a complete lockscreen
+capture from `AccessibilityService.takeScreenshot()`, not a wallpaper-only
+texture. Moving the exact eleven Line slabs therefore duplicates clock, weather
+and status UI. ARM32 discards this pass for the same reason. ARM64 retains the
+fully recovered geometry and UV implementation but keeps Line disabled until a
+clean wallpaper source is available; changing tuple positions cannot solve this
+input/compositing mismatch.
 
 ### 9.2 Stock draw order and state
 
@@ -585,7 +596,7 @@ The core should expose debug snapshots for tests: orientation, vertex/triangle c
 | Scene background | Opaque screenshot Background pass | Skip pass; real lockscreen stays visible |
 | Surface clear | Opaque scene | RGBA transparent clear |
 | Tile/Line RGB | Written into an already opaque target | Premultiply for Android translucent composition |
-| Idle Line | Always hidden by the identical opaque Background | Shared scene gate prevents seams on a transparent idle overlay |
+| Line input | Wallpaper-only texture over identical opaque Background | Disabled until the host can provide wallpaper without lockscreen UI |
 | Scatter alpha | White RGB with alpha 1 | Additive local RGB without making white opaque tiles |
 | Runtime | Samsung common library, C++/stlport | App-owned C/JNI/GLES implementation |
 | Frame scheduling | Animator manager; elapsed-time physics | Same elapsed-time physics; optional 30 fps request cap |
