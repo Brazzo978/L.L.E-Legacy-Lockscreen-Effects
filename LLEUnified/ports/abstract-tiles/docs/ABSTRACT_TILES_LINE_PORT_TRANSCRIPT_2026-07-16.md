@@ -14,8 +14,9 @@ originale.
 - La Line viene presentata a circa 60 fps e usa tempo monotono trascorso, quindi
   la durata non cambia fra pannelli 60 e 120 Hz.
 - Il picker non usa più la dicitura Alpha. Abstract Tiles ARM64 è Beta.
-- La Line è ON per impostazione predefinita. Un toggle ARM64 permette una vera
-  modalità Line OFF senza duplicare effetto, APK o trunk applicativo.
+- La GUI ARM64 presenta due varianti selezionabili, `Lines` e `No lines`.
+  Entrambe usano lo stesso effect ID e renderer; la seconda è una vera modalità
+  Line OFF senza duplicare APK o trunk applicativo.
 - Non viene dichiarata parità visiva assoluta finché non esiste una registrazione
   frame-aligned dello stesso gesto sul dispositivo originale.
 
@@ -291,11 +292,11 @@ Line OFF:
 - non costruisce i vertici Line;
 - non invia alcun draw Line.
 
-Il cambio toggle distrugge e ricrea il renderer attivo perché cambia il grafo di
-risorse GLES. La versione bridge JNI è stata portata da `1` a `2` per impedire
-l'accoppiamento accidentale con una `.so` precedente.
+Il cambio variante distrugge e ricrea il renderer attivo perché cambia il grafo
+di risorse GLES. La versione bridge JNI è stata portata da `1` a `2` per
+impedire l'accoppiamento accidentale con una `.so` precedente.
 
-ARM32 conserva il proprio comportamento tiles-only e non mostra il toggle.
+ARM32 conserva il proprio comportamento e non mostra le due varianti ARM64.
 
 ## Stabilità e falso restart del motore
 
@@ -317,10 +318,11 @@ Sono stati inoltre chiusi due rischi reali:
 
 ## Verifica sul build finale ARM64
 
-Il build finale è stato reinstallato sul dispositivo S23 di test e sottoposto al
-run `abstract_tiles_20260716_130436_455`. Il gesto dura 420 ms; le cinque catture
-coprono circa unlock +20/+80/+160/+240/+400 ms. Il PID è rimasto esattamente
-`18485` prima e dopo, `process_survived=true` e il conteggio crash/GLES è zero.
+Il build finale con le due voci GUI è stato reinstallato sul dispositivo S23 di
+test e sottoposto al run `abstract_tiles_20260716_131314_438`. Il gesto dura
+420 ms; le cinque catture coprono circa unlock +20/+80/+160/+240/+400 ms. Il
+PID è rimasto esattamente
+`21495` prima e dopo, `process_survived=true` e il conteggio crash/GLES è zero.
 Il test non considera più valido un processo che crasha e viene respawnato.
 
 La lista dei servizi accessibilità è rimasta invariata: Bitwarden più il
@@ -389,11 +391,11 @@ geometria e mask, ma non curva, cadence, direzione temporale o threshold.
 
 - ARM64 companion: `build/arm64-v8a-dev/LLE-arm64-dev.apk`
 - SHA-256 APK:
-  `F1EE41032EA909B3B49A7731AB3CAD012C11975C9016EA1E7B32C69D61F44D20`
+  `C1750BD24DBCF91E3DB950285AFA87F82686E20C0DF303D53D1E4160F43C183A`
 - `.so` Abstract Tiles contenuta nel build ARM64:
   `D97520E586449F2331DBFDCB9888A4BDBA0DEAA8DD57B710C709CE8CC1FCFB7C`
 - ARM32: `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`
 - SHA-256 APK:
-  `6BA78024348E93B1E9EC5C0AF51AD63ABFFB2EA2176256CB16DEE0889F65B69E`
+  `CE1BE80BCAD10FB53E46093907E837D3BFDA729E07065116A7014209F760150E`
 
 Questi hash vanno aggiornati se il codice cambia dopo il presente transcript.

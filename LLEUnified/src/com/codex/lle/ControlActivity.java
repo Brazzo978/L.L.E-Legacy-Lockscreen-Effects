@@ -109,6 +109,7 @@ public class ControlActivity extends Activity {
     private TextView effectProfilerSummary;
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
     private int pendingUnlockEffect = -1;
+    private int pendingAbstractTilesLineMode = -1;
     private boolean updatingServiceSwitch;
     private float tabSwipeDownX;
     private float tabSwipeDownY;
@@ -1477,17 +1478,32 @@ public class ControlActivity extends Activity {
                         : "Original Samsung ARM32 Watercolor engine with transparent lockscreen composition.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current);
-        addEffectOptionIfAvailable(effects,
-                "N4 Abstract Tiles",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 GLES reconstruction with transparent screenshot composition."
-                        : "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
-                OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                current);
-        if (EffectAvailability.is64BitProcess()) {
-            effects.addView(toggle("Abstract Tiles · Line layer",
-                    OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED,
-                    true));
+        if (EffectAvailability.isAvailable(OverlayPrefs.EFFECT_S4_ABSTRACT_TILES)) {
+            if (EffectAvailability.is64BitProcess()) {
+                boolean currentLineMode = pendingUnlockEffect
+                        == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                        && pendingAbstractTilesLineMode >= 0
+                        ? pendingAbstractTilesLineMode == 1
+                        : OverlayPrefs.abstractTilesLineEnabled(this);
+                effects.addView(abstractTilesEffectOption(
+                        "N4 Abstract Tiles · Lines",
+                        "Tile and Scatter animation with the recovered Line layer.",
+                        true,
+                        current,
+                        currentLineMode));
+                effects.addView(abstractTilesEffectOption(
+                        "N4 Abstract Tiles · No lines",
+                        "Tiles-only variant; Line shader, mask and draw pass stay disabled.",
+                        false,
+                        current,
+                        currentLineMode));
+            } else {
+                effects.addView(effectOption(
+                        "N4 Abstract Tiles",
+                        "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
+                        OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                        current));
+            }
         }
         addEffectOptionIfAvailable(effects,
                 "N4 Geometric Mosaic",
@@ -1608,7 +1624,18 @@ public class ControlActivity extends Activity {
     }
 
     private void queueUnlockEffectSelection(int value) {
+        queueUnlockEffectSelection(value, -1);
+    }
+
+    private void queueAbstractTilesSelection(boolean lineEnabled) {
+        queueUnlockEffectSelection(
+                OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                lineEnabled ? 1 : 0);
+    }
+
+    private void queueUnlockEffectSelection(int value, int abstractTilesLineMode) {
         pendingUnlockEffect = value;
+        pendingAbstractTilesLineMode = abstractTilesLineMode;
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
         uiHandler.postDelayed(applyPendingUnlockEffectRunnable,
                 EFFECT_SELECTION_APPLY_DELAY_MS);
@@ -1620,8 +1647,18 @@ public class ControlActivity extends Activity {
             return;
         }
         int effect = pendingUnlockEffect;
+        int abstractTilesLineMode = pendingAbstractTilesLineMode;
         pendingUnlockEffect = -1;
-        prefs.edit().putInt(OverlayPrefs.UNLOCK_EFFECT, effect).apply();
+        pendingAbstractTilesLineMode = -1;
+        SharedPreferences.Editor editor = prefs.edit()
+                .putInt(OverlayPrefs.UNLOCK_EFFECT, effect);
+        if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                && abstractTilesLineMode >= 0) {
+            editor.putBoolean(
+                    OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED,
+                    abstractTilesLineMode == 1);
+        }
+        editor.apply();
         showTab(TAB_LOCKSCREEN_EFFECT);
     }
 
@@ -2816,7 +2853,22 @@ public class ControlActivity extends Activity {
     }
 
     private View effectOption(String title, String subtitle, final int value, int current) {
-        final boolean selected = value == current;
+        return effectOption(title, subtitle, value, value == current, -1);
+    }
+
+    private View abstractTilesEffectOption(String title, String subtitle,
+            boolean lineEnabled, int current, boolean currentLineEnabled) {
+        return effectOption(
+                title,
+                subtitle,
+                OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                current == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                        && lineEnabled == currentLineEnabled,
+                lineEnabled ? 1 : 0);
+    }
+
+    private View effectOption(String title, String subtitle, final int value,
+            final boolean selected, final int abstractTilesLineMode) {
         final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -2869,7 +2921,11 @@ public class ControlActivity extends Activity {
                     previewOpened[0] = false;
                     return;
                 }
-                queueUnlockEffectSelection(value);
+                if (abstractTilesLineMode >= 0) {
+                    queueAbstractTilesSelection(abstractTilesLineMode == 1);
+                } else {
+                    queueUnlockEffectSelection(value);
+                }
                 showTab(selectedTab);
             }
         });

@@ -258,16 +258,18 @@ ARM64 now exposes one Abstract Tiles effect with two runtime resource modes:
 - Line OFF: skip the Line shader, VBO, mask texture, vertex build and draw pass.
 
 Line OFF is therefore a real tiles-only renderer, not a transparent Line draw.
-ARM32 retains its existing pass-discard behavior and does not expose the toggle.
+ARM64 exposes these modes as two distinct picker entries backed by the same
+effect ID and renderer. ARM32 retains its existing pass-discard behavior and
+does not expose the two ARM64 variants.
 
 ## 2026-07-16 build and device validation
 
 - ARM64 companion APK: `build/arm64-v8a-dev/LLE-arm64-dev.apk`, SHA-256
-  `F1EE41032EA909B3B49A7731AB3CAD012C11975C9016EA1E7B32C69D61F44D20`.
+  `C1750BD24DBCF91E3DB950285AFA87F82686E20C0DF303D53D1E4160F43C183A`.
 - ARM32 APK: `build/armeabi-v7a/LLE-armeabi-v7a-debug.apk`, SHA-256
-  `6BA78024348E93B1E9EC5C0AF51AD63ABFFB2EA2176256CB16DEE0889F65B69E`.
-- S23 Ultra final-build unlock-window smoke run `abstract_tiles_20260716_130436_455`:
-  PID remained exactly `18485` before and after the run, five captures covered
+  `CE1BE80BCAD10FB53E46093907E837D3BFDA729E07065116A7014209F760150E`.
+- S23 Ultra final-build unlock-window smoke run `abstract_tiles_20260716_131314_438`:
+  PID remained exactly `21495` before and after the run, five captures covered
   approximately unlock +20/+80/+160/+240/+400 ms, and crash/GLES finding count
   was zero. PID equality is required: a respawn no longer counts as survival.
 - The installed ARM64 companion remained co-installable with the ARM32 daily

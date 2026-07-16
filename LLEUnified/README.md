@@ -40,8 +40,9 @@ device.
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
 
-On ARM64, Abstract Tiles also provides a **Line layer** switch. Keep it enabled
-for the fuller visual effect, or disable it for the clean tiles-only variant.
+On ARM64, the effect picker exposes two Abstract Tiles variants:
+**Abstract Tiles · Lines** for the full Line pass and
+**Abstract Tiles · No lines** for the clean tiles-only renderer.
 
 ## Requirements
 
