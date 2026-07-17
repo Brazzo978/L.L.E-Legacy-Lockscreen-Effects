@@ -114,6 +114,9 @@ static void at_build_grid(AtScene *scene) {
     const float wx = 1.0f / (float) scene->columns;
     const float hy = 1.0f / (float) scene->rows;
     for (int row = 0; row <= scene->rows; ++row) {
+        /* FUN_24EE4 emits the two upper-cell triangles for every column first.
+         * Line tables address this exact flat vertex order, so interleaving all
+         * four triangles per cell makes their seam indices join distant cells. */
         for (int column = 0; column <= scene->columns; ++column) {
             const float x_left = 2.0f * (float) column * wx - 1.0f;
             const float x_center = x_left + wx;
@@ -124,6 +127,13 @@ static void at_build_grid(AtScene *scene) {
 
             at_add_triangle(scene, x_left, y_top, x_center, y_center, x_left, y_bottom);
             at_add_triangle(scene, x_right, y_bottom, x_center, y_center, x_right, y_top);
+        }
+
+        /* The two lower-cell triangles form a second complete column pass. */
+        for (int column = 0; column <= scene->columns; ++column) {
+            const float x_left = 2.0f * (float) column * wx - 1.0f;
+            const float y_center = 1.0f - 2.0f * (float) row * hy;
+            const float y_bottom = 1.0f - hy - 2.0f * (float) row * hy;
             at_add_triangle(
                     scene,
                     x_left - wx,

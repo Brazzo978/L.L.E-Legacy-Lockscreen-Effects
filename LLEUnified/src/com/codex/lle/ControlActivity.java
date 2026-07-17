@@ -1507,7 +1507,9 @@ public class ControlActivity extends Activity {
         }
         addEffectOptionIfAvailable(effects,
                 "N4 Geometric Mosaic",
-                "Original Samsung ARM32 LockBG mosaic renderer with transparent screenshot composition.",
+                EffectAvailability.is64BitProcess()
+                        ? "Reconstructed ARM64 mosaic renderer with transparent screenshot composition."
+                        : "Original ARM32 LockBG mosaic renderer with transparent screenshot composition.",
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current);
         addEffectOptionIfAvailable(effects,

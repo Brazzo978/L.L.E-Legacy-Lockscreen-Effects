@@ -13,12 +13,15 @@ import android.media.AudioManager;
 import android.media.SoundPool;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.os.Build;
+import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -35,7 +38,8 @@ import javax.microedition.khronos.opengles.GL10;
 
 /** Lifecycle host for LLE's standalone ARM64 reconstruction of N4 Abstract Tiles. */
 public final class AbstractTilesArm64EffectView extends GLSurfaceView
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer,
+        DebugAbstractTilesCaptureRenderer {
     private static final String TAG = "LLE64AbstractTiles";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     /* The legacy renderer presents the 400 ms Line track at roughly 60 fps.
@@ -81,6 +85,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     private float dragSoundVolume = 1.0f;
     private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
     private boolean dragSoundFading;
+    private int debugCaptureGeneration;
 
     private final Runnable animationRunnable = new Runnable() {
         @Override
@@ -315,6 +320,102 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             }
         };
         postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+    }
+
+    /** Captures a deterministic Abstract Tiles sequence directly from the GLES surface. */
+    @Override
+    public void captureDebugAbstractTilesFrame(final String sequence, final long phaseMs) {
+        if (!canRenderEffect()) {
+            Log.i(TAG, "debug capture skipped; renderer unavailable");
+            return;
+        }
+        final int captureGeneration = ++debugCaptureGeneration;
+        resetEffect();
+        lastAffordanceQueuedAt = 0L;
+        final float centerX = getRenderWidth() * 0.5f;
+        final float centerY = getRenderHeight() * 0.5f;
+        if ("hint".equals(sequence)) {
+            showUnlockAffordance(new Rect(0, 0, getRenderWidth(), getRenderHeight()), 0L);
+        } else {
+            beginGesture(centerX, centerY);
+            if ("unlock".equals(sequence) || "unlock-series".equals(sequence)) {
+                updateGesture(centerX + Math.min(320f, getRenderWidth() * 0.22f),
+                        centerY - Math.min(180f, getRenderHeight() * 0.07f));
+                finishGesture(true);
+            }
+        }
+        if ("unlock-series".equals(sequence)) {
+            /* Start the capture clock only after nativeUnlock has executed on
+             * the GL queue. Every image then belongs to one continuous Line
+             * animator instead of nine independently scheduled replays. */
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    post(new Runnable() {
+                        @Override
+                        public void run() {
+                            scheduleDebugAbstractTilesUnlockSeries(captureGeneration);
+                        }
+                    });
+                }
+            });
+            requestRender();
+            return;
+        }
+        scheduleDebugAbstractTilesCapture(sequence, phaseMs, captureGeneration);
+    }
+
+    private void scheduleDebugAbstractTilesUnlockSeries(final int captureGeneration) {
+        final long[] phasesMs = {0L, 40L, 80L, 120L, 160L, 200L, 240L, 320L, 400L};
+        for (long phaseMs : phasesMs) {
+            scheduleDebugAbstractTilesCapture("unlock", phaseMs, captureGeneration);
+        }
+    }
+
+    private void scheduleDebugAbstractTilesCapture(final String sequence,
+            final long phaseMs, final int captureGeneration) {
+        postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (captureGeneration != debugCaptureGeneration || !canRenderEffect()) {
+                    return;
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                    Log.i(TAG, "debug capture requires API 24+");
+                    return;
+                }
+                AbstractTilesPixelCopyCapture.request(
+                        AbstractTilesArm64EffectView.this, sequence, phaseMs);
+                if ("touch".equals(sequence)) {
+                    cancelGesture();
+                }
+            }
+        }, Math.max(0L, Math.min(2_400L, phaseMs)));
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.N)
+    private static final class AbstractTilesPixelCopyCapture {
+        static void request(final AbstractTilesArm64EffectView view,
+                final String sequence, final long phaseMs) {
+            int width = Math.max(1, view.getWidth());
+            int height = Math.max(1, view.getHeight());
+            final Bitmap frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            PixelCopy.request(view, frame, new PixelCopy.OnPixelCopyFinishedListener() {
+                @Override
+                public void onPixelCopyFinished(int result) {
+                    if (result == PixelCopy.SUCCESS) {
+                        DebugFrameCaptureFiles.saveAsync(view.getContext(), frame,
+                                "abstract_tiles_" + sequence + "_arm64_"
+                                        + phaseMs + "ms.png",
+                                TAG, phaseMs);
+                    } else {
+                        frame.recycle();
+                        Log.e(TAG, "debug PixelCopy failed sequence=" + sequence
+                                + " phaseMs=" + phaseMs + " result=" + result);
+                    }
+                }
+            }, new Handler(Looper.getMainLooper()));
+        }
     }
 
     @Override
@@ -1048,6 +1149,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 return backgroundSerial;
             }
         }
+
     }
 
     private static final class ElapsedClock {

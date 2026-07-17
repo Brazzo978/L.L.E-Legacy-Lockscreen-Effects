@@ -1,8 +1,9 @@
-# L.L.E. Unified
+# LLE / LLE64
 
-L.L.E. restores a collection of legacy lockscreen effects on modern Android.
+LLE restores a collection of legacy lockscreen effects on modern Android.
 The ARM32 and ARM64 applications share one project and can be installed
-together. Both use the launcher name **L.L.E.**.
+together. ARM32 is permanently named **LLE** (`com.codex.lle`); ARM64 is
+permanently named **LLE64** (`com.codex.lle64`).
 
 > **Beta:** expect some device-specific differences. Keep another unlock method
 > available while testing.
@@ -11,8 +12,8 @@ together. Both use the launcher name **L.L.E.**.
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.1-Beta-1-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
-| `LLE-1.0.1-Beta-1-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
+| `LLE-1.0.2-Beta-1-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
+| `LLE64-1.0.2-Beta-1-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
 
 Check the supported ABIs:
 
@@ -32,7 +33,7 @@ device.
 | S5 Popping Colours | Available | Available |
 | N3 Watercolor | Available | Available |
 | N4 Abstract Tiles | Available | **Beta** |
-| N4 Geometric Mosaic | Available | Unavailable |
+| N4 Geometric Mosaic | Available | **Beta** |
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |
 | N5 Sparkling Bubbles | Available | Available |
@@ -74,11 +75,11 @@ adb shell am start -n com.codex.lle/.ControlActivity
 Open ARM64:
 
 ```shell
-adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
+adb shell am start -n com.codex.lle64/com.codex.lle.ControlActivity
 ```
 
 Both can remain installed, but their preferences and screenshot caches are
-separate. Enable only one L.L.E. accessibility service at a time.
+separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 
 ## First-time setup
 
@@ -165,10 +166,10 @@ powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1 -Target Arm32
 powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1 -Target Arm64
 ```
 
-Build the co-installable ARM64 package:
+The ARM64 target is always co-installable as `com.codex.lle64`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1 -Companion
+powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1
 ```
 
 Build requirements are Android SDK Platform 35, Build Tools 35.0.1 and Android
@@ -176,7 +177,7 @@ NDK r27d.
 
 ## More documentation
 
-- [1.0.1 Beta 1 release notes](docs/RELEASE_NOTES_1.0.1_BETA_1.md)
+- [1.0.2 Beta 1 release notes](docs/RELEASE_NOTES_1.0.2_BETA_1.md)
 - [Architecture notes](ARCHITECTURE.md)
 - [Fold support notes](FOLD-DISPLAY-PORT.md)
 

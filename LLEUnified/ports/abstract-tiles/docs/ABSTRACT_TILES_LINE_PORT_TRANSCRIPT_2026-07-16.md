@@ -399,3 +399,92 @@ geometria e mask, ma non curva, cadence, direzione temporale o threshold.
   `CE1BE80BCAD10FB53E46093907E837D3BFDA729E07065116A7014209F760150E`
 
 Questi hash vanno aggiornati se il codice cambia dopo il presente transcript.
+
+## Rettifica diretta Note 4 del 2026-07-17
+
+Questa sezione sostituisce le precedenti conclusioni sulla presentazione visibile
+della Line. Le funzioni, le tabelle e l'animatore descritti sopra restano evidenza
+binaria valida; il video diretto del Note 4 ha però permesso di separare lo stato
+interno del renderer dai frame che il lockscreen originale presenta davvero.
+
+### Ciclo di visibilità osservato sul dispositivo originale
+
+Nel video `note4-lockscreen.mp4` e nei frame forniti dall'utente si osserva:
+
+1. durante l'hint automatico le fasce Line non sono visibili;
+2. al primo contatto diventano visibili e restano presenti mentre il dito è
+   premuto;
+3. se il dito viene rilasciato senza unlock, spariscono immediatamente;
+4. durante il gesto di unlock sono presenti;
+5. nella finestra effettivamente mostrata dal keyguard, la geometria delle fasce
+   appare ferma: si muovono i triangoli Tile, non le fasce Line.
+
+Il binario continua realmente a creare un track Line `0 -> 1`, con curva coseno
+e durata nominale di 400 ms. Non era quindi sbagliato il reverse dell'animatore.
+La differenza è nella presentazione: il keyguard stock termina o copre la scena
+prima che la grande deformazione finale diventi parte dell'effetto osservabile.
+L'overlay L.L.E. restava invece vivo più a lungo e mostrava anche quella coda
+interna, con il risultato visivo di linee che scivolavano e distorcevano la UI.
+
+Per fedeltà alla presentazione Note 4, il renderer ARM64 conserva la geometria
+Line a `p=0` e usa lo stato dell'animatore soltanto come finestra di visibilità:
+
+```text
+visibile = finger_held || unlock_line_active
+progress geometrico presentato = 0
+```
+
+Non è stata rimossa la macchina a stati dell'unlock: serve ancora per tenere le
+fasce presenti nella breve uscita del keyguard. È stata esclusa soltanto dalla
+presentazione L.L.E. la coda deformata che sul Note 4 non arriva visibilmente a
+schermo.
+
+### Causa esatta della posizione non simmetrica nel primo port ARM64
+
+La successiva verifica diretta in Ghidra di `FUN_00024ee4`, sul binario Note 4
+esatto, ha mostrato che la griglia non viene appiattita cella per cella. Per ogni
+riga il costruttore originale esegue due passate complete:
+
+1. attraversa tutte le colonne ed emette i due triangoli della metà superiore;
+2. riparte dalla prima colonna ed emette i due triangoli della metà inferiore.
+
+Il port precedente emetteva invece quattro triangoli per cella prima di passare
+alla colonna successiva. Il disegno dei Tile restava apparentemente corretto,
+perché i triangoli geometrici erano gli stessi, ma cambiava la loro posizione
+nell'array piatto. Le 22 tabelle Line non contengono coordinate indipendenti:
+contengono indici dentro quell'array. Con l'ordine interlacciato, gli indici
+collegavano vertici appartenenti a celle lontane, producendo fasce fuori asse,
+non simmetriche rispetto ai Tile e talvolta molto estese.
+
+`at_build_grid()` ora replica letteralmente le due passate per riga di
+`FUN_00024ee4`. L'ordine locale del quad rimane quello verificato in
+`FUN_0001c9f8`, cioè `A,C,D,A,B,C`. Non sono stati introdotti offset o correzioni
+manuali: l'allineamento deriva nuovamente dalla stessa topologia indicizzata
+dell'originale.
+
+### Esperimenti esclusi dal prodotto
+
+La prova con maschera della UI/wallpaper override è rimasta esclusivamente un
+diagnostico e non è inclusa nella build consegnata. Non è necessaria per
+correggere la posizione delle fasce e avrebbe aggiunto una seconda pipeline di
+compositing non richiesta.
+
+### Verifica della build rettificata
+
+- build: `build/arm64-v8a-dev/LLE-arm64-dev.apk`;
+- SHA-256 APK:
+  `0F3EB66106ACE41532838EEAE3D3CD62D9B28BD161BCA2FD501B9DC4A27E0284`;
+- SHA-256 `libsecveAbstractTile.so` ARM64:
+  `0075E75DE3ED3B35DA74DDD55A0A145411CC20AAA6A460B396A3133E56B7248E`;
+- smoke test:
+  `ports/abstract-tiles/tests/results/aligned_lines_smoke_20260717`;
+- cattura touch diretta:
+  `ports/abstract-tiles/tests/results/aligned_lines_note4_parity_20260717`;
+- esito automatico: PASS, processo sopravvissuto, zero crash e zero errori GLES;
+- servizi Accessibility prima/dopo: invariati.
+
+La build è stata installata sullo S23 di test. Questa rettifica risolve la causa
+strutturale della non simmetria; la qualifica visiva finale 1:1 resta comunque
+subordinata al confronto dell'utente con il Note 4 reale. Se restasse un errore
+speculare verticale della texture Line, il prossimo punto isolato da verificare
+è l'orientamento V dell'atlas, non la topologia o la posizione dei vertici.

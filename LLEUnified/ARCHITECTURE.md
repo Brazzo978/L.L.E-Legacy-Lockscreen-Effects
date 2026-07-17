@@ -2,10 +2,11 @@
 
 ## One application source, two native products
 
-`LLEUnified` produces two alternative APKs with the same package, version,
-certificate, Java bytecode inputs, resources and preference keys. Android runs
-one ABI per installed application process, so each product packages only its
-matching native libraries.
+`LLEUnified` produces two co-installable APKs from the same Java/resource tree.
+ARM32 is `LLE` / `com.codex.lle`; ARM64 is `LLE64` / `com.codex.lle64`.
+The Java/JNI namespace remains `com.codex.lle` in both products so reconstructed
+native entry points stay stable. Android runs one ABI per application process,
+so each product packages only its matching native libraries.
 
 | Effect | ARM32 process | ARM64 process |
 |---|---|---|
@@ -17,7 +18,7 @@ matching native libraries.
 | N5 Colored Droplet + Gyro | original patched ARM32 engine | Note 5 ARM64 engine |
 | N5 Sparkling Bubbles | original patched ARM32 engine | Note 5 ARM64 engine |
 | N4 Abstract Tiles | original patched ARM32 engine | reconstructed ARM64 GLES engine |
-| N4 Geometric Mosaic | original patched ARM32 engine | unavailable/hidden |
+| N4 Geometric Mosaic | original patched ARM32 engine | reconstructed ARM64 renderer |
 
 Unimplemented WIP slots are hidden on both targets.
 
@@ -38,8 +39,11 @@ load the ELF.
 - `build/armeabi-v7a` contains the ARM32 staging tree and APK.
 - `build/arm64-v8a` contains the ARM64 staging tree and APK.
 - `build.ps1 -Target All` builds both sequentially from the same source.
+- Every ARM64 build uses `com.codex.lle64`; `-Companion` is retained only as a
+  compatibility alias for the older development output directory.
 - Each target verifies/signs independently; ARM64 additionally checks exact
-  native entries, ELF machine, SONAMEs, dependencies and JNI exports.
+  package/label, resource-package DEX relocation, native entries, ELF machine,
+  SONAMEs, dependencies and JNI exports.
 
 The old application trees are preserved by Git tag
 `lle-pre-unification-2026-07-15` and are not development trunks.

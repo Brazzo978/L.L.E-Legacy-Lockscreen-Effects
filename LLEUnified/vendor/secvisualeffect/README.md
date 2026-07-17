@@ -8,6 +8,9 @@ Local Popping Colours fidelity patch:
 - `ParticleSpaceEffect.handleTouchEvent`: keep 15 dots on `ACTION_DOWN`, use the S5
   value of 3 dots on `ACTION_MOVE`.
 - `ParticleSpaceEffect$4.run`: use the S5 unlock-affordance value of 50 dots.
+- `ParticleEffect`: request Canvas redraws every 16 ms instead of every 2 ms. Particle
+  motion, lifetime and alpha are frame-counted, so this preserves the intended 60-step
+  cadence on 120/144 Hz panels without changing the display refresh rate.
 
 The original S5 reference is
 `extracted/s5_secvisualeffect_smali/com/samsung/android/visualeffect/lock/particle`.

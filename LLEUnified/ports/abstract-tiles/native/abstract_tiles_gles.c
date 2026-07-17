@@ -369,10 +369,11 @@ static void at_disable_attribute(GLuint program, const char *name) {
 #define AT_SEAM_COUNT 11
 #define AT_LINE_VERTICES_PER_SEAM 6
 #define AT_FLOATS_PER_LINE_VERTEX 7
-/* The OEM pass intentionally displaces eleven large background slabs. LLE feeds
- * it the cached lockscreen rather than wallpaper-only content, so clock/status
- * pixels move with those slabs as well. Keep that fidelity behavior enabled;
- * the p=0 gate below prevents only non-animated transparent-overlay overdraw. */
+/* Direct Note 4 capture shows these eleven masked seams as static accents while
+ * a finger is held and through the visible unlock window. The OEM scene does
+ * schedule a 400 ms Line transition, but stock keyguard exits before its large
+ * displacement becomes part of the presented effect. LLE keeps its overlay
+ * alive longer, so presenting that hidden tail looks like distortion. */
 #define AT_TRANSPARENT_LINE_AVAILABLE 1
 
 typedef struct AtSeamDefinition {
@@ -478,13 +479,13 @@ static int at_build_line_vertices(
     const float sy = (float) scene->height / (float) texture_height;
     const float crop_x = sy > sx ? fabsf(sx / sy - 1.0f) * 0.5f : 0.0f;
     const float crop_y = sy <= sx ? fabsf(sy / sx - 1.0f) * 0.5f : 0.0f;
-    const float progress = fminf(fmaxf(scene->unlock_line_progress, 0.0f), 1.0f);
-    /* At p=0 the stock Line is visually neutral because it is drawn over its
-     * identical opaque Background. On LLE's live transparent underlay those
-     * static quads expose stale UI pixels, so gate only the unlock track. */
+    /* Preserve the stock-visible p=0 seam geometry. Visibility follows the
+     * gesture lifecycle observed on-device: no seams for the hint, seams while
+     * held, immediate removal on an ordinary release, and retention through
+     * the short unlock window. */
+    const float progress = 0.0f;
     const float line_alpha = AT_TRANSPARENT_LINE_AVAILABLE
-                    && !at_scene_is_idle(scene)
-                    && progress > 0.0f
+                    && (scene->held || scene->unlock_line_active)
             ? 1.0f : 0.0f;
     int emitted = 0;
     for (int seam_index = 0; seam_index < AT_SEAM_COUNT; ++seam_index) {

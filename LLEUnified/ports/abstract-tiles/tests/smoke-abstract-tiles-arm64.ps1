@@ -44,7 +44,10 @@ param(
     [int] $WakeSettleMs = 3000,
     [ValidateRange(100, 5000)]
     [int] $LockscreenSettleMs = 800,
-    [int[]] $CaptureOffsetsMs = @(80, 240, 410)
+    [int[]] $CaptureOffsetsMs = @(80, 240, 410),
+    [ValidateRange(0, 64)]
+    [int] $EffectId = 7,
+    [string] $RunPrefix = "abstract_tiles"
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,8 +57,7 @@ $wakeComponent = if ([string]::IsNullOrWhiteSpace($ActivityComponent)) {
 } else {
     $ActivityComponent
 }
-$effectId = 7
-$runId = "abstract_tiles_" + (Get-Date -Format "yyyyMMdd_HHmmss_fff")
+$runId = $RunPrefix + "_" + (Get-Date -Format "yyyyMMdd_HHmmss_fff")
 
 if ($CaptureOffsetsMs.Count -eq 0) {
     throw "CaptureOffsetsMs must contain at least one offset"
@@ -193,8 +195,11 @@ try {
     [void](Invoke-AdbText -Arguments @("shell", "input", "keyevent", "KEYCODE_WAKEUP"))
     [void](Invoke-AdbText -Arguments @(
             "shell", "am", "start", "-W",
+            # Recreate the transient wake activity. Reusing a stale task can leave the previous
+            # effect selected and turn a smoke into a false positive for another renderer.
+            "-f", "0x10008000",
             "-n", $wakeComponent,
-            "--ei", "effect", "$effectId"))
+            "--ei", "effect", "$EffectId"))
     Start-Sleep -Milliseconds $WakeSettleMs
     # The helper intentionally prepares the cached overlay around a screen-off cycle.
     # Wake once more and let the real lockscreen become interactive before injection.
@@ -226,7 +231,7 @@ try {
     }
 
     Wait-AdbProcess -Process $swipeProcess `
-            -Description "$GestureDurationMs ms Abstract Tiles swipe"
+            -Description "$GestureDurationMs ms effect $EffectId swipe"
     for ($index = 0; $index -lt $captureProcesses.Count; $index++) {
         Wait-AdbProcess -Process $captureProcesses[$index] `
                 -Description "frame $($index + 1) screencap"
@@ -253,6 +258,7 @@ try {
     $logcat = Invoke-AdbText -Arguments @(
             "logcat", "-d", "-T", $logStart, "-v", "threadtime", "-s",
             "LLESmoke:I", "ChargingA11y:V", "LLE64AbstractTiles:V",
+            "LLE64GeometricMosaic:V",
             "AndroidRuntime:E", "libc:F", "DEBUG:F", "OpenGLRenderer:E",
             "GLConsumer:E", "EGL:E", "ActivityManager:E", "*:S")
     $markerIndex = -1
@@ -273,8 +279,8 @@ try {
     $escapedPid = [regex]::Escape($pidBefore)
     $targetLogPrefix = "(?i)^\d{2}-\d{2}\s+\S+\s+$escapedPid\s+\d+\s+"
     $explicitFailure = "(?i)(ANR in $escapedPackage|Process:\s*$escapedPackage|" +
-            "LLE64AbstractTiles.*(failed|error|unavailable)|" +
-            "ChargingA11y.*Abstract Tiles ARM64 failed)"
+            "LLE64(?:AbstractTiles|GeometricMosaic).*(failed|error|unavailable)|" +
+            "ChargingA11y.*(?:Abstract Tiles|Geometric Mosaic) ARM64 failed)"
     $targetFailure = "(?i)(FATAL EXCEPTION|Fatal signal|\bEGL.*(?:error|failed)|" +
             "\bGL(?:_| )?ERROR\b|OpenGLRenderer.*(?:error|failed))"
     $findings = @($runLog | Where-Object {
@@ -350,5 +356,5 @@ try {
 if ($failure) {
     throw "$failure. Results: $OutputDirectory"
 }
-Write-Host "Abstract Tiles ARM64 smoke PASS"
+Write-Host "ARM64 effect $EffectId smoke PASS"
 Write-Host "Results: $OutputDirectory"

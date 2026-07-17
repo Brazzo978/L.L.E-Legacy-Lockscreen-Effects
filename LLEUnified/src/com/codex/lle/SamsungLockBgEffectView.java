@@ -26,7 +26,8 @@ import java.util.HashMap;
 import java.util.concurrent.locks.LockSupport;
 
 public class SamsungLockBgEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, DebugFrameCaptureRenderer,
+        DebugAbstractTilesCaptureRenderer {
     private static final String TAG = "ChargingSamsungLockBg";
     private static final int CMD_SET_BACKGROUND = 0;
     private static final int CMD_LOCK_AFFORDANCE = 1;
@@ -81,6 +82,7 @@ public class SamsungLockBgEffectView extends FrameLayout
     private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
     private boolean dragSoundFading;
     private long lastAffordanceQueuedAt;
+    private int debugCaptureGeneration;
     private final Runnable dragSoundFadeRunnable = new Runnable() {
         @Override
         public void run() {
@@ -290,6 +292,135 @@ public class SamsungLockBgEffectView extends FrameLayout
                 + Math.max(0L, startDelayMs)
                 + " rect=" + rect.left + "," + rect.top + ","
                 + rect.right + "," + rect.bottom);
+    }
+
+    /** Captures the native GLTextureView only when the ADB debug API requests it. */
+    @Override
+    public void captureDebugAffordanceFrame(final long phaseMs) {
+        if (!canRender()) {
+            Log.i(TAG, "native hint capture skipped; renderer unavailable");
+            return;
+        }
+        lastAffordanceQueuedAt = 0L;
+        showUnlockAffordance(new Rect(0, 0, getRenderWidth(), getRenderHeight()), 0L);
+        postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                final TextureView textureView = findTextureView(effectViewAsView);
+                if (textureView == null || !textureView.isAvailable()
+                        || textureView.getWidth() <= 0 || textureView.getHeight() <= 0) {
+                    Log.i(TAG, "native hint capture skipped; TextureView unavailable phaseMs="
+                            + phaseMs);
+                    return;
+                }
+                final Bitmap frame = textureView.getBitmap(
+                        textureView.getWidth(), textureView.getHeight());
+                if (frame == null) {
+                    Log.i(TAG, "native hint capture returned null phaseMs=" + phaseMs);
+                    return;
+                }
+                DebugFrameCaptureFiles.saveAsync(getContext(), frame,
+                        "geometric_hint_arm32_" + phaseMs + "ms.png", TAG, phaseMs);
+            }
+        }, Math.max(0L, Math.min(2_400L, phaseMs)));
+    }
+
+    /** Captures a deterministic Abstract Tiles sequence directly from its TextureView. */
+    @Override
+    public void captureDebugAbstractTilesFrame(final String sequence, final long phaseMs) {
+        if (samsungEffectId != SAMSUNG_ABSTRACT_TILES || !canRender()) {
+            Log.i(TAG, "native Abstract Tiles capture skipped; renderer unavailable");
+            return;
+        }
+        final int captureGeneration = ++debugCaptureGeneration;
+        resetEffect();
+        lastAffordanceQueuedAt = 0L;
+        final float centerX = getRenderWidth() * 0.5f;
+        final float centerY = getRenderHeight() * 0.5f;
+        if ("hint".equals(sequence)) {
+            showUnlockAffordance(new Rect(0, 0, getRenderWidth(), getRenderHeight()), 0L);
+        } else {
+            beginGesture(centerX, centerY);
+            if ("unlock".equals(sequence) || "unlock-series".equals(sequence)) {
+                updateGesture(centerX + Math.min(320f, getRenderWidth() * 0.22f),
+                        centerY - Math.min(180f, getRenderHeight() * 0.07f));
+                finishGesture(true);
+            }
+        }
+        if ("unlock-series".equals(sequence)) {
+            /* forwardTouch() and sendUnlockCommand() share this handler. This
+             * marker runs after both native calls, then anchors every capture
+             * to one continuous stock animation. */
+            nativeCommandHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    post(new Runnable() {
+                        @Override
+                        public void run() {
+                            scheduleDebugAbstractTilesUnlockSeries(captureGeneration);
+                        }
+                    });
+                }
+            });
+            return;
+        }
+        scheduleDebugAbstractTilesCapture(sequence, phaseMs, captureGeneration);
+    }
+
+    private void scheduleDebugAbstractTilesUnlockSeries(final int captureGeneration) {
+        final long[] phasesMs = {0L, 40L, 80L, 120L, 160L, 200L, 240L, 320L, 400L};
+        for (long phaseMs : phasesMs) {
+            scheduleDebugAbstractTilesCapture("unlock", phaseMs, captureGeneration);
+        }
+    }
+
+    private void scheduleDebugAbstractTilesCapture(final String sequence,
+            final long phaseMs, final int captureGeneration) {
+        postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (captureGeneration != debugCaptureGeneration) {
+                    return;
+                }
+                final TextureView textureView = findTextureView(effectViewAsView);
+                if (textureView == null || !textureView.isAvailable()
+                        || textureView.getWidth() <= 0 || textureView.getHeight() <= 0) {
+                    Log.i(TAG, "native Abstract Tiles capture skipped; TextureView unavailable"
+                            + " sequence=" + sequence + " phaseMs=" + phaseMs);
+                    return;
+                }
+                final Bitmap frame = textureView.getBitmap(
+                        textureView.getWidth(), textureView.getHeight());
+                if (frame == null) {
+                    Log.i(TAG, "native Abstract Tiles capture returned null sequence="
+                            + sequence + " phaseMs=" + phaseMs);
+                    return;
+                }
+                DebugFrameCaptureFiles.saveAsync(getContext(), frame,
+                        "abstract_tiles_" + sequence + "_arm32_"
+                                + phaseMs + "ms.png",
+                        TAG, phaseMs);
+                if ("touch".equals(sequence)) {
+                    cancelGesture();
+                }
+            }
+        }, Math.max(0L, Math.min(2_400L, phaseMs)));
+    }
+
+    private TextureView findTextureView(View view) {
+        if (view instanceof TextureView) {
+            return (TextureView) view;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextureView textureView = findTextureView(group.getChildAt(i));
+                if (textureView != null) {
+                    return textureView;
+                }
+            }
+        }
+        return null;
     }
 
     @Override

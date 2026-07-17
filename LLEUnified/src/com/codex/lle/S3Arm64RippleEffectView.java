@@ -46,6 +46,9 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     private static final long LONG_PRESS_RIPPLE_MS = 600L;
     private static final int DRAG_RIPPLE_THRESHOLD_PX = 150;
+    /* The original renderer advances the water solver once per frame and targets a 60 Hz
+     * display. Keep that intended cadence on a monotonic clock so 60/120/144 Hz panels change
+     * presentation smoothness only, never propagation speed. */
     private static final int SIMULATION_HZ = 60;
     private static final int MAX_SIMULATION_STEPS_PER_FRAME = 4;
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
@@ -534,7 +537,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         return (localY - surfaceHeight * 0.5f) * yRatio / surfaceHeight;
     }
 
-    /** Fixed 60 Hz clock; rendering may still follow the display refresh rate. */
+    /** Fixed legacy solver clock; rendering may still follow the display refresh rate. */
     static final class SimulationClock {
         private static final long MAX_ACCUMULATOR_UNITS =
                 NANOS_PER_SECOND * MAX_SIMULATION_STEPS_PER_FRAME;
@@ -938,8 +941,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     return;
                 }
 
-                // Samsung called move() once per frame on its 60 Hz display. Keep that cadence
-                // even when GLSurfaceView renders at 120/144 Hz, while retaining draw-before-move.
+                // The original advances move() once per frame against a 60 Hz target. Decouple
+                // that cadence from 60/120/144 Hz presentation while retaining draw-before-move.
                 int simulationSteps = simulationClock.advance(System.nanoTime());
                 if (drawCount > 0 && !simulationIdle) {
                     for (int step = 0; step < simulationSteps; ++step) {

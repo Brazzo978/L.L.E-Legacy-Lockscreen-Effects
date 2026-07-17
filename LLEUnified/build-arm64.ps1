@@ -7,6 +7,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$applicationId = "com.codex.lle64"
+$launcherLabel = "LLE64"
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
 }
@@ -43,19 +45,19 @@ $classes = Join-Path $out "classes"
 $dex = Join-Path $out "dex"
 $resStage = Join-Path $out "res"
 $resZip = Join-Path $out "res.zip"
-$unsigned = Join-Path $out "LLE-arm64-unsigned.apk"
-$assembled = Join-Path $out "LLE-arm64-assembled.apk"
-$zipaligned = Join-Path $out "LLE-arm64-zipaligned.apk"
+$unsigned = Join-Path $out "LLE64-arm64-unsigned.apk"
+$assembled = Join-Path $out "LLE64-arm64-assembled.apk"
+$zipaligned = Join-Path $out "LLE64-arm64-zipaligned.apk"
 $signed = Join-Path $out $(if ($Companion) {
-    "LLE-arm64-dev.apk"
+    "LLE64-arm64-v8a.apk"
 } elseif ($IncludeNote5Probe) {
-    "LLE-arm64-note5-probe.apk"
+    "LLE64-arm64-note5-probe.apk"
 } elseif ($IncludeRippleCoreProbe) {
-    "LLE-arm64-ripple-core-probe.apk"
+    "LLE64-arm64-ripple-core-probe.apk"
 } elseif ($WatercolorFeedbackMode -eq "StockFeedback") {
-    "LLE-arm64-watercolor-stock-feedback.apk"
+    "LLE64-arm64-watercolor-stock-feedback.apk"
 } else {
-    "LLE-arm64-debug.apk"
+    "LLE64-arm64-v8a.apk"
 })
 $classesJar = Join-Path $out "classes.jar"
 $nativeStage = Join-Path $out "native"
@@ -80,37 +82,44 @@ Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out, $classes, $dex, $resStage, $arm64Stage | Out-Null
 
 Copy-Item -Path (Join-Path $root "res\*") -Destination $resStage -Recurse -Force
-Run (Join-Path $buildTools "aapt2.exe") @("compile", "--dir", $resStage, "-o", $resZip)
-if ($Companion -or $IncludeNote5Probe -or $IncludeRippleCoreProbe) {
-    $generatedManifest = Join-Path $out "AndroidManifest.xml"
-    $manifestText = [System.IO.File]::ReadAllText($canonicalManifest)
-    $generatedManifestText = $manifestText
-    if ($Companion) {
-        $generatedManifestText = $generatedManifestText.Replace(
-                'package="com.codex.lle"',
-                'package="com.codex.lle.arm64dev"')
-        $generatedManifestText = [regex]::Replace(
-                $generatedManifestText,
-                'android:name="\.([A-Za-z0-9_$.]+)"',
-                'android:name="com.codex.lle.$1"')
-        if ($generatedManifestText -eq $manifestText -or
-                $generatedManifestText -notmatch 'package="com\.codex\.lle\.arm64dev"' -or
-                $generatedManifestText -match 'android:name="\.') {
-            throw "ARM64 companion manifest patch failed"
-        }
-    }
-    if ($IncludeNote5Probe -or $IncludeRippleCoreProbe) {
-        $probePattern = '(?s)(android:name="\.Note5NativeProbeActivity".*?android:exported=")false(")'
-        $probeManifestText = [regex]::Replace(
-                $generatedManifestText, $probePattern, '${1}true$2')
-        if ($probeManifestText -eq $generatedManifestText) {
-            throw "Note5NativeProbeActivity manifest patch point not found"
-        }
-        $generatedManifestText = $probeManifestText
-    }
-    [System.IO.File]::WriteAllText($generatedManifest, $generatedManifestText)
-    $manifest = $generatedManifest
+$stringsStage = Join-Path $resStage "values\strings.xml"
+$stringsText = [IO.File]::ReadAllText($stringsStage)
+$appNamePattern = '<string name="app_name">[^<]*</string>'
+if ([regex]::Matches($stringsText, $appNamePattern).Count -ne 1) {
+    throw "ARM64 launcher label patch point not found"
 }
+$stringsText = [regex]::Replace(
+        $stringsText,
+        $appNamePattern,
+        "<string name=`"app_name`">$launcherLabel</string>",
+        1)
+[IO.File]::WriteAllText($stringsStage, $stringsText, [Text.UTF8Encoding]::new($false))
+Run (Join-Path $buildTools "aapt2.exe") @("compile", "--dir", $resStage, "-o", $resZip)
+$generatedManifest = Join-Path $out "AndroidManifest.xml"
+$manifestText = [System.IO.File]::ReadAllText($canonicalManifest)
+$generatedManifestText = $manifestText.Replace(
+        'package="com.codex.lle"',
+        "package=`"$applicationId`"")
+$generatedManifestText = [regex]::Replace(
+        $generatedManifestText,
+        'android:name="\.([A-Za-z0-9_$.]+)"',
+        'android:name="com.codex.lle.$1"')
+if ($generatedManifestText -eq $manifestText -or
+        $generatedManifestText -notmatch "package=`"$([regex]::Escape($applicationId))`"" -or
+        $generatedManifestText -match 'android:name="\.') {
+    throw "ARM64 LLE64 manifest patch failed"
+}
+if ($IncludeNote5Probe -or $IncludeRippleCoreProbe) {
+    $probePattern = '(?s)(android:name="com\.codex\.lle\.Note5NativeProbeActivity".*?android:exported=")false(")'
+    $probeManifestText = [regex]::Replace(
+            $generatedManifestText, $probePattern, '${1}true$2')
+    if ($probeManifestText -eq $generatedManifestText) {
+        throw "Note5NativeProbeActivity manifest patch point not found"
+    }
+    $generatedManifestText = $probeManifestText
+}
+[System.IO.File]::WriteAllText($generatedManifest, $generatedManifestText)
+$manifest = $generatedManifest
 $linkArgs = @(
     "link", "-o", $unsigned,
     "-I", $platform,
@@ -119,11 +128,9 @@ $linkArgs = @(
     "--java", (Join-Path $out "gen"),
     "--auto-add-overlay"
 )
-if ($Companion) {
-    # Keep Java/JNI classes under com.codex.lle while the installed application
-    # ID is com.codex.lle.arm64dev. This preserves all native JNI entry points.
-    $linkArgs += @("--custom-package", "com.codex.lle")
-}
+# Keep Java/JNI classes under com.codex.lle while the permanent ARM64 Android
+# application ID is com.codex.lle64. This preserves all native JNI entry points.
+$linkArgs += @("--custom-package", "com.codex.lle")
 if (Test-Path (Join-Path $root "assets")) {
     $linkArgs += @("-A", (Join-Path $root "assets"))
 }
@@ -148,7 +155,8 @@ Run "jar.exe" @("uf", $assembled, "-C", $dex, "classes.dex")
 $samsungDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
 $boundedSamsungDex = Join-Path $out "classes-note5-bounded.dex"
 & (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
-    -OutputPath $boundedSamsungDex
+    -OutputPath $boundedSamsungDex `
+    -ResourcePackageName $applicationId
 $samsungDex = $boundedSamsungDex
 if (-not (Test-Path $samsungDex)) {
     throw "Missing Samsung visual-effect dex: $samsungDex"
@@ -471,12 +479,12 @@ $badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n
 if ($LASTEXITCODE -ne 0) {
     throw "APK badging inspection failed"
 }
-$expectedPackage = if ($Companion) { "com.codex.lle.arm64dev" } else { "com.codex.lle" }
+$expectedPackage = $applicationId
 if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
     throw "Unexpected APK package; expected $expectedPackage"
 }
-if ($Companion -and $badging -notmatch "application-label:'L\.L\.E\.'") {
-    throw "ARM64 companion label verification failed"
+if ($badging -notmatch "application-label:'LLE64'") {
+    throw "ARM64 launcher label verification failed"
 }
 
 $entries = @(& "jar.exe" tf $signed)

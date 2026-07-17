@@ -51,7 +51,8 @@ function Run($exe, $arguments) {
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out, $classes, $dex, $resStage | Out-Null
 & (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
-    -OutputPath $samsungVisualEffectDex
+    -OutputPath $samsungVisualEffectDex `
+    -ResourcePackageName "com.codex.lle"
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $samsungVisualEffectDex)) {
     throw "Bounded Samsung visual-effect dex generation failed"
 }
@@ -272,6 +273,13 @@ if (-not (Test-Path $keystore)) {
 Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $aligned, (Join-Path $out "LLE-armeabi-v7a-zipaligned.apk"))
 Run (Join-Path $buildTools "apksigner.bat") @("sign", "--ks", $keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", $signed, (Join-Path $out "LLE-armeabi-v7a-zipaligned.apk"))
 Run (Join-Path $buildTools "apksigner.bat") @("verify", "--verbose", $signed)
+
+$badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n"
+if ($LASTEXITCODE -ne 0 -or
+        $badging -notmatch "package: name='com\.codex\.lle'" -or
+        $badging -notmatch "application-label:'LLE'") {
+    throw "ARM32 identity verification failed; expected LLE / com.codex.lle"
+}
 
 $entries = @(& "jar.exe" tf $signed)
 $nativeEntries = @($entries | Where-Object { $_ -like "lib/*" -and -not $_.EndsWith("/") })

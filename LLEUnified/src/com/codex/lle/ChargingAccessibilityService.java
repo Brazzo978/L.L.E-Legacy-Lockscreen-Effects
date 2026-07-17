@@ -60,6 +60,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             "com.codex.lle.DEBUG_UNLOCK_EFFECT_PROFILE";
     private static final String ACTION_DEBUG_UNLOCK_EFFECT_BENCHMARK =
             "com.codex.lle.DEBUG_UNLOCK_EFFECT_BENCHMARK";
+    private static final String ACTION_DEBUG_CAPTURE_GEOMETRIC_HINT =
+            "com.codex.lle.DEBUG_CAPTURE_GEOMETRIC_HINT";
+    private static final String ACTION_DEBUG_CAPTURE_ABSTRACT_TILES =
+            "com.codex.lle.DEBUG_CAPTURE_ABSTRACT_TILES";
     static final String ACTION_EFFECT_BACKGROUND_REFRESH =
             "com.codex.lle.EFFECT_BACKGROUND_REFRESH";
     private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
@@ -252,6 +256,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                     && unlockEffectRenderer instanceof AbstractTilesArm64EffectView) {
                 if (!((AbstractTilesArm64EffectView) unlockEffectRenderer).isReady()) {
                     fallBackFromFailedAbstractTilesRenderer("async_gl_init_or_render");
+                    return;
+                }
+            } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                    && unlockEffectRenderer instanceof GeometricMosaicArm64EffectView) {
+                if (!((GeometricMosaicArm64EffectView) unlockEffectRenderer).isReady()) {
+                    fallBackFromFailedGeometricMosaicRenderer("async_gl_init_or_render");
                     return;
                 }
             } else {
@@ -599,6 +609,52 @@ public class ChargingAccessibilityService extends AccessibilityService
                         OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)));
             } else if (ACTION_DEBUG_UNLOCK_EFFECT_BENCHMARK.equals(intent.getAction())) {
                 startUnlockEffectBenchmark();
+            } else if (ACTION_DEBUG_CAPTURE_GEOMETRIC_HINT.equals(intent.getAction())) {
+                long phaseMs = Math.max(0L, Math.min(2_400L,
+                        intent.getLongExtra("phase_ms", 800L)));
+                if (unlockEffectRendererType != OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                        || !(unlockEffectRenderer instanceof DebugFrameCaptureRenderer)) {
+                    Log.i(TAG, "debug geometric hint capture ignored phaseMs=" + phaseMs
+                            + " rendererType=" + unlockEffectRendererType
+                            + " renderer=" + (unlockEffectRenderer == null ? "null"
+                                    : unlockEffectRenderer.getClass().getSimpleName()));
+                } else {
+                    Log.i(TAG, "debug geometric hint capture requested phaseMs=" + phaseMs
+                            + " renderer=" + unlockEffectRenderer.getClass().getSimpleName());
+                    ((DebugFrameCaptureRenderer) unlockEffectRenderer)
+                            .captureDebugAffordanceFrame(phaseMs);
+                }
+            } else if (ACTION_DEBUG_CAPTURE_ABSTRACT_TILES.equals(intent.getAction())) {
+                long phaseMs = Math.max(0L, Math.min(2_400L,
+                        intent.getLongExtra("phase_ms", 800L)));
+                String sequence = intent.getStringExtra("sequence");
+                if (sequence == null) {
+                    sequence = "hint";
+                }
+                sequence = sequence.trim().toLowerCase(java.util.Locale.US);
+                if (!"hint".equals(sequence)
+                        && !"touch".equals(sequence)
+                        && !"unlock".equals(sequence)
+                        && !"unlock-series".equals(sequence)) {
+                    Log.i(TAG, "debug Abstract Tiles capture ignored; unknown sequence="
+                            + sequence);
+                } else if (unlockEffectRendererType
+                        != OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
+                        || !(unlockEffectRenderer
+                                instanceof DebugAbstractTilesCaptureRenderer)) {
+                    Log.i(TAG, "debug Abstract Tiles capture ignored sequence=" + sequence
+                            + " phaseMs=" + phaseMs
+                            + " rendererType=" + unlockEffectRendererType
+                            + " renderer=" + (unlockEffectRenderer == null ? "null"
+                                    : unlockEffectRenderer.getClass().getSimpleName()));
+                } else {
+                    Log.i(TAG, "debug Abstract Tiles capture requested sequence=" + sequence
+                            + " phaseMs=" + phaseMs
+                            + " renderer="
+                            + unlockEffectRenderer.getClass().getSimpleName());
+                    ((DebugAbstractTilesCaptureRenderer) unlockEffectRenderer)
+                            .captureDebugAbstractTilesFrame(sequence, phaseMs);
+                }
             }
         }
     };
@@ -941,10 +997,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         benchmarkFilter.addAction(ACTION_BENCHMARK_TOUCH);
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_PROFILE);
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_BENCHMARK);
+        benchmarkFilter.addAction(ACTION_DEBUG_CAPTURE_GEOMETRIC_HINT);
+        benchmarkFilter.addAction(ACTION_DEBUG_CAPTURE_ABSTRACT_TILES);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(benchmarkReceiver, benchmarkFilter, Context.RECEIVER_EXPORTED);
+            registerReceiver(benchmarkReceiver, benchmarkFilter,
+                    android.Manifest.permission.DUMP, null, Context.RECEIVER_EXPORTED);
         } else {
-            registerReceiver(benchmarkReceiver, benchmarkFilter);
+            registerReceiver(benchmarkReceiver, benchmarkFilter,
+                    android.Manifest.permission.DUMP, null);
         }
     }
 
@@ -2388,7 +2448,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                             SamsungLockBgEffectView.abstractTiles(rendererContext());
                 }
             } else if (effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
-                unlockEffectRenderer = SamsungLockBgEffectView.geometricMosaic(rendererContext());
+                if (EffectAvailability.is64BitProcess()) {
+                    GeometricMosaicArm64EffectView renderer =
+                            new GeometricMosaicArm64EffectView(rendererContext());
+                    if (!renderer.isReady()) {
+                        renderer.destroy();
+                        throw new IllegalStateException(
+                                "Geometric Mosaic ARM64 renderer unavailable");
+                    }
+                    unlockEffectRenderer = renderer;
+                } else {
+                    unlockEffectRenderer =
+                            SamsungLockBgEffectView.geometricMosaic(rendererContext());
+                }
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
                 unlockEffectRenderer = new PoppingColoursEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
@@ -2510,7 +2582,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean abstractTiles =
                 unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 && unlockEffectRenderer instanceof AbstractTilesArm64EffectView;
-        if (ripple || abstractTiles) {
+        boolean geometricMosaic =
+                unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                && unlockEffectRenderer instanceof GeometricMosaicArm64EffectView;
+        if (ripple || abstractTiles || geometricMosaic) {
             handler.postDelayed(rippleRendererReadinessRunnable, 250L);
         }
     }
@@ -2543,6 +2618,21 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .apply();
         preloadUnlockEffectRenderer();
         evaluateVisibility("abstract_tiles_renderer_failed", false);
+    }
+
+    private void fallBackFromFailedGeometricMosaicRenderer(String reason) {
+        if (unlockEffectRendererType != OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
+            return;
+        }
+        Log.e(TAG, "Geometric Mosaic ARM64 failed; falling back to Lens Flare reason="
+                + reason);
+        handler.removeCallbacks(rippleRendererReadinessRunnable);
+        destroyUnlockEffectOverlay();
+        OverlayPrefs.get(this).edit()
+                .putInt(OverlayPrefs.UNLOCK_EFFECT, OverlayPrefs.EFFECT_S4_LENS_FLARE)
+                .apply();
+        preloadUnlockEffectRenderer();
+        evaluateVisibility("geometric_mosaic_renderer_failed", false);
     }
 
     private boolean canRecreateStaleLockBgRenderer() {
@@ -4135,6 +4225,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                             screenX, screenY);
                 } else if (unlockEffectRenderer instanceof AbstractTilesArm64EffectView) {
                     ((AbstractTilesArm64EffectView) unlockEffectRenderer).realignGesture(
+                            screenX, screenY);
+                } else if (unlockEffectRenderer instanceof GeometricMosaicArm64EffectView) {
+                    ((GeometricMosaicArm64EffectView) unlockEffectRenderer).realignGesture(
                             screenX, screenY);
                 }
             }

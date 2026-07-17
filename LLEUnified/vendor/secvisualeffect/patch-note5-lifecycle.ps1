@@ -1,12 +1,17 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string] $OutputPath
+    [string] $OutputPath,
+    [ValidatePattern('^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$')]
+    [string] $ResourcePackageName = "com.codex.lle"
 )
 
 $ErrorActionPreference = "Stop"
 
 $expectedDexSha256 = "206265D2719C5223E57412871B2B778DC56A088300B52B1FEDEB548BFB7EEDB0"
-$expectedPatchedDexSha256 = "5BC6CFFB89208D9C4F9D80BD207E1061E92B0B4CD9D0E9CE69372EC003C4CF2B"
+$expectedPatchedDexSha256ByPackage = @{
+    "com.codex.lle" = "34F0B18B323178760324BF65323F3BE3C262F49162D7E601973B7FC72A4F7046"
+    "com.codex.lle64" = "1323C494141F00F1B47C2B572F78EDD25E897C545FE3DB918C25C6CA91B022BF"
+}
 $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
 $repoRoot = Split-Path $lleRoot -Parent
@@ -20,6 +25,7 @@ $targetSmaliRelative = "com\samsung\android\visualeffect\common\GLTextureView`$G
 $eglChooserRelative = "com\samsung\android\visualeffect\common\GLTextureView`$SimpleEGLConfigChooser.smali"
 $textureRendererRelative = "com\samsung\android\visualeffect\lock\common\GLTextureViewRenderer.smali"
 $watercolorRendererRelative = "com\samsung\android\visualeffect\lock\watercolor\WaterColorRenderer.smali"
+$particleEffectRelative = "com\samsung\android\visualeffect\lock\particle\ParticleEffect.smali"
 
 function Run-Java([string] $MainClass, [string[]] $Arguments) {
     & $java "-cp" $javaTools $MainClass @Arguments
@@ -263,6 +269,25 @@ $smali = Replace-OneMethod $smali "onPause\(\)V" $boundedOnPause
 $smali = Replace-OneMethod $smali "requestExitAndWait\(\)V" $boundedRequestExit
 [IO.File]::WriteAllText($targetSmali, $smali, [Text.UTF8Encoding]::new($false))
 
+# Popping Colours advances position, life and alpha once per Canvas onDraw() and has no
+# delta-time input. Its original 2 ms Handler delay merely saturated a 60 Hz display, but on a
+# modern 120 Hz panel it permits twice as many physics steps. Request at most one draw per
+# 16 ms so both 60 and high-refresh panels preserve the intended ~60-step cadence.
+$particleEffectSmali = Join-Path $stage $particleEffectRelative
+if (-not (Test-Path -LiteralPath $particleEffectSmali)) {
+    throw "Missing disassembled ParticleEffect: $particleEffectSmali"
+}
+$particleEffect = [IO.File]::ReadAllText($particleEffectSmali).Replace("`r`n", "`n")
+$particleEffect = Replace-OneLiteral `
+        $particleEffect `
+        "    .line 28`n    const/4 v7, 0x2`n`n    iput v7, p0, Lcom/samsung/android/visualeffect/lock/particle/ParticleEffect;->drawingDelayTime:I" `
+        "    .line 28`n    const/16 v7, 0x10`n`n    iput v7, p0, Lcom/samsung/android/visualeffect/lock/particle/ParticleEffect;->drawingDelayTime:I" `
+        "Popping Colours 2 ms frame loop"
+[IO.File]::WriteAllText(
+        $particleEffectSmali,
+        $particleEffect,
+        [Text.UTF8Encoding]::new($false))
+
 # Samsung asks EGL for RGB888 with alphaSize=0. Watercolor is hosted in a
 # transparent TextureView, so its default framebuffer must actually be RGBA8888.
 $eglChooserSmali = Join-Path $stage $eglChooserRelative
@@ -312,17 +337,28 @@ $watercolorRenderer = $watercolorRenderer.Insert($insertAt, $watercolorPacedDraw
         $watercolorRenderer,
         [Text.UTF8Encoding]::new($false))
 
-# The vendored dex is already package-relocated for LLE64. Keep this invariant
-# explicit because loadSpecialTexture otherwise looks in Samsung's missing APK.
+# The vendored dex starts with the LLE ARM32 resource package. Relocate that
+# literal per product: the Java/JNI namespace stays com.codex.lle, while the
+# Android application/resource package is com.codex.lle or com.codex.lle64.
 $textureRendererSmali = Join-Path $stage $textureRendererRelative
 if (-not (Test-Path -LiteralPath $textureRendererSmali)) {
     throw "Missing disassembled GLTextureViewRenderer: $textureRendererSmali"
 }
 $textureRenderer = [IO.File]::ReadAllText($textureRendererSmali)
-$llePackageLiteral = '    const-string v15, "com.codex.lle"'
-if ([regex]::Matches($textureRenderer, [regex]::Escape($llePackageLiteral)).Count -ne 1) {
+$sourcePackageLiteral = '    const-string v15, "com.codex.lle"'
+$resourcePackageLiteral = "    const-string v15, `"$ResourcePackageName`""
+if ([regex]::Matches(
+        $textureRenderer,
+        [regex]::Escape($sourcePackageLiteral)).Count -ne 1) {
     throw "Unexpected GLTextureViewRenderer asset package relocation"
 }
+$textureRenderer = $textureRenderer.Replace(
+        $sourcePackageLiteral,
+        $resourcePackageLiteral)
+[IO.File]::WriteAllText(
+        $textureRendererSmali,
+        $textureRenderer,
+        [Text.UTF8Encoding]::new($false))
 
 $outputFullPath = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $outputFullPath
@@ -381,17 +417,30 @@ $verifiedTextureRenderer = [IO.File]::ReadAllText(
         (Join-Path $verifyStage $textureRendererRelative))
 if ([regex]::Matches(
         $verifiedTextureRenderer,
-        [regex]::Escape($llePackageLiteral)).Count -ne 1) {
-    throw "Patched dex verification failed: LLE64 asset package missing"
+        [regex]::Escape($resourcePackageLiteral)).Count -ne 1) {
+    throw "Patched dex verification failed: resource package $ResourcePackageName missing"
+}
+$verifiedParticleEffect = [IO.File]::ReadAllText(
+        (Join-Path $verifyStage $particleEffectRelative))
+$particleDelayNeedle = "const/16 v7, 0x10"
+if ([regex]::Matches(
+        $verifiedParticleEffect,
+        [regex]::Escape($particleDelayNeedle)).Count -ne 1) {
+    throw "Patched dex verification failed: Popping Colours 16 ms frame pacing missing"
 }
 
 $outputHash = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
+if (-not $expectedPatchedDexSha256ByPackage.ContainsKey($ResourcePackageName)) {
+    throw "No bounded dex hash policy for resource package $ResourcePackageName"
+}
+$expectedPatchedDexSha256 = $expectedPatchedDexSha256ByPackage[$ResourcePackageName]
 if ($outputHash -ne $expectedPatchedDexSha256) {
-    throw "Unexpected bounded Samsung lifecycle dex SHA-256: $outputHash"
+    throw "Unexpected bounded Samsung lifecycle dex SHA-256 for $ResourcePackageName`: $outputHash"
 }
 $originalHashAfterPatch = (Get-FileHash -LiteralPath $originalDex -Algorithm SHA256).Hash
 if ($originalHashAfterPatch -ne $expectedDexSha256) {
     throw "Reference Samsung dex changed during patch: $originalHashAfterPatch"
 }
 Write-Host "Built bounded Samsung lifecycle dex: $outputFullPath"
+Write-Host "Resource package: $ResourcePackageName"
 Write-Host "SHA-256: $outputHash"
