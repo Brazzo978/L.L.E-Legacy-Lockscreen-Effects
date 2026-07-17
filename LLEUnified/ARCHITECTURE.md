@@ -3,7 +3,7 @@
 ## One application source, two native products
 
 `LLEUnified` produces two co-installable APKs from the same Java/resource tree.
-ARM32 is `LLE` / `com.codex.lle`; ARM64 is `LLE64` / `com.codex.lle64`.
+ARM32 is `L.L.E` / `com.codex.lle`; ARM64 is `L.L.E 64` / `com.codex.lle64`.
 The Java/JNI namespace remains `com.codex.lle` in both products so reconstructed
 native entry points stay stable. Android runs one ABI per application process,
 so each product packages only its matching native libraries.

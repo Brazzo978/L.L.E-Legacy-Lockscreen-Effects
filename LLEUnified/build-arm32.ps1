@@ -277,8 +277,8 @@ Run (Join-Path $buildTools "apksigner.bat") @("verify", "--verbose", $signed)
 $badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n"
 if ($LASTEXITCODE -ne 0 -or
         $badging -notmatch "package: name='com\.codex\.lle'" -or
-        $badging -notmatch "application-label:'LLE'") {
-    throw "ARM32 identity verification failed; expected LLE / com.codex.lle"
+        $badging -notmatch "application-label:'L\.L\.E'") {
+    throw "ARM32 identity verification failed; expected L.L.E / com.codex.lle"
 }
 
 $entries = @(& "jar.exe" tf $signed)

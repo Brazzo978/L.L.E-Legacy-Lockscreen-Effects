@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $applicationId = "com.codex.lle64"
-$launcherLabel = "LLE64"
+$launcherLabel = "L.L.E 64"
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
 }
@@ -483,7 +483,7 @@ $expectedPackage = $applicationId
 if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
     throw "Unexpected APK package; expected $expectedPackage"
 }
-if ($badging -notmatch "application-label:'LLE64'") {
+if ($badging -notmatch "application-label:'L\.L\.E 64'") {
     throw "ARM64 launcher label verification failed"
 }
 

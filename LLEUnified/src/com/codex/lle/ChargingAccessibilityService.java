@@ -1591,6 +1591,18 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " overlayAttached=" + unlockEffectOverlayAttached
                     + " touchBox=" + (touchDebugView != null)
                     + " displayState=" + displayStateName(currentDisplayState()));
+        } else {
+            int effect = OverlayPrefs.unlockEffect(this);
+            if (effectUsesCachedScreenshotBackground(effect)
+                    && !hasUnlockEffectBackgroundSource(effect)) {
+                // A fresh install has no per-package screenshot cache. Keeping an empty
+                // TextureView attached while the screen is off makes canCapture... reject
+                // the first lockscreen screenshot forever, leaving native bgReady at 0.
+                removeUnlockEffectOverlay(true);
+                removeTouchDebugOverlay();
+                Log.i(TAG, "screen-off prearm deferred for missing effect background"
+                        + " effect=" + effect);
+            }
         }
     }
 
@@ -1629,11 +1641,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean locked = isLockscreenLocked(false);
         boolean screenOffOrLocked = !interactive || locked;
         boolean showDoodle = isDoodleEnabledForLockscreen(false);
+        int effect = OverlayPrefs.unlockEffect(this);
         return screenOffOrLocked
                 && OverlayPrefs.masterEnabled(this)
                 && !showDoodle
                 && !isCallSurfaceActive()
                 && isUnlockEffectAllowedNowForActivePanel()
+                && (!effectUsesCachedScreenshotBackground(effect)
+                || hasUnlockEffectBackgroundSource(effect))
                 && OverlayPrefs.debugTouchArea(this);
     }
 
@@ -1925,10 +1940,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
             completeForcedEffectBackgroundRefresh("panel_effect_disabled");
         }
+        int selectedUnlockEffect = OverlayPrefs.unlockEffect(this);
+        boolean backgroundBootstrapNeeded = unlockEffectAllowedForActivePanel
+                && interactive
+                && locked
+                && effectUsesCachedScreenshotBackground(selectedUnlockEffect)
+                && !hasUnlockEffectBackgroundSource(selectedUnlockEffect);
         boolean hideOverlaysForBackgroundCapture =
                 unlockEffectAllowedForActivePanel
                         && (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
-                        || colorScreenshotInFlight) && interactive && locked;
+                        || colorScreenshotInFlight
+                        || backgroundBootstrapNeeded) && interactive && locked;
         syncTouchBoxScreenshotCapture(reason, interactive, locked, blockedSurfaceActive);
         boolean aodSurface = AOD_PACKAGE.equals(lastWindowPackage);
 
@@ -2745,14 +2767,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || colorScreenshotInFlight) {
             return;
         }
-        BackgroundSourceRenderer backgroundRenderer = null;
-        if (unlockEffectRendererType == effect
-                && unlockEffectRenderer instanceof BackgroundSourceRenderer) {
-            backgroundRenderer = (BackgroundSourceRenderer) unlockEffectRenderer;
-        }
-        boolean hasBackground = backgroundRenderer != null
-                ? backgroundRenderer.hasBackgroundSourceBitmap()
-                : hasUsableEffectBackgroundCache(effect);
+        boolean hasBackground = hasUnlockEffectBackgroundSource(effect);
         if (unlockEffectBackgroundCaptureSucceededThisSession && hasBackground) {
             return;
         }
@@ -3018,7 +3033,8 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean shouldRetryUnlockEffectBackgroundCapture(int effect) {
         return effectUsesScreenshotBackground(effect)
-                && OverlayPrefs.effectBackgroundWakeCaptureActive(this)
+                && (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
+                || !hasUnlockEffectBackgroundSource(effect))
                 && unlockEffectBackgroundCaptureAttempts
                 < UNLOCK_EFFECT_SCREENSHOT_MAX_ATTEMPTS;
     }
@@ -3111,9 +3127,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (colorScreenshotInFlight) {
             return;
         }
-        if (!OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
-            // Normal wakes are cache-only. A missing/stale cache is refreshed only by the
-            // explicit one-shot request (or the opt-in scheduled refresh receiver).
+        boolean missingRequiredBackground = effectUsesCachedScreenshotBackground(effect)
+                && !hasUnlockEffectBackgroundSource(effect);
+        if (!OverlayPrefs.effectBackgroundWakeCaptureActive(this)
+                && !missingRequiredBackground) {
+            // Normal wakes keep an existing cache. Only a truly missing first-run cache,
+            // an explicit one-shot request or the scheduled refresh receives retries.
             handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
             unlockEffectBackgroundNextAttemptAt = Long.MAX_VALUE;
             return;
@@ -3720,6 +3739,16 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean effectUsesCachedScreenshotBackground(int effect) {
         return effectUsesScreenshotBackground(effect);
+    }
+
+    private boolean hasUnlockEffectBackgroundSource(int effect) {
+        if (unlockEffectRendererType == effect
+                && unlockEffectRenderer instanceof BackgroundSourceRenderer
+                && ((BackgroundSourceRenderer) unlockEffectRenderer)
+                .hasBackgroundSourceBitmap()) {
+            return true;
+        }
+        return hasUsableEffectBackgroundCache(effect);
     }
 
     private void syncTouchBoxScreenshotCapture(String reason, boolean interactive,

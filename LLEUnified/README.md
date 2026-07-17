@@ -1,9 +1,9 @@
-# LLE / LLE64
+# L.L.E / L.L.E 64
 
 LLE restores a collection of legacy lockscreen effects on modern Android.
 The ARM32 and ARM64 applications share one project and can be installed
-together. ARM32 is permanently named **LLE** (`com.codex.lle`); ARM64 is
-permanently named **LLE64** (`com.codex.lle64`).
+together. ARM32 is permanently named **L.L.E** (`com.codex.lle`); ARM64 is
+permanently named **L.L.E 64** (`com.codex.lle64`).
 
 > **Beta:** expect some device-specific differences. Keep another unlock method
 > available while testing.
@@ -12,8 +12,8 @@ permanently named **LLE64** (`com.codex.lle64`).
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.2-Beta-1-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
-| `LLE64-1.0.2-Beta-1-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
+| `LLE-1.0.2-Beta-2-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
+| `LLE64-1.0.2-Beta-2-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
 
 Check the supported ABIs:
 
@@ -177,6 +177,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.2 Beta 2 release notes](docs/RELEASE_NOTES_1.0.2_BETA_2.md)
 - [1.0.2 Beta 1 release notes](docs/RELEASE_NOTES_1.0.2_BETA_1.md)
 - [Architecture notes](ARCHITECTURE.md)
 - [Fold support notes](FOLD-DISPLAY-PORT.md)
