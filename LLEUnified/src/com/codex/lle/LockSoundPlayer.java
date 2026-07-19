@@ -7,6 +7,10 @@ import android.provider.Settings;
 import android.util.Log;
 
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 final class LockSoundPlayer {
     private static final String TAG = "LLELockSound";
@@ -20,11 +24,16 @@ final class LockSoundPlayer {
     private final Context context;
     private final int[] effectSounds = new int[OverlayPrefs.EFFECT_COUNT];
     private final int[] seasonalSounds = new int[4];
+    private final Object soundLock = new Object();
+    private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
+    private final Map<Integer, String> pendingSoundSources =
+            new HashMap<Integer, String>();
 
     private SoundPool soundPool;
 
     LockSoundPlayer(Context context) {
         this.context = context.getApplicationContext();
+        ensureLoaded();
     }
 
     void playEffectLock(int effect) {
@@ -51,53 +60,67 @@ final class LockSoundPlayer {
     }
 
     void release() {
-        if (soundPool != null) {
-            soundPool.release();
-            soundPool = null;
-        }
-        for (int i = 0; i < effectSounds.length; i++) {
-            effectSounds[i] = 0;
-        }
-        for (int i = 0; i < seasonalSounds.length; i++) {
-            seasonalSounds[i] = 0;
+        synchronized (soundLock) {
+            if (soundPool != null) {
+                soundPool.setOnLoadCompleteListener(null);
+                soundPool.release();
+                soundPool = null;
+            }
+            loadedSoundIds.clear();
+            pendingSoundSources.clear();
+            for (int i = 0; i < effectSounds.length; i++) {
+                effectSounds[i] = 0;
+            }
+            for (int i = 0; i < seasonalSounds.length; i++) {
+                seasonalSounds[i] = 0;
+            }
         }
     }
 
     private void ensureLoaded() {
-        if (soundPool != null) {
-            return;
+        synchronized (soundLock) {
+            if (soundPool != null) {
+                return;
+            }
+            soundPool = new SoundPool.Builder()
+                    .setMaxStreams(2)
+                    .setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build())
+                    .build();
+            soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+                @Override
+                public void onLoadComplete(
+                        SoundPool completedPool, int sampleId, int status) {
+                    handleLoadComplete(completedPool, sampleId, status);
+                }
+            });
+
+            effectSounds[OverlayPrefs.EFFECT_S4_LENS_FLARE] =
+                    load(R.raw.lens_flare_lock);
+            effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
+                    load(R.raw.s3_lock);
+            effectSounds[OverlayPrefs.EFFECT_S5_POPPING_COLOURS] =
+                    load(R.raw.particle_lock);
+            effectSounds[OverlayPrefs.EFFECT_WATERCOLOUR] =
+                    load(R.raw.ve_watercolour_lock);
+            effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET] =
+                    load(R.raw.ve_colourdroplet_lock);
+            effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO] =
+                    effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
+            effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES] =
+                    load(R.raw.ve_sparklingbubbles_lock);
+            effectSounds[OverlayPrefs.EFFECT_S4_ABSTRACT_TILES] =
+                    load(R.raw.abstracttile_lock);
+            effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =
+                    load(R.raw.geometricmosaic_lock);
+
+            seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
+            seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);
+            seasonalSounds[SEASONAL_AUTUMN] = load(R.raw.autumn_lock);
+            seasonalSounds[SEASONAL_WINTER] = load(R.raw.winter_lock);
         }
-        soundPool = new SoundPool.Builder()
-                .setMaxStreams(2)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
-                .build();
-
-        effectSounds[OverlayPrefs.EFFECT_S4_LENS_FLARE] =
-                load(R.raw.lens_flare_lock);
-        effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
-                load(R.raw.s3_lock);
-        effectSounds[OverlayPrefs.EFFECT_S5_POPPING_COLOURS] =
-                load(R.raw.particle_lock);
-        effectSounds[OverlayPrefs.EFFECT_WATERCOLOUR] =
-                load(R.raw.ve_watercolour_lock);
-        effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET] =
-                load(R.raw.ve_colourdroplet_lock);
-        effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO] =
-                effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
-        effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES] =
-                load(R.raw.ve_sparklingbubbles_lock);
-        effectSounds[OverlayPrefs.EFFECT_S4_ABSTRACT_TILES] =
-                load(R.raw.abstracttile_lock);
-        effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =
-                load(R.raw.geometricmosaic_lock);
-
-        seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
-        seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);
-        seasonalSounds[SEASONAL_AUTUMN] = load(R.raw.autumn_lock);
-        seasonalSounds[SEASONAL_WINTER] = load(R.raw.winter_lock);
     }
 
     private int load(int resId) {
@@ -109,8 +132,49 @@ final class LockSoundPlayer {
             Log.w(TAG, "missing lock sound source=" + source);
             return;
         }
-        soundPool.play(soundId, LOCK_VOLUME, LOCK_VOLUME, 0, 0, 1.0f);
-        Log.i(TAG, "lock sound played source=" + source);
+        synchronized (soundLock) {
+            if (soundPool == null) {
+                Log.w(TAG, "lock sound pool unavailable source=" + source);
+                return;
+            }
+            if (!loadedSoundIds.contains(soundId)) {
+                pendingSoundSources.put(soundId, source);
+                Log.d(TAG, "lock sound queued until load source=" + source);
+                return;
+            }
+            playLoadedLocked(soundId, source);
+        }
+    }
+
+    private void handleLoadComplete(
+            SoundPool completedPool, int sampleId, int status) {
+        synchronized (soundLock) {
+            if (completedPool != soundPool) {
+                return;
+            }
+            if (status != 0) {
+                String source = pendingSoundSources.remove(sampleId);
+                Log.w(TAG, "lock sound load failed id=" + sampleId
+                        + " status=" + status + " source=" + source);
+                return;
+            }
+            loadedSoundIds.add(sampleId);
+            String pendingSource = pendingSoundSources.remove(sampleId);
+            if (pendingSource != null && systemLockSoundsEnabled()) {
+                playLoadedLocked(sampleId, pendingSource + ":deferred");
+            }
+        }
+    }
+
+    private void playLoadedLocked(int soundId, String source) {
+        int streamId = soundPool.play(
+                soundId, LOCK_VOLUME, LOCK_VOLUME, 0, 0, 1.0f);
+        if (streamId == 0) {
+            Log.w(TAG, "lock sound play rejected source=" + source);
+        } else {
+            Log.i(TAG, "lock sound played source=" + source
+                    + " stream=" + streamId);
+        }
     }
 
     private boolean systemLockSoundsEnabled() {

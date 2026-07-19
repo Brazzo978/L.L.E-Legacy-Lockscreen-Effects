@@ -28,8 +28,8 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+            case OverlayPrefs.EFFECT_TABS_BLIND:
                 return true;
-            case OverlayPrefs.EFFECT_TABS_BLIND_WIP:
             case OverlayPrefs.EFFECT_N3_INK_IN_WATER_WIP:
             default:
                 return false;

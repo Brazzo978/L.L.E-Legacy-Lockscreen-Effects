@@ -101,6 +101,18 @@ final class OverlayPrefs {
             "effect_background_last_capture_";
     static final String EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX =
             "effect_background_handled_refresh_token_";
+    static final String EFFECT_BACKGROUND_SOURCE_MODE_PREFIX =
+            "effect_background_source_mode_";
+    static final String EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX =
+            "effect_background_imported_path_";
+    private static final String EFFECT_BACKGROUND_IMPORTED_LABEL_PREFIX =
+            "effect_background_imported_label_";
+    private static final String EFFECT_BACKGROUND_IMPORTED_WIDTH_PREFIX =
+            "effect_background_imported_width_";
+    private static final String EFFECT_BACKGROUND_IMPORTED_HEIGHT_PREFIX =
+            "effect_background_imported_height_";
+    private static final String EFFECT_BACKGROUND_IMPORTED_AT_PREFIX =
+            "effect_background_imported_at_";
     static final String PERF_DEFAULTS_APPLIED = "perf_defaults_20260701";
     static final String TOUCH_BOX_CONFIGURED = "touch_box_configured";
     static final String TOUCH_BOX_LEFT = "touch_box_left";
@@ -130,9 +142,11 @@ final class OverlayPrefs {
     static final int EFFECT_S4_GEOMETRIC_MOSAIC = 8;
     static final int EFFECT_N5_COLOUR_DROPLET_GYRO = 9;
     static final int EFFECT_S3_RIPPLE_NATIVE = 10;
-    static final int EFFECT_TABS_BLIND_WIP = 11;
+    static final int EFFECT_TABS_BLIND = 11;
     static final int EFFECT_N3_INK_IN_WATER_WIP = 12;
     static final int EFFECT_COUNT = 13;
+    static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
+    static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
     static final int DEFAULT_TIME_END_MINUTE = 0;
     static final int DEFAULT_TOUCH_BOX_LEFT = 0;
@@ -400,8 +414,8 @@ final class OverlayPrefs {
                 return "N4 Geometric Mosaic";
             case EFFECT_S3_RIPPLE_NATIVE:
                 return "S3 Water Ripple";
-            case EFFECT_TABS_BLIND_WIP:
-                return "TabS Blind (WIP)";
+            case EFFECT_TABS_BLIND:
+                return "Tab S Blind";
             case EFFECT_N3_INK_IN_WATER_WIP:
                 return "N3 Ink in Water (WIP)";
             default:
@@ -443,6 +457,177 @@ final class OverlayPrefs {
 
     static boolean effectBackgroundWakeCaptureShouldRelock(Context context) {
         return get(context).getBoolean(EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, false);
+    }
+
+    static int effectBackgroundSourceMode(Context context, int effect, String profile) {
+        return get(context).getInt(
+                effectBackgroundProfileKey(EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, profile),
+                EFFECT_BACKGROUND_SOURCE_AUTO);
+    }
+
+    static boolean importedEffectBackgroundEnabled(Context context, int effect, String profile) {
+        return effectBackgroundSourceMode(context, effect, profile)
+                == EFFECT_BACKGROUND_SOURCE_IMPORTED;
+    }
+
+    static File importedEffectBackgroundFile(Context context, int effect, String profile) {
+        String path = get(context).getString(
+                effectBackgroundProfileKey(
+                        EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX, effect, profile), "");
+        return ManualEffectBackground.resolvePrivateFile(context, path);
+    }
+
+    static String importedEffectBackgroundLabel(Context context, int effect, String profile) {
+        return get(context).getString(
+                effectBackgroundProfileKey(
+                        EFFECT_BACKGROUND_IMPORTED_LABEL_PREFIX, effect, profile),
+                "Imported wallpaper");
+    }
+
+    static int importedEffectBackgroundWidth(Context context, int effect, String profile) {
+        return Math.max(0, get(context).getInt(
+                effectBackgroundProfileKey(
+                        EFFECT_BACKGROUND_IMPORTED_WIDTH_PREFIX, effect, profile), 0));
+    }
+
+    static int importedEffectBackgroundHeight(Context context, int effect, String profile) {
+        return Math.max(0, get(context).getInt(
+                effectBackgroundProfileKey(
+                        EFFECT_BACKGROUND_IMPORTED_HEIGHT_PREFIX, effect, profile), 0));
+    }
+
+    static long importedEffectBackgroundAt(Context context, int effect, String profile) {
+        return Math.max(0L, get(context).getLong(
+                effectBackgroundProfileKey(
+                        EFFECT_BACKGROUND_IMPORTED_AT_PREFIX, effect, profile), 0L));
+    }
+
+    static void useImportedEffectBackground(Context context, int effect, String profile,
+            File file, String label, int width, int height) {
+        if (file == null) {
+            return;
+        }
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        get(context).edit()
+                .putString(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX, effect, normalized),
+                        file.getAbsolutePath())
+                .putString(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_IMPORTED_LABEL_PREFIX, effect, normalized),
+                        label == null || label.trim().isEmpty()
+                                ? "Imported wallpaper" : label.trim())
+                .putInt(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_IMPORTED_WIDTH_PREFIX, effect, normalized),
+                        Math.max(0, width))
+                .putInt(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_IMPORTED_HEIGHT_PREFIX, effect, normalized),
+                        Math.max(0, height))
+                .putLong(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_IMPORTED_AT_PREFIX, effect, normalized),
+                        System.currentTimeMillis())
+                .putInt(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, normalized),
+                        EFFECT_BACKGROUND_SOURCE_IMPORTED)
+                .apply();
+    }
+
+    /** Pins one prepared wallpaper as the direct source for every screenshot-backed effect. */
+    static boolean useImportedEffectBackgroundForAll(Context context, String profile,
+            File file, String label, int width, int height) {
+        if (file == null) {
+            return false;
+        }
+        final int[] effects = {
+                EFFECT_S4_LENS_FLARE,
+                EFFECT_S3_RIPPLE_NATIVE,
+                EFFECT_S5_POPPING_COLOURS,
+                EFFECT_TABS_BLIND,
+                EFFECT_WATERCOLOUR,
+                EFFECT_N5_COLOUR_DROPLET,
+                EFFECT_N5_COLOUR_DROPLET_GYRO,
+                EFFECT_N5_SPARKLING_BUBBLES,
+                EFFECT_S4_ABSTRACT_TILES,
+                EFFECT_S4_GEOMETRIC_MOSAIC
+        };
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String safeLabel = label == null || label.trim().isEmpty()
+                ? "Imported wallpaper" : label.trim();
+        long importedAt = System.currentTimeMillis();
+        SharedPreferences.Editor editor = get(context).edit();
+        for (int effect : effects) {
+            editor.putString(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX, effect, normalized),
+                    file.getAbsolutePath());
+            editor.putString(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_IMPORTED_LABEL_PREFIX, effect, normalized),
+                    safeLabel);
+            editor.putInt(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_IMPORTED_WIDTH_PREFIX, effect, normalized),
+                    Math.max(0, width));
+            editor.putInt(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_IMPORTED_HEIGHT_PREFIX, effect, normalized),
+                    Math.max(0, height));
+            editor.putLong(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_IMPORTED_AT_PREFIX, effect, normalized),
+                    importedAt);
+            editor.putInt(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, normalized),
+                    EFFECT_BACKGROUND_SOURCE_IMPORTED);
+        }
+        return editor.commit();
+    }
+
+    static void useAutomaticEffectBackground(Context context, int effect, String profile) {
+        // Keep the pinned private image and its metadata. Reset only changes the active mode.
+        get(context).edit()
+                .putInt(effectBackgroundProfileKey(
+                                EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, profile),
+                        EFFECT_BACKGROUND_SOURCE_AUTO)
+                .apply();
+    }
+
+    /** Restores automatic capture for every screenshot-backed effect without deleting imports. */
+    static void useAutomaticEffectBackgroundForAll(Context context, String profile) {
+        final int[] effects = {
+                EFFECT_S4_LENS_FLARE,
+                EFFECT_S3_RIPPLE_NATIVE,
+                EFFECT_S5_POPPING_COLOURS,
+                EFFECT_TABS_BLIND,
+                EFFECT_WATERCOLOUR,
+                EFFECT_N5_COLOUR_DROPLET,
+                EFFECT_N5_COLOUR_DROPLET_GYRO,
+                EFFECT_N5_SPARKLING_BUBBLES,
+                EFFECT_S4_ABSTRACT_TILES,
+                EFFECT_S4_GEOMETRIC_MOSAIC
+        };
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        SharedPreferences.Editor editor = get(context).edit();
+        for (int effect : effects) {
+            editor.putInt(effectBackgroundProfileKey(
+                            EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, normalized),
+                    EFFECT_BACKGROUND_SOURCE_AUTO);
+        }
+        editor.apply();
+    }
+
+    static boolean isImportedEffectBackgroundPreferenceKey(String key) {
+        return key != null && (key.startsWith(EFFECT_BACKGROUND_SOURCE_MODE_PREFIX)
+                || key.startsWith(EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX)
+                || key.startsWith(EFFECT_BACKGROUND_IMPORTED_LABEL_PREFIX)
+                || key.startsWith(EFFECT_BACKGROUND_IMPORTED_WIDTH_PREFIX)
+                || key.startsWith(EFFECT_BACKGROUND_IMPORTED_HEIGHT_PREFIX)
+                || key.startsWith(EFFECT_BACKGROUND_IMPORTED_AT_PREFIX));
+    }
+
+    static boolean isImportedEffectBackgroundPreferenceKeyFor(String key, int effect,
+            String profile) {
+        if (key == null) {
+            return false;
+        }
+        return key.equals(effectBackgroundProfileKey(
+                EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, profile))
+                || key.equals(effectBackgroundProfileKey(
+                EFFECT_BACKGROUND_IMPORTED_PATH_PREFIX, effect, profile));
     }
 
     static long effectBackgroundLastCapturedAt(Context context, int effect) {
@@ -509,6 +694,10 @@ final class OverlayPrefs {
 
     static String effectBackgroundHandledRefreshTokenKey(int effect, String profile) {
         return EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX + effect + profileKeySuffix(profile);
+    }
+
+    private static String effectBackgroundProfileKey(String prefix, int effect, String profile) {
+        return prefix + effect + profileKeySuffix(profile);
     }
 
     private static String profileKeySuffix(String profile) {

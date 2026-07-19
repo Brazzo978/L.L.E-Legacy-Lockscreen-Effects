@@ -25,6 +25,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
+import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,8 +33,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -64,7 +67,22 @@ import java.util.HashSet;
 import java.util.Locale;
 
 public class ControlActivity extends Activity {
+    // Hidden framework constant intentionally used by value: getDisplays(String) is public
+    // and this category is the only API that also returns the inactive Fold panel.
+    private static final String DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED =
+            "android.hardware.display.category.ALL_INCLUDING_DISABLED";
     private static final String STATE_SELECTED_TAB = "selected_tab";
+    private static final String STATE_PENDING_IMPORTED_PROFILE =
+            "pending_imported_background_profile";
+    private static final String STATE_PENDING_IMPORTED_EFFECT =
+            "pending_imported_background_effect";
+    private static final String STATE_PENDING_IMPORTED_WIDTH =
+            "pending_imported_background_width";
+    private static final String STATE_PENDING_IMPORTED_HEIGHT =
+            "pending_imported_background_height";
+    private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND = 4917;
+    private static final int REQUEST_SETUP_WIZARD = 4918;
+    private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
     private static final int TAB_LOCKSCREEN_EFFECT = 0;
     private static final int TAB_CHARGING_DOODLE = 1;
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
@@ -110,6 +128,10 @@ public class ControlActivity extends Activity {
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
     private int pendingUnlockEffect = -1;
     private int pendingAbstractTilesLineMode = -1;
+    private int pendingImportedBackgroundEffect = -1;
+    private int pendingImportedBackgroundWidth;
+    private int pendingImportedBackgroundHeight;
+    private String pendingImportedBackgroundProfile = "";
     private boolean updatingServiceSwitch;
     private float tabSwipeDownX;
     private float tabSwipeDownY;
@@ -123,6 +145,7 @@ public class ControlActivity extends Activity {
     private boolean doodleDebugExpanded;
     private boolean doodlePositionExpanded;
     private boolean lockscreenDebugExpanded;
+    private boolean screenshotServiceExpanded;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
     private Typeface appFontRegular;
     private Typeface appFontBold;
@@ -139,6 +162,14 @@ public class ControlActivity extends Activity {
         ensureTouchAreaEnabled();
         if (savedInstanceState != null) {
             selectedTab = savedInstanceState.getInt(STATE_SELECTED_TAB, TAB_LOCKSCREEN_EFFECT);
+            pendingImportedBackgroundProfile = savedInstanceState.getString(
+                    STATE_PENDING_IMPORTED_PROFILE, "");
+            pendingImportedBackgroundEffect = savedInstanceState.getInt(
+                    STATE_PENDING_IMPORTED_EFFECT, -1);
+            pendingImportedBackgroundWidth = savedInstanceState.getInt(
+                    STATE_PENDING_IMPORTED_WIDTH, 0);
+            pendingImportedBackgroundHeight = savedInstanceState.getInt(
+                    STATE_PENDING_IMPORTED_HEIGHT, 0);
         }
 
         FrameLayout scene = new FrameLayout(this);
@@ -192,11 +223,20 @@ public class ControlActivity extends Activity {
         forceSansSerif(outer);
         updateAccessibilityStatus();
         playGraceEntrance(headerView, tabsView, tabPager);
+        if (savedInstanceState == null && SetupWizardActivity.shouldLaunch(this)) {
+            startActivityForResult(
+                    SetupWizardActivity.createLaunchIntent(this, false),
+                    REQUEST_SETUP_WIZARD);
+        }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         outState.putInt(STATE_SELECTED_TAB, selectedTab);
+        outState.putString(STATE_PENDING_IMPORTED_PROFILE, pendingImportedBackgroundProfile);
+        outState.putInt(STATE_PENDING_IMPORTED_EFFECT, pendingImportedBackgroundEffect);
+        outState.putInt(STATE_PENDING_IMPORTED_WIDTH, pendingImportedBackgroundWidth);
+        outState.putInt(STATE_PENDING_IMPORTED_HEIGHT, pendingImportedBackgroundHeight);
         super.onSaveInstanceState(outState);
     }
 
@@ -206,6 +246,62 @@ public class ControlActivity extends Activity {
         updateAccessibilityStatus();
         updateTouchBoxSummary();
         updateEffectProfilerSummary();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_SETUP_WIZARD) {
+            showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            return;
+        }
+        if (requestCode == REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP) {
+            if (resultCode == RESULT_OK) {
+                SetupWizardActivity.rememberWallpaperMode(
+                        this, SetupWizardActivity.MODE_CACHE_ONLY);
+                showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            }
+            return;
+        }
+        if (requestCode != REQUEST_IMPORTED_EFFECT_BACKGROUND) {
+            return;
+        }
+        final int effect = pendingImportedBackgroundEffect;
+        final String profile = FoldDisplayTarget.normalizeProfile(
+                pendingImportedBackgroundProfile);
+        final int targetWidth = pendingImportedBackgroundWidth;
+        final int targetHeight = pendingImportedBackgroundHeight;
+        pendingImportedBackgroundEffect = -1;
+        pendingImportedBackgroundProfile = "";
+        pendingImportedBackgroundWidth = 0;
+        pendingImportedBackgroundHeight = 0;
+        final Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+        if (uri == null || effect < 0 || targetWidth <= 0 || targetHeight <= 0) {
+            return;
+        }
+        try {
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (Throwable ignored) {
+        }
+        Intent crop = new Intent(this, WallpaperCropActivity.class);
+        crop.setData(uri);
+        crop.putExtra(WallpaperCropActivity.EXTRA_SOURCE_URI, uri.toString());
+        crop.putExtra(WallpaperCropActivity.EXTRA_MODE,
+                WallpaperCropActivity.MODE_CACHE_ONLY);
+        crop.putExtra(WallpaperCropActivity.EXTRA_PROFILE, profile);
+        crop.putExtra(WallpaperCropActivity.EXTRA_EFFECT, effect);
+        crop.putExtra(WallpaperCropActivity.EXTRA_TARGET_WIDTH, targetWidth);
+        crop.putExtra(WallpaperCropActivity.EXTRA_TARGET_HEIGHT, targetHeight);
+        crop.putExtra(WallpaperCropActivity.EXTRA_REQUIRE_PRECISE_ACK, true);
+        crop.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(crop, REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP);
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "Wallpaper editor is unavailable",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
@@ -1302,6 +1398,41 @@ public class ControlActivity extends Activity {
         return root;
     }
 
+    private View setupWizardControls() {
+        LinearLayout section = verticalGroup();
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(12));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(sectionTitle("Setup & permissions"));
+        String mode = SetupWizardActivity.selectedWallpaperMode(this);
+        String source = SetupWizardActivity.MODE_SET_LOCK_AND_CACHE.equals(mode)
+                ? "user wallpaper (lockscreen + fixed cache, Beta)"
+                : SetupWizardActivity.MODE_CACHE_ONLY.equals(mode)
+                ? "user-provided exact wallpaper (Beta)" : "automatic screenshot";
+        section.addView(infoText("Accessibility: "
+                + (isChargingAccessibilityEnabled() ? "enabled" : "not enabled")
+                + ". " + batteryOptimizationStatus()
+                + " Background source: " + source + "."));
+        section.addView(outlineButton("Run setup wizard", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivityForResult(SetupWizardActivity.createLaunchIntent(
+                        ControlActivity.this, true), REQUEST_SETUP_WIZARD);
+            }
+        }));
+        section.addView(outlineButton("Change background source", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivityForResult(SetupWizardActivity.createWallpaperLaunchIntent(
+                        ControlActivity.this), REQUEST_SETUP_WIZARD);
+            }
+        }));
+        return section;
+    }
+
     private View seasonalEffectsCard() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -1441,9 +1572,6 @@ public class ControlActivity extends Activity {
                 effectTiming,
                 effectExtras));
         root.addView(controls);
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
-            root.addView(foldPanelRoutingControls());
-        }
 
         LinearLayout effects = verticalGroup();
         LinearLayout.LayoutParams effectsParams = new LinearLayout.LayoutParams(
@@ -1470,6 +1598,13 @@ public class ControlActivity extends Activity {
                 "S5 Popping Colours",
                 "Samsung dex renderer with screenshot-backed color map; no legacy .so required.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Tab S Blind",
+                EffectAvailability.is64BitProcess()
+                        ? "Same ABI-neutral Samsung Blind DEX in the shared ARM64 host, with stock Tab S light and sounds."
+                        : "Original Samsung Blind DEX with stock Tab S light and sounds; ARM32 baseline.",
+                OverlayPrefs.EFFECT_TABS_BLIND,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N3 Watercolor",
@@ -1535,7 +1670,13 @@ public class ControlActivity extends Activity {
                 current);
 
         root.addView(effects);
-        root.addView(screenshotServiceControls(current));
+        root.addView(setupWizardControls());
+        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            root.addView(foldPanelRoutingControls());
+        }
+        if (effectUsesColormapCache(current)) {
+            root.addView(screenshotServiceControls(current));
+        }
         return root;
     }
 
@@ -1581,28 +1722,204 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
         styleCard(section);
-        section.addView(sectionTitle("Screenshot service"));
+        section.addView(sectionTitle("Renderer wallpaper"));
         section.addView(infoText(effectBackgroundStatus(currentEffect)));
-        section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                applyPendingUnlockEffect();
-                OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
-                Toast.makeText(ControlActivity.this,
-                        "Screenshot recapture queued",
-                        Toast.LENGTH_SHORT).show();
+        final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
+        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this);
+        boolean coverImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
+                this, currentEffect, FoldDisplayTarget.PROFILE_COVER);
+        boolean mainImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
+                this, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
+        boolean activeImported = !foldProfiles
+                && OverlayPrefs.importedEffectBackgroundEnabled(
+                        this, currentEffect, activeProfile);
+        boolean directModeActive = activeImported || coverImported || mainImported;
+        boolean automaticModeActive = foldProfiles
+                ? !coverImported || !mainImported : !activeImported;
+
+        if (directModeActive) {
+            section.addView(sectionLabel("EXTRA / BETA - Direct wallpaper active"));
+            section.addView(infoText(
+                    "Beta feature. LLE sends a private, display-sized wallpaper directly "
+                            + "to screenshot-driven effects. Some effect UI masks may still "
+                            + "need refinement."));
+            if (foldProfiles) {
+                addDirectWallpaperProfileControls(
+                        section, currentEffect, FoldDisplayTarget.PROFILE_COVER);
+                addDirectWallpaperProfileControls(
+                        section, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
+            } else {
+                addDirectWallpaperProfileControls(section, currentEffect, activeProfile);
             }
-        }));
-        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
-                ? "View both panel screenshots"
-                : "View colormap screenshot", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                applyPendingUnlockEffect();
-                showEffectBackgroundScreenshot();
-            }
-        }));
+            section.addView(outlineButton(foldProfiles
+                    ? "View direct wallpapers"
+                    : "View direct wallpaper", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    applyPendingUnlockEffect();
+                    showEffectBackgroundScreenshot();
+                }
+            }));
+        }
+
+        if (automaticModeActive) {
+            section.addView(screenshotServiceDebugControls());
+            section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    applyPendingUnlockEffect();
+                    OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
+                    Toast.makeText(ControlActivity.this,
+                            "Screenshot recapture queued",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }));
+            section.addView(outlineButton(foldProfiles
+                    ? "View automatic panel screenshots"
+                    : "View colormap screenshot", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    applyPendingUnlockEffect();
+                    showEffectBackgroundScreenshot();
+                }
+            }));
+        }
         return section;
+    }
+
+    private void addDirectWallpaperProfileControls(LinearLayout section, final int effect,
+            final String requestedProfile) {
+        final String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        final int[] targetSize = effectBackgroundTargetSize(profile);
+        final boolean imported = OverlayPrefs.importedEffectBackgroundEnabled(
+                this, effect, profile);
+        String profileLabel = FoldDisplayTarget.PROFILE_COVER.equals(profile)
+                ? "Cover" : FoldDisplayTarget.PROFILE_MAIN.equals(profile) ? "Main" : "Display";
+        String sourceLabel = imported ? "DIRECT active" : "AUTO screenshot";
+        section.addView(infoText(profileLabel.toUpperCase(Locale.US)
+                + "  |  " + targetSize[0] + " x " + targetSize[1]
+                + "  |  " + sourceLabel));
+        section.addView(outlineButton(
+                "Choose wallpaper for " + profileLabel + " ("
+                        + targetSize[0] + " x " + targetSize[1] + ")",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        startImportedEffectBackgroundPicker(effect, profile);
+                    }
+                }));
+        section.addView(outlineButton(imported
+                ? "Use automatic screenshot on " + profileLabel
+                : "Automatic screenshot active on " + profileLabel,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (!OverlayPrefs.importedEffectBackgroundEnabled(
+                                ControlActivity.this, effect, profile)) {
+                            Toast.makeText(ControlActivity.this,
+                                    "Automatic screenshot is already active for " + profile,
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        OverlayPrefs.useAutomaticEffectBackgroundForAll(
+                                ControlActivity.this, profile);
+                        SetupWizardActivity.rememberWallpaperMode(
+                                ControlActivity.this,
+                                SetupWizardActivity.MODE_AUTOMATIC_SCREENSHOT);
+                        OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
+                        Toast.makeText(ControlActivity.this,
+                                "Automatic screenshot restored for " + profile
+                                        + "; imported file kept privately",
+                                Toast.LENGTH_LONG).show();
+                        showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+                    }
+                }));
+    }
+
+    private int[] effectBackgroundTargetSize(String requestedProfile) {
+        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        DisplayMetrics activeMetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(activeMetrics);
+        int activeWidth = Math.max(1, activeMetrics.widthPixels);
+        int activeHeight = Math.max(1, activeMetrics.heightPixels);
+        int[] fallback = new int[] {
+                Math.min(activeWidth, activeHeight),
+                Math.max(activeWidth, activeHeight)
+        };
+        if (FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
+            return fallback;
+        }
+        try {
+            DisplayManager manager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+            Display defaultDisplay = manager == null
+                    ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+            String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
+            if (manager != null) {
+                Display[] displays = manager.getDisplays(
+                        DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+                if (displays == null || displays.length == 0) {
+                    displays = manager.getDisplays();
+                }
+                for (Display display : displays) {
+                    if (display == null || (display.getDisplayId() != Display.DEFAULT_DISPLAY
+                            && (builtInName == null || !builtInName.equals(display.getName())))) {
+                        continue;
+                    }
+                    DisplayMetrics metrics = new DisplayMetrics();
+                    display.getRealMetrics(metrics);
+                    int width = Math.max(1, metrics.widthPixels);
+                    int height = Math.max(1, metrics.heightPixels);
+                    if (profile.equals(FoldDisplayTarget.profileForSize(width, height))) {
+                        return new int[] {
+                                Math.min(width, height), Math.max(width, height)};
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.d("LLEControl", "Fold panel wallpaper size lookup failed", t);
+        }
+        return fallback;
+    }
+
+    private void startImportedEffectBackgroundPicker(int effect, String requestedProfile) {
+        if (!effectUsesColormapCache(effect)) {
+            Toast.makeText(this,
+                    "This effect does not use a screenshot-backed renderer",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        int[] targetSize = effectBackgroundTargetSize(profile);
+        pendingImportedBackgroundEffect = effect;
+        pendingImportedBackgroundProfile = profile;
+        pendingImportedBackgroundWidth = targetSize[0];
+        pendingImportedBackgroundHeight = targetSize[1];
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(picker, REQUEST_IMPORTED_EFFECT_BACKGROUND);
+        } catch (Throwable openDocumentFailure) {
+            Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+            fallback.addCategory(Intent.CATEGORY_OPENABLE);
+            fallback.setType("image/*");
+            fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivityForResult(
+                        Intent.createChooser(fallback, "Choose renderer wallpaper"),
+                        REQUEST_IMPORTED_EFFECT_BACKGROUND);
+            } catch (Throwable fallbackFailure) {
+                pendingImportedBackgroundEffect = -1;
+                pendingImportedBackgroundProfile = "";
+                pendingImportedBackgroundWidth = 0;
+                pendingImportedBackgroundHeight = 0;
+                Toast.makeText(this,
+                        "No compatible image picker is available", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private View screenshotServiceDebugControls() {
@@ -1614,14 +1931,23 @@ public class ControlActivity extends Activity {
         params.setMargins(0, dp(8), 0, dp(8));
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(sectionLabel("Screenshot service"));
-        section.addView(toggle("Auto recapture expired cache",
-                OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
-        section.addView(effectBackgroundIntervalSelector());
-        section.addView(toggle("Pause auto recapture 23-07",
-                OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
-        section.addView(toggle("Wake lockscreen for hard recapture",
-                OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
+        section.addView(collapsibleHeader("Screenshot service", screenshotServiceExpanded,
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                screenshotServiceExpanded = !screenshotServiceExpanded;
+                showTab(selectedTab, false, 0);
+            }
+        }));
+        if (screenshotServiceExpanded) {
+            section.addView(toggle("Auto recapture expired cache",
+                    OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
+            section.addView(effectBackgroundIntervalSelector());
+            section.addView(toggle("Pause auto recapture 23-07",
+                    OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
+            section.addView(toggle("Wake lockscreen for hard recapture",
+                    OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
+        }
         return section;
     }
 
@@ -1679,22 +2005,42 @@ public class ControlActivity extends Activity {
     }
 
     private String effectBackgroundProfileStatus(int effect, String profile) {
+        if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
+            File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
+            String label = OverlayPrefs.importedEffectBackgroundLabel(this, effect, profile);
+            int width = OverlayPrefs.importedEffectBackgroundWidth(this, effect, profile);
+            int height = OverlayPrefs.importedEffectBackgroundHeight(this, effect, profile);
+            long importedAt = OverlayPrefs.importedEffectBackgroundAt(this, effect, profile);
+            if (!ManualEffectBackground.isUsable(imported)) {
+                return "EXTRA / Beta Imported (" + profile + "): selected but missing or "
+                        + "unreadable. Automatic capture remains paused until you choose "
+                        + "another image or reset to Auto.";
+            }
+            long ageMs = importedAt <= 0L
+                    ? 0L : Math.max(0L, System.currentTimeMillis() - importedAt);
+            return "EXTRA / Beta Imported (" + profile + "): " + label
+                    + " | original " + width + " x " + height
+                    + " | imported " + ageLabel(ageMs)
+                    + ". Full-frame center crop; automatic capture paused.";
+        }
         File file = colormapScreenshotFileForPreview(effect, profile);
         long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(this, effect, profile);
         if (capturedAt <= 0L && file.exists()) {
             capturedAt = file.lastModified();
         }
         if (!file.exists() || file.length() <= 0L || capturedAt <= 0L) {
-            return "Screenshot cache (" + profile + "): empty.";
+            return "AUTO screenshot cache (" + profile + "): empty.";
         }
         long ageMs = Math.max(0L, System.currentTimeMillis() - capturedAt);
-        return "Screenshot cache (" + profile + "): ready, age " + ageLabel(ageMs)
+        return "AUTO screenshot cache (" + profile + "): ready, age " + ageLabel(ageMs)
                 + ". Expired cache stays active until a validated capture replaces it.";
     }
 
     private boolean effectUsesColormapCache(int effect) {
-        return effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+        return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
+                || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
+                || effect == OverlayPrefs.EFFECT_TABS_BLIND
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
@@ -2271,6 +2617,9 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 drawPreviewPoppingColours(canvas, paint, width, height);
                 break;
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                drawPreviewBlind(canvas, paint, width, height);
+                break;
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 drawPreviewWatercolor(canvas, paint, width, height);
                 break;
@@ -2496,6 +2845,32 @@ public class ControlActivity extends Activity {
             canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
                     width * rs[i] * 0.28f, paint);
         }
+    }
+
+    private void drawPreviewBlind(Canvas canvas, Paint paint, int width, int height) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        float top = height * 0.30f;
+        float bottom = height * 0.78f;
+        float centerX = width * 0.51f;
+        int columns = 12;
+        float baseWidth = width * 0.62f / columns;
+        for (int i = 0; i < columns; i++) {
+            float distance = Math.abs((i + 0.5f) - columns * 0.53f);
+            float scale = 1f + Math.max(0f, 1f - distance / 4.2f) * 0.42f;
+            float left = width * 0.19f + i * baseWidth;
+            int shade = Math.max(0, Math.min(255, Math.round(116f + scale * 54f)));
+            paint.setColor(Color.argb(225, shade, shade + 12, shade + 22));
+            canvas.save();
+            canvas.scale(scale, scale, left + baseWidth * 0.5f, (top + bottom) * 0.5f);
+            canvas.drawRect(left, top, left + baseWidth - dp(1), bottom, paint);
+            canvas.restore();
+        }
+        paint.setShader(new RadialGradient(centerX, height * 0.55f, width * 0.26f,
+                new int[] {Color.argb(120, 255, 255, 255), Color.TRANSPARENT},
+                null, Shader.TileMode.CLAMP));
+        canvas.drawCircle(centerX, height * 0.55f, width * 0.26f, paint);
+        paint.setShader(null);
     }
 
     private void drawPreviewWatercolor(Canvas canvas, Paint paint, int width, int height) {
@@ -2729,6 +3104,12 @@ public class ControlActivity extends Activity {
 
     private File colormapScreenshotFileForPreview(int effect, String profile) {
         profile = FoldDisplayTarget.normalizeProfile(profile);
+        if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
+            File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
+            return imported == null
+                    ? new File(getFilesDir(), "missing_imported_effect_background")
+                    : imported;
+        }
         File shared = OverlayPrefs.effectBackgroundFile(this, effect, profile);
         if (shared.exists() && shared.length() > 0L) {
             return shared;
@@ -2750,6 +3131,7 @@ public class ControlActivity extends Activity {
         int[] effects = {
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
+                OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
@@ -3809,6 +4191,8 @@ public class ControlActivity extends Activity {
                 return Color.rgb(66, 169, 232);
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return Color.rgb(123, 206, 92);
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                return Color.rgb(104, 164, 202);
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return Color.rgb(125, 113, 230);
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
@@ -4236,6 +4620,14 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx - unit * 0.18f, cy + unit * 0.12f, unit * 0.19f, paint);
                 canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.15f, unit * 0.16f, paint);
                 canvas.drawCircle(cx + unit * 0.19f, cy + unit * 0.23f, unit * 0.10f, paint);
+                break;
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.06f));
+                for (int i = 0; i <= 5; i++) {
+                    float x = rect.left + (rect.width() * i / 5f);
+                    canvas.drawLine(x, rect.top, x, rect.bottom, paint);
+                }
                 break;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 paint.setStyle(Paint.Style.STROKE);

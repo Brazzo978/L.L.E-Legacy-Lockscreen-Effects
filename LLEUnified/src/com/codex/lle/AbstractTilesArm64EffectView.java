@@ -39,7 +39,7 @@ import javax.microedition.khronos.opengles.GL10;
 /** Lifecycle host for LLE's standalone ARM64 reconstruction of N4 Abstract Tiles. */
 public final class AbstractTilesArm64EffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer,
-        DebugAbstractTilesCaptureRenderer {
+        DebugAbstractTilesCaptureRenderer, UnlockEffectReadiness {
     private static final String TAG = "LLE64AbstractTiles";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     /* The legacy renderer presents the 400 ms Line track at roughly 60 fps.
@@ -58,6 +58,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     private final TileRenderer tileRenderer = new TileRenderer();
     private final FrameLayout windowHost;
     private final Object bitmapLock = new Object();
+    private final Object readinessLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsNativeSlot;
@@ -86,6 +87,9 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
     private boolean dragSoundFading;
     private int debugCaptureGeneration;
+    private int readinessState = UnlockEffectReadiness.STATE_CONSTRUCTED;
+    private String readinessDetail = "constructed";
+    private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     private final Runnable animationRunnable = new Runnable() {
         @Override
@@ -147,7 +151,32 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
         if (!ownsNativeSlot) {
             Log.e(TAG, "Abstract Tiles singleton already owned; this view stays inert");
+            failReadiness("native singleton already owned");
+        } else if (!AbstractTilesNative.isAvailable()) {
+            failReadiness("native bridge unavailable");
         }
+    }
+
+    @Override
+    public int getReadinessState() {
+        synchronized (readinessLock) {
+            return readinessState;
+        }
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        synchronized (readinessLock) {
+            return readinessDetail;
+        }
+    }
+
+    @Override
+    public void setReadinessListener(UnlockEffectReadiness.ReadinessListener listener) {
+        synchronized (readinessLock) {
+            readinessListener = listener;
+        }
+        notifyReadinessListener(listener);
     }
 
     boolean isReady() {
@@ -453,6 +482,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             serial = ++backgroundSerial;
         }
         externalBackground = false;
+        invalidateResourceReadiness("background pending");
         if (paused) {
             tileRenderer.stageBackground(mapped, serial);
             return;
@@ -482,6 +512,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         }
         externalBackground = false;
         borrowedBackgroundPending = null;
+        invalidateResourceReadiness("background cleared");
         if (!canAcceptCommands()) {
             tileRenderer.clearBackgroundReference(serial);
             return;
@@ -533,12 +564,14 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         }
         super.onResume();
         paused = false;
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "resumed");
         requestRender();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "attached");
         if (paused && !destroyed) {
             onResume();
         }
@@ -553,6 +586,65 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     private boolean canAcceptCommands() {
         return !destroyed && !paused && ownsCurrentNativeSlot()
                 && AbstractTilesNative.isAvailable();
+    }
+
+    private void advanceReadiness(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == UnlockEffectReadiness.STATE_FAILED
+                    || state <= readinessState) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void setReadinessState(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == state && readinessDetail.equals(detail)) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void invalidateResourceReadiness(String detail) {
+        UnlockEffectReadiness.ReadinessListener listener = null;
+        synchronized (readinessLock) {
+            if (readinessState >= UnlockEffectReadiness.STATE_RESOURCES_READY) {
+                readinessState = UnlockEffectReadiness.STATE_SURFACE_READY;
+                readinessDetail = detail;
+                listener = readinessListener;
+            }
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void failReadiness(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_FAILED, detail);
+    }
+
+    private void markReadinessDetached(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_DETACHED, detail);
+    }
+
+    private void notifyReadinessListener(
+            UnlockEffectReadiness.ReadinessListener listener) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onReadinessChanged();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Readiness listener failed", error);
+        }
     }
 
     private boolean ownsCurrentNativeSlot() {
@@ -667,6 +759,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 }
             }
             paused = true;
+            markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             return;
         }
 
@@ -694,6 +787,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         }
         super.onPause();
         paused = true;
+        markReadinessDetached(finalDestroy ? "destroyed" : "context released");
         if (finalDestroy) {
             tileRenderer.releaseBitmapReferences();
         }
@@ -864,6 +958,8 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         private volatile boolean idle = true;
         private int contextGeneration;
         private int initializedGeneration;
+        private int initializedWidth;
+        private int initializedHeight;
         private int surfaceWidth;
         private int surfaceHeight;
 
@@ -872,6 +968,8 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             glThread = Thread.currentThread();
             ++contextGeneration;
             initializedGeneration = 0;
+            initializedWidth = 0;
+            initializedHeight = 0;
             surfaceReady = true;
             gpuReady = false;
             backgroundReady = false;
@@ -879,10 +977,13 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             initializationFailed = false;
             simulationClock.reset();
             clearTransparent();
+            setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                    "surface generation=" + contextGeneration);
 
             bridgeAvailable = ownsCurrentNativeSlot() && AbstractTilesNative.isAvailable();
             if (!bridgeAvailable) {
                 initializationFailed = true;
+                failReadiness("native bridge unavailable");
                 Log.w(TAG, "Abstract Tiles ARM64 bridge is not packaged in this build");
                 return;
             }
@@ -894,6 +995,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             } catch (Throwable error) {
                 bridgeAvailable = false;
                 initializationFailed = true;
+                failReadiness("context setup failed: " + error.getClass().getSimpleName());
                 Log.e(TAG, "Context setup failed", error);
             }
         }
@@ -905,16 +1007,28 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             if (!surfaceReady || !bridgeAvailable || width <= 0 || height <= 0) {
                 return;
             }
+            if (initializedGeneration == contextGeneration
+                    && initializedWidth == surfaceWidth
+                    && initializedHeight == surfaceHeight
+                    && gpuReady) {
+                publishResourcesReadyIfComplete();
+                return;
+            }
+            setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                    "surface resize " + surfaceWidth + "x" + surfaceHeight);
             try {
                 if (!AbstractTilesNative.nativeInitGpu(
                         surfaceWidth, surfaceHeight, lineEnabled)) {
                     initializationFailed = true;
+                    failReadiness("GLES initialization failed");
                     logNativeError("GLES init failed");
                     return;
                 }
                 gpuReady = true;
                 initializationFailed = false;
                 initializedGeneration = contextGeneration;
+                initializedWidth = surfaceWidth;
+                initializedHeight = surfaceHeight;
                 remapBackgroundForSurface(surfaceWidth, surfaceHeight);
                 lineMaskReady = !lineEnabled || (lineMask != null
                         && AbstractTilesNative.nativeUploadBitmap(
@@ -924,17 +1038,22 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                         AbstractTilesNative.TEXTURE_BACKGROUND, activeBackground);
                 if (!lineMaskReady || activeBackground != null && !backgroundReady) {
                     initializationFailed = true;
+                    failReadiness(!lineMaskReady
+                            ? "line mask upload failed" : "background upload failed");
                     logNativeError(!lineMaskReady
                             ? "Line mask upload failed" : "Background upload failed");
                     return;
                 }
                 externalBackground = backgroundReady;
+                publishResourcesReadyIfComplete();
                 idle = true;
                 simulationClock.reset();
                 clearTransparent();
             } catch (Throwable error) {
                 gpuReady = false;
                 initializationFailed = true;
+                failReadiness("surface initialization failed: "
+                        + error.getClass().getSimpleName());
                 Log.e(TAG, "Surface initialization failed", error);
             }
         }
@@ -950,6 +1069,9 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             }
             try {
                 if (AbstractTilesNative.nativeIsIdle()) {
+                    if (!drawFirstReadinessFrame()) {
+                        return;
+                    }
                     idle = true;
                     requestStopAnimation(animationGeneration);
                     return;
@@ -959,21 +1081,29 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 if (elapsedSeconds > 0.0f
                         && !AbstractTilesNative.nativeStep(elapsedSeconds)) {
                     initializationFailed = true;
+                    failReadiness("simulation step failed");
                     logNativeError("Simulation step failed");
                     return;
                 }
                 if (AbstractTilesNative.nativeIsIdle()) {
+                    if (!drawFirstReadinessFrame()) {
+                        return;
+                    }
                     idle = true;
                     requestStopAnimation(animationGeneration);
                     return;
                 }
                 if (!AbstractTilesNative.nativeDraw(surfaceWidth, surfaceHeight)) {
                     initializationFailed = true;
+                    failReadiness("transparent draw failed");
                     logNativeError("Transparent draw failed");
                     return;
                 }
+                advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
+                        "first transparent frame");
             } catch (Throwable error) {
                 initializationFailed = true;
+                failReadiness("draw failed: " + error.getClass().getSimpleName());
                 Log.e(TAG, "Draw failed", error);
             }
         }
@@ -1015,8 +1145,12 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             backgroundReady = gpuReady && AbstractTilesNative.nativeUploadBitmap(
                     AbstractTilesNative.TEXTURE_BACKGROUND, bitmap);
             externalBackground = backgroundReady;
+            if (backgroundReady) {
+                publishResourcesReadyIfComplete();
+            }
             if (!backgroundReady && gpuReady) {
                 initializationFailed = true;
+                failReadiness("background upload failed source=" + sourceName);
                 logNativeError("Background upload failed source=" + sourceName);
             }
         }
@@ -1078,7 +1212,10 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             lineMaskReady = false;
             externalBackground = false;
             initializedGeneration = 0;
+            initializedWidth = 0;
+            initializedHeight = 0;
             simulationClock.reset();
+            markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             if (finalDestroy) {
                 releaseBitmapReferences();
             }
@@ -1118,6 +1255,29 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             synchronized (bitmapLock) {
                 ownedBitmaps.add(normalized);
             }
+        }
+
+        private void publishResourcesReadyIfComplete() {
+            if (surfaceReady && gpuReady && backgroundReady
+                    && (!lineEnabled || lineMaskReady)) {
+                advanceReadiness(UnlockEffectReadiness.STATE_RESOURCES_READY,
+                        "GPU and textures ready " + surfaceWidth + "x" + surfaceHeight);
+            }
+        }
+
+        private boolean drawFirstReadinessFrame() {
+            if (getReadinessState() >= UnlockEffectReadiness.STATE_FIRST_FRAME_READY) {
+                return true;
+            }
+            if (!AbstractTilesNative.nativeDraw(surfaceWidth, surfaceHeight)) {
+                initializationFailed = true;
+                failReadiness("transparent draw failed");
+                logNativeError("Transparent draw failed");
+                return false;
+            }
+            advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
+                    "first transparent frame");
+            return true;
         }
 
         private void remapBackgroundForSurface(int width, int height) {

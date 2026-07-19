@@ -32,7 +32,8 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 
 public class ColourDropletEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer, SensorEventListener {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, SensorEventListener,
+        UnlockEffectReadiness {
     private static final String TAG = "ChargingColourDroplet";
     private static final int SAMSUNG_EFFECT_ID = 0x11;
     private static final int CMD_SET_BACKGROUND = 0;
@@ -56,6 +57,8 @@ public class ColourDropletEffectView extends FrameLayout
     private final int tapSound;
     private final int lockSound;
     private final int unlockSound;
+    private final UnlockEffectReadinessCoordinator readiness =
+            new UnlockEffectReadinessCoordinator(this, "Colour Droplet");
 
     private Object effectView;
     private View effectViewAsView;
@@ -141,6 +144,7 @@ public class ColourDropletEffectView extends FrameLayout
         } catch (Throwable t) {
             ready = false;
             cleanupSamsungState();
+            readiness.constructionFailed(t.getClass().getSimpleName());
             Log.e(TAG, "Note5 colour droplet native renderer unavailable", t);
         }
     }
@@ -155,6 +159,21 @@ public class ColourDropletEffectView extends FrameLayout
         return gyroEnabled
                 ? "N5 Colored Droplet + Gyro"
                 : "N5 Colored Droplet";
+    }
+
+    @Override
+    public int getReadinessState() {
+        return readiness.getState();
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        return readiness.getDetail();
+    }
+
+    @Override
+    public void setReadinessListener(ReadinessListener listener) {
+        readiness.setListener(listener);
     }
 
     boolean isReady() {
@@ -350,6 +369,7 @@ public class ColourDropletEffectView extends FrameLayout
         normalResourceBitmap = null;
         edgeDensityResourceBitmap = null;
         cleanupSamsungState();
+        readiness.destroyed();
         Log.i(TAG, "END colour droplet destroy");
     }
 
@@ -362,7 +382,11 @@ public class ColourDropletEffectView extends FrameLayout
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         invalidateSentBackground();
-        post(new Runnable() {
+        if (!isReady()) {
+            readiness.rendererUnavailable("Samsung Colour Droplet EffectView is not ready");
+            return;
+        }
+        readiness.attachVendor(effectViewAsView, new Runnable() {
             @Override
             public void run() {
                 warmUp();
@@ -376,6 +400,7 @@ public class ColourDropletEffectView extends FrameLayout
         sendScreenTurnedOffCommand();
         scheduleForceDirty(80L);
         invalidateSentBackground();
+        readiness.detached("Colour Droplet TextureView detached");
         super.onDetachedFromWindow();
     }
 

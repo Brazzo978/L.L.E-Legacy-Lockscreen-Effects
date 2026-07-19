@@ -393,16 +393,27 @@ rippleDistance += int(sqrt(dx*dx + dy*dy))
 previousTouch = currentTouch
 ```
 
-La soglia è **strettamente** `>150 px`. Quando viene superata:
+La soglia stock è **strettamente** `>150 px`. Nel port ARM64 viene conservata
+la densità relativa dello SM-G900F da 1080 px:
+
+```text
+runtimeThreshold = max(150, round(150 * shortSide / 1080))
+```
+
+Quindi resta 150 px sui display con lato corto fino a 1080 px e diventa 200 px
+sull'S23 a 1440 px. Quando viene superata:
 
 ```text
 rippleDistance = 0
 strength = 3 * intensity
-inject subito
-inject stessa posizione/strength dopo 20 ms
-inject stessa posizione/strength dopo 40 ms
+inject una sola volta
 play s3_ripple_up una sola volta per evento soglia
 ```
+
+La singola iniezione è confermata dai log stock sia sul GT-I9301I sia sullo
+SM-G900F. La precedente interpretazione `0/+20/+40 ms` del percorso odex
+I9300 sovrapponeva il controllo differito di long-press al trigger ripple e
+produceva tre onde non presenti sul dispositivo.
 
 Strength:
 
@@ -437,7 +448,9 @@ durata swipe PIN           = 260 ms
 cleanup/park effetto       = 900 ms
 ```
 
-La soglia host usa la distanza diretta dal punto iniziale; la soglia ripple da 150 px usa invece la somma intera dei segmenti MOVE. Sono due contatori indipendenti.
+La soglia host usa la distanza diretta dal punto iniziale; la soglia ripple
+scalata usa invece la somma intera dei segmenti MOVE. Sono due contatori
+indipendenti.
 
 ### ACTION_CANCEL
 
@@ -479,7 +492,10 @@ Gate audio:
 - finestra oraria suono effetto LLE;
 - `Settings.System[lockscreen_sounds_enabled]`.
 
-Il caricamento SoundPool è asincrono: un tocco immediato dopo la costruzione può essere silenzioso. Il pool viene rilasciato in `destroy()`.
+Il caricamento SoundPool è asincrono. L'host ARM64 aspetta ora il callback
+`OnLoadCompleteListener`: se il primo tocco arriva prima, conserva il relativo
+DOWN/UP e lo riproduce appena il sample è pronto. Il pool e gli eventi pendenti
+vengono rilasciati in `destroy()`.
 
 Dettaglio originale non replicato: `playDragSound()` sottrae 1 allo stream ID restituito, costruisce un oggetto `Thread` ma chiama `run()` sincronicamente, quindi tenta un fade in 5 step da 10 ms (`1.0→0.8→0.6→0.4→0.2→0`) bloccando il thread UI per circa 50 ms e probabilmente agendo sullo stream sbagliato. LLE conserva asset, istante e volume iniziale ma usa un one-shot SoundPool stabile. È una divergenza audio/lifecycle intenzionale, non una differenza della fisica.
 

@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.codex.lle"
-    android:versionCode="16"
-    android:versionName="1.0.2-beta.2">
+    android:versionCode="17"
+    android:versionName="1.0.3-beta.1">
 
     <uses-sdk
         android:minSdkVersion="23"
@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <application
         android:theme="@style/AppTheme"
@@ -47,6 +48,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SetupWizardActivity"
+            android:theme="@style/AppTheme"
+            android:label="L.L.E setup"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+        <activity
+            android:name=".WallpaperCropActivity"
+            android:theme="@style/AppTheme"
+            android:label="L.L.E wallpaper editor"
+            android:screenOrientation="portrait"
+            android:exported="false" />
         <activity
             android:name=".Note5NativeProbeActivity"
             android:process=":nativeprobe"

@@ -25,7 +25,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 
 public class SparklingBubblesEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "ChargingSparkling";
     private static final int SAMSUNG_EFFECT_ID = 0x0f;
     private static final int CMD_SET_BACKGROUND = 0;
@@ -49,6 +49,8 @@ public class SparklingBubblesEffectView extends FrameLayout
     private final int dragSound;
     private final int lockSound;
     private final int unlockSound;
+    private final UnlockEffectReadinessCoordinator readiness =
+            new UnlockEffectReadinessCoordinator(this, "Sparkling Bubbles");
 
     private Object effectView;
     private View effectViewAsView;
@@ -132,6 +134,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         } catch (Throwable t) {
             ready = false;
             cleanupSamsungState();
+            readiness.constructionFailed(t.getClass().getSimpleName());
             Log.e(TAG, "Note5 sparkling bubbles native renderer unavailable", t);
         }
     }
@@ -144,6 +147,21 @@ public class SparklingBubblesEffectView extends FrameLayout
     @Override
     public String effectName() {
         return "N5 Sparkling Bubbles";
+    }
+
+    @Override
+    public int getReadinessState() {
+        return readiness.getState();
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        return readiness.getDetail();
+    }
+
+    @Override
+    public void setReadinessListener(ReadinessListener listener) {
+        readiness.setListener(listener);
     }
 
     boolean isReady() {
@@ -342,6 +360,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         externalColorSource = false;
         blurMaskBitmap = null;
         cleanupSamsungState();
+        readiness.destroyed();
         Log.i(TAG, "END sparkling bubbles destroy");
     }
 
@@ -349,7 +368,11 @@ public class SparklingBubblesEffectView extends FrameLayout
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         invalidateSentBackground();
-        post(new Runnable() {
+        if (!isReady()) {
+            readiness.rendererUnavailable("Samsung Sparkling Bubbles EffectView is not ready");
+            return;
+        }
+        readiness.attachVendor(effectViewAsView, new Runnable() {
             @Override
             public void run() {
                 warmUp();
@@ -364,6 +387,7 @@ public class SparklingBubblesEffectView extends FrameLayout
         sendScreenTurnedOffCommand();
         scheduleForceDirty(80L);
         invalidateSentBackground();
+        readiness.detached("Sparkling Bubbles TextureView detached");
         super.onDetachedFromWindow();
     }
 

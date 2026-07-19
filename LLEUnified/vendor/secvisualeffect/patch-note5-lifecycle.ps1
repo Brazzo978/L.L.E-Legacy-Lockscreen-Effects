@@ -9,8 +9,8 @@ $ErrorActionPreference = "Stop"
 
 $expectedDexSha256 = "206265D2719C5223E57412871B2B778DC56A088300B52B1FEDEB548BFB7EEDB0"
 $expectedPatchedDexSha256ByPackage = @{
-    "com.codex.lle" = "34F0B18B323178760324BF65323F3BE3C262F49162D7E601973B7FC72A4F7046"
-    "com.codex.lle64" = "1323C494141F00F1B47C2B572F78EDD25E897C545FE3DB918C25C6CA91B022BF"
+    "com.codex.lle" = "9CE97D2B157A188E71EA9780B35AF72A2FB83AD1D72FD52F9A47EE3329D02AC1"
+    "com.codex.lle64" = "339A2546735F4E6A76D9BBE5BC8AD413E607F57F0347D0EBA65D4A7C7D014734"
 }
 $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
@@ -26,6 +26,7 @@ $eglChooserRelative = "com\samsung\android\visualeffect\common\GLTextureView`$Si
 $textureRendererRelative = "com\samsung\android\visualeffect\lock\common\GLTextureViewRenderer.smali"
 $watercolorRendererRelative = "com\samsung\android\visualeffect\lock\watercolor\WaterColorRenderer.smali"
 $particleEffectRelative = "com\samsung\android\visualeffect\lock\particle\ParticleEffect.smali"
+$blindEffectRelative = "com\samsung\android\visualeffect\lock\blind\BlindEffect.smali"
 
 function Run-Java([string] $MainClass, [string[]] $Arguments) {
     & $java "-cp" $javaTools $MainClass @Arguments
@@ -288,6 +289,89 @@ $particleEffect = Replace-OneLiteral `
         $particleEffect,
         [Text.UTF8Encoding]::new($false))
 
+# Blind normally redraws the complete wallpaper as 25/40 full-height ImageView strips.
+# In Samsung's keyguard that duplicate matched the wallpaper layer below it. LLE feeds a
+# lockscreen capture, so leaving neutral strips visible rewrites the live UI with the cached
+# frame. Hide strips in clearEffect() and reveal each strip atomically in the same setScale()
+# call that deforms it; the Java host also masks them as a defensive second layer.
+$blindEffectSmali = Join-Path $stage $blindEffectRelative
+if (-not (Test-Path -LiteralPath $blindEffectSmali)) {
+    throw "Missing disassembled BlindEffect: $blindEffectSmali"
+}
+$blindEffect = [IO.File]::ReadAllText($blindEffectSmali).Replace("`r`n", "`n")
+$blindClearLandscape = @'
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setColorFilter(Landroid/graphics/ColorFilter;)V
+
+    .line 474
+'@
+$blindClearLandscapeMasked = @'
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setColorFilter(Landroid/graphics/ColorFilter;)V
+
+    # LLE: a neutral strip must not expose the cached full-screen lockscreen.
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setAlpha(F)V
+
+    .line 474
+'@
+$blindEffect = Replace-OneLiteral `
+        $blindEffect `
+        $blindClearLandscape `
+        $blindClearLandscapeMasked `
+        "Blind landscape neutral alpha"
+$blindClearPortrait = @'
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setColorFilter(Landroid/graphics/ColorFilter;)V
+
+    .line 480
+'@
+$blindClearPortraitMasked = @'
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setColorFilter(Landroid/graphics/ColorFilter;)V
+
+    # LLE: a neutral strip must not expose the cached full-screen lockscreen.
+    invoke-virtual {v1, v4}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setAlpha(F)V
+
+    .line 480
+'@
+$blindEffect = Replace-OneLiteral `
+        $blindEffect `
+        $blindClearPortrait `
+        $blindClearPortraitMasked `
+        "Blind portrait neutral alpha"
+$blindScaleNeedle = @'
+    aget-object v4, v0, p1
+
+    invoke-virtual {v4, v3}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setScaleY(F)V
+
+    .line 284
+'@
+$blindScaleMasked = @'
+    aget-object v4, v0, p1
+
+    invoke-virtual {v4, v3}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setScaleY(F)V
+
+    # LLE: publish alpha in the same animator update as the scale. This removes the
+    # one-frame full-wallpaper exposure possible with an external pre-draw mask.
+    cmpl-float v5, v3, v7
+    if-eqz v5, :lle_blind_strip_transparent
+    const/high16 v5, 0x3f800000    # 1.0f
+    goto :lle_blind_strip_alpha_ready
+
+    :lle_blind_strip_transparent
+    const/4 v5, 0x0
+
+    :lle_blind_strip_alpha_ready
+    invoke-virtual {v4, v5}, Lcom/samsung/android/visualeffect/lock/blind/Blind;->setAlpha(F)V
+
+    .line 284
+'@
+$blindEffect = Replace-OneLiteral `
+        $blindEffect `
+        $blindScaleNeedle `
+        $blindScaleMasked `
+        "Blind atomic interaction alpha"
+[IO.File]::WriteAllText(
+        $blindEffectSmali,
+        $blindEffect,
+        [Text.UTF8Encoding]::new($false))
+
 # Samsung asks EGL for RGB888 with alphaSize=0. Watercolor is hosted in a
 # transparent TextureView, so its default framebuffer must actually be RGBA8888.
 $eglChooserSmali = Join-Path $stage $eglChooserRelative
@@ -427,6 +511,22 @@ if ([regex]::Matches(
         $verifiedParticleEffect,
         [regex]::Escape($particleDelayNeedle)).Count -ne 1) {
     throw "Patched dex verification failed: Popping Colours 16 ms frame pacing missing"
+}
+$verifiedBlindEffect = [IO.File]::ReadAllText(
+        (Join-Path $verifyStage $blindEffectRelative))
+foreach ($required in @(
+    "cmpl-float v5, v3, v7",
+    "Lcom/samsung/android/visualeffect/lock/blind/Blind;->setAlpha(F)V"
+)) {
+    if (-not $verifiedBlindEffect.Contains($required)) {
+        throw "Patched dex verification failed: missing Blind interaction alpha $required"
+    }
+}
+if ([regex]::Matches(
+        $verifiedBlindEffect,
+        [regex]::Escape(
+                "Lcom/samsung/android/visualeffect/lock/blind/Blind;->setAlpha(F)V")).Count -ne 3) {
+    throw "Patched dex verification failed: expected three Blind strip alpha sites"
 }
 
 $outputHash = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash

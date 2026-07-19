@@ -12,8 +12,8 @@ permanently named **L.L.E 64** (`com.codex.lle64`).
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.2-Beta-2-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
-| `LLE64-1.0.2-Beta-2-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
+| `LLE-1.0.3-Beta-1-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
+| `LLE64-1.0.3-Beta-1-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
 
 Check the supported ABIs:
 
@@ -37,6 +37,7 @@ device.
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |
 | N5 Sparkling Bubbles | Available | Available |
+| Tab S Blind | Available | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -57,13 +58,13 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 Install or update ARM32:
 
 ```shell
-adb install --no-incremental -r "LLE-1.0.1-Beta-1-32-bit.apk"
+adb install --no-incremental -r "LLE-1.0.3-Beta-1-32-bit.apk"
 ```
 
 Install or update ARM64:
 
 ```shell
-adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.3-Beta-1-64-bit.apk"
 ```
 
 Open ARM32:
@@ -83,14 +84,13 @@ separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 
 ## First-time setup
 
-1. Open the intended L.L.E. application.
-2. Tap the accessibility status badge and enable that L.L.E. service.
-3. Return to the app and enable the main switch.
-4. Open **LOCKSCREEN** and enable **Unlock effect on lockscreen**.
-5. Select an effect and wait for it to be applied.
-6. Capture the lockscreen background.
-7. Configure the touch box.
-8. Lock and wake the device, then test the saved region.
+1. Open the intended L.L.E. application and follow the first-launch wizard.
+2. Enable the matching Accessibility service when Android Settings opens.
+3. Allow unrestricted battery use, or continue with the displayed warning.
+4. Choose automatic lockscreen capture or one of the Beta direct-wallpaper modes.
+5. Select whether to run the charging doodle, lockscreen effects, or both.
+6. Return to the main screen, select an effect and configure the touch box.
+7. Lock and wake the device, then test the saved region.
 
 If both APKs are installed and Android shows two services with the same label,
 disable the current service before enabling the other one.
@@ -147,8 +147,8 @@ screenshot and touch box separately.
 - Beta effects can differ slightly across GPUs, refresh rates and Android
   versions.
 - Screenshot capture can fail on protected or unusual lockscreen surfaces.
+- Direct wallpaper import is a Beta feature and needs precise crop alignment.
 - Fold detection may require adjustment on untested models.
-- Geometric Mosaic is ARM32-only.
 - The APKs are debug-signed Beta builds, not production releases.
 
 ## Build from source
@@ -177,6 +177,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.3 Beta 1 release notes](docs/RELEASE_NOTES_1.0.3_BETA_1.md)
 - [1.0.2 Beta 2 release notes](docs/RELEASE_NOTES_1.0.2_BETA_2.md)
 - [1.0.2 Beta 1 release notes](docs/RELEASE_NOTES_1.0.2_BETA_1.md)
 - [Architecture notes](ARCHITECTURE.md)

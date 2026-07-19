@@ -24,6 +24,7 @@ import com.android.internal.policy.impl.keyguard.sec.JniWaterRippleRender;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -41,11 +42,12 @@ import javax.microedition.khronos.opengles.GL10;
  * process-global native semantics are preserved with an explicit single-owner gate.</p>
  */
 public final class S3Arm64RippleEffectView extends GLSurfaceView
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "LLE64S3Ripple";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     private static final long LONG_PRESS_RIPPLE_MS = 600L;
-    private static final int DRAG_RIPPLE_THRESHOLD_PX = 150;
+    private static final int STOCK_DRAG_RIPPLE_THRESHOLD_PX = 150;
+    private static final int STOCK_REFERENCE_SHORT_SIDE_PX = 1080;
     /* The original renderer advances the water solver once per frame and targets a 60 Hz
      * display. Keep that intended cadence on a monotonic clock so 60/120/144 Hz panels change
      * presentation smoothness only, never propagation speed. */
@@ -60,10 +62,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private final Object bitmapLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
             new IdentityHashMap<Bitmap, Boolean>());
-    private final Object moveTrailLock = new Object();
-    private final Set<Runnable> pendingMoveTrailCallbacks = Collections.newSetFromMap(
-            new IdentityHashMap<Runnable, Boolean>());
     private final Object touchSoundLock = new Object();
+    private final Object readinessLock = new Object();
 
     private volatile boolean destroyed;
     private volatile boolean paused;
@@ -76,10 +76,14 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private long backgroundSerial;
     private Runnable affordanceRunnable;
     private volatile int affordanceGeneration;
-    private int moveTrailGeneration;
     private SoundPool touchSoundPool;
     private int touchDownSoundId;
     private int touchUpSoundId;
+    private final Set<Integer> loadedTouchSoundIds = new HashSet<Integer>();
+    private final Set<Integer> pendingTouchSoundIds = new HashSet<Integer>();
+    private int readinessState = UnlockEffectReadiness.STATE_CONSTRUCTED;
+    private String readinessDetail = "constructed";
+    private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     public S3Arm64RippleEffectView(Context context) {
         super(context);
@@ -97,7 +101,32 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
         if (!ownsNativeSlot) {
             Log.e(TAG, "Water Ripple singleton already owned; this view stays inert");
+            failReadiness("native singleton already owned");
+        } else if (!S3RippleLifecycleNative.isAvailable()) {
+            failReadiness("native bridge unavailable");
         }
+    }
+
+    @Override
+    public int getReadinessState() {
+        synchronized (readinessLock) {
+            return readinessState;
+        }
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        synchronized (readinessLock) {
+            return readinessDetail;
+        }
+    }
+
+    @Override
+    public void setReadinessListener(UnlockEffectReadiness.ReadinessListener listener) {
+        synchronized (readinessLock) {
+            readinessListener = listener;
+        }
+        notifyReadinessListener(listener);
     }
 
     @Override
@@ -195,7 +224,6 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     @Override
     public void resetEffect() {
         cancelPendingAffordance();
-        cancelPendingMoveTrails();
         if (!canAcceptCommands()) {
             return;
         }
@@ -282,6 +310,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             ownedBitmaps.add(candidate);
             serial = ++backgroundSerial;
         }
+        invalidateResourceReadiness("background pending");
 
         try {
             queueEvent(new Runnable() {
@@ -304,6 +333,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             serial = ++backgroundSerial;
         }
         externalBackground = false;
+        invalidateResourceReadiness("background cleared");
         if (!canAcceptCommands()) {
             if (paused && !destroyed) {
                 rippleRenderer.clearBackgroundWhilePaused(serial);
@@ -327,7 +357,6 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         destroyed = true;
         gestureDownTimeMs = 0L;
         cancelPendingAffordance();
-        cancelPendingMoveTrails();
 
         pauseRendererBounded(true);
         recycleAllOwnedBitmaps();
@@ -348,12 +377,14 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
         super.onResume();
         paused = false;
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "resumed");
         requestRender();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "attached");
         if (paused && !destroyed) {
             onResume();
         }
@@ -367,6 +398,65 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
     private boolean canAcceptCommands() {
         return !destroyed && !paused && ownsNativeSlot;
+    }
+
+    private void advanceReadiness(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == UnlockEffectReadiness.STATE_FAILED
+                    || state <= readinessState) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void setReadinessState(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == state && readinessDetail.equals(detail)) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void invalidateResourceReadiness(String detail) {
+        UnlockEffectReadiness.ReadinessListener listener = null;
+        synchronized (readinessLock) {
+            if (readinessState >= UnlockEffectReadiness.STATE_RESOURCES_READY) {
+                readinessState = UnlockEffectReadiness.STATE_SURFACE_READY;
+                readinessDetail = detail;
+                listener = readinessListener;
+            }
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void failReadiness(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_FAILED, detail);
+    }
+
+    private void markReadinessDetached(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_DETACHED, detail);
+    }
+
+    private void notifyReadinessListener(
+            UnlockEffectReadiness.ReadinessListener listener) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onReadinessChanged();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Readiness listener failed", error);
+        }
     }
 
     private void queueTouch(
@@ -402,97 +492,67 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
     }
 
-    private void scheduleMoveTrail(
-            final float localX, final float localY, final float strength) {
-        final int generation;
-        synchronized (moveTrailLock) {
-            generation = moveTrailGeneration;
-        }
-        scheduleMoveTrailImpulse(localX, localY, strength, generation, 20L);
-        scheduleMoveTrailImpulse(localX, localY, strength, generation, 40L);
-    }
-
-    private void scheduleMoveTrailImpulse(
-            final float localX,
-            final float localY,
-            final float strength,
-            final int generation,
-            long delayMs) {
-        final Runnable callback = new Runnable() {
-            @Override
-            public void run() {
-                synchronized (moveTrailLock) {
-                    pendingMoveTrailCallbacks.remove(this);
-                    if (generation != moveTrailGeneration) {
-                        return;
-                    }
-                }
-                if (!canAcceptCommands()) {
-                    return;
-                }
-                try {
-                    queueEvent(new Runnable() {
-                        @Override
-                        public void run() {
-                            rippleRenderer.injectMoveTrail(
-                                    localX, localY, strength, generation);
-                        }
-                    });
-                    requestRender();
-                } catch (RuntimeException exception) {
-                    Log.w(TAG, "Could not queue delayed move ripple", exception);
-                }
-            }
-        };
-
-        synchronized (moveTrailLock) {
-            if (destroyed || generation != moveTrailGeneration) {
-                return;
-            }
-            pendingMoveTrailCallbacks.add(callback);
-            if (!postDelayed(callback, delayMs)) {
-                pendingMoveTrailCallbacks.remove(callback);
-            }
-        }
-    }
-
-    private void cancelPendingMoveTrails() {
-        Runnable[] callbacks;
-        synchronized (moveTrailLock) {
-            ++moveTrailGeneration;
-            callbacks = pendingMoveTrailCallbacks.toArray(
-                    new Runnable[pendingMoveTrailCallbacks.size()]);
-            pendingMoveTrailCallbacks.clear();
-        }
-        for (Runnable callback : callbacks) {
-            removeCallbacks(callback);
-        }
-    }
-
-    private boolean isMoveTrailGenerationCurrent(int generation) {
-        synchronized (moveTrailLock) {
-            return generation == moveTrailGeneration;
-        }
-    }
-
     private void initializeTouchSounds(Context context) {
+        SoundPool pool = null;
         try {
-            SoundPool pool = new SoundPool.Builder()
+            pool = new SoundPool.Builder()
                     .setMaxStreams(10)
                     .setAudioAttributes(new AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                             .build())
                     .build();
+            pool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+                @Override
+                public void onLoadComplete(
+                        SoundPool completedPool, int sampleId, int status) {
+                    onTouchSoundLoadComplete(completedPool, sampleId, status);
+                }
+            });
+            synchronized (touchSoundLock) {
+                touchSoundPool = pool;
+                loadedTouchSoundIds.clear();
+                pendingTouchSoundIds.clear();
+            }
             int downId = pool.load(context, R.raw.s3_ripple_down, 1);
             int upId = pool.load(context, R.raw.s3_ripple_up, 1);
             synchronized (touchSoundLock) {
-                touchSoundPool = pool;
                 touchDownSoundId = downId;
                 touchUpSoundId = upId;
             }
         } catch (RuntimeException exception) {
+            if (pool != null) {
+                pool.release();
+            }
+            synchronized (touchSoundLock) {
+                touchSoundPool = null;
+                touchDownSoundId = 0;
+                touchUpSoundId = 0;
+                loadedTouchSoundIds.clear();
+                pendingTouchSoundIds.clear();
+            }
             Log.w(TAG, "Could not initialize original Ripple touch sounds", exception);
+        }
+    }
+
+    private void onTouchSoundLoadComplete(
+            SoundPool completedPool, int sampleId, int status) {
+        synchronized (touchSoundLock) {
+            if (completedPool != touchSoundPool) {
+                return;
+            }
+            if (status != 0) {
+                pendingTouchSoundIds.remove(sampleId);
+                Log.w(TAG, "Ripple touch sound load failed id=" + sampleId
+                        + " status=" + status);
+                return;
+            }
+            loadedTouchSoundIds.add(sampleId);
+            if (pendingTouchSoundIds.remove(sampleId)
+                    && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())
+                    && systemLockSoundsEnabled()) {
+                playLoadedTouchSoundLocked(completedPool, sampleId, "deferred");
+            }
         }
     }
 
@@ -503,9 +563,30 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
         synchronized (touchSoundLock) {
             int soundId = down ? touchDownSoundId : touchUpSoundId;
-            if (touchSoundPool != null && soundId != 0) {
-                touchSoundPool.play(soundId, 1.0f, 1.0f, 0, 0, 1.0f);
+            if (touchSoundPool == null || soundId == 0) {
+                Log.w(TAG, "Ripple touch sound unavailable source="
+                        + (down ? "down" : "up"));
+                return;
             }
+            if (!loadedTouchSoundIds.contains(soundId)) {
+                pendingTouchSoundIds.add(soundId);
+                Log.d(TAG, "Ripple touch sound queued until load source="
+                        + (down ? "down" : "up"));
+                return;
+            }
+            playLoadedTouchSoundLocked(
+                    touchSoundPool, soundId, down ? "down" : "up");
+        }
+    }
+
+    private void playLoadedTouchSoundLocked(
+            SoundPool pool, int soundId, String source) {
+        int streamId = pool.play(soundId, 1.0f, 1.0f, 0, 0, 1.0f);
+        if (streamId == 0) {
+            Log.w(TAG, "Ripple touch sound play rejected source=" + source);
+        } else {
+            Log.d(TAG, "Ripple touch sound played source=" + source
+                    + " stream=" + streamId);
         }
     }
 
@@ -521,11 +602,14 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private void releaseTouchSounds() {
         synchronized (touchSoundLock) {
             if (touchSoundPool != null) {
+                touchSoundPool.setOnLoadCompleteListener(null);
                 touchSoundPool.release();
                 touchSoundPool = null;
             }
             touchDownSoundId = 0;
             touchUpSoundId = 0;
+            loadedTouchSoundIds.clear();
+            pendingTouchSoundIds.clear();
         }
     }
 
@@ -639,6 +723,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
         super.onPause();
         paused = true;
+        markReadinessDetached(finalDestroy ? "destroyed" : "context released");
         if (finalDestroy) {
             rippleRenderer.releaseBitmapReferences();
         }
@@ -813,9 +898,12 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             simulationClock.reset();
 
             clearTransparent();
+            setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                    "surface generation=" + contextGeneration);
             nativeBridgeAvailable = ownsNativeSlot && S3RippleLifecycleNative.isAvailable();
             if (!nativeBridgeAvailable) {
                 initializationFailed = true;
+                failReadiness("native bridge unavailable");
                 Log.w(TAG, "Full Water Ripple GLES bridge is not packaged in this build");
                 return;
             }
@@ -839,6 +927,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 nativeBridgeAvailable = false;
                 meshInitialized = false;
                 initializationFailed = true;
+                failReadiness("context setup failed: " + throwable.getClass().getSimpleName());
                 Log.e(TAG, "Water Ripple context setup failed", throwable);
             }
         }
@@ -856,8 +945,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             if (initializedGeneration == contextGeneration
                     && initializedWidth == width && initializedHeight == height
                     && gpuReady) {
+                publishResourcesReadyIfComplete();
                 return;
             }
+            setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                    "surface resize " + width + "x" + height);
 
             try {
                 // A same-context resize gets a full, bounded rebuild. A new context was already
@@ -871,6 +963,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 waterTextureLoaded = false;
                 if (!S3RippleLifecycleNative.nativeInitGpu()) {
                     initializationFailed = true;
+                    failReadiness("GLES initialization failed");
                     logNativeError("GLES init failed");
                     return;
                 }
@@ -884,13 +977,27 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 waterTextureLoaded = uploadWaterTexture();
                 backgroundTextureLoaded = uploadActiveBackground();
                 externalBackground = backgroundTextureLoaded;
+                if (!waterTextureLoaded) {
+                    initializationFailed = true;
+                    failReadiness("reflection texture upload failed");
+                    return;
+                }
+                if (activeBackground != null && !backgroundTextureLoaded) {
+                    initializationFailed = true;
+                    failReadiness("background texture upload failed");
+                    return;
+                }
+                publishResourcesReadyIfComplete();
                 drawCount = 0;
                 simulationClock.reset();
                 Log.i(TAG, "surface initialized generation=" + contextGeneration
-                        + " size=" + width + "x" + height);
+                        + " size=" + width + "x" + height
+                        + " dragThreshold=" + dragRippleThresholdPx());
             } catch (Throwable throwable) {
                 gpuReady = false;
                 initializationFailed = true;
+                failReadiness("surface init failed: "
+                        + throwable.getClass().getSimpleName());
                 Log.e(TAG, "Water Ripple surface init failed", throwable);
             }
         }
@@ -938,8 +1045,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     }
                     gpuReady = false;
                     initializationFailed = true;
+                    failReadiness("transparent draw failed");
                     return;
                 }
+                advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
+                        "first transparent frame");
 
                 // The original advances move() once per frame against a 60 Hz target. Decouple
                 // that cadence from 60/120/144 Hz presentation while retaining draw-before-move.
@@ -959,6 +1069,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             } catch (Throwable throwable) {
                 gpuReady = false;
                 initializationFailed = true;
+                failReadiness("frame failed: " + throwable.getClass().getSimpleName());
                 Log.e(TAG, "Water Ripple frame failed", throwable);
             }
         }
@@ -992,6 +1103,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 activeBackground = candidate;
                 backgroundTextureLoaded = true;
                 externalBackground = true;
+                publishResourcesReadyIfComplete();
                 if (previous != null && previous != candidate) {
                     recycleOwnedBitmap(previous);
                 }
@@ -1003,6 +1115,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                         && S3RippleLifecycleNative.nativeUploadBitmap(
                         S3RippleLifecycleNative.TEXTURE_BACKGROUND, previous);
                 externalBackground = backgroundTextureLoaded;
+                failReadiness("background upload failed");
                 logNativeError("background upload failed");
             }
         }
@@ -1067,11 +1180,10 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     rippleDistance += (int) Math.sqrt(dx * dx + dy * dy);
                     previousTouchX = localX;
                     previousTouchY = localY;
-                    if (rippleDistance > DRAG_RIPPLE_THRESHOLD_PX) {
+                    if (rippleDistance > dragRippleThresholdPx()) {
                         rippleDistance = 0;
                         float trailStrength = 3.0f * currentIntensity();
                         inject(localX, localY, trailStrength);
-                        scheduleMoveTrail(localX, localY, trailStrength);
                         playTouchSound(false);
                     }
                     break;
@@ -1120,19 +1232,6 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             inject(localX, localY, 4.0f * currentIntensity());
         }
 
-        void injectMoveTrail(
-                float localX, float localY, float strength, int generation) {
-            if (!meshInitialized || destroyed
-                    || !isMoveTrailGenerationCurrent(generation)) {
-                return;
-            }
-            if (simulationIdle) {
-                simulationClock.reset();
-            }
-            simulationIdle = false;
-            inject(localX, localY, strength);
-        }
-
         void resetSimulation() {
             Arrays.fill(heights, 0.0f);
             Arrays.fill(velocity, 0.0f);
@@ -1177,6 +1276,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             glTouched = false;
             simulationIdle = true;
             simulationClock.reset();
+            markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             if (finalDestroy) {
                 releaseBitmapReferences();
             }
@@ -1189,6 +1289,14 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             waterBitmap = null;
             recycleOwnedBitmap(background);
             recycleOwnedBitmap(water);
+        }
+
+        private void publishResourcesReadyIfComplete() {
+            if (surfaceReady && gpuReady && meshInitialized
+                    && backgroundTextureLoaded && waterTextureLoaded) {
+                advanceReadiness(UnlockEffectReadiness.STATE_RESOURCES_READY,
+                        "GPU and textures ready " + surfaceWidth + "x" + surfaceHeight);
+            }
         }
 
         private void stepSimulation() {
@@ -1253,6 +1361,20 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
         private float currentIntensity() {
             return surfaceWidth > surfaceHeight ? LANDSCAPE_INTENSITY : PORTRAIT_INTENSITY;
+        }
+
+        private int dragRippleThresholdPx() {
+            int shortSide = Math.min(surfaceWidth, surfaceHeight);
+            if (shortSide <= 0) {
+                return STOCK_DRAG_RIPPLE_THRESHOLD_PX;
+            }
+            int scaled = Math.round(
+                    STOCK_DRAG_RIPPLE_THRESHOLD_PX
+                            * (shortSide / (float) STOCK_REFERENCE_SHORT_SIDE_PX));
+            // Preserve Samsung's literal 150 px minimum on lower-resolution and cover displays,
+            // while preventing high-resolution panels from producing denser drag ripples than
+            // the 1080 px SM-G900F stock oracle.
+            return Math.max(STOCK_DRAG_RIPPLE_THRESHOLD_PX, scaled);
         }
 
         private boolean uploadActiveBackground() {

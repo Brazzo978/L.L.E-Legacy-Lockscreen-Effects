@@ -22,7 +22,7 @@ import java.util.concurrent.locks.LockSupport;
 
 /** Hosts Samsung's WaterColor Java shell with LLE64's reconstructed ARM64 engine. */
 public final class WatercolorNativeEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "ChargingWaterNative";
     private static final int EFFECT_ID = 5;
     private static final int CMD_SET_BACKGROUND = 0;
@@ -36,6 +36,8 @@ public final class WatercolorNativeEffectView extends FrameLayout
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
+    private final UnlockEffectReadinessCoordinator readiness =
+            new UnlockEffectReadinessCoordinator(this, "Watercolor");
 
     private Object effectView;
     private View effectViewAsView;
@@ -82,6 +84,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
+            readiness.constructionFailed(t.getClass().getSimpleName());
             Log.e(TAG, "original Watercolor renderer unavailable", t);
         }
     }
@@ -98,6 +101,21 @@ public final class WatercolorNativeEffectView extends FrameLayout
     @Override
     public String effectName() {
         return "N3 Watercolor";
+    }
+
+    @Override
+    public int getReadinessState() {
+        return readiness.getState();
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        return readiness.getDetail();
+    }
+
+    @Override
+    public void setReadinessListener(ReadinessListener listener) {
+        readiness.setListener(listener);
     }
 
     @Override
@@ -253,18 +271,29 @@ public final class WatercolorNativeEffectView extends FrameLayout
         }
         soundPool.release();
         releaseBackgroundBitmap();
+        readiness.destroyed();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        post(new Runnable() {
+        if (!isReady()) {
+            readiness.rendererUnavailable("Samsung Watercolor EffectView is not ready");
+            return;
+        }
+        readiness.attachVendor(effectViewAsView, new Runnable() {
             @Override
             public void run() {
                 makeTransparent(effectViewAsView);
                 warmUp();
             }
         });
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        readiness.detached("Watercolor TextureView detached");
+        super.onDetachedFromWindow();
     }
 
     private void createSamsungEffect(Context context) throws Exception {

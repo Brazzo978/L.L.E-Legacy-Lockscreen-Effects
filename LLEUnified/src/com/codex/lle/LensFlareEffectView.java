@@ -26,7 +26,7 @@ import android.widget.FrameLayout;
 import java.util.Random;
 
 public class LensFlareEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "ChargingS4LensFlare";
     private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
     private static final long FOG_ON_DURATION_MS = 100L;
@@ -91,6 +91,8 @@ public class LensFlareEffectView extends FrameLayout
     private final int tapSound;
     private final int unlockSound;
     private final FlareContentView flareContentView;
+    private final UnlockEffectReadinessCoordinator readiness =
+            new UnlockEffectReadinessCoordinator(this, "Lens Flare");
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
     private String backgroundSource = "none";
@@ -194,6 +196,21 @@ public class LensFlareEffectView extends FrameLayout
     @Override
     public String effectName() {
         return "S4 lens flare";
+    }
+
+    @Override
+    public int getReadinessState() {
+        return readiness.getState();
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        return readiness.getDetail();
+    }
+
+    @Override
+    public void setReadinessListener(ReadinessListener listener) {
+        readiness.setListener(listener);
     }
 
     @Override
@@ -363,6 +380,7 @@ public class LensFlareEffectView extends FrameLayout
         destroyed = true;
         clearBackgroundSourceBitmap();
         soundPool.release();
+        readiness.destroyed();
     }
 
     @Override
@@ -370,12 +388,14 @@ public class LensFlareEffectView extends FrameLayout
         resetEffect();
         warmUpPending = false;
         warmedUp = false;
+        readiness.detached("HWUI layer detached");
         super.onDetachedFromWindow();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        readiness.attachCanvas();
         post(new Runnable() {
             @Override
             public void run() {
@@ -424,6 +444,7 @@ public class LensFlareEffectView extends FrameLayout
             drawWarmUpFrame(canvas);
             warmUpPending = false;
             warmedUp = true;
+            readiness.canvasWarmFrameDrawn();
             Log.i(TAG, "canvas lens flare warmed");
         }
 

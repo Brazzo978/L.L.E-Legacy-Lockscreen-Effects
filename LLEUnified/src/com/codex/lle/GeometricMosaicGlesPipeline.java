@@ -356,6 +356,26 @@ public final class GeometricMosaicGlesPipeline {
         return initialized;
     }
 
+    /** Drops names from a lost EGL context without issuing deletes in the replacement context. */
+    public void abandon() {
+        maskProgram = null;
+        circle3Program = null;
+        circle2Program = null;
+        blurProgram = null;
+        finalProgram = null;
+        maskTarget = null;
+        circle3Target = null;
+        circle2Target = null;
+        blurTarget = null;
+        backgroundTexture = 0;
+        originNoiseTexture = 0;
+        circle3Mesh = null;
+        circle2Mesh = null;
+        initialized = false;
+        backgroundReady = false;
+        blurDirty = false;
+    }
+
     public void release() {
         deleteProgram(maskProgram);
         deleteProgram(circle3Program);

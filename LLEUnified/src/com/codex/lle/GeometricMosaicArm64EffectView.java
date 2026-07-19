@@ -48,7 +48,8 @@ import javax.microedition.khronos.opengles.GL10;
  * GLES2 that is available on modern 64-bit-only devices.
  */
 public final class GeometricMosaicArm64EffectView extends GLSurfaceView
-        implements UnlockEffectRenderer, BackgroundSourceRenderer, DebugFrameCaptureRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, DebugFrameCaptureRenderer,
+        UnlockEffectReadiness {
     private static final String TAG = "LLE64GeometricMosaic";
     private static final long FRAME_INTERVAL_MS = 33L;
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
@@ -64,6 +65,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
     private final MosaicRenderer mosaicRenderer = new MosaicRenderer();
     private final FrameLayout windowHost;
     private final Object bitmapLock = new Object();
+    private final Object readinessLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsRenderer;
@@ -90,6 +92,9 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
     private float dragSoundVolume = 1.0f;
     private float dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
     private boolean dragSoundFading;
+    private int readinessState = UnlockEffectReadiness.STATE_CONSTRUCTED;
+    private String readinessDetail = "constructed";
+    private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     private final Runnable dragSoundFadeRunnable = new Runnable() {
         @Override
@@ -145,7 +150,30 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
 
         if (!ownsRenderer) {
             Log.e(TAG, "Geometric Mosaic singleton already owned; this view stays inert");
+            failReadiness("renderer singleton already owned");
         }
+    }
+
+    @Override
+    public int getReadinessState() {
+        synchronized (readinessLock) {
+            return readinessState;
+        }
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        synchronized (readinessLock) {
+            return readinessDetail;
+        }
+    }
+
+    @Override
+    public void setReadinessListener(UnlockEffectReadiness.ReadinessListener listener) {
+        synchronized (readinessLock) {
+            readinessListener = listener;
+        }
+        notifyReadinessListener(listener);
     }
 
     boolean isReady() {
@@ -392,6 +420,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             serial = ++backgroundSerial;
         }
         externalBackground = false;
+        invalidateResourceReadiness("background pending");
         if (paused) {
             mosaicRenderer.stageBackground(mapped, serial);
             return;
@@ -419,6 +448,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         }
         externalBackground = false;
         borrowedBackgroundPending = null;
+        invalidateResourceReadiness("background cleared");
         if (!canAcceptCommands()) {
             mosaicRenderer.clearBackgroundReference(serial);
             return;
@@ -468,7 +498,17 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         }
         super.onResume();
         paused = false;
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "resumed");
         requestRender();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        advanceReadiness(UnlockEffectReadiness.STATE_ATTACHED, "attached");
+        if (paused && !destroyed) {
+            onResume();
+        }
     }
 
     @Override
@@ -483,6 +523,65 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
 
     private boolean canAcceptCommands() {
         return !destroyed && !paused && ownsCurrentRenderer();
+    }
+
+    private void advanceReadiness(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == UnlockEffectReadiness.STATE_FAILED
+                    || state <= readinessState) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void setReadinessState(int state, String detail) {
+        UnlockEffectReadiness.ReadinessListener listener;
+        synchronized (readinessLock) {
+            if (readinessState == state && readinessDetail.equals(detail)) {
+                return;
+            }
+            readinessState = state;
+            readinessDetail = detail;
+            listener = readinessListener;
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void invalidateResourceReadiness(String detail) {
+        UnlockEffectReadiness.ReadinessListener listener = null;
+        synchronized (readinessLock) {
+            if (readinessState >= UnlockEffectReadiness.STATE_RESOURCES_READY) {
+                readinessState = UnlockEffectReadiness.STATE_SURFACE_READY;
+                readinessDetail = detail;
+                listener = readinessListener;
+            }
+        }
+        notifyReadinessListener(listener);
+    }
+
+    private void failReadiness(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_FAILED, detail);
+    }
+
+    private void markReadinessDetached(String detail) {
+        setReadinessState(UnlockEffectReadiness.STATE_DETACHED, detail);
+    }
+
+    private void notifyReadinessListener(
+            UnlockEffectReadiness.ReadinessListener listener) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onReadinessChanged();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Readiness listener failed", error);
+        }
     }
 
     private boolean canRenderEffect() {
@@ -563,6 +662,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
                 mosaicRenderer.releaseBitmapReferences();
             }
             paused = true;
+            markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             return;
         }
         final CountDownLatch released = new CountDownLatch(1);
@@ -588,6 +688,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         }
         super.onPause();
         paused = true;
+        markReadinessDetached(finalDestroy ? "destroyed" : "context released");
         if (finalDestroy) {
             mosaicRenderer.releaseBitmapReferences();
         }
@@ -766,6 +867,10 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         private boolean surfaceReady;
         private boolean backgroundReady;
         private boolean held;
+        private int contextGeneration;
+        private int initializedGeneration;
+        private int initializedWidth;
+        private int initializedHeight;
         private int width = 1;
         private int height = 1;
         private int program;
@@ -801,17 +906,18 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             glThread = Thread.currentThread();
+            ++contextGeneration;
+            initializedGeneration = 0;
+            initializedWidth = 0;
+            initializedHeight = 0;
             surfaceReady = true;
             initializationFailed = false;
             backgroundReady = false;
             previousFrameNs = Long.MIN_VALUE;
+            exactPipeline.abandon();
             clearTransparent();
-            try {
-                exactPipeline.initialize(width, height);
-            } catch (RuntimeException error) {
-                initializationFailed = true;
-                Log.e(TAG, "Geometric Mosaic multipass initialization failed", error);
-            }
+            setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                    "surface generation=" + contextGeneration);
         }
 
         @Override
@@ -819,19 +925,41 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             width = Math.max(1, surfaceWidth);
             height = Math.max(1, surfaceHeight);
             GLES20.glViewport(0, 0, width, height);
-            remapBackgroundForSurface(width, height);
-            if (!initializationFailed) {
+            if (!surfaceReady || surfaceWidth <= 0 || surfaceHeight <= 0) {
+                return;
+            }
+            boolean needsInitialization = initializedGeneration != contextGeneration
+                    || initializedWidth != width
+                    || initializedHeight != height
+                    || !exactPipeline.isInitialized();
+            if (needsInitialization) {
+                setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
+                        "surface resize " + width + "x" + height);
                 try {
-                    exactPipeline.resize(width, height);
+                    exactPipeline.initialize(width, height);
+                    initializedGeneration = contextGeneration;
+                    initializedWidth = width;
+                    initializedHeight = height;
+                    backgroundReady = false;
                 } catch (RuntimeException error) {
                     initializationFailed = true;
-                    Log.e(TAG, "Geometric Mosaic multipass resize failed", error);
+                    failReadiness("multipass initialization failed: "
+                            + error.getClass().getSimpleName());
+                    Log.e(TAG, "Geometric Mosaic multipass initialization failed", error);
+                    return;
                 }
             }
-            if (!initializationFailed && activeBackground != null) {
+            remapBackgroundForSurface(width, height);
+            if (!initializationFailed && activeBackground != null && !backgroundReady) {
                 backgroundReady = uploadBackground(activeBackground);
                 externalBackground = backgroundReady;
+                if (!backgroundReady) {
+                    initializationFailed = true;
+                    failReadiness("background upload failed");
+                    return;
+                }
             }
+            publishResourcesReadyIfComplete();
         }
 
         @Override
@@ -845,6 +973,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             previousFrameNs = now;
             try {
                 boolean needsMoreFrames = exactPipeline.render(now);
+                advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
+                        "first transparent frame");
                 idle = !needsMoreFrames;
                 if (idle) {
                     requestStopAnimation(animationGeneration);
@@ -853,6 +983,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
                 initializationFailed = true;
                 idle = true;
                 clearTransparent();
+                failReadiness("multipass draw failed: "
+                        + error.getClass().getSimpleName());
                 Log.e(TAG, "Geometric Mosaic multipass render failed", error);
             }
         }
@@ -930,8 +1062,12 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             }
             backgroundReady = exactPipeline.isInitialized() && uploadBackground(bitmap);
             externalBackground = backgroundReady;
+            if (backgroundReady) {
+                publishResourcesReadyIfComplete();
+            }
             if (!backgroundReady && exactPipeline.isInitialized()) {
                 initializationFailed = true;
+                failReadiness("background upload failed source=" + sourceName);
                 Log.e(TAG, "Background upload failed source=" + sourceName);
             }
         }
@@ -992,7 +1128,11 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             surfaceReady = false;
             backgroundReady = false;
             externalBackground = false;
+            initializedGeneration = 0;
+            initializedWidth = 0;
+            initializedHeight = 0;
             previousFrameNs = Long.MIN_VALUE;
+            markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             if (finalDestroy) {
                 releaseBitmapReferences();
             }
@@ -1002,6 +1142,13 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             Bitmap previous = activeBackground;
             activeBackground = null;
             recycleOwnedBitmap(previous);
+        }
+
+        private void publishResourcesReadyIfComplete() {
+            if (surfaceReady && exactPipeline.isInitialized() && backgroundReady) {
+                advanceReadiness(UnlockEffectReadiness.STATE_RESOURCES_READY,
+                        "GPU and background ready " + width + "x" + height);
+            }
         }
 
         private void addPulse(float x, float y, float kind, float start) {

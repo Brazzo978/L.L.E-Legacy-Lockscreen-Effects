@@ -9,7 +9,7 @@ Port app-owned dell'effetto S3 Water Ripple, integrato nell'APK ARM64 e selezion
 - Output Android premoltiplicato e trasparente fuori dall'onda, senza coprire la SystemUI.
 - Simulazione a 60 Hz indipendente dal refresh 60/120/144 Hz, con ordine draw-before-move Samsung.
 - Bounds solver S3 letterali: portrait `3,21,101,83`, landscape `21,3,83,101`.
-- Gesture originali: down `4x`, drag oltre 150 px con tre impulsi `3x` a `0/+20/+40 ms`, long-up oltre 600 ms `4x`.
+- Gesture stock validate su GT-I9301I e SM-G900F: down `4x`, un solo impulso drag `3x` oltre 150 px stock, long-up oltre 600 ms `4x`. Sui pannelli oltre 1080 px la soglia ARM64 viene scalata sul lato corto per conservare la stessa densità relativa di eventi.
 - Suoni originali `s3_ripple_down/up`, affordance silenzioso, input multi-touch soppresso e riallineato senza un secondo down artificiale.
 - Bridge JNI lifecycle, screenshot/background ownership, context recreation e cleanup bounded.
 - Build AArch64 senza STLport o altre runtime C++ legacy.

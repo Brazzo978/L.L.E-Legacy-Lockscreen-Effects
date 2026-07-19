@@ -19,7 +19,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 
 public class PoppingColoursEffectView extends FrameLayout
-        implements UnlockEffectRenderer, BackgroundSourceRenderer {
+        implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "ChargingS5Popping";
     private static final int SAMSUNG_EFFECT_ID = 3;
     private static final int CMD_SET_BACKGROUND = 0;
@@ -33,6 +33,8 @@ public class PoppingColoursEffectView extends FrameLayout
     private final int tapSound;
     private final int dragSound;
     private final int unlockSound;
+    private final UnlockEffectReadinessCoordinator readiness =
+            new UnlockEffectReadinessCoordinator(this, "Popping Colours");
 
     private Object effectView;
     private View effectViewAsView;
@@ -80,6 +82,7 @@ public class PoppingColoursEffectView extends FrameLayout
                     + (SystemClock.uptimeMillis() - startedAt));
         } catch (Throwable t) {
             ready = false;
+            readiness.constructionFailed(t.getClass().getSimpleName());
             Log.e(TAG, "S5 popping colours Samsung renderer unavailable", t);
         }
     }
@@ -92,6 +95,21 @@ public class PoppingColoursEffectView extends FrameLayout
     @Override
     public String effectName() {
         return "S5 popping colours";
+    }
+
+    @Override
+    public int getReadinessState() {
+        return readiness.getState();
+    }
+
+    @Override
+    public String getReadinessDetail() {
+        return readiness.getDetail();
+    }
+
+    @Override
+    public void setReadinessListener(ReadinessListener listener) {
+        readiness.setListener(listener);
     }
 
     @Override
@@ -272,17 +290,28 @@ public class PoppingColoursEffectView extends FrameLayout
         handleCustomEvent = null;
         clearScreen = null;
         removeEffect = null;
+        readiness.destroyed();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        post(new Runnable() {
+        if (!canRender()) {
+            readiness.rendererUnavailable("Samsung EffectView is not ready");
+            return;
+        }
+        readiness.attachVendor(effectViewAsView, new Runnable() {
             @Override
             public void run() {
                 warmUp();
             }
         });
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        readiness.detached("vendor window layer detached");
+        super.onDetachedFromWindow();
     }
 
     private void createSamsungEffect(Context context) throws Exception {
