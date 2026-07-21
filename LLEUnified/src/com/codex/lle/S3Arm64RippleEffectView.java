@@ -48,9 +48,9 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final long LONG_PRESS_RIPPLE_MS = 600L;
     private static final int STOCK_DRAG_RIPPLE_THRESHOLD_PX = 150;
     private static final int STOCK_REFERENCE_SHORT_SIDE_PX = 1080;
-    /* The original renderer advances the water solver once per frame and targets a 60 Hz
-     * display. Keep that intended cadence on a monotonic clock so 60/120/144 Hz panels change
-     * presentation smoothness only, never propagation speed. */
+    /* The original renderer advances the solver once per frame and targets a 60 Hz display.
+     * Keep that intended cadence on a monotonic clock so faster panels change presentation
+     * smoothness only, never propagation speed. */
     private static final int SIMULATION_HZ = 60;
     private static final int MAX_SIMULATION_STEPS_PER_FRAME = 4;
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
@@ -58,6 +58,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final AtomicReference<S3Arm64RippleEffectView> NATIVE_OWNER =
             new AtomicReference<>();
 
+    private final boolean inkMode;
     private final RippleRenderer rippleRenderer = new RippleRenderer();
     private final Object bitmapLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
@@ -86,7 +87,12 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     public S3Arm64RippleEffectView(Context context) {
+        this(context, false);
+    }
+
+    S3Arm64RippleEffectView(Context context, boolean inkMode) {
         super(context);
+        this.inkMode = inkMode;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -100,7 +106,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         initializeTouchSounds(context);
 
         if (!ownsNativeSlot) {
-            Log.e(TAG, "Water Ripple singleton already owned; this view stays inert");
+            Log.e(TAG, effectName() + " singleton already owned; this view stays inert");
             failReadiness("native singleton already owned");
         } else if (!S3RippleLifecycleNative.isAvailable()) {
             failReadiness("native bridge unavailable");
@@ -136,11 +142,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
     @Override
     public String effectName() {
-        return "S3 Water Ripple ARM64";
+        return inkMode ? "N4 Ink in Water ARM64" : "S3 Water Ripple ARM64";
     }
 
     /**
-     * True when this view owns the process singleton and the complete v2 native overlay bridge
+     * True when this view owns the process singleton and the complete v3 native overlay bridge
      * can be called. Asynchronous GL setup/render failures make subsequent checks return false.
      */
     boolean isReady() {
@@ -839,6 +845,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         private static final float FRESNEL_RATIO = 0.1f;
         private static final float SPECULAR_RATIO = 0.5f;
         private static final float EXPONENT_RATIO = 20.0f;
+        private static final int INDIGO_PERSISTENCE_FRAMES = 180;
 
         private final float[] vertices = new float[SURFACE_WIDTH * SURFACE_HEIGHT * 3];
         private final short[] indices = new short[
@@ -879,6 +886,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         private int rippleDistance;
         private long activeDownTimeMs;
         private long lastTouchEventTimeMs;
+        private int inkFramesRemaining;
+        private int inkDragMode;
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -968,6 +977,12 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     return;
                 }
                 nativeGpuInitialized = true;
+                if (inkMode && !S3RippleLifecycleNative.nativeInitInk(width, height)) {
+                    initializationFailed = true;
+                    failReadiness("Indigo density initialization failed");
+                    logNativeError("Indigo density init failed");
+                    return;
+                }
                 gpuReady = true;
                 initializationFailed = false;
                 initializedGeneration = contextGeneration;
@@ -1020,7 +1035,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 int renderMeshHeight = landscape
                         ? Math.max(1, (int) (MESH_HEIGHT * bitmapRatio)) : MESH_HEIGHT;
 
-                boolean rendered = S3RippleLifecycleNative.nativeRenderNormal(
+                boolean rendered = S3RippleLifecycleNative.nativeRender(
+                        inkMode,
                         vertices,
                         gpuHeights,
                         indices,
@@ -1051,8 +1067,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent frame");
 
-                // The original advances move() once per frame against a 60 Hz target. Decouple
-                // that cadence from 60/120/144 Hz presentation while retaining draw-before-move.
+                // Preserve the original 60 Hz solver cadence while presentation follows the panel.
                 int simulationSteps = simulationClock.advance(System.nanoTime());
                 if (drawCount > 0 && !simulationIdle) {
                     for (int step = 0; step < simulationSteps; ++step) {
@@ -1168,6 +1183,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     previousTouchX = localX;
                     previousTouchY = localY;
                     rippleDistance = 0;
+                    inkDragMode = 0;
+                    injectInk(localX, localY, localX, localY, 0);
                     inject(localX, localY, 4.0f * currentIntensity());
                     playTouchSound(true);
                     break;
@@ -1175,11 +1192,15 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     if (!glTouched) {
                         break;
                     }
-                    float dx = localX - previousTouchX;
-                    float dy = localY - previousTouchY;
+                    float oldTouchX = previousTouchX;
+                    float oldTouchY = previousTouchY;
+                    float dx = localX - oldTouchX;
+                    float dy = localY - oldTouchY;
                     rippleDistance += (int) Math.sqrt(dx * dx + dy * dy);
                     previousTouchX = localX;
                     previousTouchY = localY;
+                    inkDragMode = 2;
+                    injectInk(localX, localY, oldTouchX, oldTouchY, 2);
                     if (rippleDistance > dragRippleThresholdPx()) {
                         rippleDistance = 0;
                         float trailStrength = 3.0f * currentIntensity();
@@ -1188,16 +1209,24 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     }
                     break;
                 case MotionEvent.ACTION_UP:
+                    if (glTouched) {
+                        injectInk(localX, localY, previousTouchX, previousTouchY, 1);
+                    }
                     if (glTouched && eventTimeMs - activeDownTimeMs > LONG_PRESS_RIPPLE_MS) {
                         inject(localX, localY, 4.0f * currentIntensity());
                         playTouchSound(true);
                     }
                     glTouched = false;
+                    inkDragMode = 0;
                     activeDownTimeMs = 0L;
                     rippleDistance = 0;
                     break;
                 case MotionEvent.ACTION_CANCEL:
+                    if (glTouched) {
+                        injectInk(localX, localY, previousTouchX, previousTouchY, 3);
+                    }
                     glTouched = false;
+                    inkDragMode = 0;
                     activeDownTimeMs = 0L;
                     rippleDistance = 0;
                     break;
@@ -1229,6 +1258,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 simulationClock.reset();
             }
             simulationIdle = false;
+            injectInk(localX, localY, localX, localY, 0);
+            /* An affordance is a bounded synthetic tap, not a held finger.
+             * Close it explicitly so Indigo's long-press continuation cannot
+             * keep feeding density after the hint animation has finished. */
+            injectInk(localX, localY, localX, localY, 1);
             inject(localX, localY, 4.0f * currentIntensity());
         }
 
@@ -1239,6 +1273,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             glTouched = false;
             rippleDistance = 0;
             activeDownTimeMs = 0L;
+            inkFramesRemaining = 0;
+            inkDragMode = 0;
+            if (inkMode && gpuReady) {
+                S3RippleLifecycleNative.nativeResetInk();
+            }
             drawCount = 0;
             simulationIdle = true;
             simulationClock.reset();
@@ -1274,6 +1313,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             initializedWidth = 0;
             initializedHeight = 0;
             glTouched = false;
+            inkFramesRemaining = 0;
+            inkDragMode = 0;
             simulationIdle = true;
             simulationClock.reset();
             markReadinessDetached(finalDestroy ? "destroyed" : "context released");
@@ -1318,7 +1359,17 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     REDUCTION_RATE,
                     WAVE_COEFFICIENT);
             fillGpuHeights();
-            simulationIdle = empty != 0 && !glTouched;
+            if (inkMode && inkFramesRemaining > 0) {
+                if (!S3RippleLifecycleNative.nativeAdvanceInk(
+                        previousTouchX, previousTouchY, inkDragMode)) {
+                    logNativeError("Indigo density advance failed");
+                    inkFramesRemaining = 0;
+                } else {
+                    --inkFramesRemaining;
+                }
+            }
+            simulationIdle = empty != 0 && !glTouched
+                    && (!inkMode || inkFramesRemaining <= 0);
             if (simulationIdle && drawCount >= 2) {
                 requestIdleRenderMode(contextGeneration);
             }
@@ -1357,6 +1408,23 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     glY,
                     glX,
                     strength);
+        }
+
+        private void injectInk(
+                float currentX,
+                float currentY,
+                float previousX,
+                float previousY,
+                int mode) {
+            if (!inkMode || !gpuReady) {
+                return;
+            }
+            if (!S3RippleLifecycleNative.nativeInjectInk(
+                    currentX, currentY, previousX, previousY, mode)) {
+                logNativeError("Indigo injection failed");
+                return;
+            }
+            inkFramesRemaining = INDIGO_PERSISTENCE_FRAMES;
         }
 
         private float currentIntensity() {

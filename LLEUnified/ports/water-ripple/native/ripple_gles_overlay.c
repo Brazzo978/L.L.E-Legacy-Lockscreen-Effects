@@ -76,11 +76,15 @@ static GLuint compile_shader(
     return 0;
 }
 
-static GLuint create_overlay_program(char *error, size_t error_size) {
+static GLuint create_overlay_program(
+        const char *fragment_source,
+        const char *label,
+        char *error,
+        size_t error_size) {
     GLuint vertex = compile_shader(
             GL_VERTEX_SHADER,
             lle_ripple_normal_vertex_shader,
-            "overlay-normal vertex",
+            label,
             error,
             error_size);
     if (vertex == 0) {
@@ -88,8 +92,8 @@ static GLuint create_overlay_program(char *error, size_t error_size) {
     }
     GLuint fragment = compile_shader(
             GL_FRAGMENT_SHADER,
-            lle_ripple_overlay_normal_fragment_shader,
-            "overlay-normal fragment",
+            fragment_source,
+            label,
             error,
             error_size);
     if (fragment == 0) {
@@ -148,6 +152,9 @@ void lle_ripple_overlay_destroy(LleRippleOverlay *overlay) {
     if (overlay->normal_program != 0) {
         glDeleteProgram(overlay->normal_program);
     }
+    if (overlay->ink_program != 0) {
+        glDeleteProgram(overlay->ink_program);
+    }
     lle_ripple_overlay_abandon(overlay);
 }
 
@@ -162,8 +169,21 @@ bool lle_ripple_overlay_init(
     clear_error(error, error_size);
     drain_gl_errors();
     memset(overlay, 0, sizeof(*overlay));
-    overlay->normal_program = create_overlay_program(error, error_size);
+    overlay->normal_program = create_overlay_program(
+            lle_ripple_overlay_normal_fragment_shader,
+            "overlay-normal",
+            error,
+            error_size);
     if (overlay->normal_program == 0) {
+        return false;
+    }
+    overlay->ink_program = create_overlay_program(
+            lle_ripple_overlay_ink_fragment_shader,
+            "overlay-ink",
+            error,
+            error_size);
+    if (overlay->ink_program == 0) {
+        lle_ripple_overlay_destroy(overlay);
         return false;
     }
     if (!capture_gl_error("lle_ripple_overlay_init", error, error_size)) {
@@ -190,7 +210,6 @@ static bool valid_render_args(const LleRippleRenderArgs *args) {
             || args->heights == NULL
             || args->indices == NULL
             || args->mvp == NULL
-            || args->with_ink
             || args->vertex_float_count <= 0
             || args->height_float_count != args->vertex_float_count
             || args->vertex_float_count % 3 != 0
@@ -200,7 +219,11 @@ static bool valid_render_args(const LleRippleRenderArgs *args) {
             || args->mesh_width <= 0
             || args->mesh_height <= 0
             || args->detail_width <= 0
-            || args->detail_height <= 0) {
+            || args->detail_height <= 0
+            || (args->with_ink
+            && (args->density == NULL || args->density->texture == 0
+            || args->ink_red <= 0.0f || args->ink_green <= 0.0f
+            || args->ink_blue <= 0.0f))) {
         return false;
     }
     const GLsizei vertex_count = args->vertex_float_count / 3;
@@ -221,7 +244,7 @@ static void bind_sampler(GLuint program, const char *name, GLenum unit, GLuint t
 static void cleanup_mesh(OverlayMeshLocations locations) {
     glDisableVertexAttribArray((GLuint) locations.heights);
     glDisableVertexAttribArray((GLuint) locations.position);
-    for (int unit = 1; unit >= 0; --unit) {
+    for (int unit = 2; unit >= 0; --unit) {
         glActiveTexture((GLenum) (GL_TEXTURE0 + unit));
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -237,6 +260,7 @@ static bool render_transparent_delta(
     if (gles == NULL
             || overlay == NULL
             || overlay->normal_program == 0
+            || (args != NULL && args->with_ink && overlay->ink_program == 0)
             || gles->position_vbo == 0
             || gles->height_vbo == 0
             || gles->index_ibo == 0
@@ -250,7 +274,8 @@ static bool render_transparent_delta(
 
     clear_error(error, error_size);
     drain_gl_errors();
-    const GLuint program = overlay->normal_program;
+    const GLuint program = args->with_ink
+            ? overlay->ink_program : overlay->normal_program;
     glViewport(0, 0, args->viewport_width, args->viewport_height);
     glUseProgram(program);
     glUniform1f(glGetUniformLocation(program, "uMESH_SIZE_WIDTH"), (GLfloat) args->mesh_width);
@@ -305,6 +330,23 @@ static bool render_transparent_delta(
     glUniform1f(glGetUniformLocation(program, "uOverlayMaskLow"), options->mask_low);
     glUniform1f(glGetUniformLocation(program, "uOverlayMaskHigh"), options->mask_high);
     glUniform1f(glGetUniformLocation(program, "uOverlayOpacity"), options->opacity);
+
+    if (args->with_ink) {
+        glUniform2f(
+                glGetUniformLocation(program, "Scale"),
+                1.0f / (float) args->viewport_width,
+                1.0f / (float) args->viewport_height);
+        const float numerator = 1.5f - args->clear_ink;
+        glUniform3f(
+                glGetUniformLocation(program, "ink_color"),
+                numerator / args->ink_red - 1.0f,
+                numerator / args->ink_green - 1.0f,
+                numerator / args->ink_blue - 1.0f);
+        glUniform1f(
+                glGetUniformLocation(program, "intensity"),
+                args->ink_intensity_a * args->ink_intensity_b);
+        bind_sampler(program, "Density", GL_TEXTURE2, args->density->texture);
+    }
 
     bind_sampler(program, "sBGTexture", GL_TEXTURE0, gles->background_texture);
     bind_sampler(program, "sWaterTexture", GL_TEXTURE1, gles->water_texture);

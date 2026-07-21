@@ -32,12 +32,26 @@ $s3PatchedNativeLib = Join-Path $out "patched-s3\libWaterRipple.so"
 $watercolorCommonLib = Join-Path $nativeLibs "lib\armeabi-v7a\libsecveSrkCommon.so"
 $watercolorNativePatch = Join-Path $root "vendor\native-patches\patch-watercolor-transparent.ps1"
 $watercolorPatchedCommonLib = Join-Path $out "patched-watercolor\libsecveSrkCommon.so"
+$brilliantRingOriginalLib = Join-Path $root "vendor\original-native\libsecveBrilliantRing.so"
+$brilliantRingOriginalSha256 = "17F059922AFB2B15103EDAF817C7663890F99CDE9C153B55AC3E0CBAD27E3A79"
+$brilliantRingNativePatch = Join-Path $root "vendor\native-patches\patch-brilliant-ring-transparent.ps1"
+$brilliantRingPatchedCommonLib = Join-Path $out "patched-brilliant-ring\libsecveSrkCommon.so"
+$brilliantCutOriginalLib = Join-Path $root "vendor\original-native\libsecveBrilliantCut.so"
+$brilliantCutOriginalSha256 = "46B7580078F373CD5129704B8294AD1B630665F27E6877A8ECB30A41BDF039C7"
+$brilliantCutNativePatch = Join-Path $root "vendor\native-patches\patch-brilliant-cut-transparent.ps1"
+$brilliantCutPatchedLib = Join-Path $out "patched-brilliant-cut\libsecveBrilliantCut.so"
+$brilliantCutExpectedCommonSha256 = "5DBE95670EAE329DF47BF746D50FE9ED250CADC3FFFA9B2255A64F50C7AD6C36"
+$brilliantCutStlportLib = Join-Path $nativeLibs "lib\armeabi-v7a\libstlport.so"
+$brilliantCutExpectedStlportSha256 = "B7B845F6E446E87878152D25D6DDE9657B5260B9DC47A540C87D2F6A67A97E09"
 $abstractTileOriginalLib = Join-Path $root "vendor\original-native\libsecveAbstractTile.so"
 $abstractTileNativePatch = Join-Path $root "vendor\native-patches\patch-abstract-tile-transparent.ps1"
 $abstractTilePatchedLib = Join-Path $out "patched-abstract-tile\libsecveAbstractTile.so"
 $geometricMosaicOriginalLib = Join-Path $root "vendor\original-native\libsecveGeometricMosaic.so"
 $geometricMosaicNativePatch = Join-Path $root "vendor\native-patches\patch-geometric-mosaic-transparent.ps1"
 $geometricMosaicPatchedLib = Join-Path $out "patched-geometric-mosaic\libsecveGeometricMosaic.so"
+$indigoOriginalLib = Join-Path $root "vendor\original-native\libsecveIndigoDiffusion.so"
+$indigoNativePatch = Join-Path $root "vendor\native-patches\patch-indigo-diffusion-transparent.ps1"
+$indigoPatchedLib = Join-Path $out "patched-indigo\libsecveIndigoDiffusion.so"
 $brilliantCutSoundSource = Join-Path $root "res\raw"
 $stockWatercolorTap = Join-Path $root "res\raw\ve_watercolour_tap.ogg"
 
@@ -227,6 +241,23 @@ if (Test-Path $geometricMosaicOriginalLib) {
 } else {
     throw "Missing original Geometric Mosaic library: $geometricMosaicOriginalLib"
 }
+if (Test-Path $indigoOriginalLib) {
+    if (-not (Test-Path $indigoNativePatch)) {
+        throw "Missing Indigo Diffusion native transparency patch: $indigoNativePatch"
+    }
+    & powershell -ExecutionPolicy Bypass -File $indigoNativePatch `
+        -InputLibrary $indigoOriginalLib `
+        -OutputLibrary $indigoPatchedLib
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $indigoPatchedLib)) {
+        throw "Indigo Diffusion native transparency patch failed"
+    }
+    $indigoNativeStage = Join-Path $out "indigo-native\lib\armeabi-v7a"
+    New-Item -ItemType Directory -Force -Path $indigoNativeStage | Out-Null
+    Copy-Item $indigoPatchedLib (Join-Path $indigoNativeStage "libsecveIndigoDiffusion.so") -Force
+    Run "jar.exe" @("uf", $aligned, "-C", (Join-Path $out "indigo-native"), "lib")
+} else {
+    throw "Missing original Indigo Diffusion library: $indigoOriginalLib"
+}
 if (Test-Path $watercolorCommonLib) {
     if (-not (Test-Path $watercolorNativePatch)) {
         throw "Missing Watercolor native transparency patch: $watercolorNativePatch"
@@ -237,12 +268,74 @@ if (Test-Path $watercolorCommonLib) {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $watercolorPatchedCommonLib)) {
         throw "Watercolor native transparency patch failed"
     }
+    if (-not (Test-Path $brilliantRingNativePatch)) {
+        throw "Missing Brilliant Ring native transparency patch: $brilliantRingNativePatch"
+    }
+    & powershell -ExecutionPolicy Bypass -File $brilliantRingNativePatch `
+        -InputLibrary $watercolorPatchedCommonLib `
+        -OutputLibrary $brilliantRingPatchedCommonLib
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $brilliantRingPatchedCommonLib)) {
+        throw "Brilliant Ring common transparency patch failed"
+    }
     $watercolorNativeStage = Join-Path $out "watercolor-native\lib\armeabi-v7a"
     New-Item -ItemType Directory -Force -Path $watercolorNativeStage | Out-Null
-    Copy-Item $watercolorPatchedCommonLib (Join-Path $watercolorNativeStage "libsecveSrkCommon.so") -Force
+    Copy-Item $brilliantRingPatchedCommonLib (Join-Path $watercolorNativeStage "libsecveSrkCommon.so") -Force
     Run "jar.exe" @("uf", $aligned, "-C", (Join-Path $out "watercolor-native"), "lib")
 } else {
     throw "Missing Watercolor common library: $watercolorCommonLib"
+}
+if (Test-Path $brilliantRingOriginalLib) {
+    $brilliantRingActualSha256 =
+        (Get-FileHash -LiteralPath $brilliantRingOriginalLib -Algorithm SHA256).Hash
+    if ($brilliantRingActualSha256 -ne $brilliantRingOriginalSha256) {
+        throw "Unexpected original Brilliant Ring SHA-256: $brilliantRingActualSha256"
+    }
+    $brilliantRingNativeStage = Join-Path $out "brilliant-ring-native\lib\armeabi-v7a"
+    New-Item -ItemType Directory -Force -Path $brilliantRingNativeStage | Out-Null
+    Copy-Item $brilliantRingOriginalLib `
+        (Join-Path $brilliantRingNativeStage "libsecveBrilliantRing.so") -Force
+    Run "jar.exe" @("uf", $aligned, "-C", (Join-Path $out "brilliant-ring-native"), "lib")
+} else {
+    throw "Missing original Brilliant Ring library: $brilliantRingOriginalLib"
+}
+if (Test-Path $brilliantCutOriginalLib) {
+    $brilliantCutActualSha256 =
+        (Get-FileHash -LiteralPath $brilliantCutOriginalLib -Algorithm SHA256).Hash
+    if ($brilliantCutActualSha256 -ne $brilliantCutOriginalSha256) {
+        throw "Unexpected original Brilliant Cut SHA-256: $brilliantCutActualSha256"
+    }
+    if (-not (Test-Path $brilliantCutNativePatch)) {
+        throw "Missing Brilliant Cut native transparency patch: $brilliantCutNativePatch"
+    }
+    if (-not (Test-Path $watercolorCommonLib)) {
+        throw "Missing Brilliant Cut S4 common library: $watercolorCommonLib"
+    }
+    $brilliantCutCommonSha256 =
+        (Get-FileHash -LiteralPath $watercolorCommonLib -Algorithm SHA256).Hash
+    if ($brilliantCutCommonSha256 -ne $brilliantCutExpectedCommonSha256) {
+        throw "Unexpected Brilliant Cut S4 common SHA-256: $brilliantCutCommonSha256"
+    }
+    if (-not (Test-Path $brilliantCutStlportLib)) {
+        throw "Missing Brilliant Cut stlport library: $brilliantCutStlportLib"
+    }
+    $brilliantCutStlportSha256 =
+        (Get-FileHash -LiteralPath $brilliantCutStlportLib -Algorithm SHA256).Hash
+    if ($brilliantCutStlportSha256 -ne $brilliantCutExpectedStlportSha256) {
+        throw "Unexpected Brilliant Cut stlport SHA-256: $brilliantCutStlportSha256"
+    }
+    & powershell -ExecutionPolicy Bypass -File $brilliantCutNativePatch `
+        -InputLibrary $brilliantCutOriginalLib `
+        -OutputLibrary $brilliantCutPatchedLib
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $brilliantCutPatchedLib)) {
+        throw "Brilliant Cut native transparency patch failed"
+    }
+    $brilliantCutNativeStage = Join-Path $out "brilliant-cut-native\lib\armeabi-v7a"
+    New-Item -ItemType Directory -Force -Path $brilliantCutNativeStage | Out-Null
+    Copy-Item $brilliantCutPatchedLib `
+        (Join-Path $brilliantCutNativeStage "libsecveBrilliantCut.so") -Force
+    Run "jar.exe" @("uf", $aligned, "-C", (Join-Path $out "brilliant-cut-native"), "lib")
+} else {
+    throw "Missing original Brilliant Cut library: $brilliantCutOriginalLib"
 }
 if (Test-Path $s3NativeLib) {
     if (-not (Test-Path $s3NativePatch)) {
@@ -288,7 +381,10 @@ $expectedNativeEntries = @(
     "lib/armeabi-v7a/libSparklingBubblesEffect.so",
     "lib/armeabi-v7a/libWaterRipple.so",
     "lib/armeabi-v7a/libsecveAbstractTile.so",
+    "lib/armeabi-v7a/libsecveBrilliantCut.so",
+    "lib/armeabi-v7a/libsecveBrilliantRing.so",
     "lib/armeabi-v7a/libsecveGeometricMosaic.so",
+    "lib/armeabi-v7a/libsecveIndigoDiffusion.so",
     "lib/armeabi-v7a/libsecveSrkCommon.so",
     "lib/armeabi-v7a/libsecveWaterColor.so",
     "lib/armeabi-v7a/libstlport.so"

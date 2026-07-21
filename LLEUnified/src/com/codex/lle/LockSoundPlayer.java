@@ -115,6 +115,8 @@ final class LockSoundPlayer {
                     load(R.raw.abstracttile_lock);
             effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =
                     load(R.raw.geometricmosaic_lock);
+            effectSounds[OverlayPrefs.EFFECT_BRILLIANT_RING] =
+                    load(R.raw.brilliantring_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);

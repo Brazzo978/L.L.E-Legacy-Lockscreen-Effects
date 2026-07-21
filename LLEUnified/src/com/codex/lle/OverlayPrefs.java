@@ -143,8 +143,14 @@ final class OverlayPrefs {
     static final int EFFECT_N5_COLOUR_DROPLET_GYRO = 9;
     static final int EFFECT_S3_RIPPLE_NATIVE = 10;
     static final int EFFECT_TABS_BLIND = 11;
-    static final int EFFECT_N3_INK_IN_WATER_WIP = 12;
-    static final int EFFECT_COUNT = 13;
+    static final int EFFECT_N4_INK_IN_WATER = 12;
+    /** Kept only so preferences/code from the former reserved WIP slot remain compatible. */
+    @Deprecated
+    static final int EFFECT_N3_INK_IN_WATER_WIP = EFFECT_N4_INK_IN_WATER;
+    static final int EFFECT_STONE_SKIPPING = 13;
+    static final int EFFECT_BRILLIANT_RING = 14;
+    static final int EFFECT_BRILLIANT_CUT = 15;
+    static final int EFFECT_COUNT = 16;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -416,8 +422,14 @@ final class OverlayPrefs {
                 return "S3 Water Ripple";
             case EFFECT_TABS_BLIND:
                 return "Tab S Blind";
-            case EFFECT_N3_INK_IN_WATER_WIP:
-                return "N3 Ink in Water (WIP)";
+            case EFFECT_N4_INK_IN_WATER:
+                return "N2 Ink in Water";
+            case EFFECT_STONE_SKIPPING:
+                return "S5 Stone Skipping";
+            case EFFECT_BRILLIANT_RING:
+                return "S5 Brilliant Ring";
+            case EFFECT_BRILLIANT_CUT:
+                return "Tab S Brilliant Cut";
             default:
                 return "Unknown effect " + effect;
         }
@@ -540,6 +552,7 @@ final class OverlayPrefs {
         final int[] effects = {
                 EFFECT_S4_LENS_FLARE,
                 EFFECT_S3_RIPPLE_NATIVE,
+                EFFECT_N4_INK_IN_WATER,
                 EFFECT_S5_POPPING_COLOURS,
                 EFFECT_TABS_BLIND,
                 EFFECT_WATERCOLOUR,
@@ -547,7 +560,9 @@ final class OverlayPrefs {
                 EFFECT_N5_COLOUR_DROPLET_GYRO,
                 EFFECT_N5_SPARKLING_BUBBLES,
                 EFFECT_S4_ABSTRACT_TILES,
-                EFFECT_S4_GEOMETRIC_MOSAIC
+                EFFECT_S4_GEOMETRIC_MOSAIC,
+                EFFECT_BRILLIANT_RING,
+                EFFECT_BRILLIANT_CUT
         };
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
         String safeLabel = label == null || label.trim().isEmpty()
@@ -591,6 +606,7 @@ final class OverlayPrefs {
         final int[] effects = {
                 EFFECT_S4_LENS_FLARE,
                 EFFECT_S3_RIPPLE_NATIVE,
+                EFFECT_N4_INK_IN_WATER,
                 EFFECT_S5_POPPING_COLOURS,
                 EFFECT_TABS_BLIND,
                 EFFECT_WATERCOLOUR,
@@ -598,7 +614,9 @@ final class OverlayPrefs {
                 EFFECT_N5_COLOUR_DROPLET_GYRO,
                 EFFECT_N5_SPARKLING_BUBBLES,
                 EFFECT_S4_ABSTRACT_TILES,
-                EFFECT_S4_GEOMETRIC_MOSAIC
+                EFFECT_S4_GEOMETRIC_MOSAIC,
+                EFFECT_BRILLIANT_RING,
+                EFFECT_BRILLIANT_CUT
         };
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
         SharedPreferences.Editor editor = get(context).edit();

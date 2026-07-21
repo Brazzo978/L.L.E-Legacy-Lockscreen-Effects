@@ -22,6 +22,7 @@ typedef struct LleRippleOverlayOptions {
 
 typedef struct LleRippleOverlay {
     GLuint normal_program;
+    GLuint ink_program;
 } LleRippleOverlay;
 
 void lle_ripple_overlay_default_options(LleRippleOverlayOptions *options);
@@ -35,7 +36,7 @@ void lle_ripple_overlay_abandon(LleRippleOverlay *overlay);
 
 /*
  * The exact mode is a direct dispatch to lle_ripple_gles_render(). The delta
- * mode requires an initialized overlay and accepts normal-mode args only.
+ * mode requires an initialized overlay and accepts both normal and ink args.
  */
 bool lle_ripple_gles_render_normal_variant(
         LleRippleGles *gles,

@@ -12,8 +12,8 @@ permanently named **L.L.E 64** (`com.codex.lle64`).
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.3-Beta-1-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
-| `LLE64-1.0.3-Beta-1-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
+| `LLE-1.0.4-Beta-1969-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
+| `LLE64-1.0.4-Beta-1969-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
 
 Check the supported ABIs:
 
@@ -31,13 +31,17 @@ device.
 | S4 Lens Flare | Available | Available |
 | S3 Water Ripple | Available | Available |
 | S5 Popping Colours | Available | Available |
+| S5 Stone Skipping | Available | Available |
+| S5 Brilliant Ring | Available | Available |
 | N3 Watercolor | Available | Available |
+| N4 Ink in Water / Indigo | Available | Available |
 | N4 Abstract Tiles | Available | **Beta** |
 | N4 Geometric Mosaic | Available | **Beta** |
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |
 | N5 Sparkling Bubbles | Available | Available |
 | Tab S Blind | Available | Available |
+| Tab S Brilliant Cut | Available | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -58,13 +62,13 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 Install or update ARM32:
 
 ```shell
-adb install --no-incremental -r "LLE-1.0.3-Beta-1-32-bit.apk"
+adb install --no-incremental -r "LLE-1.0.4-Beta-1969-32-bit.apk"
 ```
 
 Install or update ARM64:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.3-Beta-1-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4-Beta-1969-64-bit.apk"
 ```
 
 Open ARM32:
@@ -177,6 +181,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.4 Beta 1969 release notes](docs/RELEASE_NOTES_1.0.4_BETA_1969.md)
 - [1.0.3 Beta 1 release notes](docs/RELEASE_NOTES_1.0.3_BETA_1.md)
 - [1.0.2 Beta 2 release notes](docs/RELEASE_NOTES_1.0.2_BETA_2.md)
 - [1.0.2 Beta 1 release notes](docs/RELEASE_NOTES_1.0.2_BETA_1.md)

@@ -70,6 +70,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_MS = 400L;
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 300L;
     private static final long PIN_ENTRY_DELAY_WATERCOLOUR_MS = 250L;
+    private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_MS = 250L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
     private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 340L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
@@ -248,7 +249,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private final Runnable rippleRendererReadinessRunnable = new Runnable() {
         @Override
         public void run() {
-            if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+            if ((unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                    || unlockEffectRendererType == OverlayPrefs.EFFECT_N4_INK_IN_WATER)
                     && unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
                 if (!((S3Arm64RippleEffectView) unlockEffectRenderer).isReady()) {
                     fallBackFromFailedRippleRenderer("async_gl_init_or_render");
@@ -264,6 +266,18 @@ public class ChargingAccessibilityService extends AccessibilityService
                     && unlockEffectRenderer instanceof GeometricMosaicArm64EffectView) {
                 if (!((GeometricMosaicArm64EffectView) unlockEffectRenderer).isReady()) {
                     fallBackFromFailedGeometricMosaicRenderer("async_gl_init_or_render");
+                    return;
+                }
+            } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
+                    && unlockEffectRenderer instanceof BrilliantRingEffectView) {
+                if (!((BrilliantRingEffectView) unlockEffectRenderer).isReady()) {
+                    fallBackFromFailedBrilliantRingRenderer("async_gl_init_or_render");
+                    return;
+                }
+            } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                    && unlockEffectRenderer instanceof BrilliantCutEffectView) {
+                if (!((BrilliantCutEffectView) unlockEffectRenderer).isReady()) {
+                    fallBackFromFailedBrilliantCutRenderer("async_gl_init_or_render");
                     return;
                 }
             } else {
@@ -1376,6 +1390,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean isKnownUnlockEffect(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
                 || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
@@ -1383,7 +1398,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
-                || effect == OverlayPrefs.EFFECT_TABS_BLIND;
+                || effect == OverlayPrefs.EFFECT_TABS_BLIND
+                || effect == OverlayPrefs.EFFECT_STONE_SKIPPING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
     }
 
     private static final class EffectProfileResult {
@@ -1746,7 +1764,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean shouldKeepNativePhysicsOverlayAttachedDuringHide(int effect) {
-        // All ten selectable screenshot-backed effects benefit from keeping their attached
+        // Screenshot-backed effects benefit from keeping their attached
         // renderer parked. Mandatory detach paths pass destroyingRenderer=true (capture,
         // calls, explicit destroy) and therefore still bypass this keep-warm policy.
         return effectUsesScreenshotBackground(effect);
@@ -1793,7 +1811,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean isSamsungLockBgEffect(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
-                || effect == OverlayPrefs.EFFECT_WATERCOLOUR;
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
+                || effect == OverlayPrefs.EFFECT_WATERCOLOUR
+                || (!EffectAvailability.is64BitProcess()
+                && (effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT));
     }
 
     private boolean isRecreatableNativeEffect(int effect) {
@@ -1808,8 +1830,15 @@ public class ChargingAccessibilityService extends AccessibilityService
         int effect = unlockEffectRendererType;
         boolean arm64AbstractTiles = EffectAvailability.is64BitProcess()
                 && effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES;
+        boolean arm32BrilliantRing = !EffectAvailability.is64BitProcess()
+                && effect == OverlayPrefs.EFFECT_BRILLIANT_RING;
+        boolean arm32BrilliantCut = !EffectAvailability.is64BitProcess()
+                && effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
         if (!arm64AbstractTiles
+                && !arm32BrilliantRing
+                && !arm32BrilliantCut
                 && effect != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                && effect != OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 && effect != OverlayPrefs.EFFECT_WATERCOLOUR
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
@@ -2662,6 +2691,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                 } else {
                     unlockEffectRenderer = new S3NativeRippleEffectView(rendererContext());
                 }
+            } else if (effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER) {
+                if (EffectAvailability.is64BitProcess()) {
+                    S3Arm64RippleEffectView renderer =
+                            new S3Arm64RippleEffectView(rendererContext(), true);
+                    if (!renderer.isReady()) {
+                        renderer.destroy();
+                        throw new IllegalStateException("Ink in Water ARM64 renderer unavailable");
+                    }
+                    unlockEffectRenderer = renderer;
+                } else {
+                    unlockEffectRenderer =
+                            SamsungLockBgEffectView.indigoDiffusion(rendererContext());
+                }
             } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
                 if (EffectAvailability.is64BitProcess()) {
                     AbstractTilesArm64EffectView renderer =
@@ -2699,6 +2741,22 @@ public class ChargingAccessibilityService extends AccessibilityService
                     throw new IllegalStateException("Tab S Blind DEX renderer unavailable");
                 }
                 unlockEffectRenderer = renderer;
+            } else if (effect == OverlayPrefs.EFFECT_STONE_SKIPPING) {
+                unlockEffectRenderer = new StoneSkippingEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_BRILLIANT_RING) {
+                if (EffectAvailability.is64BitProcess()) {
+                    unlockEffectRenderer = new BrilliantRingEffectView(rendererContext());
+                } else {
+                    unlockEffectRenderer =
+                            SamsungLockBgEffectView.brilliantRing(rendererContext());
+                }
+            } else if (effect == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
+                if (EffectAvailability.is64BitProcess()) {
+                    unlockEffectRenderer = new BrilliantCutEffectView(rendererContext());
+                } else {
+                    unlockEffectRenderer =
+                            SamsungLockBgEffectView.brilliantCut(rendererContext());
+                }
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
                 WatercolorNativeEffectView renderer =
                         new WatercolorNativeEffectView(rendererContext());
@@ -2812,7 +2870,8 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void scheduleRippleRendererReadinessCheck() {
         handler.removeCallbacks(rippleRendererReadinessRunnable);
-        boolean ripple = unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+        boolean ripple = (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_N4_INK_IN_WATER)
                 && unlockEffectRenderer instanceof S3Arm64RippleEffectView;
         boolean abstractTiles =
                 unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
@@ -2820,17 +2879,24 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean geometricMosaic =
                 unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 && unlockEffectRenderer instanceof GeometricMosaicArm64EffectView;
-        if (ripple || abstractTiles || geometricMosaic) {
+        boolean brilliantRing =
+                unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
+                && unlockEffectRenderer instanceof BrilliantRingEffectView;
+        boolean brilliantCut =
+                unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                && unlockEffectRenderer instanceof BrilliantCutEffectView;
+        if (ripple || abstractTiles || geometricMosaic || brilliantRing || brilliantCut) {
             handler.postDelayed(rippleRendererReadinessRunnable, 250L);
         }
     }
 
     private void fallBackFromFailedRippleRenderer(String reason) {
-        if (unlockEffectRendererType != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
+        if (unlockEffectRendererType != OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                && unlockEffectRendererType != OverlayPrefs.EFFECT_N4_INK_IN_WATER) {
             return;
         }
-        Log.e(TAG, "Water Ripple failed; falling back to Lens Flare reason="
-                + reason);
+        Log.e(TAG, OverlayPrefs.effectLabel(unlockEffectRendererType)
+                + " failed; falling back to Lens Flare reason=" + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();
         setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
@@ -2862,6 +2928,34 @@ public class ChargingAccessibilityService extends AccessibilityService
         setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
         preloadUnlockEffectRenderer();
         evaluateVisibility("geometric_mosaic_renderer_failed", false);
+    }
+
+    private void fallBackFromFailedBrilliantRingRenderer(String reason) {
+        if (unlockEffectRendererType != OverlayPrefs.EFFECT_BRILLIANT_RING
+                || !(unlockEffectRenderer instanceof BrilliantRingEffectView)) {
+            return;
+        }
+        Log.e(TAG, "Brilliant Ring ARM64 failed; falling back to Lens Flare reason="
+                + reason);
+        handler.removeCallbacks(rippleRendererReadinessRunnable);
+        destroyUnlockEffectOverlay();
+        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        preloadUnlockEffectRenderer();
+        evaluateVisibility("brilliant_ring_renderer_failed", false);
+    }
+
+    private void fallBackFromFailedBrilliantCutRenderer(String reason) {
+        if (unlockEffectRendererType != OverlayPrefs.EFFECT_BRILLIANT_CUT
+                || !(unlockEffectRenderer instanceof BrilliantCutEffectView)) {
+            return;
+        }
+        Log.e(TAG, "Brilliant Cut ARM64 failed; falling back to Lens Flare reason="
+                + reason);
+        handler.removeCallbacks(rippleRendererReadinessRunnable);
+        destroyUnlockEffectOverlay();
+        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        preloadUnlockEffectRenderer();
+        evaluateVisibility("brilliant_cut_renderer_failed", false);
     }
 
     private boolean canRecreateStaleLockBgRenderer() {
@@ -2921,12 +3015,15 @@ public class ChargingAccessibilityService extends AccessibilityService
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
         if (unlockEffectRendererType == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_WATERCOLOUR
                 || OverlayPrefs.isColourDropletEffect(unlockEffectRendererType)
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_TABS_BLIND) {
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_TABS_BLIND
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
             if (colorScreenshotInFlight) {
                 Log.i(TAG, "native affordance waiting for screenshot reason="
                         + reason
@@ -3525,12 +3622,14 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private long unlockEffectScreenshotMinScreenOnMs(int effect) {
         long minScreenOnMs = UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
-        if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
+        if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER) {
             minScreenOnMs = S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS;
         } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             minScreenOnMs = S5_POPPING_SCREENSHOT_MIN_SCREEN_ON_MS;
         } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
             minScreenOnMs = S4_LOCKBG_SCREENSHOT_MIN_SCREEN_ON_MS;
         } else if (OverlayPrefs.isColourDropletEffect(effect)) {
             minScreenOnMs = COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS;
@@ -3860,6 +3959,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
@@ -3867,7 +3967,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
+                OverlayPrefs.EFFECT_BRILLIANT_RING,
+                OverlayPrefs.EFFECT_BRILLIANT_CUT
         };
         for (int candidate : effects) {
             if (candidate == effect
@@ -3893,6 +3995,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
@@ -3900,7 +4003,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
+                OverlayPrefs.EFFECT_BRILLIANT_RING,
+                OverlayPrefs.EFFECT_BRILLIANT_CUT
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -4478,6 +4583,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         int[] effects = {
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
@@ -4485,7 +4591,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
+                OverlayPrefs.EFFECT_BRILLIANT_RING,
+                OverlayPrefs.EFFECT_BRILLIANT_CUT
         };
         SharedPreferences.Editor editor = OverlayPrefs.get(this).edit();
         for (int effect : effects) {
@@ -4538,6 +4646,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean effectUsesScreenshotBackground(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
                 || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_TABS_BLIND
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
@@ -4545,7 +4654,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
     }
 
     private void syncTouchDebugOverlay() {
@@ -4621,6 +4732,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                             screenX, screenY);
                 } else if (unlockEffectRenderer instanceof GeometricMosaicArm64EffectView) {
                     ((GeometricMosaicArm64EffectView) unlockEffectRenderer).realignGesture(
+                            screenX, screenY);
+                } else if (unlockEffectRenderer instanceof BrilliantRingEffectView) {
+                    ((BrilliantRingEffectView) unlockEffectRenderer).realignGesture(
+                            screenX, screenY);
+                } else if (unlockEffectRenderer instanceof BrilliantCutEffectView) {
+                    ((BrilliantCutEffectView) unlockEffectRenderer).realignGesture(
                             screenX, screenY);
                 }
             }
@@ -5886,6 +6003,22 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
             ((S3Arm64RippleEffectView) unlockEffectRenderer).finishGestureAt(
                     screenX, screenY, unlockTriggered);
+        } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
+                && unlockEffectRenderer instanceof BrilliantRingEffectView) {
+            ((BrilliantRingEffectView) unlockEffectRenderer).finishGestureAt(
+                    screenX, screenY, unlockTriggered);
+        } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
+                && unlockEffectRenderer instanceof SamsungLockBgEffectView) {
+            ((SamsungLockBgEffectView) unlockEffectRenderer).finishGestureAt(
+                    screenX, screenY, unlockTriggered);
+        } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                && unlockEffectRenderer instanceof BrilliantCutEffectView) {
+            ((BrilliantCutEffectView) unlockEffectRenderer).finishGestureAt(
+                    screenX, screenY, unlockTriggered);
+        } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                && unlockEffectRenderer instanceof SamsungLockBgEffectView) {
+            ((SamsungLockBgEffectView) unlockEffectRenderer).finishGestureAt(
+                    screenX, screenY, unlockTriggered);
         } else if (unlockEffectRenderer != null) {
             unlockEffectRenderer.updateGesture(screenX, screenY);
             unlockEffectRenderer.finishGesture(unlockTriggered);
@@ -5950,6 +6083,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
             return PIN_ENTRY_DELAY_WATERCOLOUR_MS;
+        }
+        if (effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
+            return PIN_ENTRY_DELAY_BRILLIANT_RING_MS;
         }
         if (OverlayPrefs.isColourDropletEffect(effect)) {
             return PIN_ENTRY_DELAY_COLOUR_DROPLET_MS;

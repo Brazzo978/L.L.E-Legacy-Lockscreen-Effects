@@ -2,6 +2,7 @@ package com.codex.lle;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -22,6 +23,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.concurrent.locks.LockSupport;
 
@@ -34,6 +36,9 @@ public class SamsungLockBgEffectView extends FrameLayout
     private static final int CMD_UNLOCK = 2;
     private static final int SAMSUNG_ABSTRACT_TILES = 0;
     private static final int SAMSUNG_GEOMETRIC_MOSAIC = 1;
+    private static final int SAMSUNG_BRILLIANT_CUT = 6;
+    private static final int SAMSUNG_BRILLIANT_RING = 7;
+    private static final int SAMSUNG_INDIGO_DIFFUSION = 9;
     private static final float ABSTRACT_BACKGROUND_GAIN = 1.0f;
     private static final float GEOMETRIC_BACKGROUND_GAIN = 1.0f;
     private static final long DRAG_SOUND_LONG_PRESS_MS = 411L;
@@ -49,6 +54,7 @@ public class SamsungLockBgEffectView extends FrameLayout
     private final int samsungEffectId;
     private final String effectName;
     private final float backgroundGain;
+    private final boolean indigoDiffusion;
     private final AudioManager audioManager;
     private final SoundPool soundPool;
     private final int tapSound;
@@ -64,6 +70,7 @@ public class SamsungLockBgEffectView extends FrameLayout
     private Method clearScreen;
     private Method removeEffect;
     private Bitmap backgroundBitmap;
+    private Bitmap reflectionBitmap;
     private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
     private String backgroundSource = "none";
@@ -106,6 +113,30 @@ public class SamsungLockBgEffectView extends FrameLayout
                 GEOMETRIC_BACKGROUND_GAIN);
     }
 
+    public static SamsungLockBgEffectView brilliantRing(Context context) {
+        return new SamsungLockBgEffectView(
+                context,
+                SAMSUNG_BRILLIANT_RING,
+                "S5 Brilliant Ring",
+                1.0f);
+    }
+
+    public static SamsungLockBgEffectView brilliantCut(Context context) {
+        return new SamsungLockBgEffectView(
+                context,
+                SAMSUNG_BRILLIANT_CUT,
+                "Tab S Brilliant Cut",
+                1.0f);
+    }
+
+    public static SamsungLockBgEffectView indigoDiffusion(Context context) {
+        return new SamsungLockBgEffectView(
+                context,
+                SAMSUNG_INDIGO_DIFFUSION,
+                "N4 Ink in Water",
+                1.0f);
+    }
+
     private SamsungLockBgEffectView(Context context, int effectId, String name,
             float bgGain) {
         super(context);
@@ -113,6 +144,7 @@ public class SamsungLockBgEffectView extends FrameLayout
         samsungEffectId = effectId;
         effectName = name;
         backgroundGain = bgGain;
+        indigoDiffusion = samsungEffectId == SAMSUNG_INDIGO_DIFFUSION;
         nativeCommandThread = new HandlerThread("LLE-" + name.replace(' ', '-') + "-commands");
         nativeCommandThread.start();
         nativeCommandHandler = new Handler(nativeCommandThread.getLooper());
@@ -133,12 +165,24 @@ public class SamsungLockBgEffectView extends FrameLayout
                         .build())
                 .build();
         boolean geometricMosaic = samsungEffectId == SAMSUNG_GEOMETRIC_MOSAIC;
-        tapSound = soundPool.load(context, geometricMosaic
-                ? R.raw.brilliantcut_tap : R.raw.abstracttile_tap, 1);
-        dragSound = soundPool.load(context, geometricMosaic
-                ? R.raw.brilliantcut_drag : R.raw.abstracttile_drag, 1);
-        unlockSound = soundPool.load(context, geometricMosaic
-                ? R.raw.brilliantcut_unlock : R.raw.abstracttile_unlock, 1);
+        boolean brilliantCut = samsungEffectId == SAMSUNG_BRILLIANT_CUT;
+        boolean brilliantRing = samsungEffectId == SAMSUNG_BRILLIANT_RING;
+        if (indigoDiffusion) {
+            tapSound = soundPool.load(context, R.raw.s3_ripple_down, 1);
+            dragSound = soundPool.load(context, R.raw.s3_ripple_up, 1);
+            unlockSound = dragSound;
+        } else if (brilliantRing) {
+            tapSound = soundPool.load(context, R.raw.brilliantring_tap, 1);
+            dragSound = soundPool.load(context, R.raw.brilliantring_drag, 1);
+            unlockSound = soundPool.load(context, R.raw.brilliantring_unlock, 1);
+        } else {
+            tapSound = soundPool.load(context, geometricMosaic || brilliantCut
+                    ? R.raw.brilliantcut_tap : R.raw.abstracttile_tap, 1);
+            dragSound = soundPool.load(context, geometricMosaic || brilliantCut
+                    ? R.raw.brilliantcut_drag : R.raw.abstracttile_drag, 1);
+            unlockSound = soundPool.load(context, geometricMosaic || brilliantCut
+                    ? R.raw.brilliantcut_unlock : R.raw.abstracttile_unlock, 1);
+        }
         long soundsQueuedMs = SystemClock.uptimeMillis() - soundStartedAt;
 
         try {
@@ -194,7 +238,9 @@ public class SamsungLockBgEffectView extends FrameLayout
             beginGesture(screenX, screenY);
             return;
         }
-        maybeStartDragSound();
+        if (!indigoDiffusion) {
+            maybeStartDragSound();
+        }
         lastX = screenX;
         lastY = screenY;
         forwardTouch(MotionEvent.ACTION_MOVE, screenX, screenY);
@@ -202,11 +248,18 @@ public class SamsungLockBgEffectView extends FrameLayout
 
     @Override
     public void finishGesture(boolean completed) {
+        finishGestureAt(lastX, lastY, completed);
+    }
+
+    /** Forwards the real terminal UP without inserting an artificial MOVE first. */
+    public void finishGestureAt(float screenX, float screenY, boolean completed) {
         if (!gestureActive) {
             return;
         }
+        lastX = screenX;
+        lastY = screenY;
         gestureActive = false;
-        forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
+        forwardTouch(MotionEvent.ACTION_UP, screenX, screenY);
         fadeOutDragSound(completed
                 ? DRAG_SOUND_UNLOCK_FADE_STEP
                 : DRAG_SOUND_RELEASE_FADE_STEP);
@@ -447,6 +500,10 @@ public class SamsungLockBgEffectView extends FrameLayout
         backgroundSource = "none";
         invalidateSentBackground();
         releaseBackgroundBitmap();
+        if (reflectionBitmap != null && !reflectionBitmap.isRecycled()) {
+            reflectionBitmap.recycle();
+        }
+        reflectionBitmap = null;
         sendBackgroundBitmap();
     }
 
@@ -539,12 +596,21 @@ public class SamsungLockBgEffectView extends FrameLayout
         stepStartedAt = SystemClock.uptimeMillis();
         Object data = dataClass.getConstructor().newInstance();
         dataClass.getMethod("setEffect", int.class).invoke(data, samsungEffectId);
+        if (indigoDiffusion) {
+            configureIndigoData(context, dataClass, data);
+        }
         long dataMs = SystemClock.uptimeMillis() - stepStartedAt;
 
         stepStartedAt = SystemClock.uptimeMillis();
         setEffect.invoke(effectView, samsungEffectId);
         long setEffectMs = SystemClock.uptimeMillis() - stepStartedAt;
         makeTransparent(effectViewAsView);
+        if (indigoDiffusion) {
+            Method reInit = optionalMethod(effectViewClass, "reInit", dataClass);
+            if (reInit != null) {
+                reInit.invoke(effectView, data);
+            }
+        }
         stepStartedAt = SystemClock.uptimeMillis();
         init.invoke(effectView, data);
         long initMs = SystemClock.uptimeMillis() - stepStartedAt;
@@ -562,6 +628,31 @@ public class SamsungLockBgEffectView extends FrameLayout
                 makeTransparent(effectViewAsView);
             }
         });
+    }
+
+    private void configureIndigoData(Context context, Class<?> dataClass, Object data)
+            throws Exception {
+        Field indigoField = dataClass.getField("indigoDiffuseData");
+        Object indigoData = indigoField.get(data);
+        Class<?> indigoClass = indigoData.getClass();
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        indigoClass.getField("windowWidth").setInt(indigoData,
+                Math.max(1, metrics.widthPixels));
+        indigoClass.getField("windowHeight").setInt(indigoData,
+                Math.max(1, metrics.heightPixels));
+        indigoClass.getField("red").setInt(indigoData, 35);
+        indigoClass.getField("green").setInt(indigoData, 35);
+        indigoClass.getField("blue").setInt(indigoData, 85);
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = false;
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        reflectionBitmap = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.s3_reflectionmap, options);
+        if (reflectionBitmap == null) {
+            throw new IllegalStateException("Indigo reflection map decode failed");
+        }
+        indigoClass.getField("reflectionBitmap").set(indigoData, reflectionBitmap);
     }
 
     private Method optionalMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {

@@ -21,6 +21,7 @@ final class EffectAvailability {
         switch (effect) {
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
             case OverlayPrefs.EFFECT_WATERCOLOUR:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
@@ -29,8 +30,10 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
             case OverlayPrefs.EFFECT_TABS_BLIND:
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
                 return true;
-            case OverlayPrefs.EFFECT_N3_INK_IN_WATER_WIP:
             default:
                 return false;
         }
@@ -41,11 +44,14 @@ final class EffectAvailability {
             return false;
         }
         return effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
     }
 }

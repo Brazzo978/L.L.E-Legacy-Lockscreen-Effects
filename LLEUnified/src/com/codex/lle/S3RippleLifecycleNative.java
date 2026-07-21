@@ -11,7 +11,7 @@ import android.graphics.Bitmap;
 final class S3RippleLifecycleNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_WATER = 1;
-    static final int BRIDGE_VERSION = 2;
+    static final int BRIDGE_VERSION = 3;
     private static final boolean LIBRARY_LOADED;
 
     static {
@@ -52,13 +52,28 @@ final class S3RippleLifecycleNative {
     /** Deletes all resources in the current GLES2 context and zeros the state. */
     static native void nativeDestroyGpu();
 
+    /** Creates the stock Indigo 1024x512 (orientation-adjusted) density surfaces. */
+    static native boolean nativeInitInk(int viewportWidth, int viewportHeight);
+
+    static native void nativeResetInk();
+
+    static native boolean nativeAdvanceInk(float centerX, float centerY, int drag);
+
+    static native boolean nativeInjectInk(
+            float currentX,
+            float currentY,
+            float previousX,
+            float previousY,
+            int mode);
+
     /** Locks, uploads and unlocks {@code bitmap} synchronously on the GL thread. */
     static native boolean nativeUploadBitmap(int slot, Bitmap bitmap);
 
     static native void nativeFreeTexture(int slot);
 
     /** Renders the local premultiplied normal-mode overlay, not Samsung's opaque framebuffer. */
-    static native boolean nativeRenderNormal(
+    static native boolean nativeRender(
+            boolean withInk,
             float[] vertices,
             float[] heights,
             short[] indices,

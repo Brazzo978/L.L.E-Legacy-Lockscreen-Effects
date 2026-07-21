@@ -48,7 +48,7 @@ const char lle_ripple_advect_density_fragment_shader[] =
         "        float d = distance(center, Scale*v_texCoord);\n"
         "        if( d < 80.0 ) back_step = 0.0075*d;\n"
         "    }\n"
-        "    vec2 coord = v_texCoord - back_step * TimeStep * u;\n"
+        "    vec2 coord = v_texCoord - back_step * TimeStep * u * 0.25;\n"
         "    buf = texture2D(SourceTexture, coord);\n"
         "    float value = 255.0*buf.x + buf.y;\n"
         "    gl_FragColor.xy = encode(Dissipation*value);\n"

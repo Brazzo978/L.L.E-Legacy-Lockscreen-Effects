@@ -1583,11 +1583,6 @@ public class ControlActivity extends Activity {
         effects.addView(sectionTitle("Effects · " + EffectAvailability.processAbiLabel()));
         effects.addView(effectPreviewHint());
         addEffectOptionIfAvailable(effects,
-                "S4 Lens Flare",
-                "App-owned renderer; no legacy native library required.",
-                OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                current);
-        addEffectOptionIfAvailable(effects,
                 "S3 Water Ripple",
                 EffectAvailability.is64BitProcess()
                         ? "ARM64 app-owned GLES port; transparent local waves over a cached lockscreen colormap."
@@ -1595,9 +1590,38 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 current);
         addEffectOptionIfAvailable(effects,
+                "N2 Ink in Water",
+                EffectAvailability.is64BitProcess()
+                        ? "ARM64 port of the later Indigo engine from the Ripple Ink lineage introduced on Note II."
+                        : "Original ARM32 Indigo engine from the Ripple Ink lineage introduced on Note II.",
+                OverlayPrefs.EFFECT_N4_INK_IN_WATER,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "S4 Lens Flare",
+                "App-owned renderer; no legacy native library required.",
+                OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "N3 Watercolor",
+                EffectAvailability.is64BitProcess()
+                        ? "ARM64 GLES port of Samsung Watercolor with a transparent screenshot-backed brush."
+                        : "Original Samsung ARM32 Watercolor engine with transparent lockscreen composition.",
+                OverlayPrefs.EFFECT_WATERCOLOUR,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "S5 Brilliant Ring",
+                "App-owned port with the stock diamond texture, native ring timings and screenshot-backed local composition.",
+                OverlayPrefs.EFFECT_BRILLIANT_RING,
+                current);
+        addEffectOptionIfAvailable(effects,
                 "S5 Popping Colours",
                 "Samsung dex renderer with screenshot-backed color map; no legacy .so required.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "S5 Stone Skipping",
+                "Transparent app-owned port of Samsung Mass Ripple from the Galaxy S5 launch branch.",
+                OverlayPrefs.EFFECT_STONE_SKIPPING,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Tab S Blind",
@@ -1607,11 +1631,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N3 Watercolor",
+                "Tab S Brilliant Cut",
                 EffectAvailability.is64BitProcess()
-                        ? "ARM64 GLES port of Samsung Watercolor with a transparent screenshot-backed brush."
-                        : "Original Samsung ARM32 Watercolor engine with transparent lockscreen composition.",
-                OverlayPrefs.EFFECT_WATERCOLOUR,
+                        ? "ARM64 app-owned GLES port of the stock Tab S Brilliant Cut engine with screenshot-backed composition."
+                        : "Original Samsung ARM32 Brilliant Cut engine with transparent lockscreen composition.",
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
                 current);
         if (EffectAvailability.isAvailable(OverlayPrefs.EFFECT_S4_ABSTRACT_TILES)) {
             if (EffectAvailability.is64BitProcess()) {
@@ -1668,7 +1692,6 @@ public class ControlActivity extends Activity {
                         : "Original Samsung ARM32 bubbles renderer with cached lockscreen color sampling.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current);
-
         root.addView(effects);
         root.addView(setupWizardControls());
         if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
@@ -2039,6 +2062,7 @@ public class ControlActivity extends Activity {
     private boolean effectUsesColormapCache(int effect) {
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
                 || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
+                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
                 || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
                 || effect == OverlayPrefs.EFFECT_TABS_BLIND
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
@@ -2046,7 +2070,9 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC;
+                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
     }
 
     private String ageLabel(long ageMs) {
@@ -2614,6 +2640,9 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 drawPreviewRipple(canvas, paint, width, height);
                 break;
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
+                drawPreviewRipple(canvas, paint, width, height);
+                break;
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 drawPreviewPoppingColours(canvas, paint, width, height);
                 break;
@@ -2635,6 +2664,12 @@ public class ControlActivity extends Activity {
                 break;
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
                 drawPreviewTiles(canvas, paint, width, height, true);
+                break;
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                drawEffectMotif(canvas, paint, effect,
+                        new RectF(width * 0.22f, height * 0.22f,
+                                width * 0.78f, height * 0.78f),
+                        Color.rgb(222, 246, 255), 0.95f);
                 break;
             default:
                 drawPreviewLensFlare(canvas, paint, width, height);
@@ -2658,12 +2693,16 @@ public class ControlActivity extends Activity {
         switch (effect) {
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return R.drawable.preview_unlock_s3_ripple_lle;
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
+                return R.drawable.preview_unlock_s3_ripple_lle;
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
                 return R.drawable.preview_unlock_s4_lens_flare_lle;
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return R.drawable.preview_unlock_n3_watercolor_lle;
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return R.drawable.preview_unlock_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                return R.drawable.preview_unlock_brilliantring_s5;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 return R.drawable.preview_unlock_n4_abstract_tiles_lle;
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -2674,6 +2713,8 @@ public class ControlActivity extends Activity {
                 return R.drawable.preview_unlock_n5_colored_droplet_gyro_lle;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
                 return R.drawable.preview_unlock_n5_sparkling_bubbles_lle;
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                return R.drawable.preview_unlock_stoneskipping_s5;
             default:
                 return 0;
         }
@@ -2699,7 +2740,7 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_n5_colored_droplet_gyro_lle;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
                 return R.drawable.icon_effect_n5_sparkling_bubbles_lle;
-            case OverlayPrefs.EFFECT_N3_INK_IN_WATER_WIP:
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
             default:
                 return 0;
@@ -3130,6 +3171,7 @@ public class ControlActivity extends Activity {
         File best = null;
         int[] effects = {
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
+                OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
@@ -3137,7 +3179,9 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
+                OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
+                OverlayPrefs.EFFECT_BRILLIANT_RING,
+                OverlayPrefs.EFFECT_BRILLIANT_CUT
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -4189,12 +4233,20 @@ public class ControlActivity extends Activity {
                 return Color.rgb(255, 194, 78);
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return Color.rgb(66, 169, 232);
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
+                return Color.rgb(53, 53, 133);
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return Color.rgb(123, 206, 92);
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                return Color.rgb(244, 190, 77);
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                return Color.rgb(164, 221, 235);
             case OverlayPrefs.EFFECT_TABS_BLIND:
                 return Color.rgb(104, 164, 202);
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return Color.rgb(125, 113, 230);
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                return Color.rgb(82, 177, 221);
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return Color.rgb(235, 111, 102);
@@ -4621,6 +4673,35 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.15f, unit * 0.16f, paint);
                 canvas.drawCircle(cx + unit * 0.19f, cy + unit * 0.23f, unit * 0.10f, paint);
                 break;
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                canvas.drawCircle(cx - unit * 0.08f, cy + unit * 0.08f,
+                        unit * 0.34f, paint);
+                canvas.drawCircle(cx + unit * 0.18f, cy - unit * 0.18f,
+                        unit * 0.17f, paint);
+                canvas.drawCircle(cx + unit * 0.30f, cy - unit * 0.34f,
+                        unit * 0.07f, paint);
+                break;
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                Path brilliantCut = new Path();
+                brilliantCut.moveTo(cx, rect.top);
+                brilliantCut.lineTo(rect.right, cy);
+                brilliantCut.lineTo(cx, rect.bottom);
+                brilliantCut.lineTo(rect.left, cy);
+                brilliantCut.close();
+                brilliantCut.moveTo(cx, rect.top);
+                brilliantCut.lineTo(cx, rect.bottom);
+                brilliantCut.moveTo(rect.left, cy);
+                brilliantCut.lineTo(rect.right, cy);
+                brilliantCut.moveTo(cx, rect.top);
+                brilliantCut.lineTo(rect.right, cy);
+                brilliantCut.lineTo(rect.left, cy);
+                brilliantCut.close();
+                canvas.drawPath(brilliantCut, paint);
+                break;
             case OverlayPrefs.EFFECT_TABS_BLIND:
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(Math.max(dp(1), unit * 0.06f));
@@ -4674,12 +4755,20 @@ public class ControlActivity extends Activity {
                 canvas.drawPath(drop, paint);
                 break;
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(Math.max(dp(1), unit * 0.065f));
                 canvas.drawOval(new RectF(cx - unit * 0.42f, cy - unit * 0.18f,
                         cx + unit * 0.42f, cy + unit * 0.18f), paint);
                 canvas.drawOval(new RectF(cx - unit * 0.25f, cy - unit * 0.10f,
                         cx + unit * 0.25f, cy + unit * 0.10f), paint);
+                break;
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                canvas.drawCircle(cx, cy, unit * 0.38f, paint);
+                canvas.drawCircle(cx, cy, unit * 0.24f, paint);
+                canvas.drawCircle(cx, cy, unit * 0.10f, paint);
                 break;
             default:
                 paint.setStyle(Paint.Style.STROKE);

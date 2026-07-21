@@ -1,0 +1,52 @@
+{
+  "schema": "lle.brilliant_cut.stock_mesh_call_counts.v1",
+  "source": {
+    "device": "Samsung Galaxy Tab S 8.4 SM-T705",
+    "firmware": "T705XXU1ANF8",
+    "library": "libBrilliantCutEffect.so",
+    "sha256": "694E860290A277570992142E965B858DBB8D75FF168030AC0661EDB01B426EC2",
+    "create_geometry_elf_va": "0x0aaf8"
+  },
+  "constructors": {
+    "vector3": "0x079d4",
+    "plane3": "0x08448",
+    "plane6": "0x0895c",
+    "plane9": "0x08b74",
+    "plane12": "0x08588",
+    "add_plane": "0x0a79c"
+  },
+  "geometries": [
+    {
+      "id": 0,
+      "name": "portrait_special",
+      "elf_range": { "start": "0x20c74", "stop": "0x29190" },
+      "plane_count": 149,
+      "vertex_count": 543,
+      "plane_arity": { "3": 124, "6": 18, "9": 7, "12": 0 }
+    },
+    {
+      "id": 1,
+      "name": "portrait_normal",
+      "elf_range": { "start": "0x1ae10", "stop": "0x20c74" },
+      "plane_count": 125,
+      "vertex_count": 477,
+      "plane_arity": { "3": 92, "6": 32, "9": 1, "12": 0 }
+    },
+    {
+      "id": 2,
+      "name": "landscape_special",
+      "elf_range": { "start": "0x0ab28", "stop": "0x134d4" },
+      "plane_count": 149,
+      "vertex_count": 528,
+      "plane_arity": { "3": 125, "6": 21, "9": 3, "12": 0 }
+    },
+    {
+      "id": 3,
+      "name": "landscape_normal",
+      "elf_range": { "start": "0x134e0", "stop": "0x1ae10" },
+      "plane_count": 125,
+      "vertex_count": 477,
+      "plane_arity": { "3": 92, "6": 32, "9": 1, "12": 0 }
+    }
+  ]
+}

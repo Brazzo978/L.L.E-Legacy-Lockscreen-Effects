@@ -284,9 +284,13 @@ $expectedRippleExports = @(
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeInitGpu",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeAbandonGpu",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeDestroyGpu",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeInitInk",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeResetInk",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeAdvanceInk",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeInjectInk",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeUploadBitmap",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeFreeTexture",
-    "Java_com_codex_lle_S3RippleLifecycleNative_nativeRenderNormal",
+    "Java_com_codex_lle_S3RippleLifecycleNative_nativeRender",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeGetLastError"
 )
 foreach ($export in $expectedRippleExports) {
