@@ -2,6 +2,7 @@ package com.codex.lle;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.WallpaperManager;
@@ -10,6 +11,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -18,7 +20,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,6 +31,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.io.IOException;
 
 /**
  * First-run (and manually relaunchable) setup for the shared ARM32/ARM64 app.
@@ -60,6 +64,11 @@ public class SetupWizardActivity extends Activity {
 
     private static final String STATE_STEP = "wizard_step";
     private static final String STATE_PENDING_MODE = "pending_wallpaper_mode";
+    private static final String STATE_PENDING_PROFILE = "pending_wallpaper_profile";
+    private static final String STATE_PENDING_NEXT_PROFILE =
+            "pending_wallpaper_next_profile";
+    private static final String STATE_WAITING_EXTERNAL_SETTING =
+            "waiting_external_setting";
     private static final String WIZARD_PREFS = "setup_wizard_state";
     private static final String PREF_COMPLETED = "completed";
     private static final String PREF_COMPLETED_AT = "completed_at";
@@ -71,6 +80,8 @@ public class SetupWizardActivity extends Activity {
 
     private static final int REQUEST_PICK_WALLPAPER = 7201;
     private static final int REQUEST_CROP_WALLPAPER = 7202;
+    private static final int REQUEST_LOCK_WALLPAPER_ACCESS = 7203;
+    private static final int REQUEST_READ_WALLPAPER_STORAGE = 7204;
     private static final int STEP_ACCESSIBILITY = 0;
     private static final int STEP_BATTERY = 1;
     private static final int STEP_WALLPAPER = 2;
@@ -90,10 +101,13 @@ public class SetupWizardActivity extends Activity {
     private TextView progressLabel;
     private int currentStep = STEP_ACCESSIBILITY;
     private String pendingWallpaperMode = "";
+    private String pendingWallpaperProfile = FoldDisplayTarget.PROFILE_SINGLE;
+    private String pendingWallpaperNextProfile = "";
     private boolean waitingForExternalSetting;
     private boolean firstResume = true;
     private boolean manualRelaunch;
     private boolean sourceOnlyLaunch;
+    private boolean importingPulledWallpaper;
 
     public static boolean shouldLaunch(Context context) {
         return context != null && !wizardPrefs(context).getBoolean(PREF_COMPLETED, false);
@@ -148,6 +162,12 @@ public class SetupWizardActivity extends Activity {
         if (savedInstanceState != null) {
             currentStep = savedInstanceState.getInt(STATE_STEP, STEP_ACCESSIBILITY);
             pendingWallpaperMode = savedInstanceState.getString(STATE_PENDING_MODE, "");
+            pendingWallpaperProfile = savedInstanceState.getString(
+                    STATE_PENDING_PROFILE, FoldDisplayTarget.PROFILE_SINGLE);
+            pendingWallpaperNextProfile = savedInstanceState.getString(
+                    STATE_PENDING_NEXT_PROFILE, "");
+            waitingForExternalSetting = savedInstanceState.getBoolean(
+                    STATE_WAITING_EXTERNAL_SETTING, false);
         } else if (getIntent() != null
                 && getIntent().getBooleanExtra(EXTRA_START_AT_WALLPAPER, false)) {
             currentStep = STEP_WALLPAPER;
@@ -165,6 +185,9 @@ public class SetupWizardActivity extends Activity {
     protected void onSaveInstanceState(Bundle outState) {
         outState.putInt(STATE_STEP, currentStep);
         outState.putString(STATE_PENDING_MODE, pendingWallpaperMode);
+        outState.putString(STATE_PENDING_PROFILE, pendingWallpaperProfile);
+        outState.putString(STATE_PENDING_NEXT_PROFILE, pendingWallpaperNextProfile);
+        outState.putBoolean(STATE_WAITING_EXTERNAL_SETTING, waitingForExternalSetting);
         super.onSaveInstanceState(outState);
     }
 
@@ -173,10 +196,22 @@ public class SetupWizardActivity extends Activity {
         super.onResume();
         if (firstResume) {
             firstResume = false;
-            return;
+            if (!waitingForExternalSetting) {
+                return;
+            }
         }
         if (waitingForExternalSetting) {
             waitingForExternalSetting = false;
+            if (currentStep == STEP_WALLPAPER
+                    && MODE_CACHE_ONLY.equals(pendingWallpaperMode)) {
+                if (LockscreenWallpaperProbe.hasReadAccess(this)) {
+                    importCurrentLockscreenWallpaper();
+                } else {
+                    fallbackToWallpaperPicker(
+                            "Wallpaper access was not granted. Choose the image manually.");
+                }
+                return;
+            }
             if (currentStep == STEP_ACCESSIBILITY && isAccessibilityEnabled()) {
                 contentHost.postDelayed(new Runnable() {
                     @Override
@@ -216,19 +251,52 @@ public class SetupWizardActivity extends Activity {
                 launchWallpaperCrop(source);
             } else {
                 pendingWallpaperMode = "";
+                pendingWallpaperProfile = FoldDisplayTarget.PROFILE_SINGLE;
+                pendingWallpaperNextProfile = "";
             }
             return;
         }
         if (requestCode == REQUEST_CROP_WALLPAPER) {
             if (resultCode == RESULT_OK) {
                 String savedMode = pendingWallpaperMode;
+                if (pendingWallpaperNextProfile != null
+                        && !pendingWallpaperNextProfile.isEmpty()) {
+                    String nextProfile = pendingWallpaperNextProfile;
+                    pendingWallpaperNextProfile = "";
+                    Toast.makeText(this, "Now choose the " + nextProfile
+                                    + " lockscreen wallpaper",
+                            Toast.LENGTH_LONG).show();
+                    startWallpaperPicker(savedMode, nextProfile);
+                    return;
+                }
                 pendingWallpaperMode = "";
+                pendingWallpaperProfile = FoldDisplayTarget.PROFILE_SINGLE;
                 completeWallpaperChoice(savedMode);
             } else {
+                pendingWallpaperMode = "";
+                pendingWallpaperProfile = FoldDisplayTarget.PROFILE_SINGLE;
+                pendingWallpaperNextProfile = "";
                 Toast.makeText(this,
                         "No changes were saved. You can try again at any time.",
                         Toast.LENGTH_SHORT).show();
             }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_READ_WALLPAPER_STORAGE) {
+            return;
+        }
+        waitingForExternalSetting = false;
+        if (grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            importCurrentLockscreenWallpaper();
+        } else {
+            fallbackToWallpaperPicker(
+                    "Wallpaper access was not granted. Choose the image manually.");
         }
     }
 
@@ -474,8 +542,16 @@ public class SetupWizardActivity extends Activity {
                             Toast.LENGTH_LONG).show();
                     return;
                 }
-                OverlayPrefs.useAutomaticEffectBackgroundForAll(
-                        SetupWizardActivity.this, FoldDisplayTarget.PROFILE_SINGLE);
+                if (FoldDisplayTarget.isFoldDevice(SetupWizardActivity.this)
+                        && OverlayPrefs.foldModeEnabled(SetupWizardActivity.this)) {
+                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
+                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_COVER);
+                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
+                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_MAIN);
+                } else {
+                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
+                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_SINGLE);
+                }
                 completeWallpaperChoice(MODE_AUTOMATIC_SCREENSHOT);
             }
         });
@@ -507,14 +583,14 @@ public class SetupWizardActivity extends Activity {
         });
         body.addView(setAndCache, optionParams());
 
-        View exactCache = optionCard("03", "Provide the exact wallpaper (Beta)",
-                "Import the wallpaper already used by the lockscreen and align it precisely. "
-                        + "This does not change the system wallpaper.",
+        View exactCache = optionCard("03", "Use the current lockscreen wallpaper (Beta)",
+                "Try to read the current lockscreen wallpaper automatically. If Android or "
+                        + "the device cannot provide it, choose and align the image manually.",
                 "BETA", false);
         exactCache.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startWallpaperPicker(MODE_CACHE_ONLY);
+                startCurrentLockscreenWallpaperImport();
             }
         });
         body.addView(exactCache, optionParams());
@@ -606,8 +682,173 @@ public class SetupWizardActivity extends Activity {
         return scroll(body);
     }
 
+    private void startCurrentLockscreenWallpaperImport() {
+        pendingWallpaperMode = MODE_CACHE_ONLY;
+        if (!LockscreenWallpaperProbe.isSupported()) {
+            fallbackToWallpaperPicker(
+                    "Automatic wallpaper reading is unavailable. Choose it manually.");
+            return;
+        }
+        if (LockscreenWallpaperProbe.hasReadAccess(this)) {
+            importCurrentLockscreenWallpaper();
+            return;
+        }
+
+        waitingForExternalSetting = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent access = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            try {
+                startActivityForResult(access, REQUEST_LOCK_WALLPAPER_ACCESS);
+            } catch (RuntimeException firstError) {
+                try {
+                    startActivityForResult(
+                            new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
+                            REQUEST_LOCK_WALLPAPER_ACCESS);
+                } catch (RuntimeException secondError) {
+                    waitingForExternalSetting = false;
+                    fallbackToWallpaperPicker(
+                            "Wallpaper access settings are unavailable. Choose it manually.");
+                }
+            }
+            return;
+        }
+        requestPermissions(new String[] {Manifest.permission.READ_EXTERNAL_STORAGE},
+                REQUEST_READ_WALLPAPER_STORAGE);
+    }
+
+    private void importCurrentLockscreenWallpaper() {
+        if (importingPulledWallpaper) {
+            return;
+        }
+        importingPulledWallpaper = true;
+        pendingWallpaperMode = MODE_CACHE_ONLY;
+        final boolean fold = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this);
+        final String[] profiles = fold
+                ? new String[] {FoldDisplayTarget.PROFILE_COVER,
+                        FoldDisplayTarget.PROFILE_MAIN}
+                : new String[] {FoldDisplayTarget.PROFILE_SINGLE};
+        Toast.makeText(this, "Reading current lockscreen wallpaper…",
+                Toast.LENGTH_SHORT).show();
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                LockscreenWallpaperProbe.Result[] loaded =
+                        new LockscreenWallpaperProbe.Result[profiles.length];
+                ManualEffectBackground.ImportResult[] imported =
+                        new ManualEffectBackground.ImportResult[profiles.length];
+                Throwable failure = null;
+                try {
+                    for (int i = 0; i < profiles.length; i++) {
+                        int[] size = FoldDisplayTarget.displaySizeForProfile(
+                                SetupWizardActivity.this, profiles[i]);
+                        loaded[i] = LockscreenWallpaperProbe.read(
+                                SetupWizardActivity.this, profiles[i], size[0], size[1]);
+                        if (loaded[i].bitmap.getWidth() != size[0]
+                                || loaded[i].bitmap.getHeight() != size[1]) {
+                            throw new IOException(profiles[i] + " wallpaper is "
+                                    + loaded[i].bitmap.getWidth() + " x "
+                                    + loaded[i].bitmap.getHeight() + ", but that panel needs "
+                                    + size[0] + " x " + size[1]);
+                        }
+                    }
+                    int effect = OverlayPrefs.unlockEffect(SetupWizardActivity.this);
+                    for (int i = 0; i < profiles.length; i++) {
+                        imported[i] = ManualEffectBackground.importPulledLockWallpaper(
+                                SetupWizardActivity.this, loaded[i].bitmap, effect,
+                                profiles[i], fold
+                                ? "Current " + profiles[i] + " lockscreen wallpaper"
+                                : "Current lockscreen wallpaper");
+                    }
+                    for (int i = 0; i < profiles.length; i++) {
+                        if (!OverlayPrefs.useImportedEffectBackgroundForAll(
+                                SetupWizardActivity.this, profiles[i],
+                                imported[i].file, imported[i].displayName,
+                                imported[i].width, imported[i].height)) {
+                            throw new IOException("LLE could not activate the "
+                                    + profiles[i] + " wallpaper");
+                        }
+                    }
+                } catch (Throwable error) {
+                    failure = error;
+                    Log.w("LLESetup", "Automatic lockscreen wallpaper import failed", error);
+                }
+
+                final LockscreenWallpaperProbe.Result[] results = loaded;
+                final ManualEffectBackground.ImportResult[] saved = imported;
+                final Throwable error = failure;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        importingPulledWallpaper = false;
+                        for (LockscreenWallpaperProbe.Result result : results) {
+                            if (result != null && result.bitmap != null
+                                    && !result.bitmap.isRecycled()) {
+                                result.bitmap.recycle();
+                            }
+                        }
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        if (error != null || saved.length == 0 || saved[0] == null) {
+                            fallbackToWallpaperPicker(
+                                    wallpaperImportFailureMessage(error));
+                            return;
+                        }
+                        pendingWallpaperMode = "";
+                        Toast.makeText(SetupWizardActivity.this,
+                                fold
+                                ? "Cover and Main lockscreen wallpapers are active for L.L.E"
+                                : "Current lockscreen wallpaper is active for L.L.E",
+                                Toast.LENGTH_LONG).show();
+                        completeWallpaperChoice(MODE_CACHE_ONLY);
+                    }
+                });
+            }
+        }, "LLE-lock-wallpaper-import").start();
+    }
+
+    private String wallpaperImportFailureMessage(Throwable error) {
+        String detail = error == null ? "" : error.getMessage();
+        if (detail != null && detail.toLowerCase().contains("layered or live")) {
+            return "Layered wallpaper detected. Samsung protects its composed image, "
+                    + "so L.L.E is switching to manual import.";
+        }
+        if (detail != null && detail.toLowerCase().contains("denied access")) {
+            return "Wallpaper access was denied. L.L.E is switching to manual import.";
+        }
+        return "The current wallpaper could not be imported automatically. "
+                + "L.L.E is switching to manual import.";
+    }
+
+    private void fallbackToWallpaperPicker(String message) {
+        waitingForExternalSetting = false;
+        if (message != null && !message.trim().isEmpty()) {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        }
+        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            pendingWallpaperNextProfile = FoldDisplayTarget.PROFILE_MAIN;
+            Toast.makeText(this, "Choose the Cover wallpaper first, then Main.",
+                    Toast.LENGTH_LONG).show();
+            startWallpaperPicker(MODE_CACHE_ONLY, FoldDisplayTarget.PROFILE_COVER);
+        } else {
+            startWallpaperPicker(MODE_CACHE_ONLY);
+        }
+    }
+
     private void startWallpaperPicker(String mode) {
+        String profile = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this)
+                ? FoldDisplayTarget.cacheProfileForContext(this)
+                : FoldDisplayTarget.PROFILE_SINGLE;
+        startWallpaperPicker(mode, profile);
+    }
+
+    private void startWallpaperPicker(String mode, String requestedProfile) {
         pendingWallpaperMode = mode;
+        pendingWallpaperProfile = FoldDisplayTarget.normalizeProfile(requestedProfile);
         Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         picker.addCategory(Intent.CATEGORY_OPENABLE);
         picker.setType("image/*");
@@ -617,6 +858,8 @@ public class SetupWizardActivity extends Activity {
             startActivityForResult(picker, REQUEST_PICK_WALLPAPER);
         } catch (RuntimeException e) {
             pendingWallpaperMode = "";
+            pendingWallpaperProfile = FoldDisplayTarget.PROFILE_SINGLE;
+            pendingWallpaperNextProfile = "";
             Toast.makeText(this, "No image picker is available",
                     Toast.LENGTH_LONG).show();
         }
@@ -626,18 +869,16 @@ public class SetupWizardActivity extends Activity {
         if (pendingWallpaperMode == null || pendingWallpaperMode.length() == 0) {
             return;
         }
-        DisplayMetrics metrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        int targetWidth = Math.min(metrics.widthPixels, metrics.heightPixels);
-        int targetHeight = Math.max(metrics.widthPixels, metrics.heightPixels);
+        String profile = FoldDisplayTarget.normalizeProfile(pendingWallpaperProfile);
+        int[] targetSize = FoldDisplayTarget.displaySizeForProfile(this, profile);
         int effect = OverlayPrefs.unlockEffect(this);
         Intent crop = new Intent(this, WallpaperCropActivity.class);
         crop.putExtra(EXTRA_SOURCE_URI, source.toString());
         crop.putExtra(EXTRA_MODE, pendingWallpaperMode);
-        crop.putExtra(EXTRA_PROFILE, FoldDisplayTarget.PROFILE_SINGLE);
+        crop.putExtra(EXTRA_PROFILE, profile);
         crop.putExtra(EXTRA_EFFECT, effect);
-        crop.putExtra(EXTRA_TARGET_WIDTH, Math.max(1, targetWidth));
-        crop.putExtra(EXTRA_TARGET_HEIGHT, Math.max(1, targetHeight));
+        crop.putExtra(EXTRA_TARGET_WIDTH, targetSize[0]);
+        crop.putExtra(EXTRA_TARGET_HEIGHT, targetSize[1]);
         crop.putExtra(EXTRA_REQUIRE_PRECISE_ACK,
                 MODE_CACHE_ONLY.equals(pendingWallpaperMode));
         crop.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

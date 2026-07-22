@@ -182,6 +182,50 @@ final class ManualEffectBackground {
                 Math.max(0, originalWidth), Math.max(0, originalHeight));
     }
 
+    /** Stores a display-sized bitmap obtained directly from WallpaperManager. */
+    static ImportResult importPulledLockWallpaper(Context context, Bitmap prepared,
+            int effect, String profile, String displayName) throws IOException {
+        if (context == null || prepared == null || prepared.isRecycled()) {
+            throw new IOException("Missing pulled lockscreen wallpaper");
+        }
+        if (prepared.getWidth() <= 0 || prepared.getHeight() <= 0) {
+            throw new IOException("The pulled wallpaper has invalid dimensions");
+        }
+        String normalizedProfile = FoldDisplayTarget.normalizeProfile(profile);
+        File directory = new File(context.getFilesDir(), DIRECTORY);
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("Could not create private wallpaper directory");
+        }
+
+        long version = System.currentTimeMillis();
+        String baseName = "pulled_lock_wallpaper_effect" + effect + "_"
+                + normalizedProfile + "_" + version;
+        File preparedFile = new File(directory, baseName + "_"
+                + prepared.getWidth() + "x" + prepared.getHeight() + ".png");
+        BufferedOutputStream output = null;
+        try {
+            output = new BufferedOutputStream(new FileOutputStream(preparedFile), 64 * 1024);
+            if (!prepared.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                throw new IOException("The pulled wallpaper could not be saved");
+            }
+            output.flush();
+        } finally {
+            if (output != null) {
+                try {
+                    output.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        if (!isUsable(preparedFile)) {
+            throw new IOException("The private wallpaper copy is unreadable");
+        }
+        String label = displayName == null || displayName.trim().isEmpty()
+                ? "Current lockscreen wallpaper" : displayName.trim();
+        return new ImportResult(preparedFile, label,
+                prepared.getWidth(), prepared.getHeight());
+    }
+
     static String displayName(Context context, Uri uri) {
         return context == null || uri == null ? "Imported wallpaper"
                 : queryDisplayName(context, uri);

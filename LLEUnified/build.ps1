@@ -4,7 +4,10 @@ param(
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
     [ValidateSet("Stable", "StockFeedback")]
-    [string] $WatercolorFeedbackMode = "Stable"
+    [string] $WatercolorFeedbackMode = "Stable",
+    [switch] $ReleaseSigning,
+    [string] $ReleaseKeystorePath = "",
+    [string] $ReleaseKeyAlias = "lle-release"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +18,10 @@ if ($Target -ne "Arm64" -and
         $WatercolorFeedbackMode -ne "Stable")) {
     throw "ARM64 diagnostic options require -Target Arm64"
 }
+if ($ReleaseSigning -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
+        $WatercolorFeedbackMode -ne "Stable")) {
+    throw "Stable release signing does not support diagnostic ARM64 variants"
+}
 
 function Run-Target([string] $Script, [string[]] $Arguments) {
     & powershell -ExecutionPolicy Bypass -File $Script @Arguments
@@ -24,7 +31,13 @@ function Run-Target([string] $Script, [string[]] $Arguments) {
 }
 
 if ($Target -eq "All" -or $Target -eq "Arm32") {
-    Run-Target (Join-Path $root "build-arm32.ps1") @()
+    $arm32Arguments = @()
+    if ($ReleaseSigning) {
+        $arm32Arguments += @("-ReleaseSigning",
+            "-ReleaseKeystorePath", $ReleaseKeystorePath,
+            "-ReleaseKeyAlias", $ReleaseKeyAlias)
+    }
+    Run-Target (Join-Path $root "build-arm32.ps1") $arm32Arguments
 }
 
 if ($Target -eq "All" -or $Target -eq "Arm64") {
@@ -34,6 +47,11 @@ if ($Target -eq "All" -or $Target -eq "Arm64") {
     }
     if ($IncludeRippleCoreProbe) {
         $arm64Arguments += "-IncludeRippleCoreProbe"
+    }
+    if ($ReleaseSigning) {
+        $arm64Arguments += @("-ReleaseSigning",
+            "-ReleaseKeystorePath", $ReleaseKeystorePath,
+            "-ReleaseKeyAlias", $ReleaseKeyAlias)
     }
     Run-Target (Join-Path $root "build-arm64.ps1") $arm64Arguments
 }

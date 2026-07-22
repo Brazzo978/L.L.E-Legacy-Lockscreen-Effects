@@ -20,6 +20,8 @@ import java.util.List;
  * therefore not a safe proxy for the panel the user is looking at.
  */
 final class FoldDisplayTarget {
+    private static final String DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED =
+            "android.hardware.display.category.ALL_INCLUDING_DISABLED";
     static final String PROFILE_SINGLE = "single";
     static final String PROFILE_COVER = "cover";
     static final String PROFILE_MAIN = "main";
@@ -131,6 +133,43 @@ final class FoldDisplayTarget {
         }
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         return profileForSize(metrics.widthPixels, metrics.heightPixels);
+    }
+
+    static int[] displaySizeForProfile(Context context, String requestedProfile) {
+        String profile = normalizeProfile(requestedProfile);
+        DisplayMetrics active = context == null
+                ? new DisplayMetrics() : context.getResources().getDisplayMetrics();
+        int fallbackWidth = Math.max(1, active.widthPixels);
+        int fallbackHeight = Math.max(1, active.heightPixels);
+        int[] fallback = new int[] {Math.min(fallbackWidth, fallbackHeight),
+                Math.max(fallbackWidth, fallbackHeight)};
+        if (context == null || PROFILE_SINGLE.equals(profile)) {
+            return fallback;
+        }
+        try {
+            DisplayManager manager = (DisplayManager) context.getSystemService(
+                    Context.DISPLAY_SERVICE);
+            Display defaultDisplay = manager == null
+                    ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+            String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
+            Display[] displays = manager == null ? new Display[0]
+                    : manager.getDisplays(DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+            if (displays == null || displays.length == 0) {
+                displays = manager == null ? new Display[0] : manager.getDisplays();
+            }
+            for (Display display : displays) {
+                if (!isBuiltInPanel(display, builtInName)) {
+                    continue;
+                }
+                int[] size = realSize(display);
+                if (profile.equals(profileForSize(size[0], size[1]))) {
+                    return new int[] {Math.min(size[0], size[1]),
+                            Math.max(size[0], size[1])};
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
     }
 
     static boolean isFoldDevice(Context context) {

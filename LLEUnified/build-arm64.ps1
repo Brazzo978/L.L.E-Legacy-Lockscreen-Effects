@@ -3,7 +3,10 @@ param(
     [switch] $IncludeRippleCoreProbe,
     [switch] $Companion,
     [ValidateSet("Stable", "StockFeedback")]
-    [string] $WatercolorFeedbackMode = "Stable"
+    [string] $WatercolorFeedbackMode = "Stable",
+    [switch] $ReleaseSigning,
+    [string] $ReleaseKeystorePath = "",
+    [string] $ReleaseKeyAlias = "lle-release"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +17,10 @@ if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
 }
 if ($Companion -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
     throw "The co-installable ARM64 companion does not support native probe variants"
+}
+if ($ReleaseSigning -and ($Companion -or $IncludeNote5Probe -or
+        $IncludeRippleCoreProbe -or $WatercolorFeedbackMode -ne "Stable")) {
+    throw "Stable release signing is only available for the normal ARM64 build"
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -48,7 +55,9 @@ $resZip = Join-Path $out "res.zip"
 $unsigned = Join-Path $out "LLE64-arm64-unsigned.apk"
 $assembled = Join-Path $out "LLE64-arm64-assembled.apk"
 $zipaligned = Join-Path $out "LLE64-arm64-zipaligned.apk"
-$signed = Join-Path $out $(if ($Companion) {
+$signed = Join-Path $out $(if ($ReleaseSigning) {
+    "LLE64-arm64-v8a-release.apk"
+} elseif ($Companion) {
     "LLE64-arm64-v8a.apk"
 } elseif ($IncludeNote5Probe) {
     "LLE64-arm64-note5-probe.apk"
@@ -65,6 +74,7 @@ $arm64Stage = Join-Path $nativeStage "lib\arm64-v8a"
 $marker = Join-Path $arm64Stage "liblle64marker.so"
 $keystore = Join-Path $root ".keys\debug.keystore"
 $sourceKeystore = Join-Path $root "..\unlock-effects-test\demo-apk\debug.keystore"
+$releaseCertificateSha256 = "5397D6ACE3E9D2F14D8FFD2285E26E9F1B26635589CAC3A3DC95C0DEFF76B8EE"
 $canonicalManifest = Join-Path $root "AndroidManifest.xml"
 $manifest = $canonicalManifest
 
@@ -460,24 +470,51 @@ $watercolorEffectStageHash = (Get-FileHash -LiteralPath $watercolorEffectLibrary
         -Algorithm SHA256).Hash
 Run "jar.exe" @("uf", $assembled, "-C", $nativeStage, "lib")
 
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
-if (-not (Test-Path $keystore)) {
-    if (-not (Test-Path $sourceKeystore)) {
-        throw "Missing compatible debug keystore: $sourceKeystore"
+if ($ReleaseSigning) {
+    if ([string]::IsNullOrWhiteSpace($ReleaseKeystorePath)) {
+        $ReleaseKeystorePath = $env:LLE_RELEASE_KEYSTORE
     }
-    Copy-Item $sourceKeystore $keystore -Force
+    if ([string]::IsNullOrWhiteSpace($ReleaseKeystorePath) -or
+            -not (Test-Path -LiteralPath $ReleaseKeystorePath)) {
+        throw "Missing stable release keystore. Pass -ReleaseKeystorePath or set LLE_RELEASE_KEYSTORE."
+    }
+    if ([string]::IsNullOrWhiteSpace($env:LLE_RELEASE_KEY_PASSWORD)) {
+        throw "Missing LLE_RELEASE_KEY_PASSWORD for stable signing."
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
+    if (-not (Test-Path $keystore)) {
+        if (-not (Test-Path $sourceKeystore)) {
+            throw "Missing compatible debug keystore: $sourceKeystore"
+        }
+        Copy-Item $sourceKeystore $keystore -Force
+    }
 }
 
 Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $assembled, $zipaligned)
-Run (Join-Path $buildTools "apksigner.bat") @(
-    "sign",
-    "--ks", $keystore,
-    "--ks-pass", "pass:android",
-    "--key-pass", "pass:android",
-    "--out", $signed,
-    $zipaligned
-)
+$signingArguments = if ($ReleaseSigning) {
+    @("sign", "--ks", $ReleaseKeystorePath,
+        "--ks-key-alias", $ReleaseKeyAlias,
+        "--ks-pass", "env:LLE_RELEASE_KEY_PASSWORD",
+        "--key-pass", "env:LLE_RELEASE_KEY_PASSWORD",
+        "--out", $signed,
+        $zipaligned)
+} else {
+    @("sign", "--ks", $keystore,
+        "--ks-pass", "pass:android", "--key-pass", "pass:android",
+        "--out", $signed,
+        $zipaligned)
+}
+Run (Join-Path $buildTools "apksigner.bat") $signingArguments
 Run (Join-Path $buildTools "apksigner.bat") @("verify", "--verbose", $signed)
+if ($ReleaseSigning) {
+    $certificateInfo = (& (Join-Path $buildTools "apksigner.bat") verify `
+            --print-certs $signed) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or
+            $certificateInfo -notmatch "(?i)certificate SHA-256 digest:\s*$releaseCertificateSha256") {
+        throw "ARM64 stable certificate verification failed"
+    }
+}
 
 $badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n"
 if ($LASTEXITCODE -ne 0) {

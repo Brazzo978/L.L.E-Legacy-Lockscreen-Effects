@@ -2,6 +2,7 @@ package com.codex.lle;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.Manifest;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.TimePickerDialog;
@@ -9,6 +10,7 @@ import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -80,9 +82,13 @@ public class ControlActivity extends Activity {
             "pending_imported_background_width";
     private static final String STATE_PENDING_IMPORTED_HEIGHT =
             "pending_imported_background_height";
+    private static final String STATE_PENDING_LOCK_WALLPAPER_PREVIEW =
+            "pending_lock_wallpaper_preview";
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND = 4917;
     private static final int REQUEST_SETUP_WIZARD = 4918;
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
+    private static final int REQUEST_LOCK_WALLPAPER_ACCESS = 4920;
+    private static final int REQUEST_READ_WALLPAPER_STORAGE = 4921;
     private static final int TAB_LOCKSCREEN_EFFECT = 0;
     private static final int TAB_CHARGING_DOODLE = 1;
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
@@ -146,6 +152,8 @@ public class ControlActivity extends Activity {
     private boolean doodlePositionExpanded;
     private boolean lockscreenDebugExpanded;
     private boolean screenshotServiceExpanded;
+    private boolean pendingLockWallpaperPreview;
+    private boolean loadingLockWallpaperPreview;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
     private Typeface appFontRegular;
     private Typeface appFontBold;
@@ -170,6 +178,8 @@ public class ControlActivity extends Activity {
                     STATE_PENDING_IMPORTED_WIDTH, 0);
             pendingImportedBackgroundHeight = savedInstanceState.getInt(
                     STATE_PENDING_IMPORTED_HEIGHT, 0);
+            pendingLockWallpaperPreview = savedInstanceState.getBoolean(
+                    STATE_PENDING_LOCK_WALLPAPER_PREVIEW, false);
         }
 
         FrameLayout scene = new FrameLayout(this);
@@ -237,6 +247,8 @@ public class ControlActivity extends Activity {
         outState.putInt(STATE_PENDING_IMPORTED_EFFECT, pendingImportedBackgroundEffect);
         outState.putInt(STATE_PENDING_IMPORTED_WIDTH, pendingImportedBackgroundWidth);
         outState.putInt(STATE_PENDING_IMPORTED_HEIGHT, pendingImportedBackgroundHeight);
+        outState.putBoolean(STATE_PENDING_LOCK_WALLPAPER_PREVIEW,
+                pendingLockWallpaperPreview);
         super.onSaveInstanceState(outState);
     }
 
@@ -246,11 +258,24 @@ public class ControlActivity extends Activity {
         updateAccessibilityStatus();
         updateTouchBoxSummary();
         updateEffectProfilerSummary();
+        if (pendingLockWallpaperPreview
+                && LockscreenWallpaperProbe.hasReadAccess(this)) {
+            pendingLockWallpaperPreview = false;
+            showCurrentLockscreenWallpaper();
+        }
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_LOCK_WALLPAPER_ACCESS) {
+            if (pendingLockWallpaperPreview
+                    && LockscreenWallpaperProbe.hasReadAccess(this)) {
+                pendingLockWallpaperPreview = false;
+                showCurrentLockscreenWallpaper();
+            }
+            return;
+        }
         if (requestCode == REQUEST_SETUP_WIZARD) {
             showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
             return;
@@ -300,6 +325,24 @@ public class ControlActivity extends Activity {
             startActivityForResult(crop, REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP);
         } catch (RuntimeException e) {
             Toast.makeText(this, "Wallpaper editor is unavailable",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_READ_WALLPAPER_STORAGE) {
+            return;
+        }
+        if (grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            pendingLockWallpaperPreview = false;
+            showCurrentLockscreenWallpaper();
+        } else {
+            pendingLockWallpaperPreview = false;
+            Toast.makeText(this, "Wallpaper read access was not granted",
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -1411,7 +1454,7 @@ public class ControlActivity extends Activity {
         String source = SetupWizardActivity.MODE_SET_LOCK_AND_CACHE.equals(mode)
                 ? "user wallpaper (lockscreen + fixed cache, Beta)"
                 : SetupWizardActivity.MODE_CACHE_ONLY.equals(mode)
-                ? "user-provided exact wallpaper (Beta)" : "automatic screenshot";
+                ? "current/imported exact wallpaper (Beta)" : "automatic screenshot";
         section.addView(infoText("Accessibility: "
                 + (isChargingAccessibilityEnabled() ? "enabled" : "not enabled")
                 + ". " + batteryOptimizationStatus()
@@ -1430,7 +1473,141 @@ public class ControlActivity extends Activity {
                         ControlActivity.this), REQUEST_SETUP_WIZARD);
             }
         }));
+        section.addView(outlineButton("Show lockscreen wallpaper", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestLockscreenWallpaperPreview();
+            }
+        }));
         return section;
+    }
+
+    private void requestLockscreenWallpaperPreview() {
+        if (!LockscreenWallpaperProbe.isSupported()) {
+            Toast.makeText(this, "Requires Android 7 or newer",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (LockscreenWallpaperProbe.hasReadAccess(this)) {
+            showCurrentLockscreenWallpaper();
+            return;
+        }
+        pendingLockWallpaperPreview = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent access = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            try {
+                startActivityForResult(access, REQUEST_LOCK_WALLPAPER_ACCESS);
+            } catch (RuntimeException firstError) {
+                try {
+                    startActivityForResult(
+                            new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
+                            REQUEST_LOCK_WALLPAPER_ACCESS);
+                } catch (RuntimeException secondError) {
+                    pendingLockWallpaperPreview = false;
+                    Toast.makeText(this, "All files access settings are unavailable",
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+            return;
+        }
+        requestPermissions(new String[] {Manifest.permission.READ_EXTERNAL_STORAGE},
+                REQUEST_READ_WALLPAPER_STORAGE);
+    }
+
+    private void showCurrentLockscreenWallpaper() {
+        if (loadingLockWallpaperPreview) {
+            return;
+        }
+        loadingLockWallpaperPreview = true;
+        Toast.makeText(this, "Reading current lockscreen wallpaper…",
+                Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                LockscreenWallpaperProbe.Result loaded = null;
+                Throwable failure = null;
+                try {
+                    loaded = LockscreenWallpaperProbe.read(ControlActivity.this);
+                } catch (Throwable error) {
+                    failure = error;
+                    Log.w("LLEControl", "Lockscreen wallpaper probe failed", error);
+                }
+                final LockscreenWallpaperProbe.Result result = loaded;
+                final Throwable error = failure;
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        loadingLockWallpaperPreview = false;
+                        if (isFinishing() || isDestroyed()) {
+                            recycleLockscreenWallpaperResult(result);
+                            return;
+                        }
+                        if (result == null || result.bitmap == null) {
+                            String message = error != null && error.getMessage() != null
+                                    ? error.getMessage()
+                                    : "The current lockscreen wallpaper is unavailable";
+                            Toast.makeText(ControlActivity.this, message,
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        showLockscreenWallpaperDialog(result);
+                    }
+                });
+            }
+        }, "LLE-lock-wallpaper-probe").start();
+    }
+
+    private void showLockscreenWallpaperDialog(
+            final LockscreenWallpaperProbe.Result result) {
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("Current lockscreen wallpaper"));
+        root.addView(infoText("BETA probe | " + result.sourceLabel()
+                + " | original " + result.originalWidth + " x " + result.originalHeight
+                + " | preview " + result.bitmap.getWidth() + " x "
+                + result.bitmap.getHeight()));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(result.bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                recycleLockscreenWallpaperResult(result);
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private void recycleLockscreenWallpaperResult(LockscreenWallpaperProbe.Result result) {
+        if (result != null && result.bitmap != null && !result.bitmap.isRecycled()) {
+            result.bitmap.recycle();
+        }
     }
 
     private View seasonalEffectsCard() {
