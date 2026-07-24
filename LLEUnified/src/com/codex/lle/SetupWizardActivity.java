@@ -75,7 +75,9 @@ public class SetupWizardActivity extends Activity {
     private static final String PREF_STARTED = "started";
     private static final String PREF_WALLPAPER_MODE = "wallpaper_mode";
     private static final String PREF_CURRENT_STEP = "current_step";
-    private static final int WIZARD_SCHEMA = 2;
+    private static final String SAMSUNG_NIGHT_WALLPAPER_DIM =
+            "display_night_theme_wallpaper";
+    private static final int WIZARD_SCHEMA = 3;
     private static final String PREF_SCHEMA = "schema";
 
     private static final int REQUEST_PICK_WALLPAPER = 7201;
@@ -84,9 +86,10 @@ public class SetupWizardActivity extends Activity {
     private static final int REQUEST_READ_WALLPAPER_STORAGE = 7204;
     private static final int STEP_ACCESSIBILITY = 0;
     private static final int STEP_BATTERY = 1;
-    private static final int STEP_WALLPAPER = 2;
-    private static final int STEP_FEATURES = 3;
-    private static final int STEP_DONE = 4;
+    private static final int STEP_WALLPAPER_DIM = 2;
+    private static final int STEP_WALLPAPER = 3;
+    private static final int STEP_FEATURES = 4;
+    private static final int STEP_DONE = 5;
 
     private static final int COLOR_INK = Color.rgb(28, 41, 61);
     private static final int COLOR_MUTED = Color.rgb(98, 111, 129);
@@ -159,6 +162,13 @@ public class SetupWizardActivity extends Activity {
             finish();
             return;
         }
+        if (!manual && !wizardPrefs(this).getBoolean(PREF_COMPLETED, false)) {
+            // Accessibility can be granted before the user has selected a wallpaper source
+            // or feature set. Keep the runtime inert until the final wizard choice.
+            OverlayPrefs.get(this).edit()
+                    .putBoolean(OverlayPrefs.MASTER_ENABLED, false)
+                    .apply();
+        }
         if (savedInstanceState != null) {
             currentStep = savedInstanceState.getInt(STATE_STEP, STEP_ACCESSIBILITY);
             pendingWallpaperMode = savedInstanceState.getString(STATE_PENDING_MODE, "");
@@ -202,6 +212,12 @@ public class SetupWizardActivity extends Activity {
         }
         if (waitingForExternalSetting) {
             waitingForExternalSetting = false;
+            if (currentStep == STEP_WALLPAPER_DIM) {
+                if (contentHost != null) {
+                    showStep(STEP_WALLPAPER_DIM, false, 1);
+                }
+                return;
+            }
             if (currentStep == STEP_WALLPAPER
                     && MODE_CACHE_ONLY.equals(pendingWallpaperMode)) {
                 if (LockscreenWallpaperProbe.hasReadAccess(this)) {
@@ -225,7 +241,7 @@ public class SetupWizardActivity extends Activity {
                 contentHost.postDelayed(new Runnable() {
                     @Override
                     public void run() {
-                        showStep(STEP_WALLPAPER, true, 1);
+                        showStep(STEP_WALLPAPER_DIM, true, 1);
                     }
                 }, 260L);
                 return;
@@ -356,7 +372,7 @@ public class SetupWizardActivity extends Activity {
         progressDots.setGravity(Gravity.CENTER_VERTICAL);
         progress.addView(progressDots, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             View dot = new View(this);
             LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(30), dp(6));
             if (i > 0) {
@@ -365,7 +381,7 @@ public class SetupWizardActivity extends Activity {
             progressDots.addView(dot, dotParams);
         }
 
-        progressLabel = text("1 of 4", 12f, COLOR_MUTED, true);
+        progressLabel = text("1 of 5", 12f, COLOR_MUTED, true);
         progressLabel.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         progress.addView(progressLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -416,6 +432,9 @@ public class SetupWizardActivity extends Activity {
         }
         if (step == STEP_BATTERY) {
             return batteryStep();
+        }
+        if (step == STEP_WALLPAPER_DIM) {
+            return wallpaperDimStep();
         }
         if (step == STEP_WALLPAPER) {
             return wallpaperStep();
@@ -501,7 +520,7 @@ public class SetupWizardActivity extends Activity {
             @Override
             public void onClick(View v) {
                 if (isBatteryOptimizationIgnored()) {
-                    showStep(STEP_WALLPAPER, true, 1);
+                    showStep(STEP_WALLPAPER_DIM, true, 1);
                     return;
                 }
                 requestBatteryExemption();
@@ -519,9 +538,65 @@ public class SetupWizardActivity extends Activity {
         return scroll(body);
     }
 
+    private View wallpaperDimStep() {
+        final boolean exposed = isSamsungWallpaperDimExposed();
+        final boolean enabled = exposed && isSamsungWallpaperDimEnabled();
+        LinearLayout body = stepBody();
+        body.addView(kicker("STEP 3", enabled ? "HIGHLY RECOMMENDED" : "READY",
+                enabled ? COLOR_WARN : COLOR_OK));
+        body.addView(title("Disable Samsung wallpaper dimming"));
+        body.addView(paragraph("Samsung can darken the lockscreen wallpaper when Dark mode "
+                + "turns on. That protected post-processing is not included in the wallpaper "
+                + "L.L.E receives, so unlock effects can show a bright or mismatched area."));
+        body.addView(statusCard(enabled
+                        ? "Wallpaper dimming is enabled"
+                        : exposed
+                                ? "Wallpaper dimming is off"
+                                : "No Samsung wallpaper dimming detected",
+                enabled
+                        ? "Continuing with this enabled can cause bright flashes, mismatched "
+                                + "wallpaper layers, or severely broken-looking unlock effects. "
+                                + "Open Wallpaper and style and turn it off; L.L.E will verify "
+                                + "the setting when you return."
+                        : exposed
+                                ? "Samsung will keep the wallpaper brightness consistent with "
+                                        + "the L.L.E renderer."
+                                : "This device does not expose Samsung's night wallpaper option.",
+                !enabled));
+        Button primary = primaryButton(enabled
+                ? "Open Samsung Settings"
+                : "Continue");
+        primary.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!isSamsungWallpaperDimEnabled()) {
+                    showStep(STEP_WALLPAPER, true, 1);
+                    return;
+                }
+                openWallpaperStyleSettings();
+            }
+        });
+        body.addView(primary, actionParams());
+        Button manual = quietButton(enabled
+                ? "Continue anyway"
+                : "Open Samsung Settings");
+        manual.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (isSamsungWallpaperDimEnabled()) {
+                    showWallpaperDimLaterWarning();
+                } else {
+                    openWallpaperStyleSettings();
+                }
+            }
+        });
+        body.addView(manual, quietParams());
+        return scroll(body);
+    }
+
     private View wallpaperStep() {
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 3", "WALLPAPER", COLOR_ACCENT));
+        body.addView(kicker("STEP 4", "WALLPAPER", COLOR_ACCENT));
         body.addView(title("How should L.L.E get the wallpaper?"));
         body.addView(paragraph("Choose the source shown behind the effect. You can change it "
                 + "later from the main screen."));
@@ -557,13 +632,26 @@ public class SetupWizardActivity extends Activity {
         });
         body.addView(automatic, optionParams());
 
+        final boolean foldDevice = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this);
         View setAndCache = optionCard("02", "Set lockscreen + cache (Beta)",
-                "Choose a picture, move it, and zoom it. L.L.E will use the same crop as both "
-                        + "the lockscreen wallpaper and the renderer's fixed source.",
+                foldDevice
+                        ? "Unavailable on Fold devices: Samsung routes Cover and Main "
+                                + "wallpapers through protected panel-specific APIs."
+                        : "Choose a picture, move it, and zoom it. L.L.E will use the same crop "
+                                + "as both the lockscreen wallpaper and the renderer's fixed source.",
                 "BETA", true);
+        setAndCache.setAlpha(foldDevice ? 0.55f : 1f);
         setAndCache.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (foldDevice) {
+                    Toast.makeText(SetupWizardActivity.this,
+                            "Use automatic capture or provide the exact wallpaper separately "
+                                    + "for Cover and Main",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                     Toast.makeText(SetupWizardActivity.this,
                             "Setting the lockscreen wallpaper requires Android 7 or newer",
@@ -599,7 +687,7 @@ public class SetupWizardActivity extends Activity {
 
     private View featuresStep() {
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 4", "FEATURES", COLOR_ACCENT));
+        body.addView(kicker("STEP 5", "FEATURES", COLOR_ACCENT));
         body.addView(title("What do you want to enable?"));
         body.addView(paragraph("Choose the L.L.E experience you want to start with. You can "
                 + "change every option later from the main screen."));
@@ -610,7 +698,7 @@ public class SetupWizardActivity extends Activity {
         doodleOnly.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                applyFeatureSelection(true, false, false);
+                applyFeatureSelection(true, false);
             }
         });
         body.addView(doodleOnly, optionParams());
@@ -621,35 +709,24 @@ public class SetupWizardActivity extends Activity {
         lockscreenOnly.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                applyFeatureSelection(false, true, false);
+                applyFeatureSelection(false, true);
             }
         });
         body.addView(lockscreenOnly, optionParams());
 
         View doodleAndLockscreen = optionCard("03",
                 "Charging doodle + lockscreen effect",
-                "Enable both core experiences while keeping the companion effect off.",
+                "Show the charging doodle together with any effect selected in the "
+                        + "lockscreen effect picker.",
                 "BOTH", true);
         doodleAndLockscreen.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                applyFeatureSelection(true, true, false);
+                applyFeatureSelection(true, true);
             }
         });
         body.addView(doodleAndLockscreen, optionParams());
 
-        View fullExperience = optionCard("04",
-                "Doodle + lockscreen + companion effect",
-                "Enable the charging doodle, lockscreen effect, and the doodle's companion "
-                        + "effect.",
-                "FULL", false);
-        fullExperience.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                applyFeatureSelection(true, true, true);
-            }
-        });
-        body.addView(fullExperience, optionParams());
         return scroll(body);
     }
 
@@ -903,13 +980,12 @@ public class SetupWizardActivity extends Activity {
         showStep(STEP_FEATURES, true, 1);
     }
 
-    private void applyFeatureSelection(boolean doodleEnabled, boolean unlockEnabled,
-            boolean companionEnabled) {
+    private void applyFeatureSelection(boolean doodleEnabled, boolean unlockEnabled) {
         OverlayPrefs.get(this).edit()
                 .putBoolean(OverlayPrefs.MASTER_ENABLED, true)
                 .putBoolean(OverlayPrefs.SHOW_DOODLE, doodleEnabled)
                 .putBoolean(OverlayPrefs.UNLOCK_EFFECT_ENABLED, unlockEnabled)
-                .putBoolean(OverlayPrefs.SEASONAL_UNLOCK_PARTNER, companionEnabled)
+                .putBoolean(OverlayPrefs.SEASONAL_UNLOCK_PARTNER, false)
                 .apply();
         wizardPrefs(this).edit()
                 .putBoolean(PREF_COMPLETED, true)
@@ -984,11 +1060,60 @@ public class SetupWizardActivity extends Activity {
         }
     }
 
+    private boolean isSamsungWallpaperDimExposed() {
+        return Settings.System.getString(
+                getContentResolver(), SAMSUNG_NIGHT_WALLPAPER_DIM) != null;
+    }
+
+    private boolean isSamsungWallpaperDimEnabled() {
+        return Settings.System.getInt(
+                getContentResolver(), SAMSUNG_NIGHT_WALLPAPER_DIM, 0) != 0;
+    }
+
+    private void openWallpaperStyleSettings() {
+        waitingForExternalSetting = true;
+        Intent samsung = new Intent("com.samsung.intent.action.WALLPAPER_SETTING");
+        samsung.addCategory(Intent.CATEGORY_DEFAULT);
+        samsung.setPackage("com.samsung.android.app.dressroom");
+        try {
+            startActivity(samsung);
+            return;
+        } catch (RuntimeException samsungError) {
+            Log.w("LLESetup", "Samsung Wallpaper and style page unavailable",
+                    samsungError);
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_SETTINGS));
+        } catch (RuntimeException androidError) {
+            waitingForExternalSetting = false;
+            Toast.makeText(this, "Unable to open Samsung Settings",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void showBatteryLaterWarning() {
         new AlertDialog.Builder(this)
                 .setTitle("Continue without the exemption?")
                 .setMessage("Samsung may suspend L.L.E while the screen is off. The effect may "
                         + "start late or not appear until you allow unrestricted battery use.")
+                .setNegativeButton("Go back", null)
+                .setPositiveButton("Continue anyway", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        showStep(STEP_WALLPAPER_DIM, true, 1);
+                    }
+                })
+                .show();
+    }
+
+    private void showWallpaperDimLaterWarning() {
+        new AlertDialog.Builder(this)
+                .setTitle("Continue despite the compatibility risk?")
+                .setMessage("This setting is strongly recommended. When Samsung enables Dark "
+                        + "mode, the lockscreen and L.L.E layers can diverge: the wallpaper may "
+                        + "flash at full brightness, appear replaced, or make the unlock effect "
+                        + "look severely broken. You can fix it later by disabling wallpaper "
+                        + "dimming and refreshing the L.L.E background.")
                 .setNegativeButton("Go back", null)
                 .setPositiveButton("Continue anyway", new DialogInterface.OnClickListener() {
                     @Override
@@ -1166,7 +1291,7 @@ public class SetupWizardActivity extends Activity {
             dot.animate().alpha(active ? 1f : 0.55f).setDuration(220L).start();
         }
         progressLabel.setText(currentStep == STEP_DONE
-                ? "Complete" : (currentStep + 1) + " of 4");
+                ? "Complete" : (currentStep + 1) + " of 5");
     }
 
     private GradientDrawable solid(int color, int radius, int stroke) {

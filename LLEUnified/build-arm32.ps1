@@ -1,7 +1,10 @@
 param(
     [switch] $ReleaseSigning,
     [string] $ReleaseKeystorePath = "",
-    [string] $ReleaseKeyAlias = "lle-release"
+    [string] $ReleaseKeyAlias = "lle-release",
+    [string] $ReleaseLineagePath = "",
+    [string] $ReleaseOldKeystorePath = "",
+    [string] $ReleaseOldKeyAlias = "androiddebugkey"
 )
 
 $ErrorActionPreference = "Stop"
@@ -116,7 +119,9 @@ Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--min-api", "23", "-
 Copy-Item $unsigned $aligned
 Run "jar.exe" @("uf", $aligned, "-C", $dex, "classes.dex")
 if (Test-Path $samsungVisualEffectDex) {
-    $smaliCp = (Get-ChildItem -LiteralPath (Join-Path $repoRoot "unlock-effects-test\tools\java") -Filter "*.jar" | ForEach-Object { $_.FullName }) -join [IO.Path]::PathSeparator
+    $smaliCp = (Get-ChildItem -LiteralPath (Join-Path $root "vendor\smali-tools") `
+            -Filter "*.jar" | ForEach-Object { $_.FullName }) `
+            -join [IO.Path]::PathSeparator
     Run "java.exe" @("-cp", $smaliCp, "org.jf.baksmali.Main", "disassemble", $samsungVisualEffectDex, "-o", $samsungVisualEffectSmaliStage)
     # Abstract Tiles advances its physics once per rendered frame. The stock S4
     # renderer runs at ~30 fps even though the panel is 60 Hz; without pacing a
@@ -206,7 +211,9 @@ if (Test-Path $s3SmaliSource) {
     }
     $s3RendererContent = $s3RendererContent.Replace($s3DrawFrameNeedle, $s3DrawFramePatch)
     [IO.File]::WriteAllText($s3RendererSmali, $s3RendererContent, (New-Object Text.UTF8Encoding($false)))
-    $smaliCp = (Get-ChildItem -LiteralPath (Join-Path $repoRoot "unlock-effects-test\tools\java") -Filter "*.jar" | ForEach-Object { $_.FullName }) -join [IO.Path]::PathSeparator
+    $smaliCp = (Get-ChildItem -LiteralPath (Join-Path $root "vendor\smali-tools") `
+            -Filter "*.jar" | ForEach-Object { $_.FullName }) `
+            -join [IO.Path]::PathSeparator
     Run "java.exe" @("-cp", $smaliCp, "org.jf.smali.Main", "assemble", $s3SmaliStage, "-o", $s3Dex)
     if (-not (Test-Path $s3Dex)) {
         throw "S3 ripple smali assembly did not produce $s3Dex"
@@ -377,6 +384,14 @@ if ($ReleaseSigning) {
     if ([string]::IsNullOrWhiteSpace($env:LLE_RELEASE_KEY_PASSWORD)) {
         throw "Missing LLE_RELEASE_KEY_PASSWORD for stable signing."
     }
+    if ([string]::IsNullOrWhiteSpace($ReleaseLineagePath) -or
+            -not (Test-Path -LiteralPath $ReleaseLineagePath)) {
+        throw "Missing signing lineage for stable signing."
+    }
+    if ([string]::IsNullOrWhiteSpace($ReleaseOldKeystorePath) -or
+            -not (Test-Path -LiteralPath $ReleaseOldKeystorePath)) {
+        throw "Missing previous signing keystore for stable signing."
+    }
 } else {
     if (-not (Test-Path $keystore)) {
         New-Item -ItemType Directory -Force -Path $keystoreDir | Out-Null
@@ -389,10 +404,18 @@ if ($ReleaseSigning) {
 
 Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $aligned, (Join-Path $out "LLE-armeabi-v7a-zipaligned.apk"))
 $signingArguments = if ($ReleaseSigning) {
-    @("sign", "--ks", $ReleaseKeystorePath,
+    @("sign",
+        "--ks", $ReleaseOldKeystorePath,
+        "--ks-key-alias", $ReleaseOldKeyAlias,
+        "--ks-pass", "pass:android",
+        "--key-pass", "pass:android",
+        "--next-signer",
+        "--ks", $ReleaseKeystorePath,
         "--ks-key-alias", $ReleaseKeyAlias,
         "--ks-pass", "env:LLE_RELEASE_KEY_PASSWORD",
         "--key-pass", "env:LLE_RELEASE_KEY_PASSWORD",
+        "--lineage", $ReleaseLineagePath,
+        "--rotation-min-sdk-version", "33",
         "--out", $signed,
         (Join-Path $out "LLE-armeabi-v7a-zipaligned.apk"))
 } else {

@@ -6,7 +6,10 @@ param(
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
     [string] $ReleaseKeystorePath = "",
-    [string] $ReleaseKeyAlias = "lle-release"
+    [string] $ReleaseKeyAlias = "lle-release",
+    [string] $ReleaseLineagePath = "",
+    [string] $ReleaseOldKeystorePath = "",
+    [string] $ReleaseOldKeyAlias = "androiddebugkey"
 )
 
 $ErrorActionPreference = "Stop"
@@ -481,6 +484,14 @@ if ($ReleaseSigning) {
     if ([string]::IsNullOrWhiteSpace($env:LLE_RELEASE_KEY_PASSWORD)) {
         throw "Missing LLE_RELEASE_KEY_PASSWORD for stable signing."
     }
+    if ([string]::IsNullOrWhiteSpace($ReleaseLineagePath) -or
+            -not (Test-Path -LiteralPath $ReleaseLineagePath)) {
+        throw "Missing signing lineage for stable signing."
+    }
+    if ([string]::IsNullOrWhiteSpace($ReleaseOldKeystorePath) -or
+            -not (Test-Path -LiteralPath $ReleaseOldKeystorePath)) {
+        throw "Missing previous signing keystore for stable signing."
+    }
 } else {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
     if (-not (Test-Path $keystore)) {
@@ -493,10 +504,18 @@ if ($ReleaseSigning) {
 
 Run (Join-Path $buildTools "zipalign.exe") @("-f", "4", $assembled, $zipaligned)
 $signingArguments = if ($ReleaseSigning) {
-    @("sign", "--ks", $ReleaseKeystorePath,
+    @("sign",
+        "--ks", $ReleaseOldKeystorePath,
+        "--ks-key-alias", $ReleaseOldKeyAlias,
+        "--ks-pass", "pass:android",
+        "--key-pass", "pass:android",
+        "--next-signer",
+        "--ks", $ReleaseKeystorePath,
         "--ks-key-alias", $ReleaseKeyAlias,
         "--ks-pass", "env:LLE_RELEASE_KEY_PASSWORD",
         "--key-pass", "env:LLE_RELEASE_KEY_PASSWORD",
+        "--lineage", $ReleaseLineagePath,
+        "--rotation-min-sdk-version", "33",
         "--out", $signed,
         $zipaligned)
 } else {

@@ -11,6 +11,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -28,6 +29,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
 import android.hardware.display.DisplayManager;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -40,6 +42,8 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.Display;
 import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -64,6 +68,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
@@ -159,6 +164,9 @@ public class ControlActivity extends Activity {
     private Typeface appFontBold;
     private PopupWindow effectPreviewPopup;
     private Bitmap effectPreviewPopupBitmap;
+    private MediaPlayer effectPreviewMediaPlayer;
+    private Surface effectPreviewVideoSurface;
+    private int effectPreviewVideoGeneration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -345,6 +353,14 @@ public class ControlActivity extends Activity {
             Toast.makeText(this, "Wallpaper read access was not granted",
                     Toast.LENGTH_LONG).show();
         }
+    }
+
+    @Override
+    protected void onStop() {
+        uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        persistPendingUnlockEffect(false);
+        hideEffectPreviewBubble();
+        super.onStop();
     }
 
     @Override
@@ -1385,26 +1401,6 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.DOODLE_TIME_START,
                 OverlayPrefs.DOODLE_TIME_END));
 
-        LinearLayout partnerTiming = verticalGroup();
-        partnerTiming.addView(timeWindowControl("Partner effect active hours",
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_ENABLED,
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_START,
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_TIME_END));
-
-        LinearLayout partnerSoundTiming = verticalGroup();
-        partnerSoundTiming.addView(timeWindowControl("Partner sound active hours",
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_ENABLED,
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_START,
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_TIME_END));
-
-        LinearLayout partnerExtras = verticalGroup();
-        partnerExtras.addView(toggleWithAutomation("Partner effect sounds",
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER_SOUND_ENABLED,
-                true,
-                "doodle_partner_sound",
-                partnerSoundTiming,
-                null));
-
         LinearLayout doodleLockSoundTiming = verticalGroup();
         doodleLockSoundTiming.addView(timeWindowControl(
                 "Doodle lock sound active hours",
@@ -1413,12 +1409,6 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.DOODLE_LOCK_SOUND_TIME_END));
 
         LinearLayout doodleExtras = verticalGroup();
-        doodleExtras.addView(toggleWithAutomation("Seasonal unlock partner",
-                OverlayPrefs.SEASONAL_UNLOCK_PARTNER,
-                true,
-                "doodle_partner",
-                partnerTiming,
-                partnerExtras));
         doodleExtras.addView(toggleWithAutomation("Doodle lock sound",
                 OverlayPrefs.DOODLE_LOCK_SOUND_ENABLED,
                 true,
@@ -1432,10 +1422,10 @@ public class ControlActivity extends Activity {
                 doodleTiming,
                 doodleExtras));
         root.addView(controls);
+        root.addView(seasonalEffectsCard());
         if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
             root.addView(foldPanelRoutingControls());
         }
-        root.addView(seasonalEffectsCard());
         root.addView(positionControls());
         root.addView(doodleDebugMenu());
         return root;
@@ -1619,11 +1609,11 @@ public class ControlActivity extends Activity {
         sectionParams.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(sectionParams);
         styleCard(section);
-        section.addView(sectionTitle("Seasonal effects"));
+        section.addView(sectionTitle("Seasonal"));
         section.addView(effectPreviewHint());
         int currentSeason = prefs.getInt(OverlayPrefs.SEASON_MODE, SeasonalDoodleView.SEASON_AUTO);
         section.addView(seasonalEffectOption(
-                "Seasonal auto",
+                "Seasonal",
                 "Changes automatically with the current season.",
                 SeasonalDoodleView.SEASON_AUTO,
                 currentSeason));
@@ -1868,6 +1858,32 @@ public class ControlActivity extends Activity {
                         ? "Original Note 5 ARM64 renderer; the live lockscreen colors only the particles."
                         : "Original Samsung ARM32 bubbles renderer with cached lockscreen color sampling.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                current);
+        effects.addView(sectionLabel("Seasonal"));
+        addEffectOptionIfAvailable(effects,
+                "Seasonal",
+                "Automatically follows the current calendar season.",
+                OverlayPrefs.EFFECT_SEASONAL_AUTO,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Seasonal Spring",
+                "Samsung Festival spring unlock effect with blossoms and its original sounds.",
+                OverlayPrefs.EFFECT_SEASONAL_SPRING,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Seasonal Summer",
+                "Samsung Festival summer unlock effect with warm sparks and original sounds.",
+                OverlayPrefs.EFFECT_SEASONAL_SUMMER,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Seasonal Autumn",
+                "Samsung Festival autumn unlock effect with falling leaves and original sounds.",
+                OverlayPrefs.EFFECT_SEASONAL_AUTUMN,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Seasonal Winter",
+                "Samsung Festival winter unlock effect with snow particles and original sounds.",
+                OverlayPrefs.EFFECT_SEASONAL_WINTER,
                 current);
         root.addView(effects);
         root.addView(setupWizardControls());
@@ -2171,6 +2187,10 @@ public class ControlActivity extends Activity {
     }
 
     private void applyPendingUnlockEffect() {
+        persistPendingUnlockEffect(true);
+    }
+
+    private void persistPendingUnlockEffect(boolean refreshUi) {
         if (pendingUnlockEffect < 0) {
             return;
         }
@@ -2187,7 +2207,9 @@ public class ControlActivity extends Activity {
                     abstractTilesLineMode == 1);
         }
         editor.apply();
-        showTab(TAB_LOCKSCREEN_EFFECT);
+        if (refreshUi) {
+            showTab(TAB_LOCKSCREEN_EFFECT);
+        }
     }
 
     private String effectBackgroundStatus(int effect) {
@@ -2586,19 +2608,25 @@ public class ControlActivity extends Activity {
 
     private void showEffectPreviewBubble(View anchor, int effect, String title,
             float rawX, float rawY) {
+        Bitmap poster = decodeEffectPreviewPoster(effect);
+        if (poster == null) {
+            poster = createEffectPreviewBitmap(effect, 720, 720);
+        }
         showPreviewBubble(anchor, title, rawX, rawY,
-                createEffectPreviewBitmap(effect, 720, 720), true);
+                poster, true, effectPreviewAsset(effect));
     }
 
     private void showSeasonPreviewBubble(View anchor, int season, String title,
             float rawX, float rawY) {
         showPreviewBubble(anchor, title, rawX, rawY,
-                createDoodlePreviewBitmap(420, 720, season), false);
+                decodeSeasonalPreviewPoster(season), true,
+                seasonalPreviewAsset(season));
     }
 
     private void showPreviewBubble(View anchor, String title, float rawX, float rawY,
-            Bitmap previewBitmap, boolean squarePreview) {
-        if (anchor == null || isFinishing()) {
+            Bitmap previewBitmap, boolean squarePreview, String videoAsset) {
+        if (anchor == null || !anchor.isAttachedToWindow()
+                || isFinishing() || isDestroyed()) {
             if (previewBitmap != null && !previewBitmap.isRecycled()) {
                 previewBitmap.recycle();
             }
@@ -2658,12 +2686,27 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        FrameLayout previewFrame = new FrameLayout(this);
+        previewFrame.setBackground(solidDrawable(Color.rgb(245, 248, 250), dp(14),
+                Color.TRANSPARENT, 0));
+        previewFrame.setClipToOutline(true);
+
         ImageView image = new ImageView(this);
         image.setImageBitmap(effectPreviewPopupBitmap);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setBackground(solidDrawable(Color.rgb(245, 248, 250), dp(14),
-                Color.TRANSPARENT, 0));
-        card.addView(image, new LinearLayout.LayoutParams(
+        previewFrame.addView(image, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        int previewVideoGeneration = -1;
+        if (videoAsset != null) {
+            TextureView video = new TextureView(this);
+            video.setAlpha(0f);
+            previewFrame.addView(video, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+            previewVideoGeneration = prepareEffectPreviewVideo(video, videoAsset);
+        }
+        card.addView(previewFrame, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 imageHeight));
 
@@ -2698,10 +2741,23 @@ public class ControlActivity extends Activity {
         effectPreviewPopup.setClippingEnabled(false);
         effectPreviewPopup.setBackgroundDrawable(
                 solidDrawable(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0));
-        effectPreviewPopup.showAtLocation(getWindow().getDecorView(),
-                Gravity.NO_GRAVITY,
-                left,
-                top);
+        final int popupVideoGeneration = previewVideoGeneration;
+        effectPreviewPopup.setOnDismissListener(new PopupWindow.OnDismissListener() {
+            @Override
+            public void onDismiss() {
+                releaseEffectPreviewVideo(popupVideoGeneration);
+            }
+        });
+        try {
+            effectPreviewPopup.showAtLocation(getWindow().getDecorView(),
+                    Gravity.NO_GRAVITY,
+                    left,
+                    top);
+        } catch (RuntimeException error) {
+            Log.w("LLEControl", "preview popup unavailable", error);
+            hideEffectPreviewBubble();
+            return;
+        }
         root.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -2712,6 +2768,7 @@ public class ControlActivity extends Activity {
     }
 
     private void hideEffectPreviewBubble() {
+        releaseEffectPreviewVideo();
         if (effectPreviewPopup != null) {
             effectPreviewPopup.dismiss();
             effectPreviewPopup = null;
@@ -2720,6 +2777,317 @@ public class ControlActivity extends Activity {
             effectPreviewPopupBitmap.recycle();
         }
         effectPreviewPopupBitmap = null;
+    }
+
+    private String seasonalPreviewAsset(int seasonMode) {
+        if (seasonMode == SeasonalDoodleView.SEASON_AUTO) {
+            return "seasonal_preview_combined.mp4";
+        }
+        switch (resolveDoodlePreviewSeason(seasonMode)) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return "seasonal_preview_spring.mp4";
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return "seasonal_preview_summer.mp4";
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return "seasonal_preview_autumn.mp4";
+            case SeasonalDoodleView.SEASON_WINTER:
+            default:
+                return "seasonal_preview_winter.mp4";
+        }
+    }
+
+    private Bitmap decodeSeasonalPreviewPoster(int seasonMode) {
+        if (seasonMode == SeasonalDoodleView.SEASON_AUTO) {
+            return BitmapFactory.decodeResource(
+                    getResources(),
+                    R.drawable.preview_doodle_seasonal_auto);
+        }
+        final int drawable;
+        switch (resolveDoodlePreviewSeason(seasonMode)) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                drawable = R.drawable.preview_doodle_seasonal_spring;
+                break;
+            case SeasonalDoodleView.SEASON_SUMMER:
+                drawable = R.drawable.preview_doodle_seasonal_summer;
+                break;
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                drawable = R.drawable.preview_doodle_seasonal_autumn;
+                break;
+            case SeasonalDoodleView.SEASON_WINTER:
+            default:
+                drawable = R.drawable.preview_doodle_seasonal_winter;
+                break;
+        }
+        return BitmapFactory.decodeResource(getResources(), drawable);
+    }
+
+    private String effectPreviewAsset(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
+                return "effect_preview_s3_ripple.mp4";
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
+                return "effect_preview_n2_ink_in_water.mp4";
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                return "effect_preview_s4_lens_flare.mp4";
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return "effect_preview_s5_popping_colours.mp4";
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                return "effect_preview_n3_watercolor.mp4";
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+                return "effect_preview_n5_coloured_droplet.mp4";
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                return "effect_preview_n5_sparkling_bubbles.mp4";
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return "effect_preview_n4_abstract_tiles.mp4";
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                return "effect_preview_n4_geometric_mosaic.mp4";
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                return "effect_preview_tabs_blind.mp4";
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                return "effect_preview_s5_stone_skipping.mp4";
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                return "effect_preview_s5_brilliant_ring.mp4";
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                return "effect_preview_tabs_brilliant_cut.mp4";
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+                return seasonalUnlockEffectPreviewAsset(effect);
+            default:
+                return null;
+        }
+    }
+
+    private String seasonalUnlockEffectPreviewAsset(int effect) {
+        switch (resolveDoodlePreviewSeason(OverlayPrefs.seasonForUnlockEffect(effect))) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return "effect_preview_seasonal_spring.mp4";
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return "effect_preview_seasonal_summer.mp4";
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return "effect_preview_seasonal_autumn.mp4";
+            case SeasonalDoodleView.SEASON_WINTER:
+            default:
+                return "effect_preview_seasonal_winter.mp4";
+        }
+    }
+
+    private Bitmap decodeEffectPreviewPoster(int effect) {
+        final int drawable;
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
+                drawable = R.drawable.effect_preview_s3_ripple;
+                break;
+            case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
+                drawable = R.drawable.effect_preview_n2_ink_in_water;
+                break;
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                drawable = R.drawable.effect_preview_s4_lens_flare;
+                break;
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                drawable = R.drawable.effect_preview_s5_popping_colours;
+                break;
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                drawable = R.drawable.effect_preview_n3_watercolor;
+                break;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+                drawable = R.drawable.effect_preview_n5_coloured_droplet;
+                break;
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+                drawable = R.drawable.effect_preview_n5_sparkling_bubbles;
+                break;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                drawable = R.drawable.effect_preview_n4_abstract_tiles;
+                break;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                drawable = R.drawable.effect_preview_n4_geometric_mosaic;
+                break;
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                drawable = R.drawable.effect_preview_tabs_blind;
+                break;
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                drawable = R.drawable.effect_preview_s5_stone_skipping;
+                break;
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                drawable = R.drawable.effect_preview_s5_brilliant_ring;
+                break;
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                drawable = R.drawable.effect_preview_tabs_brilliant_cut;
+                break;
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+                drawable = seasonalUnlockEffectPreviewPosterResId(effect);
+                break;
+            default:
+                return null;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = false;
+        return BitmapFactory.decodeResource(getResources(), drawable, options);
+    }
+
+    private int seasonalUnlockEffectPreviewPosterResId(int effect) {
+        switch (resolveDoodlePreviewSeason(OverlayPrefs.seasonForUnlockEffect(effect))) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return R.drawable.effect_preview_seasonal_spring;
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return R.drawable.effect_preview_seasonal_summer;
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return R.drawable.effect_preview_seasonal_autumn;
+            case SeasonalDoodleView.SEASON_WINTER:
+            default:
+                return R.drawable.effect_preview_seasonal_winter;
+        }
+    }
+
+    private int prepareEffectPreviewVideo(final TextureView texture,
+            final String assetPath) {
+        final int generation = ++effectPreviewVideoGeneration;
+        texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override
+            public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture surfaceTexture,
+                    int width, int height) {
+                if (generation == effectPreviewVideoGeneration) {
+                    startEffectPreviewVideo(
+                            texture, surfaceTexture, assetPath, generation);
+                }
+            }
+
+            @Override
+            public void onSurfaceTextureSizeChanged(
+                    android.graphics.SurfaceTexture surfaceTexture,
+                    int width, int height) {
+                // CENTER_CROP scaling is applied by the square source and destination.
+            }
+
+            @Override
+            public boolean onSurfaceTextureDestroyed(
+                    android.graphics.SurfaceTexture surfaceTexture) {
+                releaseEffectPreviewVideo(generation);
+                return true;
+            }
+
+            @Override
+            public void onSurfaceTextureUpdated(
+                    android.graphics.SurfaceTexture surfaceTexture) {
+                // MediaPlayer owns frame delivery.
+            }
+        });
+        return generation;
+    }
+
+    private void startEffectPreviewVideo(final TextureView texture,
+            android.graphics.SurfaceTexture surfaceTexture, String assetPath,
+            final int generation) {
+        if (generation != effectPreviewVideoGeneration
+                || effectPreviewPopup == null) {
+            return;
+        }
+        releaseEffectPreviewVideoResources();
+        AssetFileDescriptor descriptor = null;
+        final MediaPlayer player = new MediaPlayer();
+        try {
+            descriptor = getAssets().openFd(assetPath);
+            effectPreviewVideoSurface = new Surface(surfaceTexture);
+            effectPreviewMediaPlayer = player;
+            player.setSurface(effectPreviewVideoSurface);
+            player.setDataSource(descriptor.getFileDescriptor(),
+                    descriptor.getStartOffset(), descriptor.getLength());
+            player.setLooping(true);
+            player.setVolume(0f, 0f);
+            player.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                @Override
+                public void onPrepared(MediaPlayer preparedPlayer) {
+                    if (generation != effectPreviewVideoGeneration
+                            || preparedPlayer != effectPreviewMediaPlayer
+                            || effectPreviewPopup == null) {
+                        return;
+                    }
+                    preparedPlayer.start();
+                }
+            });
+            player.setOnInfoListener(new MediaPlayer.OnInfoListener() {
+                @Override
+                public boolean onInfo(MediaPlayer infoPlayer, int what, int extra) {
+                    if (generation == effectPreviewVideoGeneration
+                            && infoPlayer == effectPreviewMediaPlayer
+                            && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                        texture.animate().alpha(1f).setDuration(100L).start();
+                    }
+                    return false;
+                }
+            });
+            player.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+                @Override
+                public boolean onError(MediaPlayer failedPlayer, int what, int extra) {
+                    Log.w("LLEControl", "effect preview video failed what="
+                            + what + " extra=" + extra);
+                    if (generation == effectPreviewVideoGeneration
+                            && failedPlayer == effectPreviewMediaPlayer) {
+                        releaseEffectPreviewVideo(generation);
+                    }
+                    return true;
+                }
+            });
+            player.prepareAsync();
+        } catch (IOException | RuntimeException error) {
+            Log.w("LLEControl", "effect preview asset unavailable path="
+                    + assetPath, error);
+            if (generation == effectPreviewVideoGeneration
+                    && effectPreviewMediaPlayer == player) {
+                releaseEffectPreviewVideo(generation);
+            } else {
+                try {
+                    player.release();
+                } catch (RuntimeException ignored) {
+                }
+            }
+        } finally {
+            if (descriptor != null) {
+                try {
+                    descriptor.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private void releaseEffectPreviewVideo() {
+        effectPreviewVideoGeneration++;
+        releaseEffectPreviewVideoResources();
+    }
+
+    private void releaseEffectPreviewVideo(int generation) {
+        if (generation < 0 || generation != effectPreviewVideoGeneration) {
+            return;
+        }
+        effectPreviewVideoGeneration++;
+        releaseEffectPreviewVideoResources();
+    }
+
+    private void releaseEffectPreviewVideoResources() {
+        if (effectPreviewMediaPlayer != null) {
+            try {
+                effectPreviewMediaPlayer.setSurface(null);
+            } catch (RuntimeException ignored) {
+            }
+            try {
+                effectPreviewMediaPlayer.release();
+            } catch (RuntimeException ignored) {
+            }
+            effectPreviewMediaPlayer = null;
+        }
+        if (effectPreviewVideoSurface != null) {
+            effectPreviewVideoSurface.release();
+            effectPreviewVideoSurface = null;
+        }
     }
 
     private View previewBubbleTail(final boolean pointsDown) {
@@ -2756,43 +3124,10 @@ public class ControlActivity extends Activity {
         return tail;
     }
 
-    private Bitmap createDoodlePreviewBitmap(int width, int height, int seasonMode) {
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-        drawGracePreviewBackground(canvas, paint, width, height, true);
-
-        paint.setShader(null);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(68, 0, 0, 0));
-        canvas.drawRoundRect(width * 0.06f, height * 0.12f,
-                width * 0.94f, height * 0.88f, dp(18), dp(18), paint);
-
-        drawDoodleSeasonalParticles(canvas, paint, width, height,
-                resolveDoodlePreviewSeason(seasonMode));
-        drawDoodleChargingMark(canvas, paint, width, height);
-
-        paint.setShader(null);
-        paint.setColor(Color.WHITE);
-        paint.setTypeface(appTypeface(Typeface.NORMAL));
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(height * 0.22f);
-        canvas.drawText("10:54", width * 0.5f, height * 0.45f, paint);
-
-        paint.setTextSize(height * 0.055f);
-        paint.setColor(Color.argb(210, 255, 255, 255));
-        canvas.drawText("Charging doodle", width * 0.5f, height * 0.70f, paint);
-
-        paint.setTextAlign(Paint.Align.LEFT);
-        paint.setTextSize(height * 0.055f);
-        canvas.drawText("97%", width * 0.73f, height * 0.20f, paint);
-        drawBatteryGlyph(canvas, paint, width * 0.84f, height * 0.155f,
-                width * 0.095f, height * 0.045f);
-        paint.setTextAlign(Paint.Align.LEFT);
-        return bitmap;
-    }
-
     private Bitmap createEffectPreviewBitmap(int effect, int width, int height) {
+        if (OverlayPrefs.isSeasonalUnlockEffect(effect)) {
+            return createSeasonalUnlockPreviewBitmap(effect, width, height);
+        }
         Bitmap stockPreview = decodeStockEffectPreview(effect);
         if (stockPreview != null) {
             Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
@@ -2852,6 +3187,22 @@ public class ControlActivity extends Activity {
                 drawPreviewLensFlare(canvas, paint, width, height);
                 break;
         }
+        drawPreviewVignette(canvas, paint, width, height);
+        return bitmap;
+    }
+
+    private Bitmap createSeasonalUnlockPreviewBitmap(int effect, int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        drawGracePreviewBackground(canvas, paint, width, height, false);
+        int season = resolveDoodlePreviewSeason(
+                OverlayPrefs.seasonForUnlockEffect(effect));
+        drawDoodleSeasonalParticles(canvas, paint, width, height, season);
+        drawEffectMotif(canvas, paint, effect,
+                new RectF(width * 0.27f, height * 0.27f,
+                        width * 0.73f, height * 0.73f),
+                Color.WHITE, 0.96f);
         drawPreviewVignette(canvas, paint, width, height);
         return bitmap;
     }
@@ -2919,6 +3270,24 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_n5_sparkling_bubbles_lle;
             case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
+            case OverlayPrefs.EFFECT_STONE_SKIPPING:
+                return R.drawable.icon_effect_s5_stone_skipping_lle;
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                return R.drawable.icon_effect_s5_brilliant_ring_lle;
+            case OverlayPrefs.EFFECT_TABS_BLIND:
+                return R.drawable.icon_effect_tabs_blind_lle;
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                return R.drawable.icon_effect_tabs_brilliant_cut_lle;
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+                return R.drawable.icon_effect_seasonal_auto_lle;
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+                return R.drawable.icon_effect_seasonal_spring_lle;
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+                return R.drawable.icon_effect_seasonal_summer_lle;
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+                return R.drawable.icon_effect_seasonal_autumn_lle;
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+                return R.drawable.icon_effect_seasonal_winter_lle;
             default:
                 return 0;
         }
@@ -4433,6 +4802,17 @@ public class ControlActivity extends Activity {
                 return Color.rgb(239, 157, 64);
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
                 return Color.rgb(174, 111, 204);
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+                return seasonAccentColor(resolveDoodlePreviewSeason(
+                        SeasonalDoodleView.SEASON_AUTO));
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+                return seasonAccentColor(SeasonalDoodleView.SEASON_SPRING);
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+                return seasonAccentColor(SeasonalDoodleView.SEASON_SUMMER);
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+                return seasonAccentColor(SeasonalDoodleView.SEASON_AUTUMN);
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+                return seasonAccentColor(SeasonalDoodleView.SEASON_WINTER);
             default:
                 return COLOR_ACCENT;
         }
@@ -4652,15 +5032,33 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private int seasonIconResId(int season) {
+        switch (season) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return R.drawable.icon_doodle_seasonal_spring_lle;
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return R.drawable.icon_doodle_seasonal_summer_lle;
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return R.drawable.icon_doodle_seasonal_autumn_lle;
+            case SeasonalDoodleView.SEASON_WINTER:
+                return R.drawable.icon_doodle_seasonal_winter_lle;
+            case SeasonalDoodleView.SEASON_AUTO:
+            default:
+                return R.drawable.icon_doodle_seasonal_auto_lle;
+        }
+    }
+
     private final class GraceSeasonIconView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int season;
         private final boolean selected;
+        private final Drawable iconDrawable;
 
         GraceSeasonIconView(int season, boolean selected) {
             super(ControlActivity.this);
             this.season = season;
             this.selected = selected;
+            this.iconDrawable = getResources().getDrawable(seasonIconResId(season));
             setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
 
@@ -4670,6 +5068,17 @@ public class ControlActivity extends Activity {
             float inset = dp(1.5f);
             RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
             float radius = Math.min(getWidth(), getHeight()) * 0.27f;
+            float unit = Math.min(bounds.width(), bounds.height());
+            if (iconDrawable != null) {
+                iconDrawable.setBounds(
+                        Math.round(bounds.left),
+                        Math.round(bounds.top),
+                        Math.round(bounds.right),
+                        Math.round(bounds.bottom));
+                iconDrawable.draw(canvas);
+                drawPreviewAffordance(canvas, bounds, radius, unit);
+                return;
+            }
             int accent = seasonAccentColor(season);
             int deep = blendColor(COLOR_GRACE_NAVY, accent, 0.58f);
             paint.setStyle(Paint.Style.FILL);
@@ -4681,7 +5090,6 @@ public class ControlActivity extends Activity {
 
             float cx = bounds.centerX() - dp(2);
             float cy = bounds.centerY() - dp(2);
-            float unit = Math.min(bounds.width(), bounds.height());
             paint.setColor(Color.argb(235, 255, 255, 255));
             paint.setStrokeCap(Paint.Cap.ROUND);
             if (season == SeasonalDoodleView.SEASON_AUTO) {
@@ -4743,6 +5151,11 @@ public class ControlActivity extends Activity {
                 paint.setStyle(Paint.Style.FILL);
             }
 
+            drawPreviewAffordance(canvas, bounds, radius, unit);
+        }
+
+        private void drawPreviewAffordance(Canvas canvas, RectF bounds, float radius,
+                float unit) {
             // Small magnifier: this icon is also the long-press preview affordance.
             float previewCx = bounds.right - unit * 0.16f;
             float previewCy = bounds.bottom - unit * 0.17f;
@@ -4833,6 +5246,16 @@ public class ControlActivity extends Activity {
         float cx = rect.centerX();
         float cy = rect.centerY();
         float unit = Math.min(rect.width(), rect.height());
+
+        if (OverlayPrefs.isSeasonalUnlockEffect(effect)) {
+            drawSeasonalEffectMotif(canvas, paint,
+                    resolveDoodlePreviewSeason(
+                            OverlayPrefs.seasonForUnlockEffect(effect)),
+                    cx, cy, unit);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+            return;
+        }
 
         switch (effect) {
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
@@ -4956,6 +5379,61 @@ public class ControlActivity extends Activity {
         }
         paint.setStyle(Paint.Style.FILL);
         paint.setStrokeCap(Paint.Cap.BUTT);
+    }
+
+    private void drawSeasonalEffectMotif(Canvas canvas, Paint paint, int season,
+            float cx, float cy, float unit) {
+        paint.setStyle(Paint.Style.FILL);
+        if (season == SeasonalDoodleView.SEASON_SPRING) {
+            for (int i = 0; i < 5; i++) {
+                double angle = -Math.PI * 0.5 + i * Math.PI * 0.4;
+                canvas.drawCircle(
+                        cx + (float) Math.cos(angle) * unit * 0.20f,
+                        cy + (float) Math.sin(angle) * unit * 0.20f,
+                        unit * 0.15f,
+                        paint);
+            }
+            int oldColor = paint.getColor();
+            paint.setColor(Color.argb(Color.alpha(oldColor), 255, 218, 89));
+            canvas.drawCircle(cx, cy, unit * 0.10f, paint);
+            paint.setColor(oldColor);
+            return;
+        }
+        if (season == SeasonalDoodleView.SEASON_SUMMER) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(dp(2), unit * 0.055f));
+            canvas.drawCircle(cx, cy, unit * 0.17f, paint);
+            for (int i = 0; i < 8; i++) {
+                double angle = i * Math.PI * 0.25;
+                canvas.drawLine(
+                        cx + (float) Math.cos(angle) * unit * 0.25f,
+                        cy + (float) Math.sin(angle) * unit * 0.25f,
+                        cx + (float) Math.cos(angle) * unit * 0.40f,
+                        cy + (float) Math.sin(angle) * unit * 0.40f,
+                        paint);
+            }
+            return;
+        }
+        if (season == SeasonalDoodleView.SEASON_AUTUMN) {
+            Path leaf = new Path();
+            leaf.moveTo(cx, cy - unit * 0.42f);
+            leaf.cubicTo(cx + unit * 0.43f, cy - unit * 0.20f,
+                    cx + unit * 0.32f, cy + unit * 0.34f,
+                    cx, cy + unit * 0.43f);
+            leaf.cubicTo(cx - unit * 0.32f, cy + unit * 0.25f,
+                    cx - unit * 0.42f, cy - unit * 0.17f,
+                    cx, cy - unit * 0.42f);
+            canvas.drawPath(leaf, paint);
+            return;
+        }
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(dp(2), unit * 0.055f));
+        for (int i = 0; i < 3; i++) {
+            double angle = i * Math.PI / 3.0;
+            float dx = (float) Math.cos(angle) * unit * 0.42f;
+            float dy = (float) Math.sin(angle) * unit * 0.42f;
+            canvas.drawLine(cx - dx, cy - dy, cx + dx, cy + dy, paint);
+        }
     }
 
     private void forceSansSerif(View view) {

@@ -10,4 +10,5 @@
 /ports/abstract-tiles/tests/lse_abstract_reference_unlocked.mp4
 /ports/abstract-tiles/tests/lse_reference_unlocked_*/
 /ports/abstract-tiles/tests/lse_reference_video_frames/
+/captures/effect-demos/
 *.log

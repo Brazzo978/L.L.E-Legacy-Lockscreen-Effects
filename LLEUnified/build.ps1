@@ -7,7 +7,10 @@ param(
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
     [string] $ReleaseKeystorePath = "",
-    [string] $ReleaseKeyAlias = "lle-release"
+    [string] $ReleaseKeyAlias = "lle-release",
+    [string] $ReleaseLineagePath = "",
+    [string] $ReleaseOldKeystorePath = "",
+    [string] $ReleaseOldKeyAlias = "androiddebugkey"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +38,10 @@ if ($Target -eq "All" -or $Target -eq "Arm32") {
     if ($ReleaseSigning) {
         $arm32Arguments += @("-ReleaseSigning",
             "-ReleaseKeystorePath", $ReleaseKeystorePath,
-            "-ReleaseKeyAlias", $ReleaseKeyAlias)
+            "-ReleaseKeyAlias", $ReleaseKeyAlias,
+            "-ReleaseLineagePath", $ReleaseLineagePath,
+            "-ReleaseOldKeystorePath", $ReleaseOldKeystorePath,
+            "-ReleaseOldKeyAlias", $ReleaseOldKeyAlias)
     }
     Run-Target (Join-Path $root "build-arm32.ps1") $arm32Arguments
 }
@@ -51,7 +57,10 @@ if ($Target -eq "All" -or $Target -eq "Arm64") {
     if ($ReleaseSigning) {
         $arm64Arguments += @("-ReleaseSigning",
             "-ReleaseKeystorePath", $ReleaseKeystorePath,
-            "-ReleaseKeyAlias", $ReleaseKeyAlias)
+            "-ReleaseKeyAlias", $ReleaseKeyAlias,
+            "-ReleaseLineagePath", $ReleaseLineagePath,
+            "-ReleaseOldKeystorePath", $ReleaseOldKeystorePath,
+            "-ReleaseOldKeyAlias", $ReleaseOldKeyAlias)
     }
     Run-Target (Join-Path $root "build-arm64.ps1") $arm64Arguments
 }

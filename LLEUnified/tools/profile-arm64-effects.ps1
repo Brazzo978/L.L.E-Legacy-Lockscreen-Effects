@@ -20,6 +20,15 @@ $effectLabels = @{
     9 = "N5 Colored Droplet + Gyro"
     10 = "S3 Water Ripple"
     11 = "Tab S Blind"
+    12 = "N2 Ink in Water"
+    13 = "S5 Stone Skipping"
+    14 = "S5 Brilliant Ring"
+    15 = "Tab S Brilliant Cut"
+    16 = "Seasonal Spring"
+    17 = "Seasonal Summer"
+    18 = "Seasonal Autumn"
+    19 = "Seasonal Winter"
+    20 = "Seasonal"
 }
 
 function Get-ThreadTicks([string] $ProcessId) {

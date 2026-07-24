@@ -33,6 +33,11 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
                 return true;
             default:
                 return false;

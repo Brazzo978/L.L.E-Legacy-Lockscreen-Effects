@@ -15,8 +15,14 @@ public class EffectBackgroundWakeActivity extends Activity {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         String profile = FoldDisplayTarget.cacheProfileForContext(this);
-        if (!OverlayPrefs.unlockEffectEnabled(this)
+        if (!OverlayPrefs.masterEnabled(this)
+                || !OverlayPrefs.unlockEffectEnabled(this)
                 || !OverlayPrefs.foldPanelUnlockEffectEnabled(this, profile)) {
+            OverlayPrefs.get(this).edit()
+                    .putBoolean(OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_ACTIVE, false)
+                    .putBoolean(
+                            OverlayPrefs.EFFECT_BACKGROUND_WAKE_CAPTURE_SHOULD_RELOCK, false)
+                    .apply();
             finish();
             return;
         }

@@ -19,10 +19,11 @@ import java.util.List;
 import java.util.Random;
 
 public class SeasonalUnlockEffectView extends View implements UnlockEffectRenderer {
-    private static final long FRAME_MS = 16L;
     private static final int SOUND_TAP = 0;
     private static final int SOUND_UNLOCK = 1;
     private static final int SOUND_DRAG = 2;
+    private static final long STOCK_MOVE_STEP_MS = 16L;
+    private static final float PARTICLE_MOVE_MIN_DP = 1f;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
@@ -35,13 +36,24 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     private int seasonMode = SeasonalDoodleView.SEASON_AUTO;
     private int activeSeason = SeasonalDoodleView.SEASON_SPRING;
     private int dragSoundCount;
+    private long lastStockMoveStepAt;
+    private float lastParticleX;
+    private float lastParticleY;
     private boolean destroyed;
     private boolean gestureActive;
+    private final boolean partnerMode;
     private SoundPool soundPool;
     private final int[][] sounds = new int[4][3];
 
     public SeasonalUnlockEffectView(Context context) {
+        this(context, SeasonalDoodleView.SEASON_AUTO, true);
+    }
+
+    SeasonalUnlockEffectView(Context context, int season, boolean partner) {
         super(context);
+        seasonMode = season;
+        activeSeason = resolveSeason();
+        partnerMode = partner;
         setWillNotDraw(false);
         loadBitmaps();
     }
@@ -62,7 +74,19 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
 
     @Override
     public String effectName() {
-        return "Seasonal unlock partner";
+        if (partnerMode) {
+            return "Seasonal unlock partner";
+        }
+        switch (resolveSeason()) {
+            case SeasonalDoodleView.SEASON_SPRING:
+                return "Seasonal Spring";
+            case SeasonalDoodleView.SEASON_SUMMER:
+                return "Seasonal Summer";
+            case SeasonalDoodleView.SEASON_AUTUMN:
+                return "Seasonal Autumn";
+            default:
+                return "Seasonal Winter";
+        }
     }
 
     @Override
@@ -73,6 +97,9 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         activeSeason = resolveSeason();
         gestureActive = true;
         dragSoundCount = 50;
+        lastStockMoveStepAt = SystemClock.uptimeMillis();
+        lastParticleX = screenX;
+        lastParticleY = screenY;
         playSound(SOUND_TAP);
         clearTouchSprites();
         addTouchSprites(screenX, screenY);
@@ -88,13 +115,25 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             beginGesture(screenX, screenY);
             return;
         }
-        dragSoundCount++;
-        if (dragSoundCount >= 60) {
-            playSound(SOUND_DRAG);
-            dragSoundCount = 0;
+        long now = SystemClock.uptimeMillis();
+        boolean stockMoveStep = now - lastStockMoveStepAt >= STOCK_MOVE_STEP_MS;
+        positionTouchSprites(screenX, screenY, stockMoveStep);
+        if (stockMoveStep) {
+            lastStockMoveStepAt = now;
+            dragSoundCount++;
+            if (dragSoundCount >= 60) {
+                playSound(SOUND_DRAG);
+                dragSoundCount = 0;
+            }
+            float dx = screenX - lastParticleX;
+            float dy = screenY - lastParticleY;
+            float minimumTravel = PARTICLE_MOVE_MIN_DP * density();
+            if (dx * dx + dy * dy >= minimumTravel * minimumTravel) {
+                spawnParticle(screenX, screenY);
+                lastParticleX = screenX;
+                lastParticleY = screenY;
+            }
         }
-        updateTouchSprites(screenX, screenY);
-        spawnParticle(screenX, screenY);
         invalidate();
     }
 
@@ -153,7 +192,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             TouchSprite touch = touchSprites[i];
             if (touch != null) {
                 drawTouchSprite(canvas, touch, now);
-                keepAnimating = true;
+                keepAnimating |= touchNeedsAnimation(touch, now);
             }
         }
         Iterator<Sprite> iterator = particles.iterator();
@@ -167,7 +206,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             keepAnimating = true;
         }
         if (keepAnimating && !destroyed) {
-            postInvalidateDelayed(FRAME_MS);
+            postInvalidateOnAnimation();
         }
     }
 
@@ -184,10 +223,10 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             touchSprites[0] = TouchSprite.springLike(touchBitmaps[season][1], 72f, 72f, true);
             touchSprites[1] = TouchSprite.springLike(touchBitmaps[season][0], 35f, 35f, false);
         }
-        updateTouchSprites(x, y);
+        positionTouchSprites(x, y, false);
     }
 
-    private void updateTouchSprites(float x, float y) {
+    private void positionTouchSprites(float x, float y, boolean advanceDrift) {
         float d = density();
         int season = activeSeason;
         for (int i = 0; i < touchSprites.length; i++) {
@@ -197,7 +236,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             }
             touch.x = x - touch.offsetXdp * d;
             touch.y = y - touch.offsetYdp * d;
-            if (season == SeasonalDoodleView.SEASON_SUMMER) {
+            if (advanceDrift && season == SeasonalDoodleView.SEASON_SUMMER) {
                 if (i == 1) {
                     touch.driftDp = Math.min(63f, touch.driftDp + 2f);
                     touch.x -= touch.driftDp * d;
@@ -207,7 +246,8 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                     touch.x -= touch.driftDp * d;
                     touch.y -= touch.driftDp * d;
                 }
-            } else if (season == SeasonalDoodleView.SEASON_WINTER && i == 1) {
+            } else if (advanceDrift
+                    && season == SeasonalDoodleView.SEASON_WINTER && i == 1) {
                 touch.driftDp = Math.min(10f, touch.driftDp + 2f);
                 touch.x -= touch.driftDp * d;
                 touch.y -= touch.driftDp * d;
@@ -338,12 +378,24 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             return 1f;
         }
         if (touch.mode == TouchSprite.MODE_SUMMER && touch.offsetXdp > 80f) {
-            return clamp(age / 1800f);
+            return accelerateDecelerate(clamp(age / 1800f));
         }
         if (touch.mode == TouchSprite.MODE_SUMMER) {
-            return clamp(age / 330f);
+            return accelerateDecelerate(clamp(age / 330f));
         }
-        return clamp(age / (touch.bigSpring ? 1470f : 330f));
+        return accelerateDecelerate(
+                clamp(age / (touch.bigSpring ? 1470f : 330f)));
+    }
+
+    private boolean touchNeedsAnimation(TouchSprite touch, long now) {
+        if (touch.mode == TouchSprite.MODE_STATIC) {
+            return false;
+        }
+        float age = now - touch.startMs;
+        if (touch.mode == TouchSprite.MODE_SUMMER) {
+            return age < (touch.offsetXdp > 80f ? 2130f : 330f);
+        }
+        return age < 1800f;
     }
 
     private void drawParticle(Canvas canvas, Sprite sprite, long now) {
@@ -374,14 +426,14 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
 
     private float particleAlpha(Sprite sprite, float age) {
         if (age < sprite.alphaInMs) {
-            return clamp(age / sprite.alphaInMs);
+            return accelerateDecelerate(clamp(age / sprite.alphaInMs));
         }
         age -= sprite.alphaInMs;
         if (age < sprite.alphaHoldMs) {
             return 1f;
         }
         age -= sprite.alphaHoldMs;
-        return lerp(1f, 0f, clamp(age / sprite.alphaOutMs));
+        return lerp(1f, 0f, age / sprite.alphaOutMs);
     }
 
     private void drawBitmap(Canvas canvas, Bitmap bitmap, float x, float y,
@@ -534,7 +586,10 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     }
 
     private boolean lockscreenSoundsEnabled() {
-        return OverlayPrefs.seasonalUnlockPartnerSoundAllowedNow(getContext())
+        boolean allowed = partnerMode
+                ? OverlayPrefs.seasonalUnlockPartnerSoundAllowedNow(getContext())
+                : OverlayPrefs.unlockEffectSoundAllowedNow(getContext());
+        return allowed
                 && Settings.System.getInt(getContext().getContentResolver(),
                 "lockscreen_sounds_enabled", 1) != 0;
     }

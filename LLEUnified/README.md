@@ -5,15 +5,16 @@ The ARM32 and ARM64 applications share one project and can be installed
 together. ARM32 is permanently named **L.L.E** (`com.codex.lle`); ARM64 is
 permanently named **L.L.E 64** (`com.codex.lle64`).
 
-> **Beta:** expect some device-specific differences. Keep another unlock method
-> available while testing.
+ARM64 is the actively developed edition. The ARM32 build is retained for
+historical continuity and now receives compatibility and critical bug fixes
+only; new effects and features target ARM64.
 
 ## APK selection
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.4-Beta-1969-32-bit.apk` | `armeabi-v7a` | Daily use on devices that support 32-bit ARM applications |
-| `LLE64-1.0.4-Beta-1969-64-bit.apk` | `arm64-v8a` | ARM64-only devices and ARM64 Beta testing |
+| `LLE-1.0.4-32-bit.apk` | `armeabi-v7a` | Historical compatibility; fixes-only maintenance |
+| `LLE64-1.0.4-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
 
 Check the supported ABIs:
 
@@ -34,7 +35,7 @@ device.
 | S5 Stone Skipping | Available | Available |
 | S5 Brilliant Ring | Available | Available |
 | N3 Watercolor | Available | Available |
-| N4 Ink in Water / Indigo | Available | Available |
+| N2 Ink in Water / Indigo | Available | Available |
 | N4 Abstract Tiles | Available | **Beta** |
 | N4 Geometric Mosaic | Available | **Beta** |
 | N5 Colored Droplet | Available | Available |
@@ -42,6 +43,7 @@ device.
 | N5 Sparkling Bubbles | Available | Available |
 | Tab S Blind | Available | Available |
 | Tab S Brilliant Cut | Available | Available |
+| Seasonal / Spring / Summer / Autumn / Winter | Available | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -62,13 +64,13 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 Install or update ARM32:
 
 ```shell
-adb install --no-incremental -r "LLE-1.0.4-Beta-1969-32-bit.apk"
+adb install --no-incremental -r "LLE-1.0.4-32-bit.apk"
 ```
 
 Install or update ARM64:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4-Beta-1969-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4-64-bit.apk"
 ```
 
 Open ARM32:
@@ -91,10 +93,13 @@ separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 1. Open the intended L.L.E. application and follow the first-launch wizard.
 2. Enable the matching Accessibility service when Android Settings opens.
 3. Allow unrestricted battery use, or continue with the displayed warning.
-4. Choose automatic lockscreen capture or one of the Beta direct-wallpaper modes.
-5. Select whether to run the charging doodle, lockscreen effects, or both.
-6. Return to the main screen, select an effect and configure the touch box.
-7. Lock and wake the device, then test the saved region.
+4. On Samsung devices, disable lockscreen wallpaper dimming when prompted. This
+   is strongly recommended because the protected dimmed layer is not exposed to
+   L.L.E and can otherwise make effect regions flash or mismatch.
+5. Choose automatic lockscreen capture or one of the Beta direct-wallpaper modes.
+6. Select whether to run the charging doodle, lockscreen effects, or both.
+7. Return to the main screen, select an effect and configure the touch box.
+8. Lock and wake the device, then test the saved region.
 
 If both APKs are installed and Android shows two services with the same label,
 disable the current service before enabling the other one.
@@ -152,8 +157,24 @@ screenshot and touch box separately.
   versions.
 - Screenshot capture can fail on protected or unusual lockscreen surfaces.
 - Direct wallpaper import is a Beta feature and needs precise crop alignment.
+- Samsung does not expose panel-specific wallpaper setting APIs to third-party
+  apps on Fold devices; use automatic capture or provide Cover/Main images
+  separately.
 - Fold detection may require adjustment on untested models.
-- The APKs are debug-signed Beta builds, not production releases.
+
+## Privacy and device access
+
+L.L.E has no Internet permission. Lockscreen screenshots, imported wallpapers
+and effect caches remain in the app's private local storage. Accessibility is
+used to detect lockscreen state and render the selected effect. “All files
+access” is requested only for the optional attempt to read the current Samsung
+lockscreen wallpaper; the manual picker remains available when that layer is
+not exposed.
+
+Version 1.0.4 migrates from the historical Beta certificate to the registered
+stable certificate using Android signing lineage. Existing Beta installations
+can be updated in place: Android 13 and newer use the stable certificate, while
+older supported Android versions retain the compatible historical signer.
 
 ## Build from source
 
@@ -181,6 +202,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.4 stable release notes](docs/RELEASE_NOTES_1.0.4.md)
 - [1.0.4 Beta 1969 release notes](docs/RELEASE_NOTES_1.0.4_BETA_1969.md)
 - [1.0.3 Beta 1 release notes](docs/RELEASE_NOTES_1.0.3_BETA_1.md)
 - [1.0.2 Beta 2 release notes](docs/RELEASE_NOTES_1.0.2_BETA_2.md)

@@ -46,7 +46,11 @@ final class FoldDisplayTarget {
 
     static FoldDisplayTarget resolve(AccessibilityService service, DisplayManager manager,
             int previousDisplayId) {
-        Display[] displays = manager == null ? new Display[0] : manager.getDisplays();
+        Display[] displays = manager == null ? new Display[0]
+                : manager.getDisplays(DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+        if (displays == null || displays.length == 0) {
+            displays = manager == null ? new Display[0] : manager.getDisplays();
+        }
         Display defaultDisplay = manager == null
                 ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
         String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
@@ -200,7 +204,12 @@ final class FoldDisplayTarget {
             String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
             int internalCount = 0;
             if (manager != null) {
-                for (Display display : manager.getDisplays()) {
+                Display[] displays =
+                        manager.getDisplays(DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+                if (displays == null || displays.length == 0) {
+                    displays = manager.getDisplays();
+                }
+                for (Display display : displays) {
                     if (isBuiltInPanel(display, builtInName)) {
                         internalCount++;
                     }

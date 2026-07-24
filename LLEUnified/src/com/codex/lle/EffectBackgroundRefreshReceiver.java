@@ -10,7 +10,8 @@ public class EffectBackgroundRefreshReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!OverlayPrefs.effectBackgroundAutoRefreshEnabled(context)
+        if (!OverlayPrefs.masterEnabled(context)
+                || !OverlayPrefs.effectBackgroundAutoRefreshEnabled(context)
                 || !OverlayPrefs.effectBackgroundForceRecapture(context)) {
             return;
         }

@@ -3,6 +3,7 @@ package com.codex.lle;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
+import android.provider.Settings;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -150,7 +151,12 @@ final class OverlayPrefs {
     static final int EFFECT_STONE_SKIPPING = 13;
     static final int EFFECT_BRILLIANT_RING = 14;
     static final int EFFECT_BRILLIANT_CUT = 15;
-    static final int EFFECT_COUNT = 16;
+    static final int EFFECT_SEASONAL_SPRING = 16;
+    static final int EFFECT_SEASONAL_SUMMER = 17;
+    static final int EFFECT_SEASONAL_AUTUMN = 18;
+    static final int EFFECT_SEASONAL_WINTER = 19;
+    static final int EFFECT_SEASONAL_AUTO = 20;
+    static final int EFFECT_COUNT = 21;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -230,7 +236,9 @@ final class OverlayPrefs {
     }
 
     static boolean seasonalUnlockPartner(Context context) {
-        return get(context).getBoolean(SEASONAL_UNLOCK_PARTNER, true);
+        // Retired beta routing. Seasonal unlocks are now regular picker effects,
+        // while the charging doodle can coexist with any selected effect.
+        return false;
     }
 
     static boolean unlockEffectAllowedNow(Context context) {
@@ -244,6 +252,8 @@ final class OverlayPrefs {
 
     static boolean unlockEffectSoundAllowedNow(Context context) {
         return get(context).getBoolean(UNLOCK_EFFECT_SOUND_ENABLED, true)
+                && Settings.System.getInt(context.getContentResolver(),
+                        "lockscreen_sounds_enabled", 1) != 0
                 && timeWindowAllows(context,
                 UNLOCK_EFFECT_SOUND_TIME_ENABLED,
                 UNLOCK_EFFECT_SOUND_TIME_START,
@@ -290,8 +300,7 @@ final class OverlayPrefs {
     static boolean hasRuntimeSurfaceTimeWindow(Context context) {
         SharedPreferences prefs = get(context);
         return prefs.getBoolean(UNLOCK_EFFECT_TIME_ENABLED, false)
-                || prefs.getBoolean(DOODLE_TIME_ENABLED, false)
-                || prefs.getBoolean(SEASONAL_UNLOCK_PARTNER_TIME_ENABLED, false);
+                || prefs.getBoolean(DOODLE_TIME_ENABLED, false);
     }
 
     static boolean timeWindowAllows(Context context, String enabledKey,
@@ -430,8 +439,40 @@ final class OverlayPrefs {
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
                 return "Tab S Brilliant Cut";
+            case EFFECT_SEASONAL_AUTO:
+                return "Seasonal";
+            case EFFECT_SEASONAL_SPRING:
+                return "Seasonal Spring";
+            case EFFECT_SEASONAL_SUMMER:
+                return "Seasonal Summer";
+            case EFFECT_SEASONAL_AUTUMN:
+                return "Seasonal Autumn";
+            case EFFECT_SEASONAL_WINTER:
+                return "Seasonal Winter";
             default:
                 return "Unknown effect " + effect;
+        }
+    }
+
+    static boolean isSeasonalUnlockEffect(int effect) {
+        return effect == EFFECT_SEASONAL_AUTO
+                || (effect >= EFFECT_SEASONAL_SPRING && effect <= EFFECT_SEASONAL_WINTER);
+    }
+
+    static int seasonForUnlockEffect(int effect) {
+        switch (effect) {
+            case EFFECT_SEASONAL_AUTO:
+                return SeasonalDoodleView.SEASON_AUTO;
+            case EFFECT_SEASONAL_SPRING:
+                return SeasonalDoodleView.SEASON_SPRING;
+            case EFFECT_SEASONAL_SUMMER:
+                return SeasonalDoodleView.SEASON_SUMMER;
+            case EFFECT_SEASONAL_AUTUMN:
+                return SeasonalDoodleView.SEASON_AUTUMN;
+            case EFFECT_SEASONAL_WINTER:
+                return SeasonalDoodleView.SEASON_WINTER;
+            default:
+                return SeasonalDoodleView.SEASON_AUTO;
         }
     }
 
@@ -541,6 +582,7 @@ final class OverlayPrefs {
                                 EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, normalized),
                         EFFECT_BACKGROUND_SOURCE_IMPORTED)
                 .apply();
+        ManualEffectBackground.pruneUnreferenced(context);
     }
 
     /** Pins one prepared wallpaper as the direct source for every screenshot-backed effect. */
@@ -589,7 +631,11 @@ final class OverlayPrefs {
                             EFFECT_BACKGROUND_SOURCE_MODE_PREFIX, effect, normalized),
                     EFFECT_BACKGROUND_SOURCE_IMPORTED);
         }
-        return editor.commit();
+        boolean committed = editor.commit();
+        if (committed) {
+            ManualEffectBackground.pruneUnreferenced(context);
+        }
+        return committed;
     }
 
     static void useAutomaticEffectBackground(Context context, int effect, String profile) {

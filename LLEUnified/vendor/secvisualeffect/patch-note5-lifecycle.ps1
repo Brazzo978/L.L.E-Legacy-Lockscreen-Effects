@@ -14,9 +14,8 @@ $expectedPatchedDexSha256ByPackage = @{
 }
 $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
-$repoRoot = Split-Path $lleRoot -Parent
 $originalDex = Join-Path $vendorRoot "classes.dex"
-$javaTools = Join-Path $repoRoot "unlock-effects-test\tools\java\*"
+$javaTools = Join-Path $lleRoot "vendor\smali-tools\*"
 $java = (Get-Command "java.exe" -ErrorAction Stop).Source
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $lleRoot "build"))
 $stage = [IO.Path]::GetFullPath((Join-Path $buildRoot "secvisualeffect-bounded-smali"))
@@ -56,6 +55,10 @@ function Replace-OneLiteral(
         [string] $Needle,
         [string] $Replacement,
         [string] $Label) {
+    # git archives use LF while a normal Windows checkout commonly uses CRLF.
+    # Keep the byte-exact smali patches reproducible in both environments.
+    $Needle = $Needle.Replace("`r`n", "`n")
+    $Replacement = $Replacement.Replace("`r`n", "`n")
     $first = $Text.IndexOf($Needle, [StringComparison]::Ordinal)
     if ($first -lt 0) {
         throw "Expected exactly one $Label block, found 0"

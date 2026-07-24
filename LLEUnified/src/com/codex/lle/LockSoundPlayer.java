@@ -44,7 +44,10 @@ final class LockSoundPlayer {
         if (soundPool == null || effect < 0 || effect >= effectSounds.length) {
             return;
         }
-        play(effectSounds[effect], "effect:" + effect);
+        int soundId = effect == OverlayPrefs.EFFECT_SEASONAL_AUTO
+                ? seasonalSounds[resolveSeason(SeasonalDoodleView.SEASON_AUTO)]
+                : effectSounds[effect];
+        play(soundId, "effect:" + effect);
     }
 
     void playSeasonalLock(int seasonMode) {
@@ -122,6 +125,14 @@ final class LockSoundPlayer {
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);
             seasonalSounds[SEASONAL_AUTUMN] = load(R.raw.autumn_lock);
             seasonalSounds[SEASONAL_WINTER] = load(R.raw.winter_lock);
+            effectSounds[OverlayPrefs.EFFECT_SEASONAL_SPRING] =
+                    seasonalSounds[SEASONAL_SPRING];
+            effectSounds[OverlayPrefs.EFFECT_SEASONAL_SUMMER] =
+                    seasonalSounds[SEASONAL_SUMMER];
+            effectSounds[OverlayPrefs.EFFECT_SEASONAL_AUTUMN] =
+                    seasonalSounds[SEASONAL_AUTUMN];
+            effectSounds[OverlayPrefs.EFFECT_SEASONAL_WINTER] =
+                    seasonalSounds[SEASONAL_WINTER];
         }
     }
 

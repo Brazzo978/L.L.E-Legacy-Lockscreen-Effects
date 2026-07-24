@@ -16,6 +16,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /** Private, profile-aware storage and decoding for an imported effect wallpaper. */
 final class ManualEffectBackground {
@@ -285,6 +288,44 @@ final class ManualEffectBackground {
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
         return bounds.outWidth > 0 && bounds.outHeight > 0;
+    }
+
+    /** Removes superseded private imports while preserving every file still in preferences. */
+    static void pruneUnreferenced(Context context) {
+        if (context == null) {
+            return;
+        }
+        File directory = new File(context.getFilesDir(), DIRECTORY);
+        File[] files = directory.listFiles();
+        if (files == null || files.length == 0) {
+            return;
+        }
+        Set<String> referenced = new HashSet<String>();
+        Map<String, ?> values = OverlayPrefs.get(context).getAll();
+        for (Object value : values.values()) {
+            if (!(value instanceof String)) {
+                continue;
+            }
+            File candidate = resolvePrivateFile(context, (String) value);
+            if (candidate != null) {
+                try {
+                    referenced.add(candidate.getCanonicalPath());
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        for (File file : files) {
+            if (file == null || !file.isFile()) {
+                continue;
+            }
+            try {
+                if (!referenced.contains(file.getCanonicalPath())) {
+                    //noinspection ResultOfMethodCallIgnored
+                    file.delete();
+                }
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     static Bitmap decodeCenterCrop(File file, int targetWidth, int targetHeight) {

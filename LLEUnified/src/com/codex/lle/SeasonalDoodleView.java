@@ -148,7 +148,11 @@ public class SeasonalDoodleView extends View {
             resumeFrameRequestedAt = 0L;
         }
         if (!warmParked) {
-            postInvalidateDelayed(16L);
+            // Samsung's stock ObjectAnimators are driven by Choreographer. Keep this
+            // Canvas port on the same vsync clock: a delayed main-looper message can
+            // be starved by bursts of accessibility events and then jump the absolute
+            // animation timeline by several frames.
+            postInvalidateOnAnimation();
         }
     }
 
@@ -214,7 +218,7 @@ public class SeasonalDoodleView extends View {
             float eased = accelerateDecelerate(raw);
             drawStockBitmapTopLeft(canvas, sprites[spec.spriteIndex], scale, left, top,
                     lerp(spec.startX, spec.endX, eased), lerp(spec.startY, spec.endY, eased),
-                    1f - raw, 359f * eased, lerp(1f, spec.targetScale, eased));
+                    1f - raw * raw, 359f * eased, lerp(1f, spec.targetScale, eased));
         }
     }
 
