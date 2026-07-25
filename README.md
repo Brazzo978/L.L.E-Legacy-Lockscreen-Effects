@@ -7,6 +7,8 @@ Beta.
 > **Beta:** behavior can vary between devices and Android versions. Keep another
 > unlock method available. ARM64 Abstract Tiles is still marked **Alpha**.
 
+> **Disclaimer:** This tool is only for Samsung Devices, it does **not** bring effects to other devices nor does it bring back Legacy Effects from/for Non-Samsung Devices.
+
 ## Download
 
 Download the APKs from the
