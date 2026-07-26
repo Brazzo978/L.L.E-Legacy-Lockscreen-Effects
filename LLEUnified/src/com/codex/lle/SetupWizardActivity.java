@@ -32,6 +32,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.io.IOException;
 
 /**
@@ -75,6 +76,7 @@ public class SetupWizardActivity extends Activity {
     private static final String PREF_STARTED = "started";
     private static final String PREF_WALLPAPER_MODE = "wallpaper_mode";
     private static final String PREF_CURRENT_STEP = "current_step";
+    private static final String PREF_CAPTURE_REQUESTED_AT = "capture_requested_at";
     private static final String SAMSUNG_NIGHT_WALLPAPER_DIM =
             "display_night_theme_wallpaper";
     private static final int WIZARD_SCHEMA = 3;
@@ -84,12 +86,16 @@ public class SetupWizardActivity extends Activity {
     private static final int REQUEST_CROP_WALLPAPER = 7202;
     private static final int REQUEST_LOCK_WALLPAPER_ACCESS = 7203;
     private static final int REQUEST_READ_WALLPAPER_STORAGE = 7204;
+    private static final int REQUEST_TOUCH_BOX_SETUP = 7205;
     private static final int STEP_ACCESSIBILITY = 0;
     private static final int STEP_BATTERY = 1;
     private static final int STEP_WALLPAPER_DIM = 2;
     private static final int STEP_WALLPAPER = 3;
     private static final int STEP_FEATURES = 4;
-    private static final int STEP_DONE = 5;
+    private static final int STEP_PREPARE_SOURCE = 5;
+    private static final int STEP_TOUCH_BOX = 6;
+    private static final int STEP_DONE = 7;
+    private static final int STEP_COUNT = 7;
 
     private static final int COLOR_INK = Color.rgb(28, 41, 61);
     private static final int COLOR_MUTED = Color.rgb(98, 111, 129);
@@ -182,7 +188,7 @@ public class SetupWizardActivity extends Activity {
                 && getIntent().getBooleanExtra(EXTRA_START_AT_WALLPAPER, false)) {
             currentStep = STEP_WALLPAPER;
         } else if (!manualRelaunch) {
-            currentStep = Math.max(STEP_ACCESSIBILITY, Math.min(STEP_FEATURES,
+            currentStep = Math.max(STEP_ACCESSIBILITY, Math.min(STEP_TOUCH_BOX,
                     wizardPrefs(this).getInt(PREF_CURRENT_STEP, STEP_ACCESSIBILITY)));
         }
         wizardPrefs(this).edit().putBoolean(PREF_STARTED, true).apply();
@@ -296,6 +302,17 @@ public class SetupWizardActivity extends Activity {
                         "No changes were saved. You can try again at any time.",
                         Toast.LENGTH_SHORT).show();
             }
+            return;
+        }
+        if (requestCode == REQUEST_TOUCH_BOX_SETUP) {
+            if (resultCode == RESULT_OK) {
+                completeWizard();
+            } else {
+                Toast.makeText(this,
+                        "Touch box was not changed. You can try again or keep the current area.",
+                        Toast.LENGTH_SHORT).show();
+                showStep(STEP_TOUCH_BOX, false, 1);
+            }
         }
     }
 
@@ -372,7 +389,7 @@ public class SetupWizardActivity extends Activity {
         progressDots.setGravity(Gravity.CENTER_VERTICAL);
         progress.addView(progressDots, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < STEP_COUNT; i++) {
             View dot = new View(this);
             LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(30), dp(6));
             if (i > 0) {
@@ -381,7 +398,7 @@ public class SetupWizardActivity extends Activity {
             progressDots.addView(dot, dotParams);
         }
 
-        progressLabel = text("1 of 5", 12f, COLOR_MUTED, true);
+        progressLabel = text("1 of " + STEP_COUNT, 12f, COLOR_MUTED, true);
         progressLabel.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         progress.addView(progressLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -441,6 +458,12 @@ public class SetupWizardActivity extends Activity {
         }
         if (step == STEP_FEATURES) {
             return featuresStep();
+        }
+        if (step == STEP_PREPARE_SOURCE) {
+            return prepareSourceStep();
+        }
+        if (step == STEP_TOUCH_BOX) {
+            return touchBoxStep();
         }
         return doneStep();
     }
@@ -730,6 +753,150 @@ public class SetupWizardActivity extends Activity {
         return scroll(body);
     }
 
+    private View prepareSourceStep() {
+        final String mode = selectedWallpaperMode(this);
+        final boolean automatic = MODE_AUTOMATIC_SCREENSHOT.equals(mode);
+        final boolean unlockEnabled = OverlayPrefs.get(this).getBoolean(
+                OverlayPrefs.UNLOCK_EFFECT_ENABLED, true);
+        final boolean captureReady = !automatic || !unlockEnabled
+                || isAutomaticBackgroundReady();
+
+        LinearLayout body = stepBody();
+        body.addView(kicker("STEP 6", captureReady ? "READY" : "CAPTURE REQUIRED",
+                captureReady ? COLOR_OK : COLOR_WARN));
+        if (automatic && unlockEnabled) {
+            body.addView(title("Capture the lockscreen once"));
+            body.addView(paragraph("Lock the phone, wait on the visible lockscreen for about "
+                    + "2–3 seconds, then unlock and return to L.L.E. This gives the selected "
+                    + "effect a clean wallpaper source before touch-area calibration."));
+            body.addView(statusCard(captureReady
+                            ? "Lockscreen screenshot captured"
+                            : "Waiting for the lockscreen screenshot",
+                    captureReady
+                            ? "The source for the active " + activeProfileLabel()
+                                    + " display is ready."
+                            : "Complete one lock → wait → unlock cycle. This page checks the "
+                                    + "saved source automatically when you return.",
+                    captureReady));
+        } else if (automatic) {
+            body.addView(title("Screenshot capture is optional"));
+            body.addView(paragraph("You selected the charging doodle without the unlock "
+                    + "effect, so no lockscreen-effect screenshot is required right now."));
+            body.addView(statusCard("No effect capture required",
+                    "If you enable unlock effects later, L.L.E will guide you through a "
+                            + "fresh capture from the main screen.",
+                    true));
+        } else {
+            body.addView(title("Wallpaper source ready"));
+            body.addView(paragraph("The wallpaper selected and aligned in the previous step "
+                    + "is ready. You can continue directly to touch-area calibration."));
+            body.addView(statusCard("Fixed wallpaper source saved",
+                    MODE_SET_LOCK_AND_CACHE.equals(mode)
+                            ? "The same aligned image is used by the lockscreen and L.L.E."
+                            : "The exact aligned image is stored in L.L.E's private cache.",
+                    true));
+        }
+
+        Button primary = primaryButton(captureReady
+                ? "Continue to touch box"
+                : "I've locked and unlocked — check");
+        primary.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!automatic || !unlockEnabled || isAutomaticBackgroundReady()) {
+                    showStep(STEP_TOUCH_BOX, true, 1);
+                    return;
+                }
+                Toast.makeText(SetupWizardActivity.this,
+                        "No screenshot yet. Lock the phone, wait on the lockscreen, then "
+                                + "unlock and return here.",
+                        Toast.LENGTH_LONG).show();
+                showStep(STEP_PREPARE_SOURCE, false, 1);
+            }
+        });
+        body.addView(primary, actionParams());
+
+        if (automatic && unlockEnabled && !captureReady) {
+            Button later = quietButton("Continue without screenshot");
+            later.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    new AlertDialog.Builder(SetupWizardActivity.this)
+                            .setTitle("Continue without a captured wallpaper?")
+                            .setMessage("The touch-box editor will request its own lockscreen "
+                                    + "capture. Unlock effects may still look wrong until the "
+                                    + "normal effect screenshot has been captured.")
+                            .setNegativeButton("Go back", null)
+                            .setPositiveButton("Continue", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialog, int which) {
+                                    showStep(STEP_TOUCH_BOX, true, 1);
+                                }
+                            })
+                            .show();
+                }
+            });
+            body.addView(later, quietParams());
+        }
+        return scroll(body);
+    }
+
+    private View touchBoxStep() {
+        final boolean fold = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this);
+        final boolean configured = fold
+                ? OverlayPrefs.touchBoxConfigured(this, FoldDisplayTarget.PROFILE_COVER)
+                        && OverlayPrefs.touchBoxConfigured(
+                                this, FoldDisplayTarget.PROFILE_MAIN)
+                : OverlayPrefs.touchBoxConfigured(
+                        this, FoldDisplayTarget.PROFILE_SINGLE);
+
+        LinearLayout body = stepBody();
+        body.addView(kicker("STEP 7", configured ? "CONFIGURED" : "OPTIONAL",
+                configured ? COLOR_OK : COLOR_ACCENT));
+        body.addView(title("Would you like to adjust the touch box?"));
+        body.addView(paragraph(fold
+                ? "The touch box defines where unlock gestures can activate an effect. "
+                        + "The existing dual-panel tool lets you configure independent areas "
+                        + "for the Cover and Main displays."
+                : "The touch box defines where unlock gestures can activate an effect. "
+                        + "The editor uses your prepared lockscreen image so you can position "
+                        + "the active area precisely."));
+        body.addView(statusCard(configured
+                        ? "Touch box already configured"
+                        : "Current default area will be used",
+                configured
+                        ? (fold
+                                ? "Both Fold display profiles already have saved touch areas."
+                                : "You can refine the saved area or keep it unchanged.")
+                        : "Open the editor to move, resize or add areas. You may also keep "
+                                + "the safe default and change it later from the main screen.",
+                configured));
+
+        Button edit = primaryButton(configured
+                ? "Review or modify touch box"
+                : "Open touch box editor");
+        edit.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                launchTouchBoxSetup();
+            }
+        });
+        body.addView(edit, actionParams());
+
+        Button keep = quietButton(configured
+                ? "Keep current touch box and finish"
+                : "Use default touch box and finish");
+        keep.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                completeWizard();
+            }
+        });
+        body.addView(keep, quietParams());
+        return scroll(body);
+    }
+
     private View doneStep() {
         LinearLayout body = stepBody();
         body.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -987,11 +1154,85 @@ public class SetupWizardActivity extends Activity {
                 .putBoolean(OverlayPrefs.UNLOCK_EFFECT_ENABLED, unlockEnabled)
                 .putBoolean(OverlayPrefs.SEASONAL_UNLOCK_PARTNER, false)
                 .apply();
+        if (unlockEnabled
+                && MODE_AUTOMATIC_SCREENSHOT.equals(selectedWallpaperMode(this))) {
+            wizardPrefs(this).edit()
+                    .putLong(PREF_CAPTURE_REQUESTED_AT, System.currentTimeMillis())
+                    .apply();
+            OverlayPrefs.requestEffectBackgroundRefresh(this);
+        }
+        showStep(STEP_PREPARE_SOURCE, true, 1);
+    }
+
+    private void launchTouchBoxSetup() {
+        Intent intent = new Intent(this, TouchBoxSetupActivity.class);
+        intent.putExtra(TouchBoxSetupActivity.EXTRA_START_CAPTURE,
+                !hasTouchBoxEditorSource());
+        try {
+            startActivityForResult(intent, REQUEST_TOUCH_BOX_SETUP);
+        } catch (RuntimeException e) {
+            Toast.makeText(this,
+                    "The touch box editor is not available in this build",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean isAutomaticBackgroundReady() {
+        String profile = activeDisplayProfile();
+        int effect = OverlayPrefs.unlockEffect(this);
+        File source = OverlayPrefs.effectBackgroundFile(
+                this, effect, profile);
+        if (!source.exists() || source.length() <= 0L) {
+            return false;
+        }
+        long requestedAt = wizardPrefs(this).getLong(PREF_CAPTURE_REQUESTED_AT, 0L);
+        long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(
+                this, effect, profile);
+        return requestedAt <= 0L || capturedAt >= requestedAt;
+    }
+
+    private boolean hasTouchBoxEditorSource() {
+        String profile = activeDisplayProfile();
+        File dedicated = OverlayPrefs.touchBoxScreenshotFile(this, profile);
+        if (dedicated.exists() && dedicated.length() > 0L) {
+            return true;
+        }
+        int effect = OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
+            File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
+            if (imported != null && imported.exists() && imported.length() > 0L) {
+                return true;
+            }
+        }
+        File automatic = OverlayPrefs.effectBackgroundFile(this, effect, profile);
+        return automatic.exists() && automatic.length() > 0L;
+    }
+
+    private String activeDisplayProfile() {
+        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            return FoldDisplayTarget.cacheProfileForContext(this);
+        }
+        return FoldDisplayTarget.PROFILE_SINGLE;
+    }
+
+    private String activeProfileLabel() {
+        String profile = activeDisplayProfile();
+        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
+            return "Cover";
+        }
+        if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
+            return "Main";
+        }
+        return "current";
+    }
+
+    private void completeWizard() {
         wizardPrefs(this).edit()
                 .putBoolean(PREF_COMPLETED, true)
                 .putLong(PREF_COMPLETED_AT, System.currentTimeMillis())
                 .putInt(PREF_SCHEMA, WIZARD_SCHEMA)
                 .putInt(PREF_CURRENT_STEP, STEP_DONE)
+                .remove(PREF_CAPTURE_REQUESTED_AT)
                 .apply();
         showStep(STEP_DONE, true, 1);
     }
@@ -1282,7 +1523,7 @@ public class SetupWizardActivity extends Activity {
         if (progressDots == null) {
             return;
         }
-        int selected = Math.min(STEP_FEATURES, currentStep);
+        int selected = Math.min(STEP_TOUCH_BOX, currentStep);
         for (int i = 0; i < progressDots.getChildCount(); i++) {
             View dot = progressDots.getChildAt(i);
             boolean active = i <= selected;
@@ -1291,7 +1532,7 @@ public class SetupWizardActivity extends Activity {
             dot.animate().alpha(active ? 1f : 0.55f).setDuration(220L).start();
         }
         progressLabel.setText(currentStep == STEP_DONE
-                ? "Complete" : (currentStep + 1) + " of 5");
+                ? "Complete" : (currentStep + 1) + " of " + STEP_COUNT);
     }
 
     private GradientDrawable solid(int color, int radius, int stroke) {

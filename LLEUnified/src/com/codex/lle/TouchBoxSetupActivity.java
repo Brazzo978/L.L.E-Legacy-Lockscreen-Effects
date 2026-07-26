@@ -590,8 +590,14 @@ public class TouchBoxSetupActivity extends Activity {
         if (dedicated.exists() && dedicated.length() > 0L) {
             return dedicated;
         }
-        File effectCache = OverlayPrefs.effectBackgroundFile(
-                this, OverlayPrefs.unlockEffect(this), profile);
+        int effect = OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
+            File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
+            if (imported != null && imported.exists() && imported.length() > 0L) {
+                return imported;
+            }
+        }
+        File effectCache = OverlayPrefs.effectBackgroundFile(this, effect, profile);
         if (effectCache.exists() && effectCache.length() > 0L) {
             return effectCache;
         }

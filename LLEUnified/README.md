@@ -13,8 +13,8 @@ only; new effects and features target ARM64.
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.4-32-bit.apk` | `armeabi-v7a` | Historical compatibility; fixes-only maintenance |
-| `LLE64-1.0.4-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
+| `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Historical compatibility; fixes-only maintenance |
+| `LLE64-1.0.4.1-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
 
 Check the supported ABIs:
 
@@ -64,13 +64,13 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 Install or update ARM32:
 
 ```shell
-adb install --no-incremental -r "LLE-1.0.4-32-bit.apk"
+adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
 ```
 
 Install or update ARM64:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4.1-64-bit.apk"
 ```
 
 Open ARM32:
@@ -171,7 +171,8 @@ access” is requested only for the optional attempt to read the current Samsung
 lockscreen wallpaper; the manual picker remains available when that layer is
 not exposed.
 
-Version 1.0.4 migrates from the historical Beta certificate to the registered
+Beginning with version 1.0.4, L.L.E migrates from the historical Beta
+certificate to the registered
 stable certificate using Android signing lineage. Existing Beta installations
 can be updated in place: Android 13 and newer use the stable certificate, while
 older supported Android versions retain the compatible historical signer.
@@ -202,6 +203,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.4.1 stable release notes](docs/RELEASE_NOTES_1.0.4.1.md)
 - [1.0.4 stable release notes](docs/RELEASE_NOTES_1.0.4.md)
 - [1.0.4 Beta 1969 release notes](docs/RELEASE_NOTES_1.0.4_BETA_1969.md)
 - [1.0.3 Beta 1 release notes](docs/RELEASE_NOTES_1.0.3_BETA_1.md)
