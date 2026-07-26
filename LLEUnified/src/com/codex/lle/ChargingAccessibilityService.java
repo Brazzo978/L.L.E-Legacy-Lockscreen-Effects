@@ -53,6 +53,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
+    private static volatile ChargingAccessibilityService activeService;
     private static final String TAG = "ChargingA11y";
     private static final String ACTION_BENCHMARK_TOUCH =
             "com.codex.lle.BENCHMARK_TOUCH";
@@ -157,6 +158,45 @@ public class ChargingAccessibilityService extends AccessibilityService
             "com.android.server.telecom",
             "com.android.phone",
             "com.sec.phone"
+    };
+    private static final String[] RUNTIME_SURFACE_BLACKLIST_PACKAGES = {
+            // Samsung lockscreen-adjacent surfaces.
+            "com.samsung.android.app.cocktailbarservice",
+            "com.samsung.android.sidegesturepad",
+            "com.sec.android.app.camera",
+            "com.sec.android.app.clockpackage",
+            "com.samsung.android.app.reminder",
+            "com.samsung.android.calendar",
+            "com.samsung.android.emergency",
+            "com.sec.android.emergencylauncher",
+
+            // Messaging and VoIP surfaces that can present a caller over keyguard.
+            "com.whatsapp",
+            "com.whatsapp.w4b",
+            "org.telegram.messenger",
+            "org.thunderdog.challegram",
+            "com.facebook.orca",
+            "com.facebook.katana",
+            "com.instagram.android",
+            "com.discord",
+            "com.truecaller",
+            "org.thoughtcrime.securesms",
+            "com.viber.voip",
+            "com.skype.raider",
+            "com.microsoft.teams",
+            "com.google.android.apps.tachyon",
+            "com.google.android.apps.meetings",
+            "us.zoom.videomeetings",
+            "jp.naver.line.android",
+            "com.tencent.mm",
+            "com.snapchat.android",
+
+            // Navigation surfaces that can wake or draw over the lockscreen.
+            "com.waze",
+            "com.google.android.apps.maps",
+            "com.sygic.aura",
+            "com.tomtom.gplay.navapp",
+            "com.here.app.maps"
     };
     private static final String SAMSUNG_KEYBOARD_PACKAGE = "com.samsung.android.honeyboard";
     private static final String GOOGLE_KEYBOARD_PACKAGE = "com.google.android.inputmethod.latin";
@@ -439,6 +479,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int debugLensLoopFrame;
     private final Set<String> homePackages = new HashSet<String>();
     private final Set<String> callPackages = new HashSet<String>();
+    private final Set<String> runtimeSurfaceBlacklistPackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
@@ -748,6 +789,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        activeService = this;
         serviceAlive = true;
         serviceLifecycleGeneration++;
         Log.i(TAG, "connected abi=" + Lle64Abi.verify());
@@ -773,6 +815,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         prefs.registerOnSharedPreferenceChangeListener(this);
         loadHomePackages();
         loadCallPackages();
+        loadRuntimeSurfaceBlacklistPackages();
         configurePassiveService();
         refreshChargingState();
         ensureDoodleLoaded();
@@ -828,11 +871,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         logSystemUiEvent(event);
         boolean interactive = powerManager == null || powerManager.isInteractive();
         noteExternalLockscreenSurface(event, interactive);
-        if (isCallPackage(event.getPackageName())) {
+        if (isRuntimeSurfaceBlockPackage(event.getPackageName())) {
             unlockAffordancePending = false;
             unlockTouchCachedWhileScreenOff = false;
-            hideRuntimeSurfacesForCall("event:" + eventTypeName(event));
-            evaluateVisibility("event:" + eventTypeName(event) + ":call_surface", false);
+            hideRuntimeSurfacesForBlockedPackage("event:" + eventTypeName(event));
+            evaluateVisibility("event:" + eventTypeName(event) + ":blocked_package", false);
             handler.removeCallbacks(screenOnRefreshRunnable);
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
@@ -903,9 +946,55 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     @Override
     public void onDestroy() {
+        if (activeService == this) {
+            activeService = null;
+        }
         cleanup();
         ioExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    static String debugRuntimeSnapshot() {
+        ChargingAccessibilityService service = activeService;
+        if (service == null) {
+            return "service_connected=false\n";
+        }
+        StringBuilder snapshot = new StringBuilder();
+        snapshot.append("service_connected=").append(service.serviceAlive).append('\n');
+        snapshot.append("service_generation=")
+                .append(service.serviceLifecycleGeneration).append('\n');
+        snapshot.append("last_window_package=")
+                .append(service.lastWindowPackage == null
+                        ? "<none>" : service.lastWindowPackage)
+                .append('\n');
+        snapshot.append("charging=").append(service.charging).append('\n');
+        snapshot.append("service_battery_percent=")
+                .append(service.batteryPercent).append('\n');
+        snapshot.append("display_profile=")
+                .append(service.activeDisplayProfile).append('\n');
+        snapshot.append("doodle_attached=")
+                .append(service.doodleOverlayAttached).append('\n');
+        snapshot.append("doodle_parked=")
+                .append(service.doodleOverlayParked).append('\n');
+        snapshot.append("effect_attached=")
+                .append(service.unlockEffectOverlayAttached).append('\n');
+        snapshot.append("effect_parked=")
+                .append(service.unlockEffectOverlayParked).append('\n');
+        snapshot.append("effect_visible=")
+                .append(service.unlockFxVisible).append('\n');
+        snapshot.append("effect_renderer_type=")
+                .append(service.unlockEffectRendererType).append('\n');
+        snapshot.append("effect_gesture_active=")
+                .append(service.unlockEffectGestureActive).append('\n');
+        snapshot.append("pin_entry_pending=")
+                .append(service.pinEntryPending).append('\n');
+        snapshot.append("pin_entry_surface_visible=")
+                .append(service.pinEntrySurfaceVisible).append('\n');
+        snapshot.append("notification_shade_visible=")
+                .append(service.notificationShadeVisible).append('\n');
+        snapshot.append("background_capture_active=")
+                .append(service.colorScreenshotInFlight).append('\n');
+        return snapshot.toString();
     }
 
     @Override
@@ -1792,7 +1881,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         int effect = OverlayPrefs.unlockEffect(this);
         return screenOffOrLocked
                 && OverlayPrefs.masterEnabled(this)
-                && !isCallSurfaceActive()
+                && !isRuntimeSurfaceBlocked()
                 && isUnlockEffectAllowedNowForActivePanel()
                 && (!effectUsesCachedScreenshotBackground(effect)
                 || hasUnlockEffectBackgroundSource(effect));
@@ -1829,7 +1918,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         return !isSystemUiFamilyPackage(value)
                 && !getPackageName().equals(value)
                 && !isHomePackage(value)
-                && !isCallPackage(value)
+                && !isRuntimeSurfaceBlockPackage(value)
                 && !isKeyboardPackage(value);
     }
 
@@ -1968,7 +2057,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " sinceScreenOnMs=" + sinceScreenOnMs);
         }
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
-        boolean callSurface = isCallSurfaceActive();
+        boolean blockedPackageSurface = isRuntimeSurfaceBlocked();
         int displayState = currentDisplayState();
         boolean displayOn = displayState == Display.STATE_UNKNOWN || displayState == Display.STATE_ON;
         if (!OverlayPrefs.masterEnabled(this)) {
@@ -1988,14 +2077,14 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockAffordanceShownThisWake = false;
             unlockFxVisible = false;
         }
-        if (callSurface) {
+        if (blockedPackageSurface) {
             unlockAffordancePending = false;
             unlockTouchCachedWhileScreenOff = false;
-            hideRuntimeSurfacesForCall(reason);
+            hideRuntimeSurfacesForBlockedPackage(reason);
             if (shouldLogVisibility(reason)) {
                 Log.i(TAG, "visibility reason=" + reason
                         + " showDoodle=false showFx=false"
-                        + " callSurface=true"
+                        + " blockedPackageSurface=true"
                         + " charging=" + charging
                         + " interactive=" + interactive
                         + " locked=" + locked
@@ -2085,8 +2174,9 @@ public class ChargingAccessibilityService extends AccessibilityService
 
         boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
         boolean seasonalSurfaceHoldActive = isSeasonalUnlockSurfaceHoldActive(
-                pinEntrySurfaceVisible, notificationShadeVisible, callSurface);
-        boolean blockedSurfaceActive = pinEntryActive || notificationShadeVisible || callSurface;
+                pinEntrySurfaceVisible, notificationShadeVisible, blockedPackageSurface);
+        boolean blockedSurfaceActive =
+                pinEntryActive || notificationShadeVisible || blockedPackageSurface;
         boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
         boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
         boolean aodSurface = isActualAodSurface(interactive, displayOn);
@@ -2236,7 +2326,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
-                    + " callSurface=" + callSurface
+                    + " blockedPackageSurface=" + blockedPackageSurface
                     + " touchBoxCapture=" + touchBoxCapturePending
                     + " home=" + home
                     + " pkg=" + lastWindowPackage);
@@ -2721,7 +2811,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + " gesture=" + unlockEffectGestureActive
                         + " pinEntry=" + pinEntrySurfaceVisible
                         + " notificationShade=" + notificationShadeVisible
-                        + " callSurface=" + isCallSurfaceActive());
+                        + " blockedPackageSurface=" + isRuntimeSurfaceBlocked());
                 return;
             }
             Log.i(TAG, "native lockbg renderer recreating reason="
@@ -3048,7 +3138,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && !pinEntryRequested
                 && !pinEntrySurfaceVisible
                 && !notificationShadeVisible
-                && !isCallSurfaceActive();
+                && !isRuntimeSurfaceBlocked();
     }
 
     private void showPendingUnlockAffordance(String reason) {
@@ -3458,7 +3548,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible || isCallSurfaceActive()) {
+                || notificationShadeVisible || isRuntimeSurfaceBlocked()) {
             return false;
         }
         if (unlockEffectGestureActive || unlockEffectOverlayAttached || unlockEffectOverlayParked
@@ -5055,7 +5145,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         overlayView = null;
     }
 
-    private void hideRuntimeSurfacesForCall(String reason) {
+    private void hideRuntimeSurfacesForBlockedPackage(String reason) {
         stopDebugLensLoop();
         cancelSeasonalUnlockPartnerGesture();
         if (unlockEffectRenderer != null) {
@@ -5069,7 +5159,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         destroySeasonalUnlockPartnerOverlay();
         removeUnlockEffectOverlay(true);
         removeTouchDebugOverlay();
-        Log.i(TAG, "runtime surfaces hidden for call reason=" + reason);
+        Log.i(TAG, "runtime surfaces hidden for blocked package reason=" + reason);
     }
 
     private void removeSeasonalUnlockPartnerOverlay() {
@@ -5732,7 +5822,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean pinEntryActive = pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible;
         boolean blockedSurfaceActive = pinEntryActive
                 || notificationShadeVisible
-                || isCallSurfaceActive();
+                || isRuntimeSurfaceBlocked();
         int displayState = currentDisplayState();
         boolean displayOn = displayState == Display.STATE_UNKNOWN || displayState == Display.STATE_ON;
         boolean aodSurface = isActualAodSurface(interactive, displayOn);
@@ -5835,7 +5925,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (lockSoundPlayer == null
                 || !OverlayPrefs.masterEnabled(this)
-                || isCallSurfaceActive()
+                || isRuntimeSurfaceBlocked()
                 || notificationShadeVisible) {
             return;
         }
@@ -5977,7 +6067,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible || isCallSurfaceActive()) {
+                || notificationShadeVisible || isRuntimeSurfaceBlocked()) {
             Log.i(TAG, "unlock effect gesture blocked by content surface");
             evaluateVisibility("gesture_blocked_surface");
             return false;
@@ -6178,7 +6268,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible || isCallSurfaceActive()) {
+                || notificationShadeVisible || isRuntimeSurfaceBlocked()) {
             Log.i(TAG, "seasonal unlock partner blocked by content surface");
             evaluateVisibility("seasonal_partner_blocked_surface");
             return false;
@@ -6555,6 +6645,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     }
 
+    private void loadRuntimeSurfaceBlacklistPackages() {
+        runtimeSurfaceBlacklistPackages.clear();
+        for (int i = 0; i < RUNTIME_SURFACE_BLACKLIST_PACKAGES.length; i++) {
+            runtimeSurfaceBlacklistPackages.add(RUNTIME_SURFACE_BLACKLIST_PACKAGES[i]);
+        }
+    }
+
     private boolean isCallPackage(CharSequence packageName) {
         if (packageName == null) {
             return false;
@@ -6571,8 +6668,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || value.equals("com.sec.phone");
     }
 
-    private boolean isCallSurfaceActive() {
-        return isCallPackage(lastWindowPackage) || isCallAudioActive();
+    private boolean isRuntimeSurfaceBlockPackage(CharSequence packageName) {
+        if (packageName == null) {
+            return false;
+        }
+        String value = packageName.toString().toLowerCase();
+        return runtimeSurfaceBlacklistPackages.contains(value) || isCallPackage(value);
+    }
+
+    private boolean isRuntimeSurfaceBlocked() {
+        return isRuntimeSurfaceBlockPackage(lastWindowPackage) || isCallAudioActive();
     }
 
     private boolean isCallAudioActive() {

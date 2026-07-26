@@ -13,8 +13,8 @@ only; new effects and features target ARM64.
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Historical compatibility; fixes-only maintenance |
-| `LLE64-1.0.4.1-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
+| `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
+| `LLE64-1.0.4.2-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
 
 Check the supported ABIs:
 
@@ -70,7 +70,7 @@ adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
 Install or update ARM64:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4.1-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4.2-64-bit.apk"
 ```
 
 Open ARM32:
@@ -203,6 +203,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.4.2 stable release notes](docs/RELEASE_NOTES_1.0.4.2.md)
 - [1.0.4.1 stable release notes](docs/RELEASE_NOTES_1.0.4.1.md)
 - [1.0.4 stable release notes](docs/RELEASE_NOTES_1.0.4.md)
 - [1.0.4 Beta 1969 release notes](docs/RELEASE_NOTES_1.0.4_BETA_1969.md)

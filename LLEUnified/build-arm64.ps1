@@ -113,6 +113,9 @@ $manifestText = [System.IO.File]::ReadAllText($canonicalManifest)
 $generatedManifestText = $manifestText.Replace(
         'package="com.codex.lle"',
         "package=`"$applicationId`"")
+$generatedManifestText = $generatedManifestText.Replace(
+        'android:authorities="com.codex.lle.debugreports"',
+        "android:authorities=`"$applicationId.debugreports`"")
 $generatedManifestText = [regex]::Replace(
         $generatedManifestText,
         'android:name="\.([A-Za-z0-9_$.]+)"',

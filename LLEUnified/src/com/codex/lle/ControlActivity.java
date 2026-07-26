@@ -6,6 +6,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.TimePickerDialog;
+import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -1469,7 +1470,69 @@ public class ControlActivity extends Activity {
                 requestLockscreenWallpaperPreview();
             }
         }));
+        if (EffectAvailability.is64BitProcess()) {
+            section.addView(outlineButton("Create debug report", new View.OnClickListener() {
+                @Override
+                public void onClick(final View view) {
+                    createAndShareDebugReport(view);
+                }
+            }));
+            section.addView(infoText("Creates a text-only support report and opens the "
+                    + "share sheet. Wallpapers and images are never included."));
+        }
         return section;
+    }
+
+    private void createAndShareDebugReport(final View source) {
+        source.setEnabled(false);
+        Toast.makeText(this, "Creating debug report\u2026", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                File report = null;
+                Throwable failure = null;
+                try {
+                    report = DebugReport.create(ControlActivity.this);
+                } catch (Throwable error) {
+                    failure = error;
+                    Log.e("LLEControl", "Debug report creation failed", error);
+                }
+                final File completedReport = report;
+                final Throwable completedFailure = failure;
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        source.setEnabled(true);
+                        if (completedReport == null) {
+                            String detail = completedFailure == null
+                                    ? "unknown error" : completedFailure.getMessage();
+                            Toast.makeText(ControlActivity.this,
+                                    "Unable to create report: " + detail,
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        shareDebugReport(completedReport);
+                    }
+                });
+            }
+        }, "LLE-debug-report").start();
+    }
+
+    private void shareDebugReport(File report) {
+        Uri uri = DebugReportProvider.uriFor(this, report);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "L.L.E 1.0.4.2 debug report");
+        share.putExtra(Intent.EXTRA_STREAM, uri);
+        share.setClipData(ClipData.newRawUri("L.L.E debug report", uri));
+        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(Intent.createChooser(share, "Share L.L.E debug report"));
+        } catch (RuntimeException error) {
+            Log.e("LLEControl", "Debug report share failed", error);
+            Toast.makeText(this, "No app is available to share the report",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private void requestLockscreenWallpaperPreview() {

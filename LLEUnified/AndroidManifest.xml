@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.codex.lle"
-    android:versionCode="20"
-    android:versionName="1.0.4.1">
+    android:versionCode="21"
+    android:versionName="1.0.4.2">
 
     <uses-sdk
         android:minSdkVersion="23"
@@ -38,6 +38,11 @@
         <receiver
             android:name=".EffectBackgroundRefreshReceiver"
             android:exported="false" />
+        <provider
+            android:name=".DebugReportProvider"
+            android:authorities="com.codex.lle.debugreports"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <activity
             android:name=".ControlActivity"
             android:theme="@style/AppTheme"
