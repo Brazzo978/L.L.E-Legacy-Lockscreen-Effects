@@ -1551,7 +1551,8 @@ public class ControlActivity extends Activity {
         Uri uri = DebugReportProvider.uriFor(this, report);
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
-        share.putExtra(Intent.EXTRA_SUBJECT, "L.L.E 1.0.4.2 debug report");
+        share.putExtra(Intent.EXTRA_SUBJECT,
+                "L.L.E " + appVersionName() + " debug report");
         share.putExtra(Intent.EXTRA_STREAM, uri);
         share.setClipData(ClipData.newRawUri("L.L.E debug report", uri));
         share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
