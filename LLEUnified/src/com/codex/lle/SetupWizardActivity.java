@@ -516,23 +516,29 @@ public class SetupWizardActivity extends Activity {
     private View restrictedSettingsStep() {
         final boolean allowed = isRestrictedSettingsAllowed();
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 1", allowed ? "READY" : "UNLOCK REQUIRED",
+        body.addView(kicker("STEP 1", allowed ? "READY" : "ACTION REQUIRED",
                 allowed ? COLOR_OK : COLOR_WARN));
-        body.addView(title("Unlock Accessibility"));
-        body.addView(paragraph("Samsung has blocked the Accessibility switch for this "
-                + "sideloaded installation. Now that the first activation was attempted, "
-                + "open L.L.E app info, tap the three-dot menu in the top-right corner, "
-                + "choose Allow restricted settings, then confirm."));
-        body.addView(statusCard(allowed
-                        ? "Restricted settings allowed"
-                        : "Accessibility is still blocked",
-                allowed
-                        ? "Return to Accessibility and enable the L.L.E service."
-                        : "In App info: tap \u22ee, choose Allow restricted settings, confirm, "
-                                + "then return to L.L.E.",
-                allowed));
+        body.addView(title(allowed
+                ? "Accessibility is unlocked"
+                : "Allow restricted settings"));
+        if (allowed) {
+            body.addView(paragraph("Samsung accepted the extra approval. Continue to "
+                    + "Accessibility and turn on the " + appLabel() + " service."));
+            body.addView(statusCard("Restricted settings allowed",
+                    "The blocked switch is now available.", true));
+        } else {
+            body.addView(paragraph("Samsung needs one extra approval before "
+                    + appLabel() + " can be enabled. On the next screen, follow these "
+                    + "three steps in order."));
+            body.addView(pathStep("1", "Open the top-right menu",
+                    "After App info opens, tap \u22ee in the upper-right corner."));
+            body.addView(pathStep("2", "Allow restricted settings",
+                    "Choose this exact menu item and confirm the warning."));
+            body.addView(pathStep("3", "Return to L.L.E",
+                    "Press Back. L.L.E will then send you to Accessibility again."));
+        }
         Button primary = primaryButton(allowed
-                ? "Return to Accessibility" : "Open L.L.E app info");
+                ? "Continue to Accessibility" : "Open App info \u2014 then tap \u22ee");
         primary.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -545,12 +551,20 @@ public class SetupWizardActivity extends Activity {
             }
         });
         body.addView(primary, actionParams());
-        Button retry = quietButton("Try Accessibility again");
+        Button retry = quietButton(allowed
+                ? "Back to this guide" : "I allowed it \u2014 check again");
         retry.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                restrictedSettingsRecovery = false;
-                showStep(STEP_ACCESSIBILITY, true, -1);
+                if (isRestrictedSettingsAllowed()) {
+                    restrictedSettingsRecovery = false;
+                    showStep(STEP_ACCESSIBILITY, true, 1);
+                    return;
+                }
+                Toast.makeText(SetupWizardActivity.this,
+                        "Still blocked: open App info, tap \u22ee at the top right, "
+                                + "then Allow restricted settings.",
+                        Toast.LENGTH_LONG).show();
             }
         });
         body.addView(retry, quietParams());
@@ -568,7 +582,9 @@ public class SetupWizardActivity extends Activity {
                 + "can disable it at any time."));
         body.addView(statusCard(enabled ? "Service enabled" : "Service not enabled yet",
                 enabled ? "Everything is ready to continue." :
-                        "Open Samsung settings and enable L.L.E.", enabled));
+                        "Samsung path: Accessibility \u2192 Installed apps \u2192 "
+                                + appLabel() + " \u2192 turn the service on.",
+                enabled));
         if (isOtherLleAccessibilityEnabled()) {
             body.addView(statusCard("The other L.L.E version is also enabled",
                     "Avoid competing overlays: keep only one L.L.E service enabled while using "
@@ -1352,6 +1368,10 @@ public class SetupWizardActivity extends Activity {
         Intent details = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         details.setData(Uri.parse("package:" + getPackageName()));
         try {
+            Toast.makeText(this,
+                    "In App info: tap \u22ee at the top right \u2192 "
+                            + "Allow restricted settings",
+                    Toast.LENGTH_LONG).show();
             startActivity(details);
         } catch (RuntimeException error) {
             waitingForExternalSetting = false;
@@ -1583,6 +1603,42 @@ public class SetupWizardActivity extends Activity {
         return card;
     }
 
+    private View pathStep(String number, String heading, String copy) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.TOP);
+        card.setPadding(dp(15), dp(13), dp(15), dp(13));
+        card.setBackground(solid(Color.argb(244, 255, 255, 255), dp(18),
+                Color.rgb(217, 224, 229)));
+
+        TextView numberView = text(number, 15f, Color.WHITE, true);
+        numberView.setGravity(Gravity.CENTER);
+        numberView.setBackground(solid(COLOR_ACCENT_DARK, dp(18), Color.TRANSPARENT));
+        card.addView(numberView, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        LinearLayout copyColumn = new LinearLayout(this);
+        copyColumn.setOrientation(LinearLayout.VERTICAL);
+        copyColumn.setPadding(dp(13), 0, 0, 0);
+        TextView headingView = text(heading, 16f, COLOR_INK, true);
+        copyColumn.addView(headingView);
+        TextView copyView = text(copy, 13f, COLOR_MUTED, false);
+        copyView.setLineSpacing(dp(2), 1f);
+        copyView.setPadding(0, dp(4), 0, 0);
+        copyColumn.addView(copyView);
+        card.addView(copyColumn, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(10));
+        card.setLayoutParams(params);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(dp(1));
+        }
+        return card;
+    }
+
     private View optionCard(String number, String heading, String copy, String badge,
             boolean accent) {
         LinearLayout card = new LinearLayout(this);
@@ -1652,6 +1708,11 @@ public class SetupWizardActivity extends Activity {
         view.setTypeface(Typeface.create(bold ? "sans-serif-medium" : "sans-serif",
                 Typeface.NORMAL));
         return view;
+    }
+
+    private String appLabel() {
+        CharSequence label = getApplicationInfo().loadLabel(getPackageManager());
+        return label == null || label.length() == 0 ? "L.L.E" : label.toString();
     }
 
     private void updateProgress() {

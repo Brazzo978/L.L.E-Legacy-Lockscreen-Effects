@@ -1,95 +1,156 @@
-# L.L.E. - Legacy Lockscreen Effects
+# L.L.E. — Legacy Lockscreen Effects
 
-L.L.E. brings a collection of legacy lockscreen effects to modern Android
-devices. The project is currently available as a co-installable ARM32 and ARM64
-Beta.
+Bring classic Android lockscreen effects back to modern devices—without root.
 
-> **Beta:** behavior can vary between devices and Android versions. Keep another
-> unlock method available. ARM64 Abstract Tiles is still marked **Alpha**.
+[Download the latest release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/latest)
+· [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
+· [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
 
-## Download
+> **Open source and local by design.** L.L.E's source code is published so its
+> permission and data handling can be inspected. The app does not request the
+> Android `INTERNET` permission: lockscreen captures, imported wallpapers,
+> settings, effect caches, and debug reports remain on the device. L.L.E does
+> not automatically upload them. Data leaves the phone only when you explicitly
+> export or share a file yourself.
 
-Download the APKs from the
-[L.L.E. 1.0.1 Beta 1 release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.1-beta.1).
+Source availability makes the official project auditable, but it cannot prove
+that an APK from an unrelated mirror was built from this source. Download only
+from the official GitHub release and verify the supplied SHA-256 checksum.
 
-| APK | Choose it when |
-|---|---|
-| `LLE-1.0.1-Beta-1-32-bit.apk` | The device supports 32-bit ARM applications; this is the recommended daily build on compatible phones |
-| `LLE-1.0.1-Beta-1-64-bit.apk` | The device is ARM64-only or you want to test the ARM64 Beta |
+## Start here
 
-Check the device ABI list with:
+Choose the installation method:
 
-```shell
-adb shell getprop ro.product.cpu.abilist
-```
+- **Recommended:** [install the APK manually](LLEUnified/docs/INSTALL_APK.md) —
+  complete illustrated Samsung setup, Play Protect, Accessibility, and
+  Restricted Settings flow.
+- **Computer/advanced:** [install or update with ADB](LLEUnified/docs/INSTALL_ADB.md).
+- **More details:** [complete setup and troubleshooting](LLEUnified/README.md).
 
-## Install
+The first-launch wizard configures Accessibility, battery optimization,
+wallpaper dimming, lockscreen capture, enabled features, and the touch region.
 
-```shell
-adb install --no-incremental -r "LLE-1.0.1-Beta-1-32-bit.apk"
-```
+### Samsung Restricted Settings
 
-```shell
-adb install --no-incremental -r "LLE-1.0.1-Beta-1-64-bit.apk"
-```
+On recent Samsung firmware, a sideloaded Accessibility app may be blocked the
+first time:
 
-Both applications appear as **L.L.E.** and can remain installed together.
-Keep only one L.L.E. accessibility service enabled at a time.
+1. In the L.L.E wizard, open Accessibility.
+2. Open **Installed apps → L.L.E 64** and try to enable the service once.
+3. If Samsung blocks it, return to L.L.E.
+4. Follow **Open App info → ⋮ → Allow restricted settings**.
+5. Return to Accessibility and enable L.L.E 64.
 
-Open the ARM32 application:
+The **Allow restricted settings** menu item may not appear until after the first
+blocked activation attempt. The
+[illustrated APK guide](LLEUnified/docs/INSTALL_APK.md) shows every screen.
 
-```shell
-adb shell am start -n com.codex.lle/.ControlActivity
-```
+## Current builds
 
-Open the ARM64 application:
+| Build | ABI | Status |
+|---|---|---|
+| **L.L.E 64** | `arm64-v8a` | Recommended and actively developed |
+| **L.L.E** | `armeabi-v7a` | Historical continuity; critical fixes only |
 
-```shell
-adb shell am start -n com.codex.lle.arm64dev/com.codex.lle.ControlActivity
-```
+New features and effects target ARM64. The 32-bit edition remains available for
+older compatible devices but is no longer developed in parallel.
 
-## First setup
+## Compatibility
 
-1. Open L.L.E. and enable its accessibility service.
-2. Enable the main switch and **Unlock effect on lockscreen**.
-3. Select an effect and wait for it to be applied.
-4. Capture the lockscreen background from **Screenshot service**.
-5. Configure the touch box or the Fold dual-panel wizard.
-6. Lock and wake the device, then test inside the saved touch region.
+This table is based on completed tests and user debug reports. “Working” means
+the service and effects have been reported operational; it is not a guarantee
+for every device, GPU, lockscreen theme, or vendor update.
 
-## Effect availability
+| Manufacturer | Tested software/device | Android | Result | Notes |
+|---|---|:---:|---|---|
+| Samsung | Galaxy phones and foldables, **One UI 6–9** | Varies | **Working** | Fold devices use separate Cover/Main setup; wallpaper layers can vary |
+| Xiaomi / POCO | **POCO X8 Pro Global** (`2511FPC34G`, `klee`) on HyperOS | 16 | **Working** | Confirmed by an ARM64 L.L.E 1.0.4.2 debug report |
 
-| Effect | ARM32 | ARM64 |
-|---|:---:|:---:|
-| S4 Lens Flare | Yes | Yes |
-| S3 Water Ripple | Yes | Yes |
-| S5 Popping Colours | Yes | Yes |
-| N3 Watercolor | Yes | Yes |
-| N4 Abstract Tiles | Yes | **Alpha - refinement pending** |
-| N4 Geometric Mosaic | Yes | No |
-| N5 Colored Droplet | Yes | Yes |
-| N5 Colored Droplet + Gyro | Yes | Yes |
-| N5 Sparkling Bubbles | Yes | Yes |
+To add a device to this table, use **Create debug report** in L.L.E and include
+whether the effect, screenshot capture, doodle, sound, and lock/unlock cycle
+worked. Reports redact saved wallpaper paths and remain local until shared by
+the user.
 
-Water Ripple and Watercolor are Beta effects. Geometric Mosaic is currently
-available only in the ARM32 build.
+## Included effects
+
+- S3 Water Ripple
+- S4 Lens Flare
+- S5 Popping Colours, Stone Skipping, and Brilliant Ring
+- N2 Ink in Water / Indigo
+- N3 Watercolor
+- N4 Abstract Tiles and Geometric Mosaic
+- N5 Colored Droplet, Gyro Droplet, and Sparkling Bubbles
+- Tab S Blind and Brilliant Cut
+- Seasonal Spring, Summer, Autumn, and Winter effects
+- Charging doodles and seasonal companion effects
+
+Some effects are marked **Beta** because rendering can still vary slightly
+between GPUs, refresh rates, and Android versions.
+
+## Requirements
+
+- Android 6.0 or newer.
+- An ARM64 device for the current recommended build.
+- Accessibility permission.
+- Unrestricted battery use is strongly recommended.
+- A lockscreen capture or user-provided wallpaper and a configured touch box.
+- No root access is required.
 
 ## Fold support
 
-Fold mode provides separate Cover and Main screenshot caches, touch boxes and
-per-panel switches. Effects and doodles can be enabled independently for each
-screen.
+Fold mode stores separate Cover and Main configurations:
 
-## Documentation
+- lockscreen background;
+- touch box;
+- effect enable/disable state;
+- doodle enable/disable state.
 
-- [Complete setup and troubleshooting](LLEUnified/README.md)
-- [1.0.1 Beta 1 release notes](LLEUnified/docs/RELEASE_NOTES_1.0.1_BETA_1.md)
-- [Developer documentation](LLEUnified/)
+Complete each part of the dual-panel wizard while the requested display is
+active. When Samsung does not expose a panel-specific wallpaper layer, use
+automatic capture or provide the Cover/Main images manually.
 
-## Third-party components
+## Privacy and permissions
 
-Some builds contain **legacy third-party compatibility components**. Rights in
-those components remain with their respective owners. This project does not
-claim ownership of them and is not affiliated with or endorsed by their
-owners. Anyone redistributing binary builds is responsible for confirming the
-applicable permissions.
+L.L.E has no `INTERNET` permission. Its main permissions are used for:
+
+- **Accessibility:** detect lockscreen state and display the selected effect;
+- **Battery optimization exemption:** keep the renderer ready between
+  lock/unlock cycles;
+- **Wallpaper access:** optional local import or setting of a user-selected
+  wallpaper;
+- **Wake lock:** keep short effect and capture operations reliable.
+
+The debug-report button creates a local text file for troubleshooting. It is not
+sent anywhere automatically.
+
+## Known limitations
+
+- Vendor lockscreen behavior can change after a system update.
+- Protected or layered wallpapers may require manual image selection.
+- Samsung nighttime wallpaper dimming can make captured and displayed
+  brightness differ; disabling that option is strongly recommended.
+- Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
+- Beta effects can show small timing or rendering differences across GPUs.
+
+## Build from source
+
+The active source is under [`LLEUnified/`](LLEUnified/).
+
+Build the ARM64 application:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1
+```
+
+Build requirements are documented in
+[`LLEUnified/README.md`](LLEUnified/README.md#build-from-source).
+
+## License
+
+Project-authored source code is available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+Some builds contain legacy proprietary compatibility components extracted from
+historical firmware. Rights in those components remain with their respective
+owners; they are not relicensed by this project. L.L.E is not affiliated with
+or endorsed by those owners.
