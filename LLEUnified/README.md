@@ -59,30 +59,44 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 - USB debugging for ADB installation.
 - A valid lockscreen screenshot and touch-box setup for effects that use them.
 
-## Install with ADB
+## Start here
 
-Install or update ARM32:
+Use the current ARM64 release unless the device is genuinely 32-bit-only:
 
-```shell
-adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
-```
+- [Install the official APK manually — illustrated Samsung flow](docs/INSTALL_APK.md)
+- [Install or update from a computer with ADB](docs/INSTALL_ADB.md)
 
-Install or update ARM64:
+The tested Samsung first-start sequence is:
+
+1. Install the verified APK and let Play Protect scan it.
+2. Open L.L.E's Accessibility step.
+3. In **Accessibility → Installed apps → L.L.E 64**, make the first enable
+   attempt.
+4. If Android blocks it, return to L.L.E and use the recovery page.
+5. Open **L.L.E App info → three-dot menu → Allow restricted settings**.
+6. Return to Accessibility and enable L.L.E 64.
+7. Complete battery, wallpaper, feature, capture, and touch-box setup.
+
+On tested Samsung firmware, **Allow restricted settings** may not appear until
+after the first blocked Accessibility attempt. The illustrated guide shows
+every screen in order.
+
+Quick ARM64 ADB update:
 
 ```shell
 adb install --no-incremental -r "LLE64-1.0.4.2-64-bit.apk"
-```
-
-Open ARM32:
-
-```shell
-adb shell am start -n com.codex.lle/.ControlActivity
 ```
 
 Open ARM64:
 
 ```shell
 adb shell am start -n com.codex.lle64/com.codex.lle.ControlActivity
+```
+
+Historical ARM32 update:
+
+```shell
+adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
 ```
 
 Both can remain installed, but their preferences and screenshot caches are
@@ -223,3 +237,10 @@ those components remain with their respective owners. This project does not
 claim ownership of them and is not affiliated with or endorsed by their
 owners. Anyone redistributing binary builds is responsible for confirming the
 applicable permissions.
+
+## License
+
+Project-authored source code is available under the
+[PolyForm Noncommercial License 1.0.0](../LICENSE.md). The license does not
+relicense legacy or proprietary third-party components; those remain subject to
+their respective owners' rights and terms.

@@ -55,8 +55,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static volatile ChargingAccessibilityService activeService;
     private static final String TAG = "ChargingA11y";
-    private static final String ACTION_BENCHMARK_TOUCH =
-            "com.codex.lle.BENCHMARK_TOUCH";
     private static final String ACTION_DEBUG_UNLOCK_EFFECT_PROFILE =
             "com.codex.lle.DEBUG_UNLOCK_EFFECT_PROFILE";
     private static final String ACTION_DEBUG_UNLOCK_EFFECT_DEMO_GESTURE =
@@ -126,15 +124,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long UNLOCK_EFFECT_SCREENSHOT_RETRY_MS = 90L;
     private static final long UNLOCK_EFFECT_SCREENSHOT_WAIT_LOG_INTERVAL_MS = 1000L;
     private static final int UNLOCK_EFFECT_SCREENSHOT_MAX_ATTEMPTS = 2;
-    private static final long UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS = 360L;
+    // The persisted colormap is shared by every screenshot-backed effect, so its
+    // capture quality must not depend on whichever renderer happens to be selected.
+    private static final long SHARED_COLORMAP_CAPTURE_MIN_SCREEN_ON_MS = 1400L;
     private static final long EFFECT_BACKGROUND_WAKE_TIMEOUT_MS = 7000L;
-    private static final long EFFECT_BACKGROUND_WAKE_CAPTURE_MIN_SCREEN_ON_MS = 500L;
     private static final long EFFECT_BACKGROUND_WAKE_LOCK_DELAY_MS = 260L;
-    private static final long S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS = 1400L;
-    private static final long S5_POPPING_SCREENSHOT_MIN_SCREEN_ON_MS = 500L;
-    private static final long S4_LOCKBG_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
-    private static final long COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
-    private static final long SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS = 700L;
     private static final int TOUCH_LISTEN_BOX_BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -549,7 +543,6 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean colorScreenshotAttemptedThisSession;
     private boolean unlockEffectBackgroundCaptureSucceededThisSession;
     private boolean skipCachedEffectBackgroundLoad;
-    private boolean rootTouchBenchmarkRunning;
     private boolean unlockEffectBenchmarkRunning;
     private boolean touchBoxScreenshotScheduled;
     private boolean touchBoxScreenshotInFlight;
@@ -715,9 +708,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             if (intent == null) {
                 return;
             }
-            if (ACTION_BENCHMARK_TOUCH.equals(intent.getAction())) {
-                startRootTouchBenchmark();
-            } else if (ACTION_DEBUG_UNLOCK_EFFECT_PROFILE.equals(intent.getAction())) {
+            if (ACTION_DEBUG_UNLOCK_EFFECT_PROFILE.equals(intent.getAction())) {
                 profileDebugUnlockEffect(intent.getIntExtra("effect",
                         OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)));
             } else if (ACTION_DEBUG_UNLOCK_EFFECT_DEMO_GESTURE.equals(intent.getAction())) {
@@ -1195,7 +1186,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         registerReceiver(screenReceiver, filter);
 
         IntentFilter benchmarkFilter = new IntentFilter();
-        benchmarkFilter.addAction(ACTION_BENCHMARK_TOUCH);
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_PROFILE);
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_DEMO_GESTURE);
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_BENCHMARK);
@@ -1617,33 +1607,6 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
-    }
-
-    private void startRootTouchBenchmark() {
-        if (prefs == null
-                || !prefs.getBoolean(OverlayPrefs.ROOT_DEBUG_ENABLED, false)
-                || !prefs.getBoolean(OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false)) {
-            Log.i(TAG, "root touch benchmark ignored; root debug/touch test disabled");
-            return;
-        }
-        if (rootTouchBenchmarkRunning) {
-            Log.i(TAG, "root touch benchmark already running");
-            return;
-        }
-        rootTouchBenchmarkRunning = true;
-        Log.i(TAG, "root touch benchmark start durationMs=8000");
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                RootDebugTools.Result result =
-                        RootDebugTools.captureTouchEvents(
-                                ChargingAccessibilityService.this,
-                                8000);
-                rootTouchBenchmarkRunning = false;
-                Log.i(TAG, "root touch benchmark done success=" + result.success
-                        + " message=" + result.message);
-            }
-        }, "LLE-root-touch-benchmark").start();
     }
 
     private void scheduleScreenOnRefreshes() {
@@ -3566,10 +3529,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         long sinceScreenOn = elapsedSinceScreenOn();
-        long minScreenOnMs = unlockEffectScreenshotMinScreenOnMs(
-                OverlayPrefs.unlockEffect(this));
         return sinceScreenOn < 0L
-                || sinceScreenOn >= minScreenOnMs;
+                || sinceScreenOn >= SHARED_COLORMAP_CAPTURE_MIN_SCREEN_ON_MS;
     }
 
     private boolean shouldRetryUnlockEffectBackgroundCapture(int effect) {
@@ -3682,9 +3643,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         long now = SystemClock.uptimeMillis();
         long sinceScreenOn = elapsedSinceScreenOn();
         long delayMs = UNLOCK_EFFECT_SCREENSHOT_RETRY_MS;
-        long minScreenOnMs = unlockEffectScreenshotMinScreenOnMs(effect);
-        if (sinceScreenOn >= 0L && sinceScreenOn < minScreenOnMs) {
-            delayMs = Math.max(delayMs, minScreenOnMs - sinceScreenOn);
+        if (sinceScreenOn >= 0L
+                && sinceScreenOn < SHARED_COLORMAP_CAPTURE_MIN_SCREEN_ON_MS) {
+            delayMs = Math.max(delayMs,
+                    SHARED_COLORMAP_CAPTURE_MIN_SCREEN_ON_MS - sinceScreenOn);
         }
         if (forcedEffectBackgroundOverlayClearStartedAt > 0L) {
             long overlayClearRemainingMs = TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS
@@ -3852,29 +3814,6 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "forced effect background refresh complete reason=" + reason
                 + " relock=" + shouldRelock
                 + " attempts=" + unlockEffectBackgroundCaptureAttempts);
-    }
-
-    private long unlockEffectScreenshotMinScreenOnMs(int effect) {
-        long minScreenOnMs = UNLOCK_EFFECT_SCREENSHOT_MIN_SCREEN_ON_MS;
-        if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
-                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER) {
-            minScreenOnMs = S3_RIPPLE_SCREENSHOT_MIN_SCREEN_ON_MS;
-        } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
-            minScreenOnMs = S5_POPPING_SCREENSHOT_MIN_SCREEN_ON_MS;
-        } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
-            minScreenOnMs = S4_LOCKBG_SCREENSHOT_MIN_SCREEN_ON_MS;
-        } else if (OverlayPrefs.isColourDropletEffect(effect)) {
-            minScreenOnMs = COLOUR_DROPLET_SCREENSHOT_MIN_SCREEN_ON_MS;
-        } else if (effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES) {
-            minScreenOnMs = SPARKLING_BUBBLES_SCREENSHOT_MIN_SCREEN_ON_MS;
-        }
-        if (OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
-            minScreenOnMs = Math.max(minScreenOnMs,
-                    EFFECT_BACKGROUND_WAKE_CAPTURE_MIN_SCREEN_ON_MS);
-        }
-        return minScreenOnMs;
     }
 
     private boolean currentUnlockEffectHasBackground(int effect) {

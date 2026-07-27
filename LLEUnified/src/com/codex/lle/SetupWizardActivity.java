@@ -3,8 +3,10 @@ package com.codex.lle;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.Manifest;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.AppOpsManager;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -25,6 +27,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -34,6 +37,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * First-run (and manually relaunchable) setup for the shared ARM32/ARM64 app.
@@ -70,6 +74,8 @@ public class SetupWizardActivity extends Activity {
             "pending_wallpaper_next_profile";
     private static final String STATE_WAITING_EXTERNAL_SETTING =
             "waiting_external_setting";
+    private static final String STATE_RESTRICTED_SETTINGS_RECOVERY =
+            "restricted_settings_recovery";
     private static final String WIZARD_PREFS = "setup_wizard_state";
     private static final String PREF_COMPLETED = "completed";
     private static final String PREF_COMPLETED_AT = "completed_at";
@@ -79,7 +85,7 @@ public class SetupWizardActivity extends Activity {
     private static final String PREF_CAPTURE_REQUESTED_AT = "capture_requested_at";
     private static final String SAMSUNG_NIGHT_WALLPAPER_DIM =
             "display_night_theme_wallpaper";
-    private static final int WIZARD_SCHEMA = 3;
+    private static final int WIZARD_SCHEMA = 5;
     private static final String PREF_SCHEMA = "schema";
 
     private static final int REQUEST_PICK_WALLPAPER = 7201;
@@ -117,6 +123,7 @@ public class SetupWizardActivity extends Activity {
     private boolean manualRelaunch;
     private boolean sourceOnlyLaunch;
     private boolean importingPulledWallpaper;
+    private boolean restrictedSettingsRecovery;
 
     public static boolean shouldLaunch(Context context) {
         return context != null && !wizardPrefs(context).getBoolean(PREF_COMPLETED, false);
@@ -176,7 +183,8 @@ public class SetupWizardActivity extends Activity {
                     .apply();
         }
         if (savedInstanceState != null) {
-            currentStep = savedInstanceState.getInt(STATE_STEP, STEP_ACCESSIBILITY);
+            currentStep = savedInstanceState.getInt(
+                    STATE_STEP, STEP_ACCESSIBILITY);
             pendingWallpaperMode = savedInstanceState.getString(STATE_PENDING_MODE, "");
             pendingWallpaperProfile = savedInstanceState.getString(
                     STATE_PENDING_PROFILE, FoldDisplayTarget.PROFILE_SINGLE);
@@ -184,12 +192,20 @@ public class SetupWizardActivity extends Activity {
                     STATE_PENDING_NEXT_PROFILE, "");
             waitingForExternalSetting = savedInstanceState.getBoolean(
                     STATE_WAITING_EXTERNAL_SETTING, false);
+            restrictedSettingsRecovery = savedInstanceState.getBoolean(
+                    STATE_RESTRICTED_SETTINGS_RECOVERY, false);
         } else if (getIntent() != null
                 && getIntent().getBooleanExtra(EXTRA_START_AT_WALLPAPER, false)) {
             currentStep = STEP_WALLPAPER;
         } else if (!manualRelaunch) {
-            currentStep = Math.max(STEP_ACCESSIBILITY, Math.min(STEP_TOUCH_BOX,
-                    wizardPrefs(this).getInt(PREF_CURRENT_STEP, STEP_ACCESSIBILITY)));
+            SharedPreferences state = wizardPrefs(this);
+            if (state.getInt(PREF_SCHEMA, 0) < WIZARD_SCHEMA
+                    && state.getBoolean(PREF_STARTED, false)) {
+                currentStep = STEP_ACCESSIBILITY;
+            } else {
+                currentStep = Math.max(STEP_ACCESSIBILITY, Math.min(STEP_TOUCH_BOX,
+                        state.getInt(PREF_CURRENT_STEP, STEP_ACCESSIBILITY)));
+            }
         }
         wizardPrefs(this).edit().putBoolean(PREF_STARTED, true).apply();
         configureWindow();
@@ -204,6 +220,8 @@ public class SetupWizardActivity extends Activity {
         outState.putString(STATE_PENDING_PROFILE, pendingWallpaperProfile);
         outState.putString(STATE_PENDING_NEXT_PROFILE, pendingWallpaperNextProfile);
         outState.putBoolean(STATE_WAITING_EXTERNAL_SETTING, waitingForExternalSetting);
+        outState.putBoolean(STATE_RESTRICTED_SETTINGS_RECOVERY,
+                restrictedSettingsRecovery);
         super.onSaveInstanceState(outState);
     }
 
@@ -234,13 +252,36 @@ public class SetupWizardActivity extends Activity {
                 }
                 return;
             }
-            if (currentStep == STEP_ACCESSIBILITY && isAccessibilityEnabled()) {
-                contentHost.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        showStep(STEP_BATTERY, true, 1);
+            if (currentStep == STEP_ACCESSIBILITY) {
+                if (restrictedSettingsRecovery) {
+                    if (isRestrictedSettingsAllowed()) {
+                        restrictedSettingsRecovery = false;
+                        contentHost.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                showStep(STEP_ACCESSIBILITY, true, 1);
+                            }
+                        }, 260L);
+                    } else if (contentHost != null) {
+                        showStep(STEP_ACCESSIBILITY, false, 1);
                     }
-                }, 260L);
+                    return;
+                }
+                if (isAccessibilityEnabled()) {
+                    contentHost.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            showStep(STEP_BATTERY, true, 1);
+                        }
+                    }, 260L);
+                    return;
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        && !isRestrictedSettingsAllowed()) {
+                    restrictedSettingsRecovery = true;
+                    showStep(STEP_ACCESSIBILITY, true, 1);
+                    return;
+                }
                 return;
             }
             if (currentStep == STEP_BATTERY && isBatteryOptimizationIgnored()) {
@@ -339,6 +380,9 @@ public class SetupWizardActivity extends Activity {
             finish();
         } else if (sourceOnlyLaunch && currentStep == STEP_WALLPAPER) {
             finish();
+        } else if (currentStep == STEP_ACCESSIBILITY && restrictedSettingsRecovery) {
+            restrictedSettingsRecovery = false;
+            showStep(STEP_ACCESSIBILITY, true, -1);
         } else if (currentStep > STEP_ACCESSIBILITY) {
             showStep(currentStep - 1, true, -1);
         } else {
@@ -445,7 +489,8 @@ public class SetupWizardActivity extends Activity {
 
     private View createStepView(int step) {
         if (step == STEP_ACCESSIBILITY) {
-            return accessibilityStep();
+            return restrictedSettingsRecovery
+                    ? restrictedSettingsStep() : accessibilityStep();
         }
         if (step == STEP_BATTERY) {
             return batteryStep();
@@ -466,6 +511,50 @@ public class SetupWizardActivity extends Activity {
             return touchBoxStep();
         }
         return doneStep();
+    }
+
+    private View restrictedSettingsStep() {
+        final boolean allowed = isRestrictedSettingsAllowed();
+        LinearLayout body = stepBody();
+        body.addView(kicker("STEP 1", allowed ? "READY" : "UNLOCK REQUIRED",
+                allowed ? COLOR_OK : COLOR_WARN));
+        body.addView(title("Unlock Accessibility"));
+        body.addView(paragraph("Samsung has blocked the Accessibility switch for this "
+                + "sideloaded installation. Now that the first activation was attempted, "
+                + "open L.L.E app info, tap the three-dot menu in the top-right corner, "
+                + "choose Allow restricted settings, then confirm."));
+        body.addView(statusCard(allowed
+                        ? "Restricted settings allowed"
+                        : "Accessibility is still blocked",
+                allowed
+                        ? "Return to Accessibility and enable the L.L.E service."
+                        : "In App info: tap \u22ee, choose Allow restricted settings, confirm, "
+                                + "then return to L.L.E.",
+                allowed));
+        Button primary = primaryButton(allowed
+                ? "Return to Accessibility" : "Open L.L.E app info");
+        primary.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (isRestrictedSettingsAllowed()) {
+                    restrictedSettingsRecovery = false;
+                    showStep(STEP_ACCESSIBILITY, true, 1);
+                    return;
+                }
+                openAppInfoForRestrictedSettings();
+            }
+        });
+        body.addView(primary, actionParams());
+        Button retry = quietButton("Try Accessibility again");
+        retry.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                restrictedSettingsRecovery = false;
+                showStep(STEP_ACCESSIBILITY, true, -1);
+            }
+        });
+        body.addView(retry, quietParams());
+        return scroll(body);
     }
 
     private View accessibilityStep() {
@@ -1237,17 +1326,58 @@ public class SetupWizardActivity extends Activity {
         showStep(STEP_DONE, true, 1);
     }
 
-    private boolean isAccessibilityEnabled() {
-        String enabled = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabled == null || enabled.length() == 0) {
+    private boolean isRestrictedSettingsAllowed() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
+        try {
+            AppOpsManager appOps = (AppOpsManager) getSystemService(APP_OPS_SERVICE);
+            if (appOps == null) {
+                return true;
+            }
+            int mode = appOps.unsafeCheckOpNoThrow(
+                    "android:access_restricted_settings",
+                    android.os.Process.myUid(),
+                    getPackageName());
+            return mode == AppOpsManager.MODE_ALLOWED
+                    || mode == AppOpsManager.MODE_FOREGROUND;
+        } catch (RuntimeException error) {
+            Log.w("LLESetup", "Restricted-settings AppOp unavailable", error);
             return false;
         }
-        String target = new ComponentName(this,
-                ChargingAccessibilityService.class).flattenToString();
-        String[] services = enabled.split(":");
-        for (int i = 0; i < services.length; i++) {
-            if (target.equalsIgnoreCase(services[i])) {
+    }
+
+    private void openAppInfoForRestrictedSettings() {
+        waitingForExternalSetting = true;
+        Intent details = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        details.setData(Uri.parse("package:" + getPackageName()));
+        try {
+            startActivity(details);
+        } catch (RuntimeException error) {
+            waitingForExternalSetting = false;
+            Toast.makeText(this, "Unable to open L.L.E app info",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean isAccessibilityEnabled() {
+        AccessibilityManager manager =
+                (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        if (manager == null) {
+            return false;
+        }
+        List<AccessibilityServiceInfo> services =
+                manager.getEnabledAccessibilityServiceList(
+                        AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+        for (AccessibilityServiceInfo service : services) {
+            if (service == null || service.getResolveInfo() == null
+                    || service.getResolveInfo().serviceInfo == null) {
+                continue;
+            }
+            if (getPackageName().equals(
+                    service.getResolveInfo().serviceInfo.packageName)
+                    && ChargingAccessibilityService.class.getName().equals(
+                            service.getResolveInfo().serviceInfo.name)) {
                 return true;
             }
         }
@@ -1255,21 +1385,26 @@ public class SetupWizardActivity extends Activity {
     }
 
     private boolean isOtherLleAccessibilityEnabled() {
-        String enabled = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabled == null || enabled.length() == 0) {
+        AccessibilityManager manager =
+                (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        if (manager == null) {
             return false;
         }
         String currentPackage = getPackageName();
-        String otherPackage = "com.codex.lle64".equals(currentPackage)
-                ? "com.codex.lle" : "com.codex.lle64";
-        String[] services = enabled.split(":");
-        for (int i = 0; i < services.length; i++) {
-            ComponentName component = ComponentName.unflattenFromString(services[i]);
-            if (component != null
-                    && otherPackage.equals(component.getPackageName())
+        List<AccessibilityServiceInfo> services =
+                manager.getEnabledAccessibilityServiceList(
+                        AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+        for (AccessibilityServiceInfo service : services) {
+            if (service == null || service.getResolveInfo() == null
+                    || service.getResolveInfo().serviceInfo == null) {
+                continue;
+            }
+            String packageName = service.getResolveInfo().serviceInfo.packageName;
+            String className = service.getResolveInfo().serviceInfo.name;
+            if (!currentPackage.equals(packageName)
+                    && packageName.startsWith("com.codex.lle")
                     && ChargingAccessibilityService.class.getName().equals(
-                            component.getClassName())) {
+                            className)) {
                 return true;
             }
         }

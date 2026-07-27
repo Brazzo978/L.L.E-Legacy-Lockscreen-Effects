@@ -68,9 +68,6 @@ final class OverlayPrefs {
     static final String FOLD_MAIN_UNLOCK_EFFECT_ENABLED =
             "fold_main_unlock_effect_enabled";
     static final String FOLD_MAIN_DOODLE_ENABLED = "fold_main_doodle_enabled";
-    static final String ROOT_DEBUG_ENABLED = "root_debug_enabled";
-    static final String ROOT_TOUCH_CAPTURE_TEST_ENABLED = "root_touch_capture_test_enabled";
-    static final String ROOT_KEEPALIVE_PLAN_ENABLED = "root_keepalive_plan_enabled";
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";

@@ -157,7 +157,9 @@ public class ControlActivity extends Activity {
     private boolean doodleDebugExpanded;
     private boolean doodlePositionExpanded;
     private boolean lockscreenDebugExpanded;
+    private boolean rendererWallpaperExpanded;
     private boolean screenshotServiceExpanded;
+    private boolean touchBoxExpanded;
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
@@ -445,6 +447,13 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f));
 
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.BOTTOM);
+        titleStack.addView(titleRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
         TextView title = new TextView(this);
         title.setText("L.L.E");
         title.setTextColor(COLOR_GRACE_NAVY);
@@ -454,7 +463,15 @@ public class ControlActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             title.setLetterSpacing(0.10f);
         }
-        titleStack.addView(title);
+        titleRow.addView(title);
+
+        TextView version = new TextView(this);
+        version.setText("v" + appVersionName());
+        version.setTextColor(Color.rgb(89, 104, 137));
+        version.setTextSize(10f);
+        version.setSingleLine(true);
+        version.setPadding(dp(7), 0, 0, dp(5));
+        titleRow.addView(version);
 
         TextView subtitle = new TextView(this);
         subtitle.setText("Legacy Lockscreen effect");
@@ -518,6 +535,18 @@ public class ControlActivity extends Activity {
         statusParams.setMargins(dp(7), 0, 0, 0);
         row.addView(accessibilityStatus, statusParams);
         return header;
+    }
+
+    private String appVersionName() {
+        try {
+            String versionName = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+            return versionName == null || versionName.trim().isEmpty()
+                    ? "unknown" : versionName;
+        } catch (PackageManager.NameNotFoundException error) {
+            Log.w("LLEControl", "Unable to resolve app version", error);
+            return "unknown";
+        }
     }
 
     private void openAccessibilitySettings() {
@@ -1439,7 +1468,7 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
-        styleCard(section);
+        styleInsetPanel(section);
         section.addView(sectionTitle("Setup & permissions"));
         String mode = SetupWizardActivity.selectedWallpaperMode(this);
         String source = SetupWizardActivity.MODE_SET_LOCK_AND_CACHE.equals(mode)
@@ -1810,61 +1839,51 @@ public class ControlActivity extends Activity {
         effectsParams.setMargins(0, 0, 0, dp(12));
         effects.setLayoutParams(effectsParams);
         styleCard(effects);
-        effects.addView(sectionTitle("Effects · " + EffectAvailability.processAbiLabel()));
+        effects.addView(sectionTitle("Effects"));
         effects.addView(effectPreviewHint());
         addEffectOptionIfAvailable(effects,
                 "S3 Water Ripple",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 app-owned GLES port; transparent local waves over a cached lockscreen colormap."
-                        : "Original Samsung ARM32 ripple engine with transparent lockscreen composition.",
+                "Soft ripples flowing from your touch.",
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N2 Ink in Water",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 port of the later Indigo engine from the Ripple Ink lineage introduced on Note II."
-                        : "Original ARM32 Indigo engine from the Ripple Ink lineage introduced on Note II.",
+                "Fluffy ink clouds blooming in water.",
                 OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 current);
         addEffectOptionIfAvailable(effects,
                 "S4 Lens Flare",
-                "App-owned renderer; no legacy native library required.",
+                "Bright flares following your finger.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N3 Watercolor",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 GLES port of Samsung Watercolor with a transparent screenshot-backed brush."
-                        : "Original Samsung ARM32 Watercolor engine with transparent lockscreen composition.",
+                "Watery paint spreading under your touch.",
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Brilliant Ring",
-                "App-owned port with the stock diamond texture, native ring timings and screenshot-backed local composition.",
+                "Thin sparkling rings expanding outward.",
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Popping Colours",
-                "Samsung dex renderer with screenshot-backed color map; no legacy .so required.",
+                "Colorful particles bursting from touch.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Stone Skipping",
-                "Transparent app-owned port of Samsung Mass Ripple from the Galaxy S5 launch branch.",
+                "Skipping ripples crossing the wallpaper.",
                 OverlayPrefs.EFFECT_STONE_SKIPPING,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Tab S Blind",
-                EffectAvailability.is64BitProcess()
-                        ? "Same ABI-neutral Samsung Blind DEX in the shared ARM64 host, with stock Tab S light and sounds."
-                        : "Original Samsung Blind DEX with stock Tab S light and sounds; ARM32 baseline.",
+                "Glowing blinds opening under your touch.",
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Tab S Brilliant Cut",
-                EffectAvailability.is64BitProcess()
-                        ? "ARM64 app-owned GLES port of the stock Tab S Brilliant Cut engine with screenshot-backed composition."
-                        : "Original Samsung ARM32 Brilliant Cut engine with transparent lockscreen composition.",
+                "A crystal grid sparkling beneath touch.",
                 OverlayPrefs.EFFECT_BRILLIANT_CUT,
                 current);
         if (EffectAvailability.isAvailable(OverlayPrefs.EFFECT_S4_ABSTRACT_TILES)) {
@@ -1876,83 +1895,71 @@ public class ControlActivity extends Activity {
                         : OverlayPrefs.abstractTilesLineEnabled(this);
                 effects.addView(abstractTilesEffectOption(
                         "N4 Abstract Tiles · Lines",
-                        "Tile and Scatter animation with the recovered Line layer.",
+                        "Geometric tiles with bright line trails.",
                         true,
                         current,
                         currentLineMode));
                 effects.addView(abstractTilesEffectOption(
                         "N4 Abstract Tiles · No lines",
-                        "Tiles-only variant; Line shader, mask and draw pass stay disabled.",
+                        "Clean tiles scattering across the wallpaper.",
                         false,
                         current,
                         currentLineMode));
             } else {
                 effects.addView(effectOption(
                         "N4 Abstract Tiles",
-                        "Original Samsung ARM32 LockBG tile renderer with transparent screenshot composition.",
+                        "Geometric tiles scattering from touch.",
                         OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                         current));
             }
         }
         addEffectOptionIfAvailable(effects,
                 "N4 Geometric Mosaic",
-                EffectAvailability.is64BitProcess()
-                        ? "Reconstructed ARM64 mosaic renderer with transparent screenshot composition."
-                        : "Original ARM32 LockBG mosaic renderer with transparent screenshot composition.",
+                "Mosaic fragments shifting and breaking apart.",
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N5 Colored Droplet",
-                EffectAvailability.is64BitProcess()
-                        ? "Original Note 5 ARM64 renderer; the live lockscreen is sampled only inside droplets."
-                        : "Original Samsung ARM32 droplet renderer with transparent lockscreen sampling.",
+                "Colorful liquid droplets rolling across screen.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N5 Colored Droplet + Gyro",
-                EffectAvailability.is64BitProcess()
-                        ? "Original Note 5 ARM64 renderer with accelerometer-driven gravity."
-                        : "Original Samsung ARM32 droplet physics with accelerometer-driven gravity.",
+                "Liquid droplets flowing with phone movement.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current);
         addEffectOptionIfAvailable(effects,
                 "N5 Sparkling Bubbles",
-                EffectAvailability.is64BitProcess()
-                        ? "Original Note 5 ARM64 renderer; the live lockscreen colors only the particles."
-                        : "Original Samsung ARM32 bubbles renderer with cached lockscreen color sampling.",
+                "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current);
         effects.addView(sectionLabel("Seasonal"));
         addEffectOptionIfAvailable(effects,
                 "Seasonal",
-                "Automatically follows the current calendar season.",
+                "Particles matching the current season.",
                 OverlayPrefs.EFFECT_SEASONAL_AUTO,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Seasonal Spring",
-                "Samsung Festival spring unlock effect with blossoms and its original sounds.",
+                "Pink blossoms drifting across screen.",
                 OverlayPrefs.EFFECT_SEASONAL_SPRING,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Seasonal Summer",
-                "Samsung Festival summer unlock effect with warm sparks and original sounds.",
+                "Warm golden sparks scattering from touch.",
                 OverlayPrefs.EFFECT_SEASONAL_SUMMER,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Seasonal Autumn",
-                "Samsung Festival autumn unlock effect with falling leaves and original sounds.",
+                "Autumn leaves swirling and falling.",
                 OverlayPrefs.EFFECT_SEASONAL_AUTUMN,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Seasonal Winter",
-                "Samsung Festival winter unlock effect with snow particles and original sounds.",
+                "Snowflakes sparkling around your touch.",
                 OverlayPrefs.EFFECT_SEASONAL_WINTER,
                 current);
         root.addView(effects);
-        root.addView(setupWizardControls());
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
-            root.addView(foldPanelRoutingControls());
-        }
         if (effectUsesColormapCache(current)) {
             root.addView(screenshotServiceControls(current));
         }
@@ -2001,8 +2008,18 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
         styleCard(section);
-        section.addView(sectionTitle("Renderer wallpaper"));
+        section.addView(collapsibleHeader("Wallpaper source", rendererWallpaperExpanded,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        rendererWallpaperExpanded = !rendererWallpaperExpanded;
+                        showTab(selectedTab, false, 0);
+                    }
+                }));
         section.addView(infoText(effectBackgroundStatus(currentEffect)));
+        if (!rendererWallpaperExpanded) {
+            return section;
+        }
         final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
         boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
                 && OverlayPrefs.foldModeEnabled(this);
@@ -2043,7 +2060,6 @@ public class ControlActivity extends Activity {
         }
 
         if (automaticModeActive) {
-            section.addView(screenshotServiceDebugControls());
             section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -4207,7 +4223,14 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(params);
         styleCard(section);
-        section.addView(sectionTitle("Touch box"));
+        section.addView(collapsibleHeader("Touch box", touchBoxExpanded,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        touchBoxExpanded = !touchBoxExpanded;
+                        showTab(selectedTab, false, 0);
+                    }
+                }));
 
         touchBoxSummary = new TextView(this);
         touchBoxSummary.setTextColor(COLOR_MUTED);
@@ -4221,6 +4244,9 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         updateTouchBoxSummary();
 
+        if (!touchBoxExpanded) {
+            return section;
+        }
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
         section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
@@ -4279,7 +4305,7 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(params);
         styleCard(section);
-        section.addView(collapsibleHeader("Debug", lockscreenDebugExpanded,
+        section.addView(collapsibleHeader("Advanced settings", lockscreenDebugExpanded,
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -4288,16 +4314,24 @@ public class ControlActivity extends Activity {
                     }
         }));
         if (lockscreenDebugExpanded) {
+            section.addView(setupWizardControls());
             section.addView(toggle("FOLD MODE (dual panels)", OverlayPrefs.FOLD_MODE,
                     FoldDisplayTarget.isFoldDevice(this)));
-            section.addView(screenshotServiceDebugControls());
+            if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+                section.addView(foldPanelRoutingControls());
+            }
+            int current = pendingUnlockEffect >= 0
+                    ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
+            if (effectUsesColormapCache(current)) {
+                section.addView(screenshotServiceDebugControls());
+            }
             section.addView(effectProfilerControls());
-            section.addView(rootDebugControls());
+            section.addView(batteryDebugControls());
         }
         return section;
     }
 
-    private View rootDebugControls() {
+    private View batteryDebugControls() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -4306,7 +4340,7 @@ public class ControlActivity extends Activity {
         params.setMargins(0, dp(8), 0, 0);
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(sectionTitle("Root debug"));
+        section.addView(sectionTitle("Battery"));
 
         section.addView(infoText(batteryOptimizationStatus()));
         section.addView(outlineButton("Request battery unrestricted", new View.OnClickListener() {
@@ -4319,96 +4353,6 @@ public class ControlActivity extends Activity {
             @Override
             public void onClick(View v) {
                 openBatteryOptimizationSettings();
-            }
-        }));
-        section.addView(toggle("Enable root debug tools", OverlayPrefs.ROOT_DEBUG_ENABLED, false));
-        section.addView(toggle("Root touch capture test", OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED, false));
-        section.addView(toggle("Root keepalive plan", OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED, false));
-        section.addView(outlineButton("Root: check su", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootDebugEnabled()) {
-                    return;
-                }
-                runRootDebugAction("Checking root", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.checkRoot();
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: benchmark touch 8s", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootFeature(OverlayPrefs.ROOT_TOUCH_CAPTURE_TEST_ENABLED,
-                        "Enable root touch capture test first")) {
-                    return;
-                }
-                runRootDebugAction("Capturing root touch events", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.captureTouchEvents(ControlActivity.this, 8000);
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: write debug report", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootDebugEnabled()) {
-                    return;
-                }
-                runRootDebugAction("Writing root debug report", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.writeDebugReport(ControlActivity.this);
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: write keepalive plan", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootFeature(OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED,
-                        "Enable root keepalive plan first")) {
-                    return;
-                }
-                runRootDebugAction("Writing root keepalive plan", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.writeKeepAlivePlan(ControlActivity.this);
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: apply keepalive", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootFeature(OverlayPrefs.ROOT_KEEPALIVE_PLAN_ENABLED,
-                        "Enable root keepalive plan first")) {
-                    return;
-                }
-                runRootDebugAction("Applying root keepalive", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.applyKeepAlivePlan(ControlActivity.this);
-                    }
-                });
-            }
-        }));
-        section.addView(outlineButton("Root: revert keepalive", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!requireRootDebugEnabled()) {
-                    return;
-                }
-                runRootDebugAction("Reverting root keepalive", new RootTask() {
-                    @Override
-                    public RootDebugTools.Result run() {
-                        return RootDebugTools.revertKeepAlivePlan(ControlActivity.this);
-                    }
-                });
             }
         }));
         return section;
@@ -4446,56 +4390,6 @@ public class ControlActivity extends Activity {
         } catch (RuntimeException e) {
             startActivity(new Intent(Settings.ACTION_SETTINGS));
         }
-    }
-
-    private boolean requireRootDebugEnabled() {
-        if (prefs.getBoolean(OverlayPrefs.ROOT_DEBUG_ENABLED, false)) {
-            return true;
-        }
-        Toast.makeText(this, "Enable root debug tools first", Toast.LENGTH_SHORT).show();
-        return false;
-    }
-
-    private boolean requireRootFeature(String key, String message) {
-        if (!requireRootDebugEnabled()) {
-            return false;
-        }
-        if (prefs.getBoolean(key, false)) {
-            return true;
-        }
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
-        return false;
-    }
-
-    private void runRootDebugAction(String runningMessage, final RootTask task) {
-        Toast.makeText(this, runningMessage, Toast.LENGTH_SHORT).show();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                RootDebugTools.Result result;
-                try {
-                    result = task.run();
-                } catch (RuntimeException e) {
-                    result = RootDebugTools.Result.error(
-                            "Root action failed: " + e.getMessage(), null);
-                }
-                final RootDebugTools.Result finalResult = result;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        String prefix = finalResult.success ? "Root OK: " : "Root failed: ";
-                        Log.i("LleRootDebug", prefix + finalResult.message);
-                        Toast.makeText(ControlActivity.this,
-                                finalResult.message,
-                                Toast.LENGTH_LONG).show();
-                    }
-                });
-            }
-        }, "LLE-root-debug").start();
-    }
-
-    private interface RootTask {
-        RootDebugTools.Result run();
     }
 
     private void updateTouchBoxSummary() {

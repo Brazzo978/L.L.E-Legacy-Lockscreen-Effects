@@ -2,6 +2,7 @@ param(
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
     [switch] $Companion,
+    [switch] $Tester,
     [ValidateSet("Stable", "StockFeedback")]
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
@@ -13,16 +14,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$applicationId = "com.codex.lle64"
-$launcherLabel = "L.L.E 64"
+$applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
+$launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
 }
 if ($Companion -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
     throw "The co-installable ARM64 companion does not support native probe variants"
 }
+if ($Tester -and ($Companion -or $IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
+    throw "The ARM64 tester cannot be combined with companion or probe variants"
+}
 if ($ReleaseSigning -and ($Companion -or $IncludeNote5Probe -or
-        $IncludeRippleCoreProbe -or $WatercolorFeedbackMode -ne "Stable")) {
+        $IncludeRippleCoreProbe -or $Tester -or $WatercolorFeedbackMode -ne "Stable")) {
     throw "Stable release signing is only available for the normal ARM64 build"
 }
 
@@ -46,7 +50,9 @@ $readelf = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-read
 $objdump = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-objdump.exe"
 $strings = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strings.exe"
 
-$out = Join-Path $root $(if ($Companion) {
+$out = Join-Path $root $(if ($Tester) {
+    "build\arm64-v8a-test"
+} elseif ($Companion) {
     "build\arm64-v8a-dev"
 } else {
     "build\arm64-v8a"
@@ -60,6 +66,8 @@ $assembled = Join-Path $out "LLE64-arm64-assembled.apk"
 $zipaligned = Join-Path $out "LLE64-arm64-zipaligned.apk"
 $signed = Join-Path $out $(if ($ReleaseSigning) {
     "LLE64-arm64-v8a-release.apk"
+} elseif ($Tester) {
+    "LLE64-arm64-v8a-tester.apk"
 } elseif ($Companion) {
     "LLE64-arm64-v8a.apk"
 } elseif ($IncludeNote5Probe) {
@@ -546,7 +554,7 @@ $expectedPackage = $applicationId
 if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
     throw "Unexpected APK package; expected $expectedPackage"
 }
-if ($badging -notmatch "application-label:'L\.L\.E 64'") {
+if ($badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'") {
     throw "ARM64 launcher label verification failed"
 }
 
