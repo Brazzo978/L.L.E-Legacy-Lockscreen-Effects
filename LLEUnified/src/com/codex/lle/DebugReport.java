@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Debug;
@@ -53,6 +54,7 @@ final class DebugReport {
         StringBuilder body = new StringBuilder(64 * 1024);
         appendHeader(body, appContext);
         appendRuntimeState(body, appContext);
+        appendAudioState(body, appContext);
         appendPreferences(body, appContext);
         appendInternalFiles(body, appContext);
         appendLogcat(body);
@@ -173,6 +175,68 @@ final class DebugReport {
                 || enabled.contains(component.flattenToString());
     }
 
+    private static void appendAudioState(StringBuilder body, Context context) {
+        body.append("[audio]\n");
+        AudioManager audio =
+                (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audio == null) {
+            body.append("audio_manager=unavailable\n\n");
+            return;
+        }
+        int ringerMode = audio.getRingerMode();
+        body.append("ringer_mode=").append(ringerModeLabel(ringerMode)).append('\n');
+        body.append("ringer_mode_value=").append(ringerMode).append('\n');
+        body.append("audio_mode=").append(audio.getMode()).append('\n');
+        body.append("system_stream_volume=")
+                .append(audio.getStreamVolume(AudioManager.STREAM_SYSTEM)).append('\n');
+        body.append("system_stream_max_volume=")
+                .append(audio.getStreamMaxVolume(AudioManager.STREAM_SYSTEM)).append('\n');
+        body.append("system_stream_muted=")
+                .append(audio.isStreamMute(AudioManager.STREAM_SYSTEM)).append('\n');
+        body.append("music_stream_volume=")
+                .append(audio.getStreamVolume(AudioManager.STREAM_MUSIC)).append('\n');
+        body.append("music_stream_max_volume=")
+                .append(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).append('\n');
+        try {
+            int lockscreenSounds = Settings.System.getInt(
+                    context.getContentResolver(), "lockscreen_sounds_enabled", 1);
+            body.append("system_lockscreen_sounds_enabled=")
+                    .append(lockscreenSounds != 0).append('\n');
+        } catch (RuntimeException error) {
+            body.append("system_lockscreen_sounds_enabled=unavailable:")
+                    .append(error.getClass().getSimpleName()).append('\n');
+        }
+        SharedPreferences preferences = OverlayPrefs.get(context);
+        body.append("lle_effect_sounds_enabled=")
+                .append(preferences.getBoolean(
+                        OverlayPrefs.UNLOCK_EFFECT_SOUND_ENABLED, true)).append('\n');
+        try {
+            body.append("lle_effect_sounds_allowed_now=")
+                    .append(OverlayPrefs.unlockEffectSoundAllowedNow(context)).append('\n');
+        } catch (RuntimeException error) {
+            body.append("lle_effect_sounds_allowed_now=unavailable:")
+                    .append(error.getClass().getSimpleName()).append('\n');
+        }
+        body.append("lle_lock_sound_enabled=")
+                .append(OverlayPrefs.lockSoundEnabled(context)).append('\n');
+        body.append("lle_lock_sound_allowed_now=")
+                .append(OverlayPrefs.lockscreenLockSoundAllowedNow(context)).append('\n');
+        body.append('\n');
+    }
+
+    private static String ringerModeLabel(int mode) {
+        switch (mode) {
+            case AudioManager.RINGER_MODE_SILENT:
+                return "silent";
+            case AudioManager.RINGER_MODE_VIBRATE:
+                return "vibrate";
+            case AudioManager.RINGER_MODE_NORMAL:
+                return "normal";
+            default:
+                return "unknown";
+        }
+    }
+
     private static void appendPreferences(StringBuilder body, Context context) {
         body.append("[preferences]\n");
         SharedPreferences preferences = OverlayPrefs.get(context);
@@ -226,15 +290,27 @@ final class DebugReport {
 
     private static void appendLogcat(StringBuilder body) {
         body.append("[app_uid_logcat]\n");
+        String output = captureLogcat("--uid=" + android.os.Process.myUid());
+        if (selectorUnsupported(output, "--uid")) {
+            body.append("filter_fallback=pid (uid selector unsupported)\n");
+            output = captureLogcat("--pid=" + android.os.Process.myPid());
+        } else {
+            body.append("filter=uid\n");
+        }
+        body.append(output);
+    }
+
+    private static String captureLogcat(String selector) {
         Process process = null;
         BufferedReader reader = null;
+        StringBuilder output = new StringBuilder(64 * 1024);
         try {
             process = new ProcessBuilder(
                     "/system/bin/logcat",
                     "-d",
                     "-v", "threadtime",
                     "-t", "2000",
-                    "--uid=" + android.os.Process.myUid())
+                    selector)
                     .redirectErrorStream(true)
                     .start();
             reader = new BufferedReader(new InputStreamReader(
@@ -245,16 +321,16 @@ final class DebugReport {
             while ((count = reader.read(buffer)) >= 0) {
                 int allowed = Math.min(count, MAX_LOGCAT_CHARS - total);
                 if (allowed > 0) {
-                    body.append(buffer, 0, allowed);
+                    output.append(buffer, 0, allowed);
                     total += allowed;
                 }
                 if (total >= MAX_LOGCAT_CHARS) {
-                    body.append("\n<logcat truncated>\n");
+                    output.append("\n<logcat truncated>\n");
                     break;
                 }
             }
         } catch (Throwable error) {
-            body.append("unavailable=").append(error.getClass().getSimpleName())
+            output.append("unavailable=").append(error.getClass().getSimpleName())
                     .append(": ").append(error.getMessage()).append('\n');
         } finally {
             if (reader != null) {
@@ -268,6 +344,16 @@ final class DebugReport {
                 process.destroy();
             }
         }
+        return output.toString();
+    }
+
+    private static boolean selectorUnsupported(String output, String selectorName) {
+        if (output == null) {
+            return false;
+        }
+        String lower = output.toLowerCase(Locale.US);
+        return lower.contains("unknown option")
+                && lower.contains(selectorName.toLowerCase(Locale.US));
     }
 
     private static void pruneOldReports(File directory) {

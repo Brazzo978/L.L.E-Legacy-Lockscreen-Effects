@@ -26,6 +26,7 @@ Choose the installation method:
   Restricted Settings flow.
 - **Computer/advanced:** [install or update with ADB](LLEUnified/docs/INSTALL_ADB.md).
 - **More details:** [complete setup and troubleshooting](LLEUnified/README.md).
+- **Problems or questions:** [read the L.L.E. FAQ](LLEUnified/docs/FAQ.md).
 
 The first-launch wizard configures Accessibility, battery optimization,
 wallpaper dimming, lockscreen capture, enabled features, and the touch region.
@@ -65,6 +66,7 @@ for every device, GPU, lockscreen theme, or vendor update.
 |---|---|:---:|---|---|
 | Samsung | Galaxy phones and foldables, **One UI 6–9** | Varies | **Working** | Fold devices use separate Cover/Main setup; wallpaper layers can vary |
 | Xiaomi / POCO | **POCO X8 Pro Global** (`2511FPC34G`, `klee`) on HyperOS | 16 | **Working** | Confirmed by an ARM64 L.L.E 1.0.4.2 debug report |
+| LG | **LG Velvet** (`LM-G910`, `caymanslm`) | 11 | **Working** | Effects and lock/unlock runtime confirmed; 1.0.4.4 improves intermittent Colored Droplet audio and Android 11 diagnostics |
 
 To add a device to this table, use **Create debug report** in L.L.E and include
 whether the effect, screenshot capture, doodle, sound, and lock/unlock cycle

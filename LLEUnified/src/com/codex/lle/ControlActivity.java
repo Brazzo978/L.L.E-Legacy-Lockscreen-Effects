@@ -40,6 +40,7 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.Display;
 import android.view.MotionEvent;
@@ -53,6 +54,7 @@ import android.view.animation.Interpolator;
 import android.view.animation.PathInterpolator;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -67,12 +69,14 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 public class ControlActivity extends Activity {
     // Hidden framework constant intentionally used by value: getDisplays(String) is public
@@ -273,6 +277,9 @@ public class ControlActivity extends Activity {
                 && LockscreenWallpaperProbe.hasReadAccess(this)) {
             pendingLockWallpaperPreview = false;
             showCurrentLockscreenWallpaper();
+        }
+        if (selectedTab == TAB_LOCKSCREEN_EFFECT && tabContent != null) {
+            showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
         }
     }
 
@@ -1831,6 +1838,10 @@ public class ControlActivity extends Activity {
                 "lockscreen_effect",
                 effectTiming,
                 effectExtras));
+        View backgroundWarning = missingColormapWarning(current);
+        if (backgroundWarning != null) {
+            root.addView(backgroundWarning);
+        }
         root.addView(controls);
 
         LinearLayout effects = verticalGroup();
@@ -1965,6 +1976,167 @@ public class ControlActivity extends Activity {
             root.addView(screenshotServiceControls(current));
         }
         return root;
+    }
+
+    private View missingColormapWarning(final int effect) {
+        if (!effectUsesColormapCache(effect)) {
+            return null;
+        }
+        final ArrayList<String> missingProfiles = new ArrayList<String>();
+        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
+                && OverlayPrefs.foldModeEnabled(this);
+        if (foldProfiles) {
+            addMissingAutomaticColormapProfile(
+                    missingProfiles, effect, FoldDisplayTarget.PROFILE_COVER);
+            addMissingAutomaticColormapProfile(
+                    missingProfiles, effect, FoldDisplayTarget.PROFILE_MAIN);
+        } else {
+            addMissingAutomaticColormapProfile(missingProfiles, effect,
+                    FoldDisplayTarget.cacheProfileForContext(this));
+        }
+        if (missingProfiles.isEmpty()) {
+            return null;
+        }
+
+        LinearLayout warning = verticalGroup();
+        warning.setPadding(dp(15), dp(12), dp(15), dp(12));
+        warning.setBackground(gradient(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {Color.rgb(255, 249, 235), Color.rgb(255, 241, 232)},
+                dp(18),
+                Color.rgb(232, 154, 77),
+                dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            warning.setElevation(dp(4));
+        }
+        LinearLayout.LayoutParams warningParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        warningParams.setMargins(0, 0, 0, dp(12));
+        warning.setLayoutParams(warningParams);
+
+        TextView title = new TextView(this);
+        title.setText("\u26a0  No colormap screenshot ready");
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(16f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setPadding(0, 0, 0, dp(4));
+        warning.addView(title);
+
+        String missing = joinProfileLabels(missingProfiles);
+        TextView copy = infoText("Missing"
+                + (missing.isEmpty() ? "." : " for " + missing + ".")
+                + " Tap recapture, then lock \u2192 wait \u2192 unlock.");
+        copy.setTextColor(Color.rgb(104, 76, 59));
+        copy.setTextSize(12.5f);
+        copy.setPadding(0, 0, 0, dp(6));
+        warning.addView(copy);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button recapture = compactWarningButton("Force recapture now", true,
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                applyPendingUnlockEffect();
+                OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
+                Toast.makeText(ControlActivity.this,
+                        isChargingAccessibilityEnabled()
+                                ? "Recapture armed \u2014 lock, wait, then unlock"
+                                : "Recapture armed \u2014 enable Accessibility, then lock and unlock",
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+        LinearLayout.LayoutParams recaptureParams = new LinearLayout.LayoutParams(
+                0, dp(42), 1.35f);
+        recaptureParams.setMargins(0, 0, dp(7), 0);
+        actions.addView(recapture, recaptureParams);
+
+        Button source = compactWarningButton("Change source", false,
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        startActivityForResult(SetupWizardActivity.createWallpaperLaunchIntent(
+                                ControlActivity.this), REQUEST_SETUP_WIZARD);
+                    }
+                });
+        actions.addView(source, new LinearLayout.LayoutParams(0, dp(42), 0.8f));
+        warning.addView(actions);
+        return warning;
+    }
+
+    private Button compactWarningButton(String text, boolean filled,
+            View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setTextSize(12.5f);
+        button.setTextColor(filled ? Color.WHITE : Color.rgb(181, 89, 35));
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setOnClickListener(listener);
+        button.setBackground(filled
+                ? gradient(GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[] {Color.rgb(216, 104, 43), Color.rgb(238, 151, 56)},
+                        dp(14), Color.TRANSPARENT, 0)
+                : solidDrawable(Color.argb(115, 255, 255, 255), dp(14),
+                        Color.argb(150, 216, 104, 43), dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setElevation(filled ? dp(2) : 0f);
+        }
+        return button;
+    }
+
+    private void addMissingAutomaticColormapProfile(ArrayList<String> missingProfiles,
+            int effect, String requestedProfile) {
+        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
+            return;
+        }
+        File screenshot = colormapScreenshotFileForPreview(effect, profile);
+        if (isReadableImageFile(screenshot)) {
+            return;
+        }
+        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
+            missingProfiles.add("Cover");
+        } else if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
+            missingProfiles.add("Main");
+        } else {
+            missingProfiles.add("this display");
+        }
+    }
+
+    private boolean isReadableImageFile(File file) {
+        if (file == null || !file.exists() || file.length() <= 0L) {
+            return false;
+        }
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        return bounds.outWidth > 0 && bounds.outHeight > 0;
+    }
+
+    private String joinProfileLabels(ArrayList<String> profiles) {
+        if (profiles == null || profiles.isEmpty()) {
+            return "";
+        }
+        if (profiles.size() == 1) {
+            return profiles.get(0);
+        }
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < profiles.size(); i++) {
+            if (i > 0) {
+                result.append(i == profiles.size() - 1 ? " and " : ", ");
+            }
+            result.append(profiles.get(i));
+        }
+        return result.toString();
     }
 
     private void addEffectOptionIfAvailable(LinearLayout effects, String title,
@@ -4327,9 +4499,141 @@ public class ControlActivity extends Activity {
                 section.addView(screenshotServiceDebugControls());
             }
             section.addView(effectProfilerControls());
+            section.addView(customAppBlacklistControls());
             section.addView(batteryDebugControls());
         }
         return section;
+    }
+
+    private View customAppBlacklistControls() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, 0);
+        section.setLayoutParams(params);
+        styleInsetPanel(section);
+        section.addView(sectionTitle("Custom app blacklist"));
+        section.addView(infoText("Hide L.L.E. effects, doodles, and touch input when a "
+                + "vendor-specific app appears over the lockscreen. Enter only the package "
+                + "name, for example com.example.app. Built-in safety rules cannot be removed."));
+
+        final EditText packageInput = new EditText(this);
+        packageInput.setHint("com.example.app");
+        packageInput.setSingleLine(true);
+        packageInput.setTextColor(COLOR_TEXT);
+        packageInput.setHintTextColor(COLOR_MUTED);
+        packageInput.setTextSize(14f);
+        packageInput.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_URI
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        packageInput.setPadding(dp(14), 0, dp(14), 0);
+        packageInput.setBackground(solidDrawable(
+                Color.WHITE, dp(14), Color.argb(90, 135, 172, 185), dp(1)));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        inputParams.setMargins(0, dp(4), 0, dp(4));
+        packageInput.setLayoutParams(inputParams);
+        section.addView(packageInput);
+
+        section.addView(outlineButton("Add package", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                addCustomBlacklistPackage(packageInput.getText().toString());
+            }
+        }));
+
+        ArrayList<String> packages = new ArrayList<String>(
+                OverlayPrefs.userRuntimeBlacklistPackages(this));
+        Collections.sort(packages);
+        if (packages.isEmpty()) {
+            section.addView(infoText("No user-added packages."));
+            return section;
+        }
+
+        section.addView(sectionLabel("User-added packages"));
+        for (int i = 0; i < packages.size(); i++) {
+            final String packageName = packages.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(14), dp(4), dp(6), dp(4));
+            row.setBackground(controlRowBackground(false));
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(56));
+            rowParams.setMargins(0, dp(3), 0, dp(3));
+            row.setLayoutParams(rowParams);
+
+            TextView packageLabel = new TextView(this);
+            packageLabel.setText(packageName);
+            packageLabel.setTextColor(COLOR_TEXT);
+            packageLabel.setTextSize(13f);
+            packageLabel.setSingleLine(true);
+            packageLabel.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            row.addView(packageLabel, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            Button remove = outlineButton("Remove", new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    removeCustomBlacklistPackage(packageName);
+                }
+            });
+            LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                    dp(92), dp(42));
+            removeParams.setMargins(dp(8), 0, 0, 0);
+            remove.setLayoutParams(removeParams);
+            row.addView(remove);
+            section.addView(row);
+        }
+        return section;
+    }
+
+    private void addCustomBlacklistPackage(String rawPackageName) {
+        String packageName = OverlayPrefs.normalizePackageName(rawPackageName);
+        if (!OverlayPrefs.isValidPackageName(packageName)) {
+            Toast.makeText(this, "Enter a valid package name, such as com.example.app.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (isProtectedCustomBlacklistPackage(packageName)) {
+            Toast.makeText(this, "This core system package cannot be blacklisted.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (ChargingAccessibilityService.isBuiltInRuntimeBlacklistPackage(packageName)) {
+            Toast.makeText(this, "This package is already covered by L.L.E.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        Set<String> packages = OverlayPrefs.userRuntimeBlacklistPackages(this);
+        if (!packages.add(packageName)) {
+            Toast.makeText(this, "This package is already in your blacklist.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        OverlayPrefs.setUserRuntimeBlacklistPackages(this, packages);
+        Toast.makeText(this, "Package added to the blacklist.", Toast.LENGTH_SHORT).show();
+        showTab(selectedTab);
+    }
+
+    private void removeCustomBlacklistPackage(String packageName) {
+        Set<String> packages = OverlayPrefs.userRuntimeBlacklistPackages(this);
+        if (!packages.remove(packageName)) {
+            return;
+        }
+        OverlayPrefs.setUserRuntimeBlacklistPackages(this, packages);
+        Toast.makeText(this, "Package removed from the blacklist.", Toast.LENGTH_SHORT).show();
+        showTab(selectedTab);
+    }
+
+    private boolean isProtectedCustomBlacklistPackage(String packageName) {
+        return "android".equals(packageName)
+                || "com.android.systemui".equals(packageName)
+                || "com.samsung.android.app.aodservice".equals(packageName)
+                || getPackageName().equals(packageName)
+                || packageName.startsWith("com.codex.lle");
     }
 
     private View batteryDebugControls() {

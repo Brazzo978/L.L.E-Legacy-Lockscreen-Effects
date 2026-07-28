@@ -34,19 +34,19 @@ Download the current ARM64 APK and `SHA256SUMS.txt` from the
 Verify the APK on Windows PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\LLE64-1.0.4.3-64-bit.apk"
+Get-FileHash -Algorithm SHA256 ".\LLE64-1.0.4.4-64-bit.apk"
 ```
 
 On macOS:
 
 ```shell
-shasum -a 256 "./LLE64-1.0.4.3-64-bit.apk"
+shasum -a 256 "./LLE64-1.0.4.4-64-bit.apk"
 ```
 
 On Linux:
 
 ```shell
-sha256sum "./LLE64-1.0.4.3-64-bit.apk"
+sha256sum "./LLE64-1.0.4.4-64-bit.apk"
 ```
 
 Compare the complete value with `SHA256SUMS.txt` from the same release.
@@ -66,7 +66,7 @@ The device must be listed as `device` and support `arm64-v8a`. If it says
 Open the terminal in the directory containing the APK:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4.3-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4.4-64-bit.apk"
 ```
 
 `-r` preserves app data. `--no-incremental` avoids device-specific issues with
@@ -74,7 +74,7 @@ the native effect libraries. If an older ADB version does not recognize it,
 update Platform Tools or temporarily use:
 
 ```shell
-adb install -r "LLE64-1.0.4.3-64-bit.apk"
+adb install -r "LLE64-1.0.4.4-64-bit.apk"
 ```
 
 Do not uninstall before a routine update: uninstalling deletes preferences,

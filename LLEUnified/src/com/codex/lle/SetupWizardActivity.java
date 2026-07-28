@@ -85,6 +85,14 @@ public class SetupWizardActivity extends Activity {
     private static final String PREF_CAPTURE_REQUESTED_AT = "capture_requested_at";
     private static final String SAMSUNG_NIGHT_WALLPAPER_DIM =
             "display_night_theme_wallpaper";
+    private static final String SAMSUNG_DYNAMIC_LOCK_WALLPAPER_TYPE =
+            "plugin_lock_wallpaper_type";
+    private static final String SAMSUNG_DYNAMIC_LOCK_INSTANCE_DATA =
+            "key_plugin_lock_instance_data";
+    private static final String SAMSUNG_DYNAMIC_LOCK_PACKAGE =
+            "com.samsung.android.dynamiclock";
+    private static final String SAMSUNG_DYNAMIC_LOCK_SETTINGS_ACTION =
+            "dynamic.intent.action.WALLPAPER_SERVICES_ACTIVITY";
     private static final int WIZARD_SCHEMA = 5;
     private static final String PREF_SCHEMA = "schema";
 
@@ -667,58 +675,90 @@ public class SetupWizardActivity extends Activity {
     }
 
     private View wallpaperDimStep() {
-        final boolean exposed = isSamsungWallpaperDimExposed();
-        final boolean enabled = exposed && isSamsungWallpaperDimEnabled();
+        final boolean dimExposed = isSamsungWallpaperDimExposed();
+        final boolean dimEnabled = dimExposed && isSamsungWallpaperDimEnabled();
+        final boolean dynamicExposed = isSamsungDynamicLockExposed();
+        final boolean dynamicEnabled =
+                dynamicExposed && isSamsungDynamicLockEnabled();
+        final boolean compatibilityRisk = dimEnabled || dynamicEnabled;
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 3", enabled ? "HIGHLY RECOMMENDED" : "READY",
-                enabled ? COLOR_WARN : COLOR_OK));
-        body.addView(title("Disable Samsung wallpaper dimming"));
-        body.addView(paragraph("Samsung can darken the lockscreen wallpaper when Dark mode "
-                + "turns on. That protected post-processing is not included in the wallpaper "
-                + "L.L.E receives, so unlock effects can show a bright or mismatched area."));
-        body.addView(statusCard(enabled
+        body.addView(kicker("STEP 3",
+                compatibilityRisk ? "ACTION STRONGLY RECOMMENDED" : "READY",
+                compatibilityRisk ? COLOR_WARN : COLOR_OK));
+        body.addView(title("Check Samsung wallpaper compatibility"));
+        body.addView(paragraph("L.L.E needs one stable lockscreen image. Samsung wallpaper "
+                + "dimming is a protected post-process, while Dynamic Lock Screen can replace "
+                + "the image after every lock. Either feature can make the rendered effect "
+                + "show a bright, stale, or mismatched wallpaper area."));
+        body.addView(statusCard(dimEnabled
                         ? "Wallpaper dimming is enabled"
-                        : exposed
+                        : dimExposed
                                 ? "Wallpaper dimming is off"
                                 : "No Samsung wallpaper dimming detected",
-                enabled
+                dimEnabled
                         ? "Continuing with this enabled can cause bright flashes, mismatched "
                                 + "wallpaper layers, or severely broken-looking unlock effects. "
                                 + "Open Wallpaper and style and turn it off; L.L.E will verify "
                                 + "the setting when you return."
-                        : exposed
+                        : dimExposed
                                 ? "Samsung will keep the wallpaper brightness consistent with "
                                         + "the L.L.E renderer."
                                 : "This device does not expose Samsung's night wallpaper option.",
-                !enabled));
-        Button primary = primaryButton(enabled
-                ? "Open Samsung Settings"
-                : "Continue");
-        primary.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isSamsungWallpaperDimEnabled()) {
-                    showStep(STEP_WALLPAPER, true, 1);
-                    return;
+                !dimEnabled));
+        body.addView(statusCard(dynamicEnabled
+                        ? "Dynamic Lock Screen is enabled"
+                        : dynamicExposed
+                                ? "Dynamic Lock Screen is off"
+                                : "No Samsung Dynamic Lock Screen detected",
+                dynamicEnabled
+                        ? "Samsung is replacing the lockscreen wallpaper after each lock. "
+                                + "L.L.E cannot reliably capture that protected image before "
+                                + "the same unlock effect starts. Turn Dynamic Lock Screen off; "
+                                + "L.L.E will verify the setting when you return."
+                        : dynamicExposed
+                                ? "The lockscreen image will remain stable between L.L.E "
+                                        + "captures."
+                                : "This device does not expose Samsung's Dynamic Lock Screen.",
+                !dynamicEnabled));
+
+        if (dynamicEnabled) {
+            Button dynamicSettings = primaryButton("Turn off Dynamic Lock Screen");
+            dynamicSettings.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    openDynamicLockSettings();
                 }
-                openWallpaperStyleSettings();
-            }
-        });
-        body.addView(primary, actionParams());
-        Button manual = quietButton(enabled
-                ? "Continue anyway"
-                : "Open Samsung Settings");
-        manual.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (isSamsungWallpaperDimEnabled()) {
-                    showWallpaperDimLaterWarning();
-                } else {
+            });
+            body.addView(dynamicSettings, actionParams());
+        }
+        if (dimEnabled) {
+            Button dimSettings = primaryButton("Turn off wallpaper dimming");
+            dimSettings.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
                     openWallpaperStyleSettings();
                 }
+            });
+            body.addView(dimSettings, actionParams());
+        }
+
+        Button continueButton = compatibilityRisk
+                ? quietButton("Continue anyway")
+                : primaryButton("Continue");
+        continueButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean currentDim = isSamsungWallpaperDimEnabled();
+                boolean currentDynamic = isSamsungDynamicLockEnabled();
+                if (currentDim || currentDynamic) {
+                    showWallpaperCompatibilityWarning(currentDim, currentDynamic);
+                } else {
+                    showStep(STEP_WALLPAPER, true, 1);
+                }
             }
         });
-        body.addView(manual, quietParams());
+        body.addView(continueButton,
+                compatibilityRisk ? quietParams() : actionParams());
         return scroll(body);
     }
 
@@ -1466,6 +1506,77 @@ public class SetupWizardActivity extends Activity {
                 getContentResolver(), SAMSUNG_NIGHT_WALLPAPER_DIM, 0) != 0;
     }
 
+    private boolean isSamsungDynamicLockExposed() {
+        if (!"samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
+            return false;
+        }
+        try {
+            if (Settings.Secure.getString(
+                    getContentResolver(), SAMSUNG_DYNAMIC_LOCK_WALLPAPER_TYPE) != null) {
+                return true;
+            }
+        } catch (RuntimeException error) {
+            Log.d("LLESetup", "Dynamic Lock Screen setting is not readable", error);
+        }
+        try {
+            getPackageManager().getApplicationInfo(SAMSUNG_DYNAMIC_LOCK_PACKAGE, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return false;
+        }
+    }
+
+    private boolean isSamsungDynamicLockEnabled() {
+        if (!"samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
+            return false;
+        }
+        try {
+            String rawType = Settings.Secure.getString(
+                    getContentResolver(), SAMSUNG_DYNAMIC_LOCK_WALLPAPER_TYPE);
+            if (rawType != null) {
+                try {
+                    int type = Integer.parseInt(rawType.trim());
+                    if (type > 0) {
+                        return true;
+                    }
+                } catch (NumberFormatException error) {
+                    Log.d("LLESetup", "Unexpected Dynamic Lock Screen type=" + rawType);
+                }
+            }
+            String instanceData = Settings.Secure.getString(
+                    getContentResolver(), SAMSUNG_DYNAMIC_LOCK_INSTANCE_DATA);
+            return instanceData != null
+                    && (instanceData.contains("\"wallpaper_dynamic\":1")
+                            || instanceData.contains("\"wallpaper_dynamic_sub\":1"));
+        } catch (RuntimeException error) {
+            Log.d("LLESetup", "Unable to verify Dynamic Lock Screen state", error);
+            return false;
+        }
+    }
+
+    private void openDynamicLockSettings() {
+        waitingForExternalSetting = true;
+        Intent settings = new Intent(SAMSUNG_DYNAMIC_LOCK_SETTINGS_ACTION);
+        settings.addCategory(Intent.CATEGORY_DEFAULT);
+        settings.setPackage(SAMSUNG_DYNAMIC_LOCK_PACKAGE);
+        try {
+            startActivity(settings);
+            return;
+        } catch (RuntimeException directError) {
+            Log.w("LLESetup", "Dynamic Lock Screen page unavailable", directError);
+        }
+        Intent fallback = new Intent("dynamic.intent.action.DLS_SETTINGS");
+        fallback.addCategory(Intent.CATEGORY_DEFAULT);
+        fallback.setPackage(SAMSUNG_DYNAMIC_LOCK_PACKAGE);
+        try {
+            startActivity(fallback);
+        } catch (RuntimeException fallbackError) {
+            Log.w("LLESetup", "Dynamic Lock settings fallback unavailable",
+                    fallbackError);
+            openWallpaperStyleSettings();
+        }
+    }
+
     private void openWallpaperStyleSettings() {
         waitingForExternalSetting = true;
         Intent samsung = new Intent("com.samsung.intent.action.WALLPAPER_SETTING");
@@ -1502,14 +1613,30 @@ public class SetupWizardActivity extends Activity {
                 .show();
     }
 
-    private void showWallpaperDimLaterWarning() {
+    private void showWallpaperCompatibilityWarning(
+            boolean dimEnabled, boolean dynamicEnabled) {
+        StringBuilder message = new StringBuilder();
+        if (dimEnabled) {
+            message.append("Wallpaper dimming can make the lockscreen and L.L.E layers diverge, "
+                    + "causing bright flashes or mismatched wallpaper areas.");
+        }
+        if (dynamicEnabled) {
+            if (message.length() > 0) {
+                message.append("\n\n");
+            }
+            message.append("Dynamic Lock Screen replaces the image after each lock. L.L.E "
+                    + "cannot reliably capture the new protected wallpaper before the same "
+                    + "unlock effect starts, so the previous wallpaper or a broken layer may "
+                    + "appear.");
+        }
+        message.append("\n\nDisable the flagged Samsung feature");
+        if (dimEnabled && dynamicEnabled) {
+            message.append("s");
+        }
+        message.append(" and refresh the L.L.E background for reliable effects.");
         new AlertDialog.Builder(this)
                 .setTitle("Continue despite the compatibility risk?")
-                .setMessage("This setting is strongly recommended. When Samsung enables Dark "
-                        + "mode, the lockscreen and L.L.E layers can diverge: the wallpaper may "
-                        + "flash at full brightness, appear replaced, or make the unlock effect "
-                        + "look severely broken. You can fix it later by disabling wallpaper "
-                        + "dimming and refreshing the L.L.E background.")
+                .setMessage(message.toString())
                 .setNegativeButton("Go back", null)
                 .setPositiveButton("Continue anyway", new DialogInterface.OnClickListener() {
                     @Override

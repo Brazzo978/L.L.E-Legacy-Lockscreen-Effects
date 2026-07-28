@@ -14,7 +14,7 @@ only; new effects and features target ARM64.
 | APK | ABI | Recommended use |
 |---|---|---|
 | `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
-| `LLE64-1.0.4.3-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
+| `LLE64-1.0.4.4-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
 
 Check the supported ABIs:
 
@@ -65,6 +65,7 @@ Use the current ARM64 release unless the device is genuinely 32-bit-only:
 
 - [Install the official APK manually — illustrated Samsung flow](docs/INSTALL_APK.md)
 - [Install or update from a computer with ADB](docs/INSTALL_ADB.md)
+- [Frequently asked questions and troubleshooting](docs/FAQ.md)
 
 The tested Samsung first-start sequence is:
 
@@ -84,7 +85,7 @@ every screen in order.
 Quick ARM64 ADB update:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4.3-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.4.4-64-bit.apk"
 ```
 
 Open ARM64:
@@ -107,9 +108,10 @@ separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 1. Open the intended L.L.E. application and follow the first-launch wizard.
 2. Enable the matching Accessibility service when Android Settings opens.
 3. Allow unrestricted battery use, or continue with the displayed warning.
-4. On Samsung devices, disable lockscreen wallpaper dimming when prompted. This
-   is strongly recommended because the protected dimmed layer is not exposed to
-   L.L.E and can otherwise make effect regions flash or mismatch.
+4. On Samsung devices, disable lockscreen wallpaper dimming and Dynamic Lock
+   Screen when prompted. This is strongly recommended because protected dimming
+   is not exposed to L.L.E, while Dynamic Lock Screen can replace the image
+   after every lock; either can make effect regions flash or mismatch.
 5. Choose automatic lockscreen capture or one of the Beta direct-wallpaper modes.
 6. Select whether to run the charging doodle, lockscreen effects, or both.
 7. Return to the main screen, select an effect and configure the touch box.
@@ -158,6 +160,19 @@ active.
 
 Remove battery restrictions for L.L.E. in Android or device battery settings.
 Some devices stop background accessibility services aggressively.
+
+### Effects are silent
+
+On Samsung, open **Settings → Sounds and vibration → System sound**, then turn
+on **Screen lock/unlock**. This switch is required because L.L.E. respects the
+device's lockscreen sound policy.
+
+Also use the normal Sound profile rather than Silent or Vibrate, raise the
+System sound volume, and keep **Effect sounds** enabled in L.L.E. Media volume
+is a separate channel.
+
+See the [audio troubleshooting FAQ](docs/FAQ.md) for the complete Samsung flow,
+other-vendor equivalents, and the information recorded by a debug report.
 
 ### The wrong Fold screen is used
 
@@ -217,6 +232,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.4.4 stable release notes](docs/RELEASE_NOTES_1.0.4.4.md)
 - [1.0.4.3 stable release notes](docs/RELEASE_NOTES_1.0.4.3.md)
 - [1.0.4.2 stable release notes](docs/RELEASE_NOTES_1.0.4.2.md)
 - [1.0.4.1 stable release notes](docs/RELEASE_NOTES_1.0.4.1.md)

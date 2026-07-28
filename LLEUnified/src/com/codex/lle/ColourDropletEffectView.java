@@ -30,6 +30,8 @@ import android.widget.FrameLayout;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 
 public class ColourDropletEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, SensorEventListener,
@@ -57,6 +59,9 @@ public class ColourDropletEffectView extends FrameLayout
     private final int tapSound;
     private final int lockSound;
     private final int unlockSound;
+    private final Object soundLock = new Object();
+    private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
+    private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
     private final UnlockEffectReadinessCoordinator readiness =
             new UnlockEffectReadinessCoordinator(this, "Colour Droplet");
 
@@ -83,6 +88,8 @@ public class ColourDropletEffectView extends FrameLayout
     private boolean accelerometerRegistered;
     private long downTime;
     private long lastSensorLogAt;
+    private long lastSoundSuppressionLogAt;
+    private String lastSoundSuppressionReason = "";
     private float lastX;
     private float lastY;
     private final Runnable forceDirtyRunnable = new Runnable() {
@@ -131,6 +138,13 @@ public class ColourDropletEffectView extends FrameLayout
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build())
                 .build();
+        soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+            @Override
+            public void onLoadComplete(
+                    SoundPool completedPool, int sampleId, int status) {
+                handleSoundLoadComplete(completedPool, sampleId, status);
+            }
+        });
         tapSound = soundPool.load(context, R.raw.ve_colourdroplet_tap, 1);
         lockSound = soundPool.load(context, R.raw.ve_colourdroplet_lock, 1);
         unlockSound = soundPool.load(context, R.raw.ve_colourdroplet_unlock, 1);
@@ -198,7 +212,7 @@ public class ColourDropletEffectView extends FrameLayout
         gestureActive = true;
         lastX = screenX;
         lastY = screenY;
-        play(tapSound);
+        play(tapSound, "tap");
         forwardTouch(MotionEvent.ACTION_DOWN, screenX, screenY);
         Log.i(TAG, "colour droplet begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY)
@@ -225,7 +239,7 @@ public class ColourDropletEffectView extends FrameLayout
         forwardTouch(MotionEvent.ACTION_UP, lastX, lastY);
         if (completed) {
             sendUnlockCommand();
-            play(unlockSound);
+            play(unlockSound, "unlock");
         }
         Log.i(TAG, "colour droplet finish completed=" + completed
                 + " x=" + Math.round(lastX)
@@ -348,6 +362,11 @@ public class ColourDropletEffectView extends FrameLayout
         removeCallbacks(forceDirtyRunnable);
         sendScreenTurnedOffCommand();
         destroyed = true;
+        synchronized (soundLock) {
+            soundPool.setOnLoadCompleteListener(null);
+            loadedSoundIds.clear();
+            pendingSoundIds.clear();
+        }
         soundPool.release();
         if (removeEffect != null && effectView != null) {
             try {
@@ -871,26 +890,105 @@ public class ColourDropletEffectView extends FrameLayout
         return Math.max(1, metrics.heightPixels);
     }
 
-    private void play(int soundId) {
-        if (!destroyed && soundId != 0 && canPlayEffectSound()) {
-            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+    private void play(int soundId, String source) {
+        if (destroyed || soundId == 0) {
+            Log.w(TAG, "colour droplet sound unavailable source=" + source);
+            return;
+        }
+        String suppressionReason = effectSoundSuppressionReason();
+        if (suppressionReason != null) {
+            logSoundSuppressed(source, suppressionReason);
+            return;
+        }
+        synchronized (soundLock) {
+            if (!loadedSoundIds.contains(soundId)) {
+                pendingSoundIds.add(soundId);
+                Log.d(TAG, "colour droplet sound queued until load source=" + source);
+                return;
+            }
+            playLoadedSoundLocked(soundId, source);
         }
     }
 
-    private boolean canPlayEffectSound() {
-        if (!OverlayPrefs.unlockEffectSoundAllowedNow(context)) {
-            return false;
+    private void handleSoundLoadComplete(
+            SoundPool completedPool, int sampleId, int status) {
+        synchronized (soundLock) {
+            if (completedPool != soundPool || destroyed) {
+                return;
+            }
+            if (status != 0) {
+                pendingSoundIds.remove(sampleId);
+                Log.w(TAG, "colour droplet sound load failed id=" + sampleId
+                        + " status=" + status);
+                return;
+            }
+            loadedSoundIds.add(sampleId);
+            if (!pendingSoundIds.remove(sampleId)) {
+                return;
+            }
+            String suppressionReason = effectSoundSuppressionReason();
+            if (suppressionReason == null) {
+                playLoadedSoundLocked(sampleId, "deferred");
+            } else {
+                logSoundSuppressed("deferred", suppressionReason);
+            }
+        }
+    }
+
+    private void playLoadedSoundLocked(int soundId, String source) {
+        int streamId = soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+        if (streamId == 0) {
+            Log.w(TAG, "colour droplet sound play rejected source=" + source);
+        } else {
+            Log.d(TAG, "colour droplet sound played source=" + source
+                    + " stream=" + streamId);
+        }
+    }
+
+    private String effectSoundSuppressionReason() {
+        if (!OverlayPrefs.get(context).getBoolean(
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_ENABLED, true)) {
+            return "lle_effect_sounds_disabled";
+        }
+        if (!OverlayPrefs.timeWindowAllows(context,
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_ENABLED,
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_START,
+                OverlayPrefs.UNLOCK_EFFECT_SOUND_TIME_END)) {
+            return "lle_effect_sound_time_window";
         }
         try {
             if (Settings.System.getInt(context.getContentResolver(),
                     "lockscreen_sounds_enabled", 1) == 0) {
-                return false;
+                return "system_lockscreen_sounds_disabled";
             }
         } catch (RuntimeException ignored) {
-            // Match Samsung's permissive behavior when the setting cannot be queried.
+            // Keep vendor compatibility when the setting does not exist or is protected.
         }
-        return audioManager != null
-                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+        if (audioManager == null) {
+            return "audio_manager_unavailable";
+        }
+        int ringerMode = audioManager.getRingerMode();
+        if (ringerMode == AudioManager.RINGER_MODE_SILENT) {
+            return "ringer_silent";
+        }
+        if (ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
+            return "ringer_vibrate";
+        }
+        if (audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) <= 0) {
+            return "system_stream_volume_zero";
+        }
+        return null;
+    }
+
+    private void logSoundSuppressed(String source, String reason) {
+        long now = SystemClock.uptimeMillis();
+        if (!reason.equals(lastSoundSuppressionReason)
+                || now - lastSoundSuppressionLogAt >= 5_000L) {
+            lastSoundSuppressionReason = reason;
+            lastSoundSuppressionLogAt = now;
+            Log.i(TAG, "colour droplet sound suppressed source=" + source
+                    + " reason=" + reason);
+        }
     }
 
     private void recycle(Bitmap bitmap) {

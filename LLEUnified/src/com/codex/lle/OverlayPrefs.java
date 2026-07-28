@@ -8,7 +8,9 @@ import android.provider.Settings;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class OverlayPrefs {
     private static volatile long cachedEpochMinute = Long.MIN_VALUE;
@@ -61,6 +63,8 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    static final String USER_RUNTIME_BLACKLIST_PACKAGES =
+            "user_runtime_blacklist_packages";
     static final String FOLD_MODE = "fold_mode";
     static final String FOLD_COVER_UNLOCK_EFFECT_ENABLED =
             "fold_cover_unlock_effect_enabled";
@@ -378,6 +382,55 @@ final class OverlayPrefs {
 
     static boolean debugLensLoop(Context context) {
         return false;
+    }
+
+    static Set<String> userRuntimeBlacklistPackages(Context context) {
+        Set<String> stored = get(context).getStringSet(
+                USER_RUNTIME_BLACKLIST_PACKAGES, null);
+        return stored == null ? new HashSet<String>() : new HashSet<String>(stored);
+    }
+
+    static void setUserRuntimeBlacklistPackages(Context context, Set<String> packages) {
+        Set<String> copy = packages == null
+                ? new HashSet<String>() : new HashSet<String>(packages);
+        get(context).edit().putStringSet(USER_RUNTIME_BLACKLIST_PACKAGES, copy).apply();
+    }
+
+    static String normalizePackageName(String packageName) {
+        return packageName == null
+                ? "" : packageName.trim().toLowerCase(java.util.Locale.US);
+    }
+
+    static boolean isValidPackageName(String packageName) {
+        String normalized = normalizePackageName(packageName);
+        if (normalized.length() < 3 || normalized.length() > 255
+                || normalized.indexOf('.') <= 0
+                || normalized.endsWith(".")) {
+            return false;
+        }
+        String[] segments = normalized.split("\\.");
+        if (segments.length < 2) {
+            return false;
+        }
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (segment.length() == 0 || !isAsciiPackageLetter(segment.charAt(0))) {
+                return false;
+            }
+            for (int j = 1; j < segment.length(); j++) {
+                char value = segment.charAt(j);
+                if (!isAsciiPackageLetter(value)
+                        && (value < '0' || value > '9')
+                        && value != '_') {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean isAsciiPackageLetter(char value) {
+        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
     }
 
     static boolean unlockEffectEnabled(Context context) {

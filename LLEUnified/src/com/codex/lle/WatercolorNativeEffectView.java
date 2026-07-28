@@ -48,6 +48,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
     private Bitmap lastSentBackgroundBitmap;
+    private Object lastSentBackgroundSurface;
     private String backgroundSource = "none";
     private String lastSentBackgroundSource = "";
     private boolean ready;
@@ -236,6 +237,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
         ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName == null ? "external" : sourceName;
         lastSentBackgroundBitmap = null;
+        lastSentBackgroundSurface = null;
         lastSentBackgroundSource = "";
         sendBackgroundBitmap();
         Log.i(TAG, "watercolor background ready source=" + backgroundSource
@@ -245,6 +247,7 @@ public final class WatercolorNativeEffectView extends FrameLayout
     @Override
     public void clearBackgroundSourceBitmap() {
         lastSentBackgroundBitmap = null;
+        lastSentBackgroundSurface = null;
         lastSentBackgroundSource = "";
         releaseBackgroundBitmap();
         backgroundSource = "none";
@@ -277,6 +280,12 @@ public final class WatercolorNativeEffectView extends FrameLayout
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        // Samsung recreates the TextureView/EGL context when this parked renderer is
+        // detached and attached again. A bitmap uploaded to the previous context is
+        // no longer a valid GL texture even though the Java Bitmap instance is unchanged.
+        lastSentBackgroundBitmap = null;
+        lastSentBackgroundSurface = null;
+        lastSentBackgroundSource = "";
         if (!isReady()) {
             readiness.rendererUnavailable("Samsung Watercolor EffectView is not ready");
             return;
@@ -341,8 +350,13 @@ public final class WatercolorNativeEffectView extends FrameLayout
     }
 
     private void sendBackgroundBitmap() {
-        if (!isReady() || !hasBackgroundSourceBitmap()
-                || backgroundBitmap == lastSentBackgroundBitmap
+        if (!isReady() || !hasBackgroundSourceBitmap()) {
+            return;
+        }
+        Object currentSurface = findSurfaceToken(effectViewAsView);
+        if (currentSurface != null
+                && currentSurface == lastSentBackgroundSurface
+                && backgroundBitmap == lastSentBackgroundBitmap
                 && backgroundSource.equals(lastSentBackgroundSource)) {
             return;
         }
@@ -350,7 +364,27 @@ public final class WatercolorNativeEffectView extends FrameLayout
         params.put("Bitmap", backgroundBitmap);
         sendCommand(CMD_SET_BACKGROUND, params);
         lastSentBackgroundBitmap = backgroundBitmap;
+        lastSentBackgroundSurface = currentSurface;
         lastSentBackgroundSource = backgroundSource;
+    }
+
+    private Object findSurfaceToken(View view) {
+        if (view == null) {
+            return null;
+        }
+        if (view instanceof TextureView) {
+            return ((TextureView) view).getSurfaceTexture();
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                Object token = findSurfaceToken(group.getChildAt(i));
+                if (token != null) {
+                    return token;
+                }
+            }
+        }
+        return null;
     }
 
     private void sendCommand(int command, HashMap<String, Object> params) {

@@ -119,6 +119,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long WARM_BURST_LATE_MS = 180L;
     private static final long READINESS_GESTURE_TIMEOUT_MS = 650L;
     private static final long BLOCKED_SURFACE_CLEAR_GRACE_MS = 120L;
+    private static final long GLOBAL_ACTIONS_EVENT_CLEAR_GRACE_MS = 250L;
+    private static final long GLOBAL_ACTIONS_FALLBACK_CLEAR_MS = 9000L;
     private static final long TOUCH_BOX_SCREENSHOT_DELAY_MS = 2000L;
     private static final long TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS = 180L;
     private static final long UNLOCK_EFFECT_SCREENSHOT_RETRY_MS = 90L;
@@ -138,6 +140,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int PIN_ENTRY_NODE_SCAN_CHILD_LIMIT = 80;
     private static final int BLOCKED_SURFACE_PIN_ENTRY = 1;
     private static final int BLOCKED_SURFACE_NOTIFICATION_SHADE = 1 << 1;
+    private static final String ACTION_CLOSE_SYSTEM_DIALOGS =
+            "android.intent.action.CLOSE_SYSTEM_DIALOGS";
+    private static final String SYSTEM_DIALOG_REASON_KEY = "reason";
+    private static final String SYSTEM_DIALOG_REASON_GLOBAL_ACTIONS = "globalactions";
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String AOD_PACKAGE = "com.samsung.android.app.aodservice";
     private static final String SAMSUNG_BIOMETRICS_PACKAGE =
@@ -163,6 +169,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             "com.samsung.android.calendar",
             "com.samsung.android.emergency",
             "com.sec.android.emergencylauncher",
+            "com.google.android.googlequicksearchbox",
 
             // Messaging and VoIP surfaces that can present a caller over keyguard.
             "com.whatsapp",
@@ -482,6 +489,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean pinEntrySurfaceSeen;
     private boolean pinEntrySurfaceVisible;
     private boolean notificationShadeVisible;
+    private boolean globalActionsVisible;
     private boolean unlockTouchCachedWhileScreenOff;
     private boolean unlockAffordancePending;
     private boolean unlockAffordanceShownThisWake;
@@ -505,6 +513,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long lastActiveDisplayResolveAt;
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
+    private long globalActionsShownAt;
     private long lastScreenOnAt;
     private long lastScreenOffAt;
     private long lastLockSoundPlayedAt;
@@ -596,6 +605,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                 }
             };
 
+    private final Runnable globalActionsFallbackClearRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!globalActionsVisible) {
+                return;
+            }
+            globalActionsVisible = false;
+            globalActionsShownAt = 0L;
+            Log.i(TAG, "global actions suppression cleared reason=fallback_timeout");
+            evaluateVisibility("global_actions:fallback_timeout", false);
+        }
+    };
+
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -607,6 +629,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 refreshChargingState();
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                clearGlobalActionsSuppression("screen_off", false);
                 playLockSoundForScreenOff();
                 handler.removeCallbacks(timeWindowRefreshRunnable);
                 interactiveSessionWasUnlocked = false;
@@ -632,6 +655,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 scheduleScreenOffPrearm();
                 scheduleEffectBackgroundRefreshAlarm("screen_off");
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+                clearGlobalActionsSuppression("user_present", false);
                 handler.removeCallbacks(timeWindowRefreshRunnable);
                 interactiveSessionWasUnlocked = true;
                 unlockAffordancePending = false;
@@ -653,6 +677,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                         .apply();
                 scheduleEffectBackgroundRefreshAlarm("user_present");
             } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                clearGlobalActionsSuppression("screen_on", false);
                 boolean duplicateScreenOn = lastInteractive && lastScreenOnAt > 0L;
                 lastInteractive = true;
                 if (!duplicateScreenOn) {
@@ -693,6 +718,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
                 startLockscreenSessionPolling();
                 return;
+            } else if (ACTION_CLOSE_SYSTEM_DIALOGS.equals(action)) {
+                String closeReason = intent == null
+                        ? null : intent.getStringExtra(SYSTEM_DIALOG_REASON_KEY);
+                Log.i(TAG, "close system dialogs reason=" + closeReason);
+                if (SYSTEM_DIALOG_REASON_GLOBAL_ACTIONS.equals(closeReason)) {
+                    showGlobalActionsSuppression();
+                    return;
+                }
+                if (globalActionsVisible) {
+                    clearGlobalActionsSuppression(
+                            "close_system_dialogs:" + closeReason, true);
+                    return;
+                }
             } else if (Intent.ACTION_DREAMING_STOPPED.equals(action)
                     || PowerManager.ACTION_POWER_SAVE_MODE_CHANGED.equals(action)
                     || PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED.equals(action)) {
@@ -861,6 +899,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         logSystemUiEvent(event);
         boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (interactive && isGlobalActionsEvent(event)) {
+            showGlobalActionsSuppression();
+            return;
+        }
+        if (globalActionsVisible && isGlobalActionsDismissEvent(event)) {
+            clearGlobalActionsSuppression("window_state_changed", true);
+        }
         noteExternalLockscreenSurface(event, interactive);
         if (isRuntimeSurfaceBlockPackage(event.getPackageName())) {
             unlockAffordancePending = false;
@@ -983,6 +1028,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .append(service.pinEntrySurfaceVisible).append('\n');
         snapshot.append("notification_shade_visible=")
                 .append(service.notificationShadeVisible).append('\n');
+        snapshot.append("global_actions_visible=")
+                .append(service.globalActionsVisible).append('\n');
+        snapshot.append("global_actions_age_ms=")
+                .append(service.globalActionsShownAt <= 0L
+                        ? -1L
+                        : SystemClock.uptimeMillis() - service.globalActionsShownAt)
+                .append('\n');
+        snapshot.append("custom_blacklist_packages=")
+                .append(new java.util.TreeSet<String>(
+                        OverlayPrefs.userRuntimeBlacklistPackages(service)))
+                .append('\n');
         snapshot.append("background_capture_active=")
                 .append(service.colorScreenshotInFlight).append('\n');
         return snapshot.toString();
@@ -1007,6 +1063,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (OverlayPrefs.MASTER_ENABLED.equals(key) && !OverlayPrefs.masterEnabled(this)) {
             stopAllRuntimeSurfaces();
             disableHardEffectBackgroundRecapture("master_disabled");
+        }
+        if (OverlayPrefs.USER_RUNTIME_BLACKLIST_PACKAGES.equals(key)) {
+            loadRuntimeSurfaceBlacklistPackages();
+            if (isRuntimeSurfaceBlocked()) {
+                hideRuntimeSurfacesForBlockedPackage("prefs:custom_blacklist");
+            }
+            evaluateVisibility("prefs:custom_blacklist", false);
+            return;
         }
         if (OverlayPrefs.FOLD_MODE.equals(key)) {
             refreshActiveDisplayTarget("prefs_fold_mode");
@@ -1173,17 +1237,16 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void registerScreenReceiver() {
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_SCREEN_ON);
-        filter.addAction(Intent.ACTION_SCREEN_OFF);
-        filter.addAction(Intent.ACTION_USER_PRESENT);
-        filter.addAction(Intent.ACTION_BATTERY_CHANGED);
-        filter.addAction(Intent.ACTION_POWER_CONNECTED);
-        filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
-        filter.addAction(Intent.ACTION_DREAMING_STOPPED);
-        filter.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
-        filter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
-        registerReceiver(screenReceiver, filter);
+        IntentFilter filter = createScreenReceiverFilter(true);
+        try {
+            registerScreenReceiverInternal(filter);
+        } catch (SecurityException e) {
+            // Some vendor builds treat CLOSE_SYSTEM_DIALOGS as a non-system action.
+            // Keep the accessibility service alive even if that optional power-menu
+            // signal is unavailable.
+            Log.w(TAG, "global actions broadcast unavailable; using base receiver", e);
+            registerScreenReceiverInternal(createScreenReceiverFilter(false));
+        }
 
         IntentFilter benchmarkFilter = new IntentFilter();
         benchmarkFilter.addAction(ACTION_DEBUG_UNLOCK_EFFECT_PROFILE);
@@ -1198,6 +1261,31 @@ public class ChargingAccessibilityService extends AccessibilityService
         } else {
             registerReceiver(benchmarkReceiver, benchmarkFilter,
                     android.Manifest.permission.DUMP, null);
+        }
+    }
+
+    private IntentFilter createScreenReceiverFilter(boolean includeGlobalActions) {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        if (includeGlobalActions) {
+            filter.addAction(ACTION_CLOSE_SYSTEM_DIALOGS);
+        }
+        filter.addAction(Intent.ACTION_BATTERY_CHANGED);
+        filter.addAction(Intent.ACTION_POWER_CONNECTED);
+        filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        filter.addAction(Intent.ACTION_DREAMING_STOPPED);
+        filter.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+        filter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
+        return filter;
+    }
+
+    private void registerScreenReceiverInternal(IntentFilter filter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(screenReceiver, filter);
         }
     }
 
@@ -1988,6 +2076,34 @@ public class ChargingAccessibilityService extends AccessibilityService
         clearPinEntryTrace();
     }
 
+    private void showGlobalActionsSuppression() {
+        globalActionsVisible = true;
+        globalActionsShownAt = SystemClock.uptimeMillis();
+        handler.removeCallbacks(globalActionsFallbackClearRunnable);
+        handler.postDelayed(
+                globalActionsFallbackClearRunnable,
+                GLOBAL_ACTIONS_FALLBACK_CLEAR_MS);
+        unlockAffordancePending = false;
+        unlockTouchCachedWhileScreenOff = false;
+        hideRuntimeSurfacesForBlockedPackage("global_actions");
+        Log.i(TAG, "global actions visible=true");
+        evaluateVisibility("global_actions:shown", false);
+    }
+
+    private void clearGlobalActionsSuppression(String reason, boolean evaluate) {
+        handler.removeCallbacks(globalActionsFallbackClearRunnable);
+        if (!globalActionsVisible) {
+            globalActionsShownAt = 0L;
+            return;
+        }
+        globalActionsVisible = false;
+        globalActionsShownAt = 0L;
+        Log.i(TAG, "global actions suppression cleared reason=" + reason);
+        if (evaluate) {
+            evaluateVisibility("global_actions:cleared:" + reason, false);
+        }
+    }
+
     private void configurePassiveService() {
         AccessibilityServiceInfo info = getServiceInfo();
         if (info == null) {
@@ -2289,6 +2405,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " pinEntryRequested=" + pinEntryRequested
                     + " pinEntrySurface=" + pinEntrySurfaceVisible
                     + " notificationShade=" + notificationShadeVisible
+                    + " globalActions=" + globalActionsVisible
                     + " blockedPackageSurface=" + blockedPackageSurface
                     + " touchBoxCapture=" + touchBoxCapturePending
                     + " home=" + home
@@ -5313,10 +5430,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void restoreUnlockEffectOverlayAfterScreenOff() {
         holdHotWakeLock("restore_after_screen_off");
-        syncUnlockEffectOverlay(true);
         if (unlockEffectRenderer != null) {
             unlockEffectRenderer.resetEffect();
         }
+        syncUnlockEffectOverlay(true);
         scheduleUnlockEffectWarmBurst("restore_after_screen_off");
     }
 
@@ -6589,6 +6706,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         for (int i = 0; i < RUNTIME_SURFACE_BLACKLIST_PACKAGES.length; i++) {
             runtimeSurfaceBlacklistPackages.add(RUNTIME_SURFACE_BLACKLIST_PACKAGES[i]);
         }
+        runtimeSurfaceBlacklistPackages.addAll(
+                OverlayPrefs.userRuntimeBlacklistPackages(this));
+    }
+
+    static boolean isBuiltInRuntimeBlacklistPackage(String packageName) {
+        String normalized = OverlayPrefs.normalizePackageName(packageName);
+        for (int i = 0; i < RUNTIME_SURFACE_BLACKLIST_PACKAGES.length; i++) {
+            if (RUNTIME_SURFACE_BLACKLIST_PACKAGES[i].equals(normalized)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < CALL_SURFACE_PACKAGES.length; i++) {
+            if (CALL_SURFACE_PACKAGES[i].equals(normalized)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isCallPackage(CharSequence packageName) {
@@ -6616,7 +6750,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean isRuntimeSurfaceBlocked() {
-        return isRuntimeSurfaceBlockPackage(lastWindowPackage) || isCallAudioActive();
+        return globalActionsVisible
+                || isRuntimeSurfaceBlockPackage(lastWindowPackage)
+                || isCallAudioActive();
     }
 
     private boolean isCallAudioActive() {
@@ -6944,6 +7080,34 @@ public class ChargingAccessibilityService extends AccessibilityService
         return containsStrongNotificationShadeKeyword(event.getClassName())
                 || containsNotificationShadeTextKeyword(event.getText())
                 || containsNotificationShadeTextKeyword(event.getContentDescription());
+    }
+
+    private boolean isGlobalActionsEvent(AccessibilityEvent event) {
+        if (event == null || !SYSTEM_UI_PACKAGE.equals(
+                event.getPackageName() == null
+                        ? null : event.getPackageName().toString())) {
+            return false;
+        }
+        CharSequence className = event.getClassName();
+        if (className == null) {
+            return false;
+        }
+        String normalized = className.toString().toLowerCase();
+        return normalized.contains("globalactions")
+                || normalized.contains("global_actions")
+                || normalized.contains("actionsdialog");
+    }
+
+    private boolean isGlobalActionsDismissEvent(AccessibilityEvent event) {
+        if (event == null
+                || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                || !isSystemKeyguardPackage(event.getPackageName())
+                || isGlobalActionsEvent(event)) {
+            return false;
+        }
+        return globalActionsShownAt > 0L
+                && SystemClock.uptimeMillis() - globalActionsShownAt
+                >= GLOBAL_ACTIONS_EVENT_CLEAR_GRACE_MS;
     }
 
     private int dp(int value) {

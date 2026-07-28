@@ -117,11 +117,13 @@ Confirm unrestricted battery use in the Samsung prompt.
 
 <img src="images/install-s23/15-battery-confirm.jpg" width="320" alt="Samsung unrestricted battery prompt">
 
-Follow the wallpaper-dimming recommendation. If Samsung dims the lockscreen
-wallpaper at night while L.L.E keeps a daytime capture, effects can render with
-the wrong brightness.
+Follow the Samsung wallpaper compatibility recommendation. Disable both
+wallpaper dimming and Dynamic Lock Screen when L.L.E flags them. Dimming can
+make the lockscreen darker than L.L.E's captured layer, while Dynamic Lock
+Screen can replace the image after each lock before L.L.E can reliably capture
+it for that same unlock.
 
-<img src="images/install-s23/16-wallpaper-dimming.jpg" width="320" alt="Samsung wallpaper dimming recommendation">
+<img src="images/install-s23/16-wallpaper-dimming.jpg" width="320" alt="Samsung wallpaper compatibility recommendation">
 
 Choose the lockscreen background source. Automatic screenshot capture is the
 normal option; direct wallpaper modes remain available for compatible setups.
