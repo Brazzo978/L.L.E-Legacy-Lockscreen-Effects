@@ -27,6 +27,7 @@ Choose the installation method:
 - **Computer/advanced:** [install or update with ADB](LLEUnified/docs/INSTALL_ADB.md).
 - **More details:** [complete setup and troubleshooting](LLEUnified/README.md).
 - **Problems or questions:** [read the L.L.E. FAQ](LLEUnified/docs/FAQ.md).
+- **XDA Thread:**[XDA](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
 
 The first-launch wizard configures Accessibility, battery optimization,
 wallpaper dimming, lockscreen capture, enabled features, and the touch region.
