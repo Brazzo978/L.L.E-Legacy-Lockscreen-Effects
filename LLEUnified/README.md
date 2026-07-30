@@ -258,8 +258,6 @@ claim ownership of them and is not affiliated with or endorsed by their
 owners. Anyone redistributing binary builds is responsible for confirming the
 applicable permissions.
 
-<p align="center"><sub><a href="https://paypal.me/GiuliaRamari">L.L.E will always be free - but if you insist... ♡</a></sub></p>
-
 ## License
 
 Project-authored source code is available under the
