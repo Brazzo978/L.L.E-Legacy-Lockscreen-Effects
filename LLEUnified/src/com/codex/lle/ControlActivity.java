@@ -1967,37 +1967,58 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_MASS_TENSION,
                 current);
         addEffectOptionIfAvailable(effects,
-                "S6 Water Droplet",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "S6 Water Droplet (Samsung legacy)"
+                        : "S6 Water Droplet",
                 "Refracted water droplets flowing across the wallpaper.",
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Colored Droplet",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "S6 Water Droplet (LLE renderer)"
+                        : "S6 Water Droplet",
+                "Refracted water droplets flowing across the wallpaper.",
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
+                current);
+        addEffectOptionIfAvailable(effects,
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet (Samsung legacy)"
+                        : "N5 Colored Droplet",
                 "Colorful liquid droplets rolling across screen.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Colored Droplet + Gyro",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet + Gyro (Samsung legacy)"
+                        : "N5 Colored Droplet + Gyro",
                 "Liquid droplets flowing with phone movement.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Colored Droplet (App-owned WIP)",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet (LLE renderer)"
+                        : "N5 Colored Droplet",
                 "Colorful liquid droplets rolling across screen.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Coloured Droplet (Gyro) (App-owned WIP)",
-                "Colorful liquid droplets rolling across screen.",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet + Gyro (LLE renderer)"
+                        : "N5 Colored Droplet + Gyro",
+                "Liquid droplets flowing with phone movement.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Sparkling Bubbles",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Sparkling Bubbles (Samsung legacy)"
+                        : "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 current);
         addEffectOptionIfAvailable(effects,
-                "N5 Sparkling Bubbles (App-owned WIP)",
+                EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Sparkling Bubbles (LLE renderer)"
+                        : "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 current);
@@ -2581,6 +2602,7 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
@@ -3162,6 +3184,9 @@ public class ControlActivity extends Activity {
                 return "effect_preview_tabs_blind.mp4";
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return "effect_preview_s5_stone_skipping.mp4";
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
+                return "effect_preview_s6_water_droplet.mp4";
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return "effect_preview_mass_tension.mp4";
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
@@ -3222,6 +3247,7 @@ public class ControlActivity extends Activity {
                 drawable = R.drawable.effect_preview_n5_sparkling_bubbles;
                 break;
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 drawable = R.drawable.preview_unlock_s6_water_droplet_lle;
                 break;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
@@ -3496,6 +3522,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 drawPreviewDroplets(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
@@ -3576,6 +3603,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return R.drawable.preview_unlock_n5_sparkling_bubbles_lle;
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return R.drawable.preview_unlock_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return R.drawable.preview_unlock_stoneskipping_s5;
@@ -3610,6 +3638,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return R.drawable.icon_effect_n5_sparkling_bubbles_lle;
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return R.drawable.icon_effect_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
@@ -4073,6 +4102,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET,
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
@@ -5160,6 +5190,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return Color.rgb(235, 111, 102);
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return Color.rgb(80, 178, 226);
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
@@ -5714,6 +5745,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 paint.setStyle(Paint.Style.FILL);
                 Path drop = new Path();
                 drop.moveTo(cx, rect.top);

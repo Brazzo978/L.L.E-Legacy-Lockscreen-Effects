@@ -168,9 +168,12 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
 
     @Override
     public String effectName() {
-        return gyroEnabled
-                ? "N5 Coloured Droplet (Gyro) (App-owned WIP)"
-                : "N5 Colored Droplet (App-owned WIP)";
+        String name = gyroEnabled
+                ? "N5 Colored Droplet + Gyro"
+                : "N5 Colored Droplet";
+        return EffectAvailability.hasLegacyVendorEffects()
+                ? name + " (LLE renderer)"
+                : name;
     }
 
     @Override

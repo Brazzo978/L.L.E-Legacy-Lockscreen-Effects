@@ -62,6 +62,7 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
             case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return ARM64_PROCESS;
             default:
                 return false;

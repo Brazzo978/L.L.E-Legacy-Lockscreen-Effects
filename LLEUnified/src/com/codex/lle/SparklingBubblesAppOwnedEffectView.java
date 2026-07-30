@@ -133,7 +133,9 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
 
     @Override
     public String effectName() {
-        return "N5 Sparkling Bubbles";
+        return EffectAvailability.hasLegacyVendorEffects()
+                ? "N5 Sparkling Bubbles (LLE renderer)"
+                : "N5 Sparkling Bubbles";
     }
 
     @Override

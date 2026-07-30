@@ -1,6 +1,6 @@
 param(
     [ValidateSet("All", "Arm32", "Arm64")]
-    [string] $Target = "All",
+    [string] $Target = "Arm64",
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
     [switch] $LegacyVendorEffects,
@@ -23,8 +23,8 @@ if ($Target -ne "Arm64" -and
     throw "ARM64 diagnostic options require -Target Arm64"
 }
 if ($ReleaseSigning -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
-        $LegacyVendorEffects -or $WatercolorFeedbackMode -ne "Stable")) {
-    throw "Stable release signing does not support diagnostic ARM64 variants"
+        $WatercolorFeedbackMode -ne "Stable")) {
+    throw "Stable release signing does not support probe or experimental ARM64 variants"
 }
 
 function Run-Target([string] $Script, [string[]] $Arguments) {

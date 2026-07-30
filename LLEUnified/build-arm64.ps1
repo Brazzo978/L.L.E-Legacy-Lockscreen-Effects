@@ -4,6 +4,8 @@ param(
     [switch] $Companion,
     [switch] $Tester,
     [switch] $LegacyVendorEffects,
+    [ValidateRange(0, 2147483647)]
+    [int] $ValidationVersionCode = 0,
     [ValidateSet("Stable", "StockFeedback")]
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
@@ -20,6 +22,17 @@ $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
 if ($LegacyVendorEffects) {
     $launcherLabel += " Legacy"
 }
+if ($ValidationVersionCode -gt 0) {
+    if (-not $Tester -or $LegacyVendorEffects -or $Companion -or
+            $IncludeNote5Probe -or $IncludeRippleCoreProbe -or
+            $ReleaseSigning -or $WatercolorFeedbackMode -ne "Stable") {
+        throw "Validation version override is only available for a Samsung-free ARM64 tester"
+    }
+    if ($ValidationVersionCode -lt 27) {
+        throw "Validation versionCode must be at least 27"
+    }
+    $launcherLabel += " Validation"
+}
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
 }
@@ -33,9 +46,9 @@ if ($LegacyVendorEffects -and $Companion) {
     throw "Legacy vendor effects are not supported by the companion build"
 }
 if ($ReleaseSigning -and ($Companion -or $IncludeNote5Probe -or
-        $IncludeRippleCoreProbe -or $Tester -or $LegacyVendorEffects -or
+        $IncludeRippleCoreProbe -or $Tester -or
         $WatercolorFeedbackMode -ne "Stable")) {
-    throw "Stable release signing is only available for the normal ARM64 build"
+    throw "Stable release signing is only available for normal ARM64 product builds"
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -58,7 +71,9 @@ $readelf = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-read
 $objdump = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-objdump.exe"
 $strings = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strings.exe"
 
-$out = Join-Path $root $(if ($Tester -and $LegacyVendorEffects) {
+$out = Join-Path $root $(if ($ValidationVersionCode -gt 0) {
+    "build\arm64-v8a-test-validation-vc$ValidationVersionCode"
+} elseif ($Tester -and $LegacyVendorEffects) {
     "build\arm64-v8a-test-legacy"
 } elseif ($Tester) {
     "build\arm64-v8a-test"
@@ -76,7 +91,11 @@ $resZip = Join-Path $out "res.zip"
 $unsigned = Join-Path $out "LLE64-arm64-unsigned.apk"
 $assembled = Join-Path $out "LLE64-arm64-assembled.apk"
 $zipaligned = Join-Path $out "LLE64-arm64-zipaligned.apk"
-$signed = Join-Path $out $(if ($ReleaseSigning) {
+$signed = Join-Path $out $(if ($ValidationVersionCode -gt 0) {
+    "LLE64-arm64-v8a-validation-vc$ValidationVersionCode-tester.apk"
+} elseif ($ReleaseSigning -and $LegacyVendorEffects) {
+    "LLE64-arm64-v8a-legacy-vendor-release.apk"
+} elseif ($ReleaseSigning) {
     "LLE64-arm64-v8a-release.apk"
 } elseif ($Tester -and $LegacyVendorEffects) {
     "LLE64-arm64-v8a-legacy-vendor-tester.apk"
@@ -103,6 +122,8 @@ $keystore = Join-Path $root ".keys\debug.keystore"
 $sourceKeystore = Join-Path $root "..\unlock-effects-test\demo-apk\debug.keystore"
 $releaseCertificateSha256 = "5397D6ACE3E9D2F14D8FFD2285E26E9F1B26635589CAC3A3DC95C0DEFF76B8EE"
 $canonicalManifest = Join-Path $root "AndroidManifest.xml"
+$canonicalManifestHashBefore = (Get-FileHash -LiteralPath $canonicalManifest `
+        -Algorithm SHA256).Hash
 $manifest = $canonicalManifest
 $includeNativeProbeActivity = $IncludeNote5Probe -or $IncludeRippleCoreProbe
 $nativeProbeSource = Join-Path $root `
@@ -160,6 +181,29 @@ if ($generatedManifestText -eq $manifestText -or
         $generatedManifestText -notmatch "package=`"$([regex]::Escape($applicationId))`"" -or
         $generatedManifestText -match 'android:name="\.') {
     throw "ARM64 LLE64 manifest patch failed"
+}
+if ($ValidationVersionCode -gt 0) {
+    $versionCodePattern = 'android:versionCode="\d+"'
+    if ([regex]::Matches($generatedManifestText, $versionCodePattern).Count -ne 1) {
+        throw "Validation manifest versionCode patch point not found"
+    }
+    $generatedManifestText = [regex]::Replace(
+            $generatedManifestText,
+            $versionCodePattern,
+            "android:versionCode=`"$ValidationVersionCode`"",
+            1)
+    if ($generatedManifestText -notmatch
+            "android:versionCode=`"$ValidationVersionCode`"") {
+        throw "Validation manifest versionCode override failed"
+    }
+    $canonicalVersionName = [regex]::Match(
+            $manifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    $generatedVersionName = [regex]::Match(
+            $generatedManifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    if ([string]::IsNullOrWhiteSpace($canonicalVersionName) -or
+            $generatedVersionName -ne $canonicalVersionName) {
+        throw "Validation build must preserve the canonical versionName"
+    }
 }
 if ($includeNativeProbeActivity) {
     $probePattern = '(?s)(android:name="com\.codex\.lle\.Note5NativeProbeActivity".*?android:exported=")false(")'
@@ -542,6 +586,96 @@ $colourDropletAppOwnedStageHash = (Get-FileHash `
 if ($colourDropletAppOwnedStageHash -ne $colourDropletAppOwnedBuiltHash) {
     throw "App-owned Coloured Droplet staged library hash mismatch"
 }
+$s6WaterDropletAppOwnedNative = Join-Path $root `
+        "ports\s6-water-droplet-appowned\native"
+$s6WaterDropletAppOwnedBuiltLibrary = Join-Path $out `
+        "liblleS6WaterDroplet-built.so"
+$s6WaterDropletAppOwnedLibrary = Join-Path $arm64Stage `
+        "liblleS6WaterDroplet.so"
+$s6WaterDropletAppOwnedSources = @(
+    "lle_s6_water_sim.c",
+    "lle_s6_water_gles.c",
+    "lle_s6_water_jni.c"
+) | ForEach-Object {
+    Join-Path $s6WaterDropletAppOwnedNative $_
+}
+foreach ($s6WaterDropletAppOwnedSource in $s6WaterDropletAppOwnedSources) {
+    if (-not (Test-Path -LiteralPath $s6WaterDropletAppOwnedSource -PathType Leaf)) {
+        throw "Missing app-owned S6 Water Droplet native source: $s6WaterDropletAppOwnedSource"
+    }
+}
+$s6WaterDropletAppOwnedClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-fPIC", "-pthread", "-Wall", "-Wextra", "-Werror",
+    "-shared", "-Wl,--no-undefined",
+    "-Wl,-soname,liblleS6WaterDroplet.so",
+    "-I", $s6WaterDropletAppOwnedNative
+) + $s6WaterDropletAppOwnedSources + @(
+    "-Wl,--no-as-needed",
+    "-landroid", "-ljnigraphics", "-lGLESv2", "-llog", "-lm",
+    "-o", $s6WaterDropletAppOwnedBuiltLibrary
+)
+Run $clang $s6WaterDropletAppOwnedClangArgs
+$s6WaterDropletAppOwnedHeader = (& $readelf -h `
+        $s6WaterDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $s6WaterDropletAppOwnedHeader -notmatch "Class:\s+ELF64" `
+        -or $s6WaterDropletAppOwnedHeader -notmatch "Machine:\s+AArch64") {
+    throw "App-owned S6 Water Droplet library is not an ELF64 AArch64 binary"
+}
+$s6WaterDropletAppOwnedDynamic = (& $readelf -d `
+        $s6WaterDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $s6WaterDropletAppOwnedDynamic -notmatch `
+        "SONAME.*\[liblleS6WaterDroplet\.so\]") {
+    throw "App-owned S6 Water Droplet library has an unexpected SONAME"
+}
+if ($s6WaterDropletAppOwnedDynamic -match
+        "NEEDED.*\[(libstlport|libstdc\+\+|libc\+\+|libColourDropletEffect|" +
+        "libSparklingBubblesEffect|libWaterDropletEffect|libsecve[^]]*)\.so\]") {
+    throw "App-owned S6 Water Droplet unexpectedly depends on a legacy Samsung runtime"
+}
+$s6WaterDropletAppOwnedSymbols = (& $readelf -Ws `
+        $s6WaterDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "App-owned S6 Water Droplet dynamic symbol inspection failed"
+}
+$expectedS6WaterDropletAppOwnedExports = @(
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeBridgeVersion",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeCreate",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeInitGpu",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeResize",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeAbandonGpu",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDestroy",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeUploadBitmap",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeClearBitmap",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeReset",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeTouch",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeTilt",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeAffordance",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeUnlock",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeResetBackgroundScale",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStep",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeIsIdle",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeGetLastError"
+)
+foreach ($export in $expectedS6WaterDropletAppOwnedExports) {
+    $definedExportPattern = "(?m)^\s*\d+:\s+\S+\s+\d+\s+FUNC\s+GLOBAL\s+DEFAULT\s+\d+\s+" `
+            + [regex]::Escape($export) + "\s*$"
+    if ($s6WaterDropletAppOwnedSymbols -notmatch $definedExportPattern) {
+        throw "Missing app-owned S6 Water Droplet JNI export: $export"
+    }
+}
+$s6WaterDropletAppOwnedBuiltHash = (Get-FileHash `
+        -LiteralPath $s6WaterDropletAppOwnedBuiltLibrary -Algorithm SHA256).Hash
+Copy-Item -LiteralPath $s6WaterDropletAppOwnedBuiltLibrary `
+        -Destination $s6WaterDropletAppOwnedLibrary -Force
+$s6WaterDropletAppOwnedStageHash = (Get-FileHash `
+        -LiteralPath $s6WaterDropletAppOwnedLibrary -Algorithm SHA256).Hash
+if ($s6WaterDropletAppOwnedStageHash -ne $s6WaterDropletAppOwnedBuiltHash) {
+    throw "App-owned S6 Water Droplet staged library hash mismatch"
+}
 if ($LegacyVendorEffects) {
 $s6WaterDropletSource = Join-Path $root `
         "ports\s6-water-droplet\integration\native\patched\libWaterDropletEffect.so"
@@ -873,6 +1007,11 @@ if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
 if ($badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'") {
     throw "ARM64 launcher label verification failed"
 }
+if ($ValidationVersionCode -gt 0 -and
+        $badging -notmatch
+        "versionCode='$ValidationVersionCode'.*versionName='$([regex]::Escape($canonicalVersionName))'") {
+    throw "Validation APK version metadata verification failed"
+}
 
 $entries = @(& "jar.exe" tf $signed)
 $dexEntries = @($entries | Where-Object { $_ -match "^classes[0-9]*\.dex$" })
@@ -884,6 +1023,7 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/liblle64marker.so",
     "lib/arm64-v8a/liblleSparklingBubbles.so",
     "lib/arm64-v8a/liblleColourDroplet.so",
+    "lib/arm64-v8a/liblleS6WaterDroplet.so",
     "lib/arm64-v8a/libWaterRipple.so",
     "lib/arm64-v8a/libsecveAbstractTile.so",
     "lib/arm64-v8a/libsecveSrkCommon.so",
@@ -1027,9 +1167,43 @@ if ($colourDropletAppOwnedApkHash -ne $colourDropletAppOwnedStageHash) {
 }
 Remove-Item -Recurse -Force $colourDropletAppOwnedApkVerify
 
+$s6WaterDropletAppOwnedApkVerify = Join-Path $out `
+        "verify-app-owned-s6-water-droplet-entry"
+New-Item -ItemType Directory -Force `
+        -Path $s6WaterDropletAppOwnedApkVerify | Out-Null
+Push-Location $s6WaterDropletAppOwnedApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/liblleS6WaterDroplet.so")
+} finally {
+    Pop-Location
+}
+$s6WaterDropletAppOwnedApkLibrary = Join-Path `
+        $s6WaterDropletAppOwnedApkVerify `
+        "lib\arm64-v8a\liblleS6WaterDroplet.so"
+if (-not (Test-Path -LiteralPath $s6WaterDropletAppOwnedApkLibrary)) {
+    throw "App-owned S6 Water Droplet APK entry is missing"
+}
+$s6WaterDropletAppOwnedApkHash = (Get-FileHash `
+        -LiteralPath $s6WaterDropletAppOwnedApkLibrary -Algorithm SHA256).Hash
+if ($s6WaterDropletAppOwnedApkHash -ne $s6WaterDropletAppOwnedStageHash) {
+    throw "App-owned S6 Water Droplet APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $s6WaterDropletAppOwnedApkVerify
+
+$canonicalManifestHashAfter = (Get-FileHash -LiteralPath $canonicalManifest `
+        -Algorithm SHA256).Hash
+if ($canonicalManifestHashAfter -ne $canonicalManifestHashBefore) {
+    throw "Canonical AndroidManifest.xml changed during the ARM64 build"
+}
+
 Write-Host "Built ARM64-only APK: $signed"
 Write-Host "Application ID: $expectedPackage"
 Write-Host "Build flavor: $buildFlavorName"
+if ($ValidationVersionCode -gt 0) {
+    Write-Host "Validation-only versionCode override: $ValidationVersionCode"
+    Write-Host "Canonical manifest SHA-256: $canonicalManifestHashAfter"
+}
 if ($LegacyVendorEffects) {
     Write-Warning "Legacy diagnostic APK contains proprietary Samsung Note 5 and S6 firmware libraries."
 } else {
@@ -1041,6 +1215,7 @@ if ($IncludeRippleCoreProbe) {
 Write-Host "Native entries: $($nativeEntries -join ', ')"
 Write-Host "App-owned Sparkling Bubbles SHA-256: $sparklingAppOwnedStageHash"
 Write-Host "App-owned Coloured Droplet SHA-256: $colourDropletAppOwnedStageHash"
+Write-Host "App-owned S6 Water Droplet SHA-256: $s6WaterDropletAppOwnedStageHash"
 if ($LegacyVendorEffects) {
     Write-Host "S6 Water Droplet SHA-256: $s6WaterDropletStageHash"
 }

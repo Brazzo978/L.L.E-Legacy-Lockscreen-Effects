@@ -126,6 +126,8 @@ final class LockSoundPlayer {
                     effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES];
             effectSounds[OverlayPrefs.EFFECT_S6_WATER_DROPLET] =
                     load(R.raw.s6_water_droplet_lock);
+            effectSounds[OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED] =
+                    effectSounds[OverlayPrefs.EFFECT_S6_WATER_DROPLET];
             effectSounds[OverlayPrefs.EFFECT_S4_ABSTRACT_TILES] =
                     load(R.raw.abstracttile_lock);
             effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =

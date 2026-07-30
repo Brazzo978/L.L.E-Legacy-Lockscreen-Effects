@@ -32,6 +32,9 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     private static final float DRAG_THRESHOLD = 2.0999999046325684f;
     private static final float BETWEEN_FACTOR = 40f;
     private static final float CIRCLE_PLACE_ADJUST_PX = 5f;
+    private static final float REFERENCE_SHORT_EDGE_PX = 720f;
+    private static final float MIN_VISUAL_SCALE = 1f;
+    private static final float MAX_VISUAL_SCALE = 2.5f;
     private static final float OUTER_ALPHA_FACTOR = 0.8f;
     private static final int OUTER_MIN_ALPHA = 50;
     private static final int MAX_ALPHA = 255;
@@ -59,8 +62,9 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
     private final SoundPool soundPool;
     private final int tapSound;
-    private final float lineDeletePx;
+    private final float lineDeleteBasePx;
 
+    private float visualScale;
     private boolean destroyed;
     private boolean gestureActive;
     private boolean releaseLockedUntilFinish;
@@ -99,7 +103,10 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         fingerAfter = decode(R.drawable.mass_tension_finger_after);
         line = decode(R.drawable.mass_tension_line);
         outer = decode(R.drawable.mass_tension_outer);
-        lineDeletePx = dp(20f);
+        lineDeleteBasePx = dp(20f);
+        visualScale = resolveVisualScale(
+                getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels);
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(2)
@@ -156,7 +163,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         int diffX = (int) (screenX - originX);
         int diffY = (int) (screenY - originY);
         float distance = (float) Math.hypot(diffX, diffY);
-        float threshold = Math.max(1f, outer.getWidth() * 0.5f);
+        float threshold = Math.max(1f, outer.getWidth() * 0.5f * visualScale);
         distanceRatio = distance / threshold;
 
         betweenX = (int) (originX + ((screenX - originX) / BETWEEN_FACTOR));
@@ -164,8 +171,9 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         lineAngle = (float) Math.toDegrees(
                 Math.atan2(screenY - originY, screenX - originX));
 
-        float radius = (finger.getWidth() * 0.5f)
-                + (outer.getWidth() * 0.5f) - CIRCLE_PLACE_ADJUST_PX;
+        float radius = ((finger.getWidth() * 0.5f)
+                + (outer.getWidth() * 0.5f) - CIRCLE_PLACE_ADJUST_PX)
+                * visualScale;
         if (distanceRatio < TEMP_THRESHOLD) {
             fingerX = (int) screenX;
             fingerY = (int) screenY;
@@ -240,6 +248,14 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     public void warmUp() {
         if (!destroyed) {
             invalidate();
+        }
+    }
+
+    @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        if (width > 0 && height > 0) {
+            visualScale = resolveVisualScale(width, height);
         }
     }
 
@@ -382,7 +398,8 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         float dx = endX - betweenX;
         float dy = endY - betweenY;
         lineSize = (float) Math.hypot(dx, dy)
-                - centerDot.getWidth() * 0.5f - lineDeletePx;
+                - centerDot.getWidth() * 0.5f * visualScale
+                - lineDeleteBasePx * visualScale;
         lineSize = Math.max(0f, lineSize);
     }
 
@@ -404,7 +421,8 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         bitmapPaint.setAlpha(Math.min(MAX_ALPHA, alpha));
         int save = canvas.save();
         canvas.translate(centerX, centerY);
-        canvas.scale(scale, scale);
+        float combinedScale = scale * visualScale;
+        canvas.scale(combinedScale, combinedScale);
         canvas.drawBitmap(bitmap, -bitmap.getWidth() * 0.5f,
                 -bitmap.getHeight() * 0.5f, bitmapPaint);
         canvas.restoreToCount(save);
@@ -420,8 +438,8 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         int save = canvas.save();
         canvas.translate(startX, startY);
         canvas.rotate(angle);
-        lineDestination.set(0f, -line.getHeight() * 0.5f,
-                length, line.getHeight() * 0.5f);
+        float halfLineHeight = line.getHeight() * 0.5f * visualScale;
+        lineDestination.set(0f, -halfLineHeight, length, halfLineHeight);
         canvas.drawBitmap(line, null, lineDestination, bitmapPaint);
         canvas.restoreToCount(save);
         bitmapPaint.setAlpha(MAX_ALPHA);
@@ -452,6 +470,16 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         lineSize = 0f;
         lineAngle = 0f;
         pressStartedAt = 0L;
+    }
+
+    private static float resolveVisualScale(int width, int height) {
+        int shortEdge = Math.min(width, height);
+        if (shortEdge <= 0) {
+            return MIN_VISUAL_SCALE;
+        }
+        return Math.max(MIN_VISUAL_SCALE,
+                Math.min(MAX_VISUAL_SCALE,
+                        shortEdge / REFERENCE_SHORT_EDGE_PX));
     }
 
     private float dp(float value) {

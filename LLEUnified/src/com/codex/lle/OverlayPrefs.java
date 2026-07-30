@@ -169,7 +169,9 @@ final class OverlayPrefs {
     static final int EFFECT_N5_COLOUR_DROPLET_GYRO_WIP = 24;
     /** App-owned, ABI-independent port of Samsung's hidden Mass Tension effect. */
     static final int EFFECT_MASS_TENSION = 25;
-    static final int EFFECT_COUNT = 26;
+    /** App-owned Galaxy S6 Water Droplet reconstruction, kept separate while it is WIP. */
+    static final int EFFECT_S6_WATER_DROPLET_APP_OWNED = 26;
+    static final int EFFECT_COUNT = 27;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -496,7 +498,7 @@ final class OverlayPrefs {
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return EFFECT_N5_SPARKLING_BUBBLES_WIP;
             case EFFECT_S6_WATER_DROPLET:
-                return EFFECT_N5_COLOUR_DROPLET_WIP;
+                return EFFECT_S6_WATER_DROPLET_APP_OWNED;
             default:
                 return EFFECT_S4_LENS_FLARE;
         }
@@ -511,19 +513,37 @@ final class OverlayPrefs {
             case EFFECT_WATERCOLOUR:
                 return "N3 Watercolor";
             case EFFECT_N5_COLOUR_DROPLET:
-                return "N5 Colored Droplet";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet (Samsung legacy)"
+                        : "N5 Colored Droplet";
             case EFFECT_N5_COLOUR_DROPLET_WIP:
-                return "N5 Colored Droplet (App-owned WIP)";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet (LLE renderer)"
+                        : "N5 Colored Droplet";
             case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
-                return "N5 Coloured Droplet (Gyro) (App-owned WIP)";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet + Gyro (LLE renderer)"
+                        : "N5 Colored Droplet + Gyro";
             case EFFECT_N5_COLOUR_DROPLET_GYRO:
-                return "N5 Colored Droplet + Gyro";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Colored Droplet + Gyro (Samsung legacy)"
+                        : "N5 Colored Droplet + Gyro";
             case EFFECT_N5_SPARKLING_BUBBLES:
-                return "N5 Sparkling Bubbles";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Sparkling Bubbles (Samsung legacy)"
+                        : "N5 Sparkling Bubbles";
             case EFFECT_N5_SPARKLING_BUBBLES_WIP:
-                return "N5 Sparkling Bubbles (App-owned WIP)";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "N5 Sparkling Bubbles (LLE renderer)"
+                        : "N5 Sparkling Bubbles";
             case EFFECT_S6_WATER_DROPLET:
-                return "S6 Water Droplet";
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "S6 Water Droplet (Samsung legacy)"
+                        : "S6 Water Droplet";
+            case EFFECT_S6_WATER_DROPLET_APP_OWNED:
+                return EffectAvailability.hasLegacyVendorEffects()
+                        ? "S6 Water Droplet (LLE renderer)"
+                        : "S6 Water Droplet";
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -710,6 +730,7 @@ final class OverlayPrefs {
                 EFFECT_N5_SPARKLING_BUBBLES,
                 EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 EFFECT_S6_WATER_DROPLET,
+                EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 EFFECT_S4_ABSTRACT_TILES,
                 EFFECT_S4_GEOMETRIC_MOSAIC,
                 EFFECT_BRILLIANT_RING,
@@ -772,6 +793,7 @@ final class OverlayPrefs {
                 EFFECT_N5_SPARKLING_BUBBLES,
                 EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 EFFECT_S6_WATER_DROPLET,
+                EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 EFFECT_S4_ABSTRACT_TILES,
                 EFFECT_S4_GEOMETRIC_MOSAIC,
                 EFFECT_BRILLIANT_RING,

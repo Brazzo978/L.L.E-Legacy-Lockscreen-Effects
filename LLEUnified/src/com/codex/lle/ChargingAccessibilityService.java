@@ -1606,6 +1606,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_TABS_BLIND
@@ -2014,7 +2015,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
-                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET;
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED;
     }
 
     private void markNativeRendererStaleForDisplaySize() {
@@ -2037,7 +2039,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && effect != OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 && effect != OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
-                && effect != OverlayPrefs.EFFECT_S6_WATER_DROPLET) {
+                && effect != OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                && effect != OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED) {
             return;
         }
         DisplayMetrics metrics = activeDisplayMetrics();
@@ -3052,6 +3055,19 @@ public class ChargingAccessibilityService extends AccessibilityService
                             "S6 Water Droplet ARM64 renderer unavailable");
                 }
                 unlockEffectRenderer = renderer;
+            } else if (effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED) {
+                if (!EffectAvailability.is64BitProcess()) {
+                    throw new IllegalStateException(
+                            "App-owned S6 Water Droplet requires ARM64");
+                }
+                S6WaterDropletAppOwnedEffectView renderer =
+                        new S6WaterDropletAppOwnedEffectView(rendererContext());
+                if (!renderer.isReady()) {
+                    renderer.destroy();
+                    throw new IllegalStateException(
+                            "App-owned S6 Water Droplet renderer unavailable");
+                }
+                unlockEffectRenderer = renderer;
             } else if (effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET) {
                 if (EffectAvailability.is64BitProcess()) {
                     ColourDropletArm64EffectView renderer =
@@ -3410,6 +3426,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || unlockEffectRendererType
+                        == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_TABS_BLIND
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
@@ -3509,7 +3527,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         if ((OverlayPrefs.isColourDropletEffect(captureEffect)
                 || captureEffect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || captureEffect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
-                || captureEffect == OverlayPrefs.EFFECT_S6_WATER_DROPLET)
+                || captureEffect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || captureEffect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED)
                 && unlockEffectRenderer != null) {
             unlockEffectRenderer.resetEffect();
         }
@@ -4411,6 +4430,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET,
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
@@ -4451,6 +4471,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET,
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
@@ -5082,6 +5103,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET,
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
@@ -5149,6 +5171,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
@@ -5542,6 +5565,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             ((Note5NativeEffectView) renderer).parkForReuse();
         } else if (renderer instanceof S6WaterDropletEffectView) {
             ((S6WaterDropletEffectView) renderer).parkForReuse();
+        } else if (renderer instanceof S6WaterDropletAppOwnedEffectView) {
+            ((S6WaterDropletAppOwnedEffectView) renderer).parkForReuse();
         } else if (renderer instanceof ColourDropletEffectView) {
             ((ColourDropletEffectView) renderer).parkForReuse();
         } else if (renderer instanceof SparklingBubblesEffectView) {
@@ -5560,6 +5585,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             ((Note5NativeEffectView) renderer).resumeForReuse();
         } else if (renderer instanceof S6WaterDropletEffectView) {
             ((S6WaterDropletEffectView) renderer).resumeForReuse();
+        } else if (renderer instanceof S6WaterDropletAppOwnedEffectView) {
+            ((S6WaterDropletAppOwnedEffectView) renderer).resumeForReuse();
         } else if (renderer instanceof ColourDropletEffectView) {
             ((ColourDropletEffectView) renderer).resumeForReuse();
         } else if (renderer instanceof SparklingBubblesEffectView) {
@@ -6687,7 +6714,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP) {
             return PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS;
         }
-        if (effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET) {
+        if (effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED) {
             return PIN_ENTRY_DELAY_S6_WATER_DROPLET_MS;
         }
         if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
@@ -6763,7 +6791,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP) {
             return PIN_ENTRY_EFFECT_CLEANUP_DELAY_SPARKLING_BUBBLES_MS;
         }
-        if (effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET) {
+        if (effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED) {
             return PIN_ENTRY_EFFECT_CLEANUP_DELAY_S6_WATER_DROPLET_MS;
         }
         return PIN_ENTRY_EFFECT_CLEANUP_DELAY_DEFAULT_MS;

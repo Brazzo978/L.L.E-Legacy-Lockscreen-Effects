@@ -1,6 +1,7 @@
 param(
     [ValidateSet("All", "Arm32", "Arm64")]
-    [string] $Target = "All",
+    [string] $Target = "Arm64",
+    [switch] $IncludeLegacyVendor,
     [string] $KeystorePath = "",
     [string] $KeyAlias = "lle-release"
 )
@@ -27,6 +28,9 @@ if (-not (Test-Path -LiteralPath $KeystorePath)) {
 }
 if (-not (Test-Path -LiteralPath $apksigner)) {
     throw "apksigner 35.0.1 not found: $apksigner"
+}
+if ($IncludeLegacyVendor -and $Target -eq "Arm32") {
+    throw "The legacy-vendor product variant is ARM64-only"
 }
 if (-not (Test-Path -LiteralPath $oldKeystore)) {
     if (-not (Test-Path -LiteralPath $sourceOldKeystore)) {
@@ -71,6 +75,21 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Stable build failed with exit code $LASTEXITCODE"
     }
+    if ($IncludeLegacyVendor -and ($Target -eq "All" -or $Target -eq "Arm64")) {
+        & powershell -NoProfile -ExecutionPolicy Bypass `
+                -File (Join-Path $root "build.ps1") `
+                -Target Arm64 `
+                -LegacyVendorEffects `
+                -ReleaseSigning `
+                -ReleaseKeystorePath $KeystorePath `
+                -ReleaseKeyAlias $KeyAlias `
+                -ReleaseLineagePath $lineagePath `
+                -ReleaseOldKeystorePath $oldKeystore `
+                -ReleaseOldKeyAlias androiddebugkey
+        if ($LASTEXITCODE -ne 0) {
+            throw "Stable legacy-vendor build failed with exit code $LASTEXITCODE"
+        }
+    }
 } finally {
     Remove-Item Env:LLE_RELEASE_KEY_PASSWORD -ErrorAction SilentlyContinue
     if ($passwordPointer -ne [IntPtr]::Zero) {
@@ -84,6 +103,10 @@ if ($Target -eq "All" -or $Target -eq "Arm32") {
 }
 if ($Target -eq "All" -or $Target -eq "Arm64") {
     $artifacts += Join-Path $root "build\arm64-v8a\LLE64-arm64-v8a-release.apk"
+    if ($IncludeLegacyVendor) {
+        $artifacts += Join-Path $root `
+                "build\arm64-v8a-legacy\LLE64-arm64-v8a-legacy-vendor-release.apk"
+    }
 }
 foreach ($artifact in $artifacts) {
     if (-not (Test-Path -LiteralPath $artifact)) {
@@ -116,6 +139,14 @@ if ($Target -eq "All" -or $Target -eq "Arm64") {
             "build\arm64-v8a\LLE64-arm64-v8a-release.apk") `
             -Destination $destination -Force
     $packagedArtifacts += $destination
+    if ($IncludeLegacyVendor) {
+        $legacyDestination = Join-Path $releaseDirectory `
+                "LLE64-$version-64-bit-legacy-vendor.apk"
+        Copy-Item -LiteralPath (Join-Path $root `
+                "build\arm64-v8a-legacy\LLE64-arm64-v8a-legacy-vendor-release.apk") `
+                -Destination $legacyDestination -Force
+        $packagedArtifacts += $legacyDestination
+    }
 }
 $checksumLines = foreach ($artifact in $packagedArtifacts) {
     $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()

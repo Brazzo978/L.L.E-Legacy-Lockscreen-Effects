@@ -14,7 +14,8 @@ only; new effects and features target ARM64.
 | APK | ABI | Recommended use |
 |---|---|---|
 | `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
-| `LLE64-1.0.4.4-64-bit.apk` | `arm64-v8a` | Recommended build and active development target |
+| `LLE64-1.0.5-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
+| `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Final diagnostic build with frozen Samsung engines |
 
 Check the supported ABIs:
 
@@ -33,6 +34,7 @@ device.
 | S3 Water Ripple | Available | Available |
 | S5 Popping Colours | Available | Available |
 | S5 Stone Skipping | Available | Available |
+| Mass Tension | Not in frozen build | Available |
 | S5 Brilliant Ring | Available | Available |
 | N3 Watercolor | Available | Available |
 | N2 Ink in Water / Indigo | Available | Available |
@@ -41,6 +43,7 @@ device.
 | N5 Colored Droplet | Available | Available |
 | N5 Colored Droplet + Gyro | Available | Available |
 | N5 Sparkling Bubbles | Available | Available |
+| S6 Water Droplet | Not in frozen build | Available |
 | Tab S Blind | Available | Available |
 | Tab S Brilliant Cut | Available | Available |
 | Seasonal / Spring / Summer / Autumn / Winter | Available | Available |
@@ -85,7 +88,7 @@ every screen in order.
 Quick ARM64 ADB update:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.4.4-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.5-64-bit.apk"
 ```
 
 Open ARM64:
@@ -102,6 +105,12 @@ adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
 
 Both can remain installed, but their preferences and screenshot caches are
 separate. Enable only one of the LLE/LLE64 accessibility services at a time.
+
+The two ARM64 1.0.5 variants use the same package and signing lineage and are
+alternatives, not co-installable editions. Use the Samsung-free APK normally.
+The legacy-vendor APK is provided only for oracle comparison and diagnostics.
+**L.L.E 1.0.5 Legacy is the final release that contains Samsung code or
+binaries. Every later release will remove the frozen vendor engines entirely.**
 
 ## First-time setup
 
@@ -208,16 +217,9 @@ older supported Android versions retain the compatible historical signer.
 
 ## Build from source
 
-Build both normal targets:
+Build the actively maintained ARM64 target:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1
-```
-
-Build one target:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1 -Target Arm32
 powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1 -Target Arm64
 ```
 
@@ -232,6 +234,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.5 stable release notes](docs/RELEASE_NOTES_1.0.5.md)
 - [1.0.4.4 stable release notes](docs/RELEASE_NOTES_1.0.4.4.md)
 - [1.0.4.3 stable release notes](docs/RELEASE_NOTES_1.0.4.3.md)
 - [1.0.4.2 stable release notes](docs/RELEASE_NOTES_1.0.4.2.md)
