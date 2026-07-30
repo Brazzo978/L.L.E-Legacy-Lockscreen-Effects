@@ -17,7 +17,25 @@ final class EffectAvailability {
         return ARM64_PROCESS ? "ARM64" : "ARM32 legacy";
     }
 
+    static boolean hasLegacyVendorEffects() {
+        return BuildFlavor.LEGACY_VENDOR_EFFECTS;
+    }
+
+    static String buildFlavorLabel() {
+        return BuildFlavor.NAME;
+    }
+
+    static boolean isLegacyVendorEffect(int effect) {
+        return effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET;
+    }
+
     static boolean isAvailable(int effect) {
+        if (!BuildFlavor.LEGACY_VENDOR_EFFECTS && isLegacyVendorEffect(effect)) {
+            return false;
+        }
         switch (effect) {
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
@@ -31,6 +49,7 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
             case OverlayPrefs.EFFECT_TABS_BLIND:
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
+            case OverlayPrefs.EFFECT_MASS_TENSION:
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
             case OverlayPrefs.EFFECT_SEASONAL_SPRING:
@@ -39,6 +58,11 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_SEASONAL_WINTER:
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
                 return true;
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+                return ARM64_PROCESS;
             default:
                 return false;
         }

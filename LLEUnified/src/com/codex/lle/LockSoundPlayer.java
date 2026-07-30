@@ -40,6 +40,10 @@ final class LockSoundPlayer {
         if (!systemLockSoundsEnabled()) {
             return;
         }
+        // Samsung's Mass Tension renderer intentionally has no lock sound.
+        if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
+            return;
+        }
         ensureLoaded();
         if (soundPool == null || effect < 0 || effect >= effectSounds.length) {
             return;
@@ -110,10 +114,18 @@ final class LockSoundPlayer {
                     load(R.raw.ve_watercolour_lock);
             effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET] =
                     load(R.raw.ve_colourdroplet_lock);
+            effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP] =
+                    effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
+            effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP] =
+                    effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
             effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO] =
                     effectSounds[OverlayPrefs.EFFECT_N5_COLOUR_DROPLET];
             effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES] =
                     load(R.raw.ve_sparklingbubbles_lock);
+            effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP] =
+                    effectSounds[OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES];
+            effectSounds[OverlayPrefs.EFFECT_S6_WATER_DROPLET] =
+                    load(R.raw.s6_water_droplet_lock);
             effectSounds[OverlayPrefs.EFFECT_S4_ABSTRACT_TILES] =
                     load(R.raw.abstracttile_lock);
             effectSounds[OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC] =

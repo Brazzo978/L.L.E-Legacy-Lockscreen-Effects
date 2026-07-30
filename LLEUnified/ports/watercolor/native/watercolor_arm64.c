@@ -1244,6 +1244,96 @@ Java_com_samsung_android_visualeffect_lock_common_Native_resumeAnimation(
     g_paused = 0;
 }
 
+/*
+ * App-owned JNI aliases.  Keep the historical Samsung ABI above while ARM32 is
+ * frozen, but let the active ARM64 application call the reconstructed engine
+ * without loading any class from the vendor visual-effect DEX.
+ */
+JNIEXPORT jobjectArray JNICALL
+Java_com_codex_lle_WatercolorArm64Native_loadEffect(
+        JNIEnv *env, jobject object, jstring path) {
+    return Java_com_samsung_android_visualeffect_lock_common_Native_loadEffect(
+            env, object, path);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_loadTexture(
+        JNIEnv *env, jobject object, jstring name, jintArray pixels,
+        jint width, jint height) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_loadTexture(
+            env, object, name, pixels, width, height);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_init(
+        JNIEnv *env, jobject object, jint width, jint height, jboolean force) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_init(
+            env, object, width, height, force);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_codex_lle_WatercolorArm64Native_draw(JNIEnv *env, jobject object) {
+    return Java_com_samsung_android_visualeffect_lock_common_Native_draw(env, object);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_onTouch(
+        JNIEnv *env, jobject object, jint x, jint y, jint action) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_onTouch(
+            env, object, x, y, action);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_showUnlock(
+        JNIEnv *env, jobject object) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_showUnlock(env, object);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_showAffordance(
+        JNIEnv *env, jobject object, jint x, jint y) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_showAffordance(
+            env, object, x, y);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_clear(JNIEnv *env, jobject object) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_clear(env, object);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_destroy(JNIEnv *env, jobject object) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_destroy(env, object);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_setParameters(
+        JNIEnv *env, jobject object, jintArray numbers, jfloatArray values) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_setParameters(
+            env, object, numbers, values);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_loadModel(
+        JNIEnv *env, jobject object, jstring name, jbyteArray bytes) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_loadModel(
+            env, object, name, bytes);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_pauseAnimation(
+        JNIEnv *env, jclass clazz) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_pauseAnimation(
+            env, clazz);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_WatercolorArm64Native_resumeAnimation(
+        JNIEnv *env, jclass clazz) {
+    Java_com_samsung_android_visualeffect_lock_common_Native_resumeAnimation(
+            env, clazz);
+}
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)vm;
     (void)reserved;

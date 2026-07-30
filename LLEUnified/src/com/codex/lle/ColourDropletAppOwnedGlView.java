@@ -1,0 +1,686 @@
+package com.codex.lle;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.opengl.GLES20;
+import android.opengl.GLSurfaceView;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.MotionEvent;
+
+import java.util.ArrayDeque;
+import java.util.Iterator;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
+
+/** Transparent GLES host for the app-owned Coloured Droplet core. */
+final class ColourDropletAppOwnedGlView extends GLSurfaceView
+        implements GLSurfaceView.Renderer {
+    interface Listener {
+        void onSurfaceReady();
+        void onResourcesReady();
+        void onFirstFrame();
+        void onNativeFailure(Throwable error, String detail);
+    }
+
+    private static final String TAG = "LLEColourDropletGl";
+    private static final float FIXED_STEP_SECONDS = 1f / 60f;
+    private static final long DESTROY_TIMEOUT_MS = 500L;
+    private static final int WARM_KEEP_ALIVE_FRAMES = 100;
+    private static final int MAX_PENDING_COMMANDS = 100;
+    private static final int COMMAND_TOUCH = 0;
+    private static final int COMMAND_UNLOCK = 1;
+
+    private static final class PendingCommand {
+        final long generation;
+        final int kind;
+        final int touchType;
+        final float x;
+        final float y;
+        final long eventTimeMs;
+
+        PendingCommand(
+                long generation,
+                int kind,
+                int touchType,
+                float x,
+                float y,
+                long eventTimeMs) {
+            this.generation = generation;
+            this.kind = kind;
+            this.touchType = touchType;
+            this.x = x;
+            this.y = y;
+            this.eventTimeMs = eventTimeMs;
+        }
+    }
+
+    private final Listener listener;
+    private final Object bitmapLock = new Object();
+    private final Object commandLock = new Object();
+    private final ArrayDeque<PendingCommand> pendingCommands =
+            new ArrayDeque<>(MAX_PENDING_COMMANDS);
+    private final Bitmap normalMap;
+    private final Bitmap edgeDensityMap;
+    private final int projectKind;
+    private final int logicalWidth;
+    private final int logicalHeight;
+
+    private Bitmap backgroundBitmap;
+    private volatile long nativeHandle;
+    private volatile boolean gpuReady;
+    private volatile boolean resourcesReady;
+    private volatile boolean destroyed;
+    private volatile long minimumRenderUntilMs;
+    private long commandGeneration;
+    private int surfaceWidth;
+    private int surfaceHeight;
+    private int drawCount;
+    private volatile int keepAliveFrames;
+    private int emptyFrames;
+
+    ColourDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalWidth,
+            int logicalHeight,
+            Listener listener) {
+        super(context);
+        this.normalMap = normalMap;
+        this.edgeDensityMap = edgeDensityMap;
+        this.projectKind = projectKind;
+        this.logicalWidth = Math.max(1, logicalWidth);
+        this.logicalHeight = Math.max(1, logicalHeight);
+        this.listener = listener;
+
+        setZOrderOnTop(true);
+        getHolder().setFormat(PixelFormat.TRANSLUCENT);
+        setBackgroundColor(Color.TRANSPARENT);
+        setEGLContextClientVersion(2);
+        setEGLConfigChooser(8, 8, 8, 8, 16, 8);
+        setPreserveEGLContextOnPause(true);
+        setRenderer(this);
+        setRenderMode(RENDERMODE_CONTINUOUSLY);
+    }
+
+    @Override
+    public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+        if (destroyed) {
+            return;
+        }
+        clearTransparent();
+        try {
+            if (nativeHandle == 0L) {
+                nativeHandle = ColourDropletNative.nativeCreate(projectKind);
+                if (nativeHandle == 0L) {
+                    throw new IllegalStateException("nativeCreate returned zero");
+                }
+            } else {
+                ColourDropletNative.nativeAbandonGpu(nativeHandle);
+            }
+            gpuReady = false;
+            resourcesReady = false;
+            drawCount = 0;
+            emptyFrames = 0;
+            if (listener != null) {
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        listener.onSurfaceReady();
+                    }
+                });
+            }
+        } catch (Throwable error) {
+            fail(error);
+        }
+    }
+
+    @Override
+    public void onSurfaceChanged(GL10 gl, int width, int height) {
+        if (destroyed || nativeHandle == 0L || width <= 0 || height <= 0) {
+            return;
+        }
+        int nextWidth = Math.max(1, width);
+        int nextHeight = Math.max(1, height);
+        try {
+            boolean sameGpuContext = gpuReady;
+            surfaceWidth = nextWidth;
+            surfaceHeight = nextHeight;
+            if (sameGpuContext) {
+                gpuReady = ColourDropletNative.nativeResize(
+                        nativeHandle, surfaceWidth, surfaceHeight);
+            } else {
+                gpuReady = ColourDropletNative.nativeInitGpu(
+                        nativeHandle,
+                        surfaceWidth,
+                        surfaceHeight,
+                        Math.min(logicalWidth, logicalHeight),
+                        Math.max(logicalWidth, logicalHeight));
+            }
+            if (!gpuReady) {
+                throw new IllegalStateException(nativeError());
+            }
+            if (!sameGpuContext) {
+                uploadFixedResources();
+            }
+            ColourDropletNative.nativeResetBackgroundScale(nativeHandle);
+            uploadCurrentBackground();
+        } catch (Throwable error) {
+            fail(error);
+        }
+    }
+
+    @Override
+    public void onDrawFrame(GL10 gl) {
+        clearTransparent();
+        if (destroyed || !gpuReady || !resourcesReady || nativeHandle == 0L) {
+            return;
+        }
+        try {
+            /*
+             * Stock drains the pending input batch before updateSPH. Commands
+             * are therefore applied before the frame-owned fixed simulation
+             * tick.
+             */
+            flushPendingCommandsIfReady();
+            if (!ColourDropletNative.nativeStep(
+                    nativeHandle, FIXED_STEP_SECONDS)) {
+                throw new IllegalStateException(nativeError());
+            }
+            if (!ColourDropletNative.nativeDraw(
+                    nativeHandle, surfaceWidth, surfaceHeight)) {
+                throw new IllegalStateException(nativeError());
+            }
+            drawCount++;
+            if (drawCount == 1 && listener != null) {
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        listener.onFirstFrame();
+                    }
+                });
+            }
+            if (keepAliveFrames > 0) {
+                keepAliveFrames--;
+            }
+            if (ColourDropletNative.nativeIsIdle(nativeHandle)
+                    && keepAliveFrames <= 0
+                    && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
+                if (++emptyFrames >= 2) {
+                    stopAnimationFromGlThread();
+                }
+            } else {
+                emptyFrames = 0;
+            }
+        } catch (Throwable error) {
+            fail(error);
+        }
+    }
+
+    boolean isRendererReady() {
+        return !destroyed && nativeHandle != 0L && gpuReady && resourcesReady
+                && drawCount > 0;
+    }
+
+    void setBackgroundBitmap(final Bitmap bitmap) {
+        if (bitmap == null) {
+            return;
+        }
+        if (destroyed) {
+            recycle(bitmap);
+            return;
+        }
+        final Bitmap previous;
+        synchronized (bitmapLock) {
+            previous = backgroundBitmap;
+            backgroundBitmap = bitmap;
+        }
+        try {
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    if (destroyed || !gpuReady || nativeHandle == 0L) {
+                        recycle(previous);
+                        return;
+                    }
+                    try {
+                        resourcesReady = ColourDropletNative.nativeUploadBitmap(
+                                nativeHandle,
+                                ColourDropletNative.TEXTURE_BACKGROUND,
+                                bitmap);
+                        if (!resourcesReady) {
+                            throw new IllegalStateException(
+                                    "background upload failed: " + nativeError());
+                        }
+                        ColourDropletNative.nativeResetBackgroundScale(nativeHandle);
+                        notifyResourcesReady();
+                        activateAnimation(0L, WARM_KEEP_ALIVE_FRAMES);
+                    } catch (Throwable error) {
+                        fail(error);
+                    } finally {
+                        recycle(previous);
+                    }
+                }
+            });
+            requestRender();
+        } catch (RuntimeException error) {
+            recycle(previous);
+            fail(error);
+        }
+    }
+
+    void clearBackgroundBitmap() {
+        advanceCommandGeneration();
+        final Bitmap previous;
+        synchronized (bitmapLock) {
+            previous = backgroundBitmap;
+            backgroundBitmap = null;
+        }
+        resourcesReady = false;
+        stopAnimation();
+        try {
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    if (!destroyed && gpuReady && nativeHandle != 0L) {
+                        ColourDropletNative.nativeClearBitmap(
+                                nativeHandle,
+                                ColourDropletNative.TEXTURE_BACKGROUND);
+                        ColourDropletNative.nativeReset(nativeHandle);
+                    }
+                    recycle(previous);
+                }
+            });
+        } catch (RuntimeException error) {
+            recycle(previous);
+            fail(error);
+        }
+    }
+
+    void touch(final int action, final float screenX, final float screenY,
+            final long eventTimeMs) {
+        if (destroyed) {
+            return;
+        }
+        final int eventType = nativeTouchType(action);
+        queueCommand(new PendingCommand(
+                currentCommandGeneration(),
+                COMMAND_TOUCH,
+                eventType,
+                screenX,
+                screenY,
+                eventTimeMs));
+        activateAnimation(0L, 2);
+    }
+
+    void sensor(final int sensorType, final float x, final float y, final float z) {
+        if (destroyed) {
+            return;
+        }
+        /*
+         * A sensor sample only replaces the native gravity state. Active
+         * particle animation is already continuous; while idle, queueing the
+         * sample must not start a render loop on its own.
+         */
+        queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                if (canIssueNativeCommand()) {
+                    ColourDropletNative.nativeSensor(
+                            nativeHandle, sensorType, x, y, z);
+                }
+            }
+        });
+    }
+
+    void affordance(final float screenX, final float screenY, long minimumRenderMs) {
+        if (destroyed) {
+            return;
+        }
+        queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                if (canIssueNativeCommand()) {
+                    ColourDropletNative.nativeAffordance(
+                            nativeHandle, screenX, screenY);
+                }
+            }
+        });
+        activateAnimation(Math.max(0L, minimumRenderMs), 2);
+    }
+
+    void unlock() {
+        if (destroyed) {
+            return;
+        }
+        queueCommand(new PendingCommand(
+                currentCommandGeneration(),
+                COMMAND_UNLOCK,
+                0,
+                0f,
+                0f,
+                0L));
+        activateAnimation(0L, 2);
+    }
+
+    void resetEffect() {
+        if (destroyed) {
+            return;
+        }
+        minimumRenderUntilMs = 0L;
+        final long generation = advanceCommandGeneration();
+        queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                if (isCurrentCommandGeneration(generation)
+                        && canIssueNativeCommand()) {
+                    ColourDropletNative.nativeReset(nativeHandle);
+                }
+            }
+        });
+        activateAnimation(0L, 2);
+    }
+
+    void parkForReuse() {
+        if (destroyed) {
+            return;
+        }
+        minimumRenderUntilMs = 0L;
+        final long generation = advanceCommandGeneration();
+        queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                if (isCurrentCommandGeneration(generation)
+                        && canIssueNativeCommand()) {
+                    ColourDropletNative.nativeReset(nativeHandle);
+                    ColourDropletNative.nativeResetBackgroundScale(nativeHandle);
+                }
+            }
+        });
+        activateAnimation(0L, 2);
+    }
+
+    void warmUp() {
+        if (!destroyed) {
+            activateAnimation(0L, WARM_KEEP_ALIVE_FRAMES);
+        }
+    }
+
+    void pauseRenderer() {
+        stopAnimation();
+    }
+
+    void discardPendingCommands() {
+        advanceCommandGeneration();
+    }
+
+    void destroyRenderer() {
+        if (destroyed) {
+            return;
+        }
+        advanceCommandGeneration();
+        destroyed = true;
+        stopAnimation();
+        final CountDownLatch finished = new CountDownLatch(1);
+        final long handle = nativeHandle;
+        try {
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (handle != 0L) {
+                            ColourDropletNative.nativeDestroy(handle);
+                        }
+                    } finally {
+                        nativeHandle = 0L;
+                        gpuReady = false;
+                        resourcesReady = false;
+                        finished.countDown();
+                    }
+                }
+            });
+            requestRender();
+            if (!finished.await(DESTROY_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                Log.w(TAG, "bounded native teardown timed out");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "GL thread unavailable during teardown", error);
+        }
+        onPause();
+        synchronized (bitmapLock) {
+            recycle(backgroundBitmap);
+            backgroundBitmap = null;
+        }
+        recycle(normalMap);
+        recycle(edgeDensityMap);
+    }
+
+    private void uploadFixedResources() {
+        if (!ColourDropletNative.nativeUploadBitmap(
+                nativeHandle, ColourDropletNative.TEXTURE_NORMAL, normalMap)) {
+            throw new IllegalStateException("normal-map upload failed: " + nativeError());
+        }
+        if (!ColourDropletNative.nativeUploadBitmap(
+                nativeHandle,
+                ColourDropletNative.TEXTURE_EDGE_DENSITY,
+                edgeDensityMap)) {
+            throw new IllegalStateException(
+                    "edge-density upload failed: " + nativeError());
+        }
+    }
+
+    private void uploadCurrentBackground() {
+        Bitmap background;
+        synchronized (bitmapLock) {
+            background = backgroundBitmap;
+        }
+        resourcesReady = false;
+        if (background == null || background.isRecycled()) {
+            stopAnimationFromGlThread();
+            return;
+        }
+        resourcesReady = ColourDropletNative.nativeUploadBitmap(
+                nativeHandle,
+                ColourDropletNative.TEXTURE_BACKGROUND,
+                background);
+        if (!resourcesReady) {
+            throw new IllegalStateException(
+                    "background upload failed: " + nativeError());
+        }
+        notifyResourcesReady();
+        warmUp();
+    }
+
+    private void activateAnimation(long minimumDurationMs, int minimumFrames) {
+        minimumRenderUntilMs = Math.max(
+                minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
+        keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
+        if (getRenderMode() != RENDERMODE_CONTINUOUSLY) {
+            setRenderMode(RENDERMODE_CONTINUOUSLY);
+        }
+        requestRender();
+    }
+
+    private void stopAnimationFromGlThread() {
+        post(new Runnable() {
+            @Override
+            public void run() {
+                stopAnimation();
+            }
+        });
+    }
+
+    private void stopAnimation() {
+        if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
+            setRenderMode(RENDERMODE_WHEN_DIRTY);
+        }
+    }
+
+    private boolean canIssueNativeCommand() {
+        return !destroyed && gpuReady && resourcesReady && nativeHandle != 0L;
+    }
+
+    private long currentCommandGeneration() {
+        synchronized (commandLock) {
+            return commandGeneration;
+        }
+    }
+
+    private long advanceCommandGeneration() {
+        synchronized (commandLock) {
+            commandGeneration++;
+            pendingCommands.clear();
+            return commandGeneration;
+        }
+    }
+
+    private boolean isCurrentCommandGeneration(long generation) {
+        synchronized (commandLock) {
+            return generation == commandGeneration;
+        }
+    }
+
+    private void queueCommand(final PendingCommand command) {
+        try {
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (commandLock) {
+                        if (destroyed
+                                || command.generation != commandGeneration) {
+                            return;
+                        }
+                        /*
+                         * Preserve the stock input queue: all commands are
+                         * drained as one ordered batch immediately before the
+                         * next simulation step.
+                         */
+                        enqueuePendingCommandLocked(command);
+                    }
+                }
+            });
+        } catch (RuntimeException error) {
+            fail(error);
+        }
+    }
+
+    private void enqueuePendingCommandLocked(PendingCommand command) {
+        if (pendingCommands.size() >= MAX_PENDING_COMMANDS) {
+            boolean removedMove = false;
+            Iterator<PendingCommand> iterator =
+                    command.kind == COMMAND_TOUCH && command.touchType == 2
+                            ? pendingCommands.descendingIterator()
+                            : pendingCommands.iterator();
+            while (iterator.hasNext()) {
+                PendingCommand candidate = iterator.next();
+                if (candidate.kind == COMMAND_TOUCH
+                        && candidate.touchType == 2) {
+                    iterator.remove();
+                    removedMove = true;
+                    break;
+                }
+            }
+            if (!removedMove) {
+                pendingCommands.removeFirst();
+            }
+        }
+        pendingCommands.addLast(command);
+    }
+
+    private void flushPendingCommandsIfReady() {
+        if (!canIssueNativeCommand() || drawCount <= 0) {
+            return;
+        }
+        synchronized (commandLock) {
+            while (!pendingCommands.isEmpty()) {
+                PendingCommand command = pendingCommands.removeFirst();
+                if (command.generation == commandGeneration) {
+                    dispatchCommandLocked(command);
+                }
+            }
+        }
+    }
+
+    private void dispatchCommandLocked(PendingCommand command) {
+        if (command.kind == COMMAND_UNLOCK) {
+            ColourDropletNative.nativeUnlock(nativeHandle);
+            return;
+        }
+        ColourDropletNative.nativeTouch(
+                nativeHandle,
+                command.touchType,
+                command.x,
+                command.y,
+                command.eventTimeMs);
+    }
+
+    private void notifyResourcesReady() {
+        if (listener != null) {
+            post(new Runnable() {
+                @Override
+                public void run() {
+                    listener.onResourcesReady();
+                }
+            });
+        }
+    }
+
+    private int nativeTouchType(int action) {
+        if (action == MotionEvent.ACTION_MOVE) {
+            return 2;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private void clearTransparent() {
+        GLES20.glViewport(0, 0, Math.max(1, surfaceWidth), Math.max(1, surfaceHeight));
+        GLES20.glClearColor(0f, 0f, 0f, 0f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT
+                | GLES20.GL_DEPTH_BUFFER_BIT);
+    }
+
+    private String nativeError() {
+        if (nativeHandle == 0L) {
+            return "native handle unavailable";
+        }
+        try {
+            String detail = ColourDropletNative.nativeGetLastError(nativeHandle);
+            return detail == null || detail.length() == 0
+                    ? "unknown native error" : detail;
+        } catch (Throwable ignored) {
+            return "native error unavailable";
+        }
+    }
+
+    private void fail(final Throwable error) {
+        stopAnimation();
+        final String detail = nativeError();
+        Log.e(TAG, detail, error);
+        if (listener != null) {
+            post(new Runnable() {
+                @Override
+                public void run() {
+                    listener.onNativeFailure(error, detail);
+                }
+            });
+        }
+    }
+
+    private static void recycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) {
+            bitmap.recycle();
+        }
+    }
+}

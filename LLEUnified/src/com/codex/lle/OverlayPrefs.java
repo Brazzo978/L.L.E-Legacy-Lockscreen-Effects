@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.provider.Settings;
+import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 final class OverlayPrefs {
+    private static final String TAG = "LLEPrefs";
     private static volatile long cachedEpochMinute = Long.MIN_VALUE;
     private static volatile int cachedMinuteOfDay;
     static final String PREFS = "overlay_prefs";
@@ -157,7 +159,17 @@ final class OverlayPrefs {
     static final int EFFECT_SEASONAL_AUTUMN = 18;
     static final int EFFECT_SEASONAL_WINTER = 19;
     static final int EFFECT_SEASONAL_AUTO = 20;
-    static final int EFFECT_COUNT = 21;
+    /** Distinct Galaxy S6 Water Droplet engine, available in the ARM64 product only. */
+    static final int EFFECT_S6_WATER_DROPLET = 21;
+    /** App-owned Sparkling Bubbles reconstruction, kept separate while it is WIP. */
+    static final int EFFECT_N5_SPARKLING_BUBBLES_WIP = 22;
+    /** App-owned Colored Droplet reconstruction, kept separate while it is WIP. */
+    static final int EFFECT_N5_COLOUR_DROPLET_WIP = 23;
+    /** App-owned Colored Droplet reconstruction with accelerometer physics. */
+    static final int EFFECT_N5_COLOUR_DROPLET_GYRO_WIP = 24;
+    /** App-owned, ABI-independent port of Samsung's hidden Mass Tension effect. */
+    static final int EFFECT_MASS_TENSION = 25;
+    static final int EFFECT_COUNT = 26;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -446,17 +458,48 @@ final class OverlayPrefs {
     }
 
     static int unlockEffect(Context context) {
-        int effect = get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
+        SharedPreferences preferences = get(context);
+        int effect = preferences.getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
         // Values 1 and 6 belonged to superseded ripple experiments in early builds.
         if (effect == 1 || effect == 6) {
             effect = EFFECT_S3_RIPPLE_NATIVE;
-            get(context).edit().putInt(UNLOCK_EFFECT, effect).apply();
+            preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
+        }
+        if (!EffectAvailability.hasLegacyVendorEffects()
+                && EffectAvailability.isLegacyVendorEffect(effect)) {
+            int previousEffect = effect;
+            effect = samsungFreeReplacement(effect);
+            if (!isImplementedEffect(effect)) {
+                effect = EFFECT_S4_LENS_FLARE;
+            }
+            preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
+            Log.i(TAG, "migrated unavailable legacy vendor effect "
+                    + previousEffect + " -> " + effect);
         }
         if (!isImplementedEffect(effect)) {
-            get(context).edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
+            preferences.edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
             return EFFECT_S4_LENS_FLARE;
         }
         return effect;
+    }
+
+    static int rawUnlockEffect(Context context) {
+        return get(context).getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
+    }
+
+    private static int samsungFreeReplacement(int effect) {
+        switch (effect) {
+            case EFFECT_N5_COLOUR_DROPLET:
+                return EFFECT_N5_COLOUR_DROPLET_WIP;
+            case EFFECT_N5_COLOUR_DROPLET_GYRO:
+                return EFFECT_N5_COLOUR_DROPLET_GYRO_WIP;
+            case EFFECT_N5_SPARKLING_BUBBLES:
+                return EFFECT_N5_SPARKLING_BUBBLES_WIP;
+            case EFFECT_S6_WATER_DROPLET:
+                return EFFECT_N5_COLOUR_DROPLET_WIP;
+            default:
+                return EFFECT_S4_LENS_FLARE;
+        }
     }
 
     static String effectLabel(int effect) {
@@ -469,10 +512,18 @@ final class OverlayPrefs {
                 return "N3 Watercolor";
             case EFFECT_N5_COLOUR_DROPLET:
                 return "N5 Colored Droplet";
+            case EFFECT_N5_COLOUR_DROPLET_WIP:
+                return "N5 Colored Droplet (App-owned WIP)";
+            case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
+                return "N5 Coloured Droplet (Gyro) (App-owned WIP)";
             case EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return "N5 Colored Droplet + Gyro";
             case EFFECT_N5_SPARKLING_BUBBLES:
                 return "N5 Sparkling Bubbles";
+            case EFFECT_N5_SPARKLING_BUBBLES_WIP:
+                return "N5 Sparkling Bubbles (App-owned WIP)";
+            case EFFECT_S6_WATER_DROPLET:
+                return "S6 Water Droplet";
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -485,6 +536,8 @@ final class OverlayPrefs {
                 return "N2 Ink in Water";
             case EFFECT_STONE_SKIPPING:
                 return "S5 Stone Skipping";
+            case EFFECT_MASS_TENSION:
+                return "Mass Tension";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -528,6 +581,8 @@ final class OverlayPrefs {
 
     static boolean isColourDropletEffect(int effect) {
         return effect == EFFECT_N5_COLOUR_DROPLET
+                || effect == EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO;
     }
 
@@ -649,8 +704,12 @@ final class OverlayPrefs {
                 EFFECT_TABS_BLIND,
                 EFFECT_WATERCOLOUR,
                 EFFECT_N5_COLOUR_DROPLET,
+                EFFECT_N5_COLOUR_DROPLET_WIP,
+                EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
                 EFFECT_N5_COLOUR_DROPLET_GYRO,
                 EFFECT_N5_SPARKLING_BUBBLES,
+                EFFECT_N5_SPARKLING_BUBBLES_WIP,
+                EFFECT_S6_WATER_DROPLET,
                 EFFECT_S4_ABSTRACT_TILES,
                 EFFECT_S4_GEOMETRIC_MOSAIC,
                 EFFECT_BRILLIANT_RING,
@@ -707,8 +766,12 @@ final class OverlayPrefs {
                 EFFECT_TABS_BLIND,
                 EFFECT_WATERCOLOUR,
                 EFFECT_N5_COLOUR_DROPLET,
+                EFFECT_N5_COLOUR_DROPLET_WIP,
+                EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
                 EFFECT_N5_COLOUR_DROPLET_GYRO,
                 EFFECT_N5_SPARKLING_BUBBLES,
+                EFFECT_N5_SPARKLING_BUBBLES_WIP,
+                EFFECT_S6_WATER_DROPLET,
                 EFFECT_S4_ABSTRACT_TILES,
                 EFFECT_S4_GEOMETRIC_MOSAIC,
                 EFFECT_BRILLIANT_RING,

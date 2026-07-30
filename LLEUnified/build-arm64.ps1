@@ -3,6 +3,7 @@ param(
     [switch] $IncludeRippleCoreProbe,
     [switch] $Companion,
     [switch] $Tester,
+    [switch] $LegacyVendorEffects,
     [ValidateSet("Stable", "StockFeedback")]
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
@@ -16,17 +17,24 @@ param(
 $ErrorActionPreference = "Stop"
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
+if ($LegacyVendorEffects) {
+    $launcherLabel += " Legacy"
+}
 if ($IncludeNote5Probe -and $IncludeRippleCoreProbe) {
     throw "Choose only one native probe build"
 }
 if ($Companion -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
     throw "The co-installable ARM64 companion does not support native probe variants"
 }
-if ($Tester -and ($Companion -or $IncludeNote5Probe -or $IncludeRippleCoreProbe)) {
-    throw "The ARM64 tester cannot be combined with companion or probe variants"
+if ($Tester -and ($Companion -or $IncludeRippleCoreProbe)) {
+    throw "The ARM64 tester cannot be combined with companion or ripple-core probe variants"
+}
+if ($LegacyVendorEffects -and $Companion) {
+    throw "Legacy vendor effects are not supported by the companion build"
 }
 if ($ReleaseSigning -and ($Companion -or $IncludeNote5Probe -or
-        $IncludeRippleCoreProbe -or $Tester -or $WatercolorFeedbackMode -ne "Stable")) {
+        $IncludeRippleCoreProbe -or $Tester -or $LegacyVendorEffects -or
+        $WatercolorFeedbackMode -ne "Stable")) {
     throw "Stable release signing is only available for the normal ARM64 build"
 }
 
@@ -50,8 +58,12 @@ $readelf = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-read
 $objdump = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-objdump.exe"
 $strings = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strings.exe"
 
-$out = Join-Path $root $(if ($Tester) {
+$out = Join-Path $root $(if ($Tester -and $LegacyVendorEffects) {
+    "build\arm64-v8a-test-legacy"
+} elseif ($Tester) {
     "build\arm64-v8a-test"
+} elseif ($LegacyVendorEffects) {
+    "build\arm64-v8a-legacy"
 } elseif ($Companion) {
     "build\arm64-v8a-dev"
 } else {
@@ -66,8 +78,12 @@ $assembled = Join-Path $out "LLE64-arm64-assembled.apk"
 $zipaligned = Join-Path $out "LLE64-arm64-zipaligned.apk"
 $signed = Join-Path $out $(if ($ReleaseSigning) {
     "LLE64-arm64-v8a-release.apk"
+} elseif ($Tester -and $LegacyVendorEffects) {
+    "LLE64-arm64-v8a-legacy-vendor-tester.apk"
 } elseif ($Tester) {
     "LLE64-arm64-v8a-tester.apk"
+} elseif ($LegacyVendorEffects) {
+    "LLE64-arm64-v8a-legacy-vendor.apk"
 } elseif ($Companion) {
     "LLE64-arm64-v8a.apk"
 } elseif ($IncludeNote5Probe) {
@@ -88,6 +104,18 @@ $sourceKeystore = Join-Path $root "..\unlock-effects-test\demo-apk\debug.keystor
 $releaseCertificateSha256 = "5397D6ACE3E9D2F14D8FFD2285E26E9F1B26635589CAC3A3DC95C0DEFF76B8EE"
 $canonicalManifest = Join-Path $root "AndroidManifest.xml"
 $manifest = $canonicalManifest
+$includeNativeProbeActivity = $IncludeNote5Probe -or $IncludeRippleCoreProbe
+$nativeProbeSource = Join-Path $root `
+        "src\com\codex\lle\Note5NativeProbeActivity.java"
+$canonicalBuildFlavorSource = Join-Path $root `
+        "src\com\codex\lle\BuildFlavor.java"
+$generatedBuildFlavorSource = Join-Path $out `
+        "gen\com\codex\lle\BuildFlavor.java"
+$buildFlavorName = if ($LegacyVendorEffects) {
+    "legacy-vendor"
+} else {
+    "samsung-free"
+}
 
 function Run($exe, $arguments) {
     if (-not (Test-Path -LiteralPath $exe) -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) {
@@ -133,12 +161,25 @@ if ($generatedManifestText -eq $manifestText -or
         $generatedManifestText -match 'android:name="\.') {
     throw "ARM64 LLE64 manifest patch failed"
 }
-if ($IncludeNote5Probe -or $IncludeRippleCoreProbe) {
+if ($includeNativeProbeActivity) {
     $probePattern = '(?s)(android:name="com\.codex\.lle\.Note5NativeProbeActivity".*?android:exported=")false(")'
     $probeManifestText = [regex]::Replace(
             $generatedManifestText, $probePattern, '${1}true$2')
     if ($probeManifestText -eq $generatedManifestText) {
         throw "Note5NativeProbeActivity manifest patch point not found"
+    }
+    $generatedManifestText = $probeManifestText
+    if ($generatedManifestText -notmatch
+            '(?s)android:name="com\.codex\.lle\.Note5NativeProbeActivity".*?android:exported="true"') {
+        throw "Diagnostic manifest does not export Note5NativeProbeActivity"
+    }
+} else {
+    $probeActivityPattern = '(?s)\s*<activity\s+android:name="com\.codex\.lle\.Note5NativeProbeActivity".*?/>'
+    $probeManifestText = [regex]::Replace(
+            $generatedManifestText, $probeActivityPattern, "")
+    if ($probeManifestText -eq $generatedManifestText -or
+            $probeManifestText -match 'Note5NativeProbeActivity') {
+        throw "Note5NativeProbeActivity manifest removal failed"
     }
     $generatedManifestText = $probeManifestText
 }
@@ -160,9 +201,51 @@ if (Test-Path (Join-Path $root "assets")) {
 }
 Run (Join-Path $buildTools "aapt2.exe") $linkArgs
 
+$generatedBuildFlavorDirectory = Split-Path -Parent $generatedBuildFlavorSource
+New-Item -ItemType Directory -Force -Path $generatedBuildFlavorDirectory |
+        Out-Null
+$legacyVendorLiteral = if ($LegacyVendorEffects) { "true" } else { "false" }
+$generatedBuildFlavorText = @"
+package com.codex.lle;
+
+/** Generated by build-arm64.ps1. */
+final class BuildFlavor {
+    static final boolean LEGACY_VENDOR_EFFECTS = $legacyVendorLiteral;
+    static final String NAME = "$buildFlavorName";
+
+    private BuildFlavor() {
+    }
+}
+"@
+[IO.File]::WriteAllText(
+        $generatedBuildFlavorSource,
+        $generatedBuildFlavorText,
+        [Text.UTF8Encoding]::new($false))
+
 $sources = @()
 $sources += Get-ChildItem (Join-Path $root "src") -Recurse -Filter *.java | ForEach-Object FullName
 $sources += Get-ChildItem (Join-Path $out "gen") -Recurse -Filter *.java | ForEach-Object FullName
+$sources = @($sources | Where-Object {
+    -not [string]::Equals(
+            $_, $canonicalBuildFlavorSource, [StringComparison]::OrdinalIgnoreCase)
+})
+if ($sources -contains $canonicalBuildFlavorSource -or
+        $sources -notcontains $generatedBuildFlavorSource) {
+    throw "ARM64 generated BuildFlavor source gating failed"
+}
+if ($includeNativeProbeActivity) {
+    if ($sources -notcontains $nativeProbeSource) {
+        throw "Note5NativeProbeActivity source is missing from diagnostic build"
+    }
+} else {
+    $sources = @($sources | Where-Object {
+        -not [string]::Equals(
+                $_, $nativeProbeSource, [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($sources -contains $nativeProbeSource) {
+        throw "Note5NativeProbeActivity source exclusion failed"
+    }
+}
 $javacArgs = @(
     "-encoding", "UTF-8",
     "-source", "1.8",
@@ -172,21 +255,54 @@ $javacArgs = @(
 ) + $sources
 Run "javac.exe" $javacArgs
 Run "jar.exe" @("cf", $classesJar, "-C", $classes, ".")
+$classEntries = @(& jar.exe tf $classesJar)
+$buildFlavorClassEntries = @($classEntries | Where-Object {
+    $_ -eq "com/codex/lle/BuildFlavor.class"
+})
+if ($buildFlavorClassEntries.Count -ne 1) {
+    throw "ARM64 build must contain exactly one generated BuildFlavor class"
+}
+$probeClassEntries = @($classEntries | Where-Object {
+    $_ -like "com/codex/lle/Note5NativeProbeActivity*.class"
+})
+if ($includeNativeProbeActivity -and $probeClassEntries.Count -eq 0) {
+    throw "Diagnostic build is missing Note5NativeProbeActivity classes"
+}
+if (-not $includeNativeProbeActivity -and $probeClassEntries.Count -ne 0) {
+    throw "Ordinary build contains Note5NativeProbeActivity classes"
+}
 Run (Join-Path $buildTools "d8.bat") @("--lib", $platform, "--min-api", "23", "--output", $dex, $classesJar)
+$classesDex = Join-Path $dex "classes.dex"
+$dexStrings = @(& $strings $classesDex)
+if ($dexStrings -notcontains $buildFlavorName) {
+    throw "DEX build flavor marker is missing: $buildFlavorName"
+}
+$probeDexMarkers = @(
+    $dexStrings | Where-Object {
+        $_ -match 'Note5NativeProbeActivity|colour_probe|colour-(arm64|wip)'
+    }
+)
+if ($includeNativeProbeActivity) {
+    foreach ($requiredProbeMarker in @(
+            'Note5NativeProbeActivity',
+            'colour_probe',
+            'colour-arm64-render',
+            'colour-wip-render')) {
+        if (@($probeDexMarkers -match [regex]::Escape(
+                $requiredProbeMarker)).Count -eq 0) {
+            throw "Diagnostic DEX is missing probe marker: $requiredProbeMarker"
+        }
+    }
+}
+if (-not $includeNativeProbeActivity -and $probeDexMarkers.Count -ne 0) {
+    throw "Ordinary DEX contains native-probe markers: $($probeDexMarkers -join ', ')"
+}
 
 Copy-Item $unsigned $assembled
 Run "jar.exe" @("uf", $assembled, "-C", $dex, "classes.dex")
-$samsungDex = Join-Path $root "vendor\secvisualeffect\classes.dex"
-$boundedSamsungDex = Join-Path $out "classes-note5-bounded.dex"
-& (Join-Path $root "vendor\secvisualeffect\patch-note5-lifecycle.ps1") `
-    -OutputPath $boundedSamsungDex `
-    -ResourcePackageName $applicationId
-$samsungDex = $boundedSamsungDex
-if (-not (Test-Path $samsungDex)) {
-    throw "Missing Samsung visual-effect dex: $samsungDex"
-}
-Copy-Item $samsungDex (Join-Path $out "classes2.dex") -Force
-Run "jar.exe" @("uf", $assembled, "-C", $out, "classes2.dex")
+# ARM64 renderers are app-owned Java hosts.  ARM32 keeps its frozen Samsung
+# visual-effect DEX path in build-arm32.ps1, but the active ARM64 package must
+# contain only LLE's primary DEX.
 
 Run $clang @(
     "-shared", "-fPIC", "-O2", "-Wall", "-Werror",
@@ -199,6 +315,7 @@ if ($LASTEXITCODE -ne 0 -or ($markerHeader -join "`n") -notmatch "Machine:\s+AAr
     throw "ARM64 marker verification failed"
 }
 
+if ($LegacyVendorEffects) {
 $candidateRoot = Join-Path $root "reference\arm64-candidates\note5-aoj4"
 $stableNote5Hashes = @{
     "libColourDropletEffect.so" = "634DC703FF9288A4961B3E636B83DD89DDBF86DF6087D624DC19B4231E6C010C"
@@ -258,6 +375,205 @@ foreach ($library in $stableNote5StagedHashes.Keys) {
     if ($stagedHash -ne $stableNote5StagedHashes[$library]) {
         throw "Unexpected staged SHA-256 for $library`: $stagedHash"
     }
+}
+}
+$sparklingAppOwnedNative = Join-Path $root "ports\sparkling-bubbles\native"
+$sparklingAppOwnedBuiltLibrary = Join-Path $out "liblleSparklingBubbles-built.so"
+$sparklingAppOwnedLibrary = Join-Path $arm64Stage "liblleSparklingBubbles.so"
+if (-not (Test-Path -LiteralPath $sparklingAppOwnedNative -PathType Container)) {
+    throw "Missing app-owned Sparkling Bubbles native directory: $sparklingAppOwnedNative"
+}
+$sparklingAppOwnedSources = @(
+    Get-ChildItem -LiteralPath $sparklingAppOwnedNative -Filter "*.c" -File |
+            Sort-Object Name |
+            ForEach-Object { $_.FullName }
+)
+if ($sparklingAppOwnedSources.Count -eq 0) {
+    throw "Missing app-owned Sparkling Bubbles native sources: $sparklingAppOwnedNative"
+}
+$sparklingAppOwnedClangArgs = @(
+    "-std=c11", "-O2", "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-shared", "-Wl,--no-undefined",
+    "-Wl,-soname,liblleSparklingBubbles.so",
+    "-I", $sparklingAppOwnedNative
+) + $sparklingAppOwnedSources + @(
+    "-Wl,--no-as-needed",
+    "-landroid", "-ljnigraphics", "-lGLESv2", "-llog", "-lm",
+    "-o", $sparklingAppOwnedBuiltLibrary
+)
+Run $clang $sparklingAppOwnedClangArgs
+$sparklingAppOwnedHeader = (& $readelf -h $sparklingAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $sparklingAppOwnedHeader -notmatch "Class:\s+ELF64" `
+        -or $sparklingAppOwnedHeader -notmatch "Machine:\s+AArch64") {
+    throw "App-owned Sparkling Bubbles library is not an ELF64 AArch64 binary"
+}
+$sparklingAppOwnedDynamic = (& $readelf -d $sparklingAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $sparklingAppOwnedDynamic -notmatch `
+        "SONAME.*\[liblleSparklingBubbles\.so\]") {
+    throw "App-owned Sparkling Bubbles library has an unexpected SONAME"
+}
+if ($sparklingAppOwnedDynamic -match
+        "NEEDED.*\[(libstlport|libstdc\+\+|libc\+\+|libColourDropletEffect|" +
+        "libSparklingBubblesEffect|libWaterDropletEffect|libsecve[^]]*)\.so\]") {
+    throw "App-owned Sparkling Bubbles unexpectedly depends on a legacy Samsung runtime"
+}
+$sparklingAppOwnedSymbols = (& $readelf -Ws $sparklingAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "App-owned Sparkling Bubbles dynamic symbol inspection failed"
+}
+$expectedSparklingAppOwnedExports = @(
+    "Java_com_codex_lle_SparklingBubblesNative_nativeBridgeVersion",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeCreate",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeInitGpu",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeAbandonGpu",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeDestroy",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeUploadBitmap",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeClearBitmap",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeReset",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeTouch",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeAffordance",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeUnlock",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeStep",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeDraw",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeIsIdle",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeGetLastError"
+)
+foreach ($export in $expectedSparklingAppOwnedExports) {
+    if ($sparklingAppOwnedSymbols -notmatch "\b$([regex]::Escape($export))\b") {
+        throw "Missing app-owned Sparkling Bubbles JNI export: $export"
+    }
+}
+$sparklingAppOwnedBuiltHash = (Get-FileHash `
+        -LiteralPath $sparklingAppOwnedBuiltLibrary -Algorithm SHA256).Hash
+Copy-Item -LiteralPath $sparklingAppOwnedBuiltLibrary `
+        -Destination $sparklingAppOwnedLibrary -Force
+$sparklingAppOwnedStageHash = (Get-FileHash `
+        -LiteralPath $sparklingAppOwnedLibrary -Algorithm SHA256).Hash
+if ($sparklingAppOwnedStageHash -ne $sparklingAppOwnedBuiltHash) {
+    throw "App-owned Sparkling Bubbles staged library hash mismatch"
+}
+$colourDropletAppOwnedNative = Join-Path $root `
+        "ports\colour-droplet-appowned\native"
+$colourDropletAppOwnedBuiltLibrary = Join-Path $out `
+        "liblleColourDroplet-built.so"
+$colourDropletAppOwnedLibrary = Join-Path $arm64Stage `
+        "liblleColourDroplet.so"
+$colourDropletAppOwnedSources = @(
+    "lle_colour_sim.c",
+    "lle_colour_gles.c",
+    "lle_colour_jni.c"
+) | ForEach-Object {
+    Join-Path $colourDropletAppOwnedNative $_
+}
+foreach ($colourDropletAppOwnedSource in $colourDropletAppOwnedSources) {
+    if (-not (Test-Path -LiteralPath $colourDropletAppOwnedSource -PathType Leaf)) {
+        throw "Missing app-owned Coloured Droplet native source: $colourDropletAppOwnedSource"
+    }
+}
+$colourDropletAppOwnedClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-fPIC", "-Wall", "-Wextra", "-Werror",
+    "-shared", "-Wl,--no-undefined",
+    "-Wl,-soname,liblleColourDroplet.so",
+    "-I", $colourDropletAppOwnedNative
+) + $colourDropletAppOwnedSources + @(
+    "-Wl,--no-as-needed",
+    "-landroid", "-ljnigraphics", "-lGLESv2", "-llog", "-lm",
+    "-o", $colourDropletAppOwnedBuiltLibrary
+)
+Run $clang $colourDropletAppOwnedClangArgs
+$colourDropletAppOwnedHeader = (& $readelf -h `
+        $colourDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $colourDropletAppOwnedHeader -notmatch "Class:\s+ELF64" `
+        -or $colourDropletAppOwnedHeader -notmatch "Machine:\s+AArch64") {
+    throw "App-owned Coloured Droplet library is not an ELF64 AArch64 binary"
+}
+$colourDropletAppOwnedDynamic = (& $readelf -d `
+        $colourDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $colourDropletAppOwnedDynamic -notmatch `
+        "SONAME.*\[liblleColourDroplet\.so\]") {
+    throw "App-owned Coloured Droplet library has an unexpected SONAME"
+}
+if ($colourDropletAppOwnedDynamic -match
+        "NEEDED.*\[(libstlport|libstdc\+\+|libc\+\+|libColourDropletEffect|" +
+        "libSparklingBubblesEffect|libWaterDropletEffect|libsecve[^]]*)\.so\]") {
+    throw "App-owned Coloured Droplet unexpectedly depends on a legacy Samsung runtime"
+}
+$colourDropletAppOwnedSymbols = (& $readelf -Ws `
+        $colourDropletAppOwnedBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "App-owned Coloured Droplet dynamic symbol inspection failed"
+}
+$expectedColourDropletAppOwnedExports = @(
+    "Java_com_codex_lle_ColourDropletNative_nativeBridgeVersion",
+    "Java_com_codex_lle_ColourDropletNative_nativeCreate",
+    "Java_com_codex_lle_ColourDropletNative_nativeDestroy",
+    "Java_com_codex_lle_ColourDropletNative_nativeInitGpu",
+    "Java_com_codex_lle_ColourDropletNative_nativeResize",
+    "Java_com_codex_lle_ColourDropletNative_nativeAbandonGpu",
+    "Java_com_codex_lle_ColourDropletNative_nativeUploadBitmap",
+    "Java_com_codex_lle_ColourDropletNative_nativeClearBitmap",
+    "Java_com_codex_lle_ColourDropletNative_nativeReset",
+    "Java_com_codex_lle_ColourDropletNative_nativeTouch",
+    "Java_com_codex_lle_ColourDropletNative_nativeSensor",
+    "Java_com_codex_lle_ColourDropletNative_nativeAffordance",
+    "Java_com_codex_lle_ColourDropletNative_nativeUnlock",
+    "Java_com_codex_lle_ColourDropletNative_nativeResetBackgroundScale",
+    "Java_com_codex_lle_ColourDropletNative_nativeStep",
+    "Java_com_codex_lle_ColourDropletNative_nativeDraw",
+    "Java_com_codex_lle_ColourDropletNative_nativeIsIdle",
+    "Java_com_codex_lle_ColourDropletNative_nativeGetLastError"
+)
+foreach ($export in $expectedColourDropletAppOwnedExports) {
+    if ($colourDropletAppOwnedSymbols -notmatch "\b$([regex]::Escape($export))\b") {
+        throw "Missing app-owned Coloured Droplet JNI export: $export"
+    }
+}
+$colourDropletAppOwnedBuiltHash = (Get-FileHash `
+        -LiteralPath $colourDropletAppOwnedBuiltLibrary -Algorithm SHA256).Hash
+Copy-Item -LiteralPath $colourDropletAppOwnedBuiltLibrary `
+        -Destination $colourDropletAppOwnedLibrary -Force
+$colourDropletAppOwnedStageHash = (Get-FileHash `
+        -LiteralPath $colourDropletAppOwnedLibrary -Algorithm SHA256).Hash
+if ($colourDropletAppOwnedStageHash -ne $colourDropletAppOwnedBuiltHash) {
+    throw "App-owned Coloured Droplet staged library hash mismatch"
+}
+if ($LegacyVendorEffects) {
+$s6WaterDropletSource = Join-Path $root `
+        "ports\s6-water-droplet\integration\native\patched\libWaterDropletEffect.so"
+$s6WaterDropletExpectedHash =
+        "D14BB2253E9059B055582B195ED2D70ED4D516CCDABBDC403472EAD38D99C9BC"
+if (-not (Test-Path -LiteralPath $s6WaterDropletSource)) {
+    throw "Missing patched S6 Water Droplet ARM64 library: $s6WaterDropletSource"
+}
+$s6WaterDropletSourceHash = (Get-FileHash -LiteralPath $s6WaterDropletSource `
+        -Algorithm SHA256).Hash
+if ($s6WaterDropletSourceHash -ne $s6WaterDropletExpectedHash) {
+    throw "Unexpected S6 Water Droplet SHA-256: $s6WaterDropletSourceHash"
+}
+$s6WaterDropletHeader = (& $readelf -h $s6WaterDropletSource) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $s6WaterDropletHeader -notmatch "Machine:\s+AArch64") {
+    throw "S6 Water Droplet library is not an AArch64 ELF"
+}
+$s6WaterDropletDynamic = (& $readelf -d $s6WaterDropletSource) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $s6WaterDropletDynamic -notmatch `
+        "SONAME.*\[libWaterDropletEffect\.so\]" `
+        -or $s6WaterDropletDynamic -match "NEEDED.*\[libstlport\.so\]") {
+    throw "S6 Water Droplet native dependency contract changed"
+}
+$s6WaterDropletLibrary = Join-Path $arm64Stage "libWaterDropletEffect.so"
+Copy-Item -LiteralPath $s6WaterDropletSource `
+        -Destination $s6WaterDropletLibrary -Force
+$s6WaterDropletStageHash = (Get-FileHash -LiteralPath $s6WaterDropletLibrary `
+        -Algorithm SHA256).Hash
+if ($s6WaterDropletStageHash -ne $s6WaterDropletExpectedHash) {
+    throw "S6 Water Droplet staged library hash mismatch"
+}
 }
 $rippleNative = Join-Path $root "ports\water-ripple\native"
 $rippleLibrary = Join-Path $arm64Stage "libWaterRipple.so"
@@ -559,23 +875,51 @@ if ($badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'")
 }
 
 $entries = @(& "jar.exe" tf $signed)
+$dexEntries = @($entries | Where-Object { $_ -match "^classes[0-9]*\.dex$" })
+if ($dexEntries.Count -ne 1 -or $dexEntries[0] -ne "classes.dex") {
+    throw "ARM64 APK must contain exactly one app-owned DEX: $($dexEntries -join ', ')"
+}
 $nativeEntries = @($entries | Where-Object { $_ -like "lib/*" -and -not $_.EndsWith("/") })
 $expectedNativeEntries = @(
     "lib/arm64-v8a/liblle64marker.so",
-    "lib/arm64-v8a/libColourDropletEffect.so",
-    "lib/arm64-v8a/libSparklingBubblesEffect.so",
-    "lib/arm64-v8a/libstlport.so",
+    "lib/arm64-v8a/liblleSparklingBubbles.so",
+    "lib/arm64-v8a/liblleColourDroplet.so",
     "lib/arm64-v8a/libWaterRipple.so",
     "lib/arm64-v8a/libsecveAbstractTile.so",
     "lib/arm64-v8a/libsecveSrkCommon.so",
     "lib/arm64-v8a/libsecveWaterColor.so"
 )
+if ($LegacyVendorEffects) {
+    $expectedNativeEntries += @(
+        "lib/arm64-v8a/libColourDropletEffect.so",
+        "lib/arm64-v8a/libSparklingBubblesEffect.so",
+        "lib/arm64-v8a/libWaterDropletEffect.so",
+        "lib/arm64-v8a/libstlport.so"
+    )
+}
 $nativeDiff = Compare-Object ($nativeEntries | Sort-Object) ($expectedNativeEntries | Sort-Object)
 if ($nativeDiff) {
     throw "Unexpected APK native entries: $($nativeEntries -join ', ')"
 }
 if ($entries -match "armeabi|x86") {
     throw "Non-ARM64 ABI found in APK"
+}
+$forbiddenVendorEntries = @(
+    "lib/arm64-v8a/libColourDropletEffect.so",
+    "lib/arm64-v8a/libSparklingBubblesEffect.so",
+    "lib/arm64-v8a/libWaterDropletEffect.so",
+    "lib/arm64-v8a/libstlport.so"
+)
+$packagedVendorEntries = @($nativeEntries | Where-Object {
+    $forbiddenVendorEntries -contains $_
+})
+if (-not $LegacyVendorEffects -and $packagedVendorEntries.Count -ne 0) {
+    throw ("Samsung-free APK contains vendor ELF entries: " +
+            ($packagedVendorEntries -join ", "))
+}
+if ($LegacyVendorEffects -and $packagedVendorEntries.Count -ne
+        $forbiddenVendorEntries.Count) {
+    throw "Legacy-vendor APK is missing expected vendor ELF entries"
 }
 $rippleApkVerify = Join-Path $out "verify-ripple-entry"
 New-Item -ItemType Directory -Force -Path $rippleApkVerify | Out-Null
@@ -615,13 +959,91 @@ if ($abstractTilesApkHash -ne $abstractTilesStageHash) {
 }
 Remove-Item -Recurse -Force $abstractTilesApkVerify
 
+if ($LegacyVendorEffects) {
+$s6WaterDropletApkVerify = Join-Path $out "verify-s6-water-droplet-entry"
+New-Item -ItemType Directory -Force -Path $s6WaterDropletApkVerify | Out-Null
+Push-Location $s6WaterDropletApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/libWaterDropletEffect.so")
+} finally {
+    Pop-Location
+}
+$s6WaterDropletApkLibrary = Join-Path $s6WaterDropletApkVerify `
+        "lib\arm64-v8a\libWaterDropletEffect.so"
+if (-not (Test-Path -LiteralPath $s6WaterDropletApkLibrary)) {
+    throw "S6 Water Droplet APK entry is missing"
+}
+$s6WaterDropletApkHash = (Get-FileHash `
+        -LiteralPath $s6WaterDropletApkLibrary -Algorithm SHA256).Hash
+if ($s6WaterDropletApkHash -ne $s6WaterDropletStageHash) {
+    throw "S6 Water Droplet APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $s6WaterDropletApkVerify
+}
+
+$sparklingAppOwnedApkVerify = Join-Path $out "verify-app-owned-sparkling-entry"
+New-Item -ItemType Directory -Force -Path $sparklingAppOwnedApkVerify | Out-Null
+Push-Location $sparklingAppOwnedApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/liblleSparklingBubbles.so")
+} finally {
+    Pop-Location
+}
+$sparklingAppOwnedApkLibrary = Join-Path $sparklingAppOwnedApkVerify `
+        "lib\arm64-v8a\liblleSparklingBubbles.so"
+if (-not (Test-Path -LiteralPath $sparklingAppOwnedApkLibrary)) {
+    throw "App-owned Sparkling Bubbles APK entry is missing"
+}
+$sparklingAppOwnedApkHash = (Get-FileHash `
+        -LiteralPath $sparklingAppOwnedApkLibrary -Algorithm SHA256).Hash
+if ($sparklingAppOwnedApkHash -ne $sparklingAppOwnedStageHash) {
+    throw "App-owned Sparkling Bubbles APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $sparklingAppOwnedApkVerify
+
+$colourDropletAppOwnedApkVerify = Join-Path $out `
+        "verify-app-owned-colour-droplet-entry"
+New-Item -ItemType Directory -Force `
+        -Path $colourDropletAppOwnedApkVerify | Out-Null
+Push-Location $colourDropletAppOwnedApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/liblleColourDroplet.so")
+} finally {
+    Pop-Location
+}
+$colourDropletAppOwnedApkLibrary = Join-Path `
+        $colourDropletAppOwnedApkVerify `
+        "lib\arm64-v8a\liblleColourDroplet.so"
+if (-not (Test-Path -LiteralPath $colourDropletAppOwnedApkLibrary)) {
+    throw "App-owned Coloured Droplet APK entry is missing"
+}
+$colourDropletAppOwnedApkHash = (Get-FileHash `
+        -LiteralPath $colourDropletAppOwnedApkLibrary -Algorithm SHA256).Hash
+if ($colourDropletAppOwnedApkHash -ne $colourDropletAppOwnedStageHash) {
+    throw "App-owned Coloured Droplet APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $colourDropletAppOwnedApkVerify
+
 Write-Host "Built ARM64-only APK: $signed"
 Write-Host "Application ID: $expectedPackage"
-Write-Warning "APK contains proprietary Samsung Note 5 firmware libraries."
+Write-Host "Build flavor: $buildFlavorName"
+if ($LegacyVendorEffects) {
+    Write-Warning "Legacy diagnostic APK contains proprietary Samsung Note 5 and S6 firmware libraries."
+} else {
+    Write-Host "Samsung-free APK: legacy vendor ELF set excluded"
+}
 if ($IncludeRippleCoreProbe) {
     Write-Warning "Ripple probe filename selected; it contains the same full Early Alpha Water Ripple library as the normal APK."
 }
 Write-Host "Native entries: $($nativeEntries -join ', ')"
+Write-Host "App-owned Sparkling Bubbles SHA-256: $sparklingAppOwnedStageHash"
+Write-Host "App-owned Coloured Droplet SHA-256: $colourDropletAppOwnedStageHash"
+if ($LegacyVendorEffects) {
+    Write-Host "S6 Water Droplet SHA-256: $s6WaterDropletStageHash"
+}
 Write-Host "Water Ripple SHA-256: $rippleStageHash"
 Write-Host "Abstract Tiles SHA-256: $abstractTilesStageHash"
 Write-Host "Watercolor common SHA-256: $watercolorCommonStageHash"

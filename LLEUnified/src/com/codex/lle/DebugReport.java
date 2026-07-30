@@ -97,6 +97,10 @@ final class DebugReport {
         } catch (PackageManager.NameNotFoundException error) {
             body.append("version=unavailable\n");
         }
+        body.append("build_flavor=")
+                .append(EffectAvailability.buildFlavorLabel()).append('\n');
+        body.append("legacy_vendor_effects=")
+                .append(EffectAvailability.hasLegacyVendorEffects()).append('\n');
         body.append("process_64_bit=")
                 .append(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                         && android.os.Process.is64Bit())
@@ -116,6 +120,10 @@ final class DebugReport {
 
     private static void appendRuntimeState(StringBuilder body, Context context) {
         body.append("[runtime]\n");
+        int rawUnlockEffect = OverlayPrefs.rawUnlockEffect(context);
+        int resolvedUnlockEffect = OverlayPrefs.unlockEffect(context);
+        body.append("unlock_effect_raw=").append(rawUnlockEffect).append('\n');
+        body.append("unlock_effect_resolved=").append(resolvedUnlockEffect).append('\n');
         PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         body.append("interactive=").append(power != null && power.isInteractive()).append('\n');
         body.append("power_save=").append(power != null && power.isPowerSaveMode()).append('\n');

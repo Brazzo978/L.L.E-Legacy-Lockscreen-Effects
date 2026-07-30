@@ -3,6 +3,7 @@ param(
     [string] $Target = "All",
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
+    [switch] $LegacyVendorEffects,
     [ValidateSet("Stable", "StockFeedback")]
     [string] $WatercolorFeedbackMode = "Stable",
     [switch] $ReleaseSigning,
@@ -18,11 +19,11 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if ($Target -ne "Arm64" -and
         ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
-        $WatercolorFeedbackMode -ne "Stable")) {
+        $LegacyVendorEffects -or $WatercolorFeedbackMode -ne "Stable")) {
     throw "ARM64 diagnostic options require -Target Arm64"
 }
 if ($ReleaseSigning -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
-        $WatercolorFeedbackMode -ne "Stable")) {
+        $LegacyVendorEffects -or $WatercolorFeedbackMode -ne "Stable")) {
     throw "Stable release signing does not support diagnostic ARM64 variants"
 }
 
@@ -53,6 +54,9 @@ if ($Target -eq "All" -or $Target -eq "Arm64") {
     }
     if ($IncludeRippleCoreProbe) {
         $arm64Arguments += "-IncludeRippleCoreProbe"
+    }
+    if ($LegacyVendorEffects) {
+        $arm64Arguments += "-LegacyVendorEffects"
     }
     if ($ReleaseSigning) {
         $arm64Arguments += @("-ReleaseSigning",

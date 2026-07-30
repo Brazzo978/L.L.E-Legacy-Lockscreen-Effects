@@ -101,6 +101,8 @@ public class ControlActivity extends Activity {
     private static final int REQUEST_READ_WALLPAPER_STORAGE = 4921;
     private static final int TAB_LOCKSCREEN_EFFECT = 0;
     private static final int TAB_CHARGING_DOODLE = 1;
+    private static final String PROJECT_GITHUB_URL =
+            "https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects";
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
     private static final int COLOR_SURFACE = Color.WHITE;
     private static final int COLOR_TEXT = Color.rgb(33, 33, 33);
@@ -681,6 +683,7 @@ public class ControlActivity extends Activity {
         page.removeAllViews();
         if (tab == TAB_CHARGING_DOODLE) {
             page.addView(chargingDoodleControls());
+            page.addView(infoFooter());
         } else {
             page.addView(effectSelector());
             page.addView(lockscreenTouchControls());
@@ -1080,6 +1083,34 @@ public class ControlActivity extends Activity {
     private void updateTabStyles() {
         styleTabButton(chargingDoodleTabButton, selectedTab == TAB_CHARGING_DOODLE);
         styleTabButton(lockscreenEffectTabButton, selectedTab == TAB_LOCKSCREEN_EFFECT);
+    }
+
+    private View infoFooter() {
+        TextView footer = new TextView(this);
+        footer.setText("GitHub  \u00b7  Made with love by Brazzo97 and Codex \u2661");
+        footer.setTextColor(COLOR_MUTED);
+        footer.setTextSize(12f);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(dp(8), dp(18), dp(8), dp(8));
+        footer.setClickable(true);
+        footer.setFocusable(true);
+        footer.setContentDescription(
+                "Open GitHub. Made with love by Brazzo97 and Codex. Heart.");
+        footer.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                openProjectGitHub();
+            }
+        });
+        return footer;
+    }
+
+    private void openProjectGitHub() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_GITHUB_URL)));
+        } catch (RuntimeException error) {
+            Toast.makeText(this, "No browser is available", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void styleTabButton(Button button, boolean selected) {
@@ -1931,6 +1962,16 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current);
         addEffectOptionIfAvailable(effects,
+                "Mass Tension",
+                "An elastic ring stretching and snapping back under touch.",
+                OverlayPrefs.EFFECT_MASS_TENSION,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "S6 Water Droplet",
+                "Refracted water droplets flowing across the wallpaper.",
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET,
+                current);
+        addEffectOptionIfAvailable(effects,
                 "N5 Colored Droplet",
                 "Colorful liquid droplets rolling across screen.",
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
@@ -1941,9 +1982,24 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 current);
         addEffectOptionIfAvailable(effects,
+                "N5 Colored Droplet (App-owned WIP)",
+                "Colorful liquid droplets rolling across screen.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "N5 Coloured Droplet (Gyro) (App-owned WIP)",
+                "Colorful liquid droplets rolling across screen.",
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
+                current);
+        addEffectOptionIfAvailable(effects,
                 "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "N5 Sparkling Bubbles (App-owned WIP)",
+                "Glowing bubbles sparkling across the wallpaper.",
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 current);
         effects.addView(sectionLabel("Seasonal"));
         addEffectOptionIfAvailable(effects,
@@ -1972,6 +2028,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_SEASONAL_WINTER,
                 current);
         root.addView(effects);
+        root.addView(infoFooter());
         if (effectUsesColormapCache(current)) {
             root.addView(screenshotServiceControls(current));
         }
@@ -2518,8 +2575,12 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_TABS_BLIND
                 || effect == OverlayPrefs.EFFECT_WATERCOLOUR
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
                 || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
+                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
@@ -3086,9 +3147,12 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_WATERCOLOUR:
                 return "effect_preview_n3_watercolor.mp4";
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return "effect_preview_n5_coloured_droplet.mp4";
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return "effect_preview_n5_sparkling_bubbles.mp4";
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 return "effect_preview_n4_abstract_tiles.mp4";
@@ -3098,6 +3162,8 @@ public class ControlActivity extends Activity {
                 return "effect_preview_tabs_blind.mp4";
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return "effect_preview_s5_stone_skipping.mp4";
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                return "effect_preview_mass_tension.mp4";
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return "effect_preview_s5_brilliant_ring.mp4";
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
@@ -3146,11 +3212,17 @@ public class ControlActivity extends Activity {
                 drawable = R.drawable.effect_preview_n3_watercolor;
                 break;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 drawable = R.drawable.effect_preview_n5_coloured_droplet;
                 break;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 drawable = R.drawable.effect_preview_n5_sparkling_bubbles;
+                break;
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+                drawable = R.drawable.preview_unlock_s6_water_droplet_lle;
                 break;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 drawable = R.drawable.effect_preview_n4_abstract_tiles;
@@ -3163,6 +3235,9 @@ public class ControlActivity extends Activity {
                 break;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 drawable = R.drawable.effect_preview_s5_stone_skipping;
+                break;
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                drawable = R.drawable.preview_unlock_mass_tension;
                 break;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 drawable = R.drawable.effect_preview_s5_brilliant_ring;
@@ -3417,10 +3492,14 @@ public class ControlActivity extends Activity {
                 drawPreviewWatercolor(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
                 drawPreviewDroplets(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 drawPreviewBubbles(canvas, paint, width, height);
                 break;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
@@ -3488,13 +3567,20 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
                 return R.drawable.preview_unlock_n4_geometric_mosaic_lle;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
                 return R.drawable.preview_unlock_n5_colored_droplet_lle;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
                 return R.drawable.preview_unlock_n5_colored_droplet_gyro_lle;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return R.drawable.preview_unlock_n5_sparkling_bubbles_lle;
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+                return R.drawable.preview_unlock_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return R.drawable.preview_unlock_stoneskipping_s5;
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                return R.drawable.preview_unlock_mass_tension;
             default:
                 return 0;
         }
@@ -3515,15 +3601,22 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
                 return R.drawable.icon_effect_n4_geometric_mosaic_lle;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
                 return R.drawable.icon_effect_n5_colored_droplet_lle;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
                 return R.drawable.icon_effect_n5_colored_droplet_gyro_lle;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return R.drawable.icon_effect_n5_sparkling_bubbles_lle;
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+                return R.drawable.icon_effect_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return R.drawable.icon_effect_s5_stone_skipping_lle;
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                return R.drawable.icon_effect_mass_tension;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return R.drawable.icon_effect_s5_brilliant_ring_lle;
             case OverlayPrefs.EFFECT_TABS_BLIND:
@@ -3974,8 +4067,12 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_TABS_BLIND,
                 OverlayPrefs.EFFECT_WATERCOLOUR,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP,
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
                 OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES,
+                OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
+                OverlayPrefs.EFFECT_S6_WATER_DROPLET,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
@@ -5055,10 +5152,17 @@ public class ControlActivity extends Activity {
                 return Color.rgb(125, 113, 230);
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return Color.rgb(82, 177, 221);
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                return Color.rgb(210, 235, 242);
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return Color.rgb(235, 111, 102);
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
+                return Color.rgb(80, 178, 226);
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return Color.rgb(94, 210, 209);
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 return Color.rgb(239, 157, 64);
@@ -5598,6 +5702,7 @@ public class ControlActivity extends Activity {
                 canvas.drawPath(mosaic, paint);
                 break;
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES:
+            case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(Math.max(dp(1), unit * 0.065f));
                 canvas.drawCircle(cx - unit * 0.16f, cy + unit * 0.12f, unit * 0.20f, paint);
@@ -5605,7 +5710,10 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx + unit * 0.23f, cy + unit * 0.25f, unit * 0.07f, paint);
                 break;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
+            case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case OverlayPrefs.EFFECT_S6_WATER_DROPLET:
                 paint.setStyle(Paint.Style.FILL);
                 Path drop = new Path();
                 drop.moveTo(cx, rect.top);
@@ -5631,6 +5739,17 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx, cy, unit * 0.38f, paint);
                 canvas.drawCircle(cx, cy, unit * 0.24f, paint);
                 canvas.drawCircle(cx, cy, unit * 0.10f, paint);
+                break;
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                float tensionX = cx + unit * 0.20f;
+                float tensionY = cy - unit * 0.14f;
+                canvas.drawCircle(cx, cy, unit * 0.38f, paint);
+                canvas.drawCircle(tensionX, tensionY, unit * 0.13f, paint);
+                canvas.drawLine(cx, cy, tensionX, tensionY, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx, cy, unit * 0.055f, paint);
                 break;
             default:
                 paint.setStyle(Paint.Style.STROKE);
