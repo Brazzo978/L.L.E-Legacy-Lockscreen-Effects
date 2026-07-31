@@ -99,6 +99,7 @@ public class ControlActivity extends Activity {
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
     private static final int REQUEST_LOCK_WALLPAPER_ACCESS = 4920;
     private static final int REQUEST_READ_WALLPAPER_STORAGE = 4921;
+    private static final int REQUEST_DOODLE_POSITION = 4922;
     private static final int TAB_LOCKSCREEN_EFFECT = 0;
     private static final int TAB_CHARGING_DOODLE = 1;
     private static final String PROJECT_GITHUB_URL =
@@ -160,8 +161,8 @@ public class ControlActivity extends Activity {
     private int tabAdjacentTab = -1;
     private int tabAdjacentDirection;
     private boolean tabAnimationRunning;
+    private boolean doodleAdvancedExpanded;
     private boolean doodleDebugExpanded;
-    private boolean doodlePositionExpanded;
     private boolean lockscreenDebugExpanded;
     private boolean rendererWallpaperExpanded;
     private boolean screenshotServiceExpanded;
@@ -298,6 +299,10 @@ public class ControlActivity extends Activity {
         }
         if (requestCode == REQUEST_SETUP_WIZARD) {
             showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            return;
+        }
+        if (requestCode == REQUEST_DOODLE_POSITION) {
+            showTab(TAB_CHARGING_DOODLE, false, 0);
             return;
         }
         if (requestCode == REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP) {
@@ -1495,6 +1500,8 @@ public class ControlActivity extends Activity {
             root.addView(foldPanelRoutingControls());
         }
         root.addView(positionControls());
+        root.addView(doodleAodControls());
+        root.addView(doodleAdvancedMenu());
         root.addView(doodleDebugMenu());
         return root;
     }
@@ -1771,6 +1778,114 @@ public class ControlActivity extends Activity {
         return section;
     }
 
+    private View doodleAodControls() {
+        LinearLayout section = verticalGroup();
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(sectionTitle("Always On Display"));
+        section.addView(toggle("Keep doodle visible on AOD",
+                OverlayPrefs.DOODLE_AOD_ENABLED, false));
+        section.addView(infoText("Shows a frozen, dimmed doodle while charging on Always On "
+                + "Display. Animation resumes when the screen wakes."));
+        return section;
+    }
+
+    private View doodleAdvancedMenu() {
+        LinearLayout section = verticalGroup();
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(collapsibleHeader("Advanced settings", doodleAdvancedExpanded,
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                doodleAdvancedExpanded = !doodleAdvancedExpanded;
+                showTab(selectedTab);
+            }
+        }));
+        if (doodleAdvancedExpanded) {
+            section.addView(doodleAdvancedControls());
+        }
+        return section;
+    }
+
+    private View doodleAdvancedControls() {
+        LinearLayout section = verticalGroup();
+        styleInsetPanel(section);
+        section.addView(percentPreferenceControl("AOD brightness",
+                OverlayPrefs.DOODLE_AOD_BRIGHTNESS_PERCENT,
+                OverlayPrefs.DOODLE_AOD_BRIGHTNESS_DEFAULT_PERCENT));
+        section.addView(percentPreferenceControl("AOD opacity",
+                OverlayPrefs.DOODLE_AOD_OPACITY_PERCENT,
+                OverlayPrefs.DOODLE_AOD_OPACITY_DEFAULT_PERCENT));
+        section.addView(percentPreferenceControl("Lockscreen opacity",
+                OverlayPrefs.DOODLE_OPACITY_PERCENT,
+                OverlayPrefs.DOODLE_OPACITY_DEFAULT_PERCENT));
+        section.addView(infoText("AOD brightness changes light output without replacing opacity. "
+                + "Lockscreen opacity applies whenever the doodle is outside AOD."));
+        return section;
+    }
+
+    private View percentPreferenceControl(final String label, final String key,
+            int defaultValue) {
+        LinearLayout row = verticalGroup();
+        row.setPadding(dp(14), dp(8), dp(14), dp(8));
+        row.setBackground(controlRowBackground(false));
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, dp(3), 0, dp(3));
+        row.setLayoutParams(rowParams);
+
+        final TextView value = new TextView(this);
+        value.setTextColor(COLOR_TEXT);
+        value.setTextSize(15f);
+        value.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        value.setIncludeFontPadding(false);
+
+        int initial = Math.max(0, Math.min(100, prefs.getInt(key, defaultValue)));
+        value.setText(label + ": " + initial + "%");
+        row.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(100);
+        slider.setProgress(initial);
+        slider.setContentDescription(label);
+        tintSeekBar(slider);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int percent = Math.max(0, Math.min(100, progress));
+                value.setText(label + ": " + percent + "%");
+                if (fromUser) {
+                    prefs.edit().putInt(key, percent).apply();
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                prefs.edit().putInt(key, seekBar.getProgress()).apply();
+            }
+        });
+        LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+        sliderParams.setMargins(0, dp(2), 0, 0);
+        row.addView(slider, sliderParams);
+        return row;
+    }
     private View doodleDebugMenu() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -1863,6 +1978,7 @@ public class ControlActivity extends Activity {
                 "lockscreen_lock_sound",
                 lockSoundTiming,
                 null));
+
         controls.addView(toggleWithAutomation("Unlock effect on lockscreen",
                 OverlayPrefs.UNLOCK_EFFECT_ENABLED,
                 true,
@@ -4464,40 +4580,16 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
         styleCard(section);
-
-        final TextView header = new TextView(this);
-        header.setText(doodlePositionExpanded
-                ? "Size and position   ▾"
-                : "Size and position   +");
-        header.setTextColor(COLOR_ACCENT_DEEP);
-        header.setTextSize(16f);
-        header.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setIncludeFontPadding(false);
-        header.setPadding(dp(14), 0, dp(14), 0);
-        header.setBackground(controlRowBackground(false));
-        section.addView(header, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48)));
-
-        final LinearLayout content = verticalGroup();
-        content.setPadding(0, dp(6), 0, 0);
-        content.addView(doodleSizeSlider());
-        content.addView(positionSlider("Horizontal", OverlayPrefs.POSITION_OFFSET_X, 0));
-        content.addView(positionSlider("Vertical", OverlayPrefs.POSITION_OFFSET_Y, 0));
-        setRevealState(content, doodlePositionExpanded, false);
-        section.addView(content);
-
-        header.setOnClickListener(new View.OnClickListener() {
+        section.addView(sectionTitle("Doodle layout"));
+        section.addView(infoText("Move and resize the doodle directly on a lockscreen preview."));
+        section.addView(outlineButton("Open visual editor", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                doodlePositionExpanded = !doodlePositionExpanded;
-                header.setText(doodlePositionExpanded
-                        ? "Size and position   ▾"
-                        : "Size and position   +");
-                setRevealState(content, doodlePositionExpanded, true);
+                startActivityForResult(
+                        new Intent(ControlActivity.this, DoodlePositionActivity.class),
+                        REQUEST_DOODLE_POSITION);
             }
-        });
+        }));
         return section;
     }
 
@@ -4510,7 +4602,8 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, 0);
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
+        section.addView(toggle("Rolling battery percent",
+                OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         return section;
     }
 
@@ -4628,6 +4721,11 @@ public class ControlActivity extends Activity {
             section.addView(effectProfilerControls());
             section.addView(customAppBlacklistControls());
             section.addView(batteryDebugControls());
+            section.addView(toggle("Media audio output",
+                    OverlayPrefs.LLE_AUDIO_ROUTE_MEDIA, false));
+            section.addView(infoText("Routes every L.L.E. effect and lock sound through "
+                    + "media volume instead of System sounds. This also bypasses the phone's "
+                    + "Screen lock/unlock sound switch."));
         }
         return section;
     }
@@ -4883,122 +4981,6 @@ public class ControlActivity extends Activity {
                 + ", " + cache;
     }
 
-    private View positionSlider(final String label, final String key, int defaultValue) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, 0, 0, 0);
-        row.setLayoutParams(rowParams);
-        row.setPadding(0, dp(8), 0, dp(8));
-        row.setBackground(controlRowBackground(false));
-
-        final TextView valueLabel = new TextView(this);
-        valueLabel.setTextColor(COLOR_ACCENT_DEEP);
-        valueLabel.setTextSize(15f);
-        valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        row.addView(valueLabel, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        SeekBar slider = new SeekBar(this);
-        int range = OverlayPrefs.POSITION_OFFSET_MAX - OverlayPrefs.POSITION_OFFSET_MIN;
-        int current = OverlayPrefs.clampPositionOffset(prefs.getInt(key, defaultValue));
-        slider.setMax(range);
-        slider.setProgress(current - OverlayPrefs.POSITION_OFFSET_MIN);
-        tintSeekBar(slider);
-        updatePositionLabel(valueLabel, label, current);
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = OverlayPrefs.POSITION_OFFSET_MIN + progress;
-                updatePositionLabel(valueLabel, label, value);
-                if (fromUser) {
-                    prefs.edit().putInt(key, value).apply();
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                int value = OverlayPrefs.POSITION_OFFSET_MIN + seekBar.getProgress();
-                prefs.edit().putInt(key, value).apply();
-            }
-        });
-        row.addView(slider, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)));
-        return row;
-    }
-
-    private View doodleSizeSlider() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, 0, 0, 0);
-        row.setLayoutParams(rowParams);
-        row.setPadding(0, dp(8), 0, dp(8));
-        row.setBackground(controlRowBackground(false));
-
-        final TextView valueLabel = new TextView(this);
-        valueLabel.setTextColor(COLOR_ACCENT_DEEP);
-        valueLabel.setTextSize(15f);
-        valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        row.addView(valueLabel, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        SeekBar slider = new SeekBar(this);
-        int min = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT;
-        int max = OverlayPrefs.DOODLE_SIZE_MAX_PERCENT;
-        int current = OverlayPrefs.doodleSizePercent(this);
-        slider.setMax(max - min);
-        slider.setProgress(current - min);
-        tintSeekBar(slider);
-        updateDoodleSizeLabel(valueLabel, current);
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT + progress;
-                updateDoodleSizeLabel(valueLabel, value);
-                if (fromUser) {
-                    prefs.edit().putInt(OverlayPrefs.DOODLE_SIZE_PERCENT, value).apply();
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                int value = OverlayPrefs.DOODLE_SIZE_MIN_PERCENT + seekBar.getProgress();
-                prefs.edit().putInt(OverlayPrefs.DOODLE_SIZE_PERCENT, value).apply();
-            }
-        });
-        row.addView(slider, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)));
-        return row;
-    }
-
-    private void updateDoodleSizeLabel(TextView valueLabel, int value) {
-        valueLabel.setText("Size: " + value + "%");
-    }
-
-    private void updatePositionLabel(TextView valueLabel, String label, int value) {
-        valueLabel.setText(label + ": " + signedValue(value));
-    }
-
-    private String signedValue(int value) {
-        return value > 0 ? "+" + value : String.valueOf(value);
-    }
 
     private int clampInt(int value, int min, int max) {
         if (max < min) {

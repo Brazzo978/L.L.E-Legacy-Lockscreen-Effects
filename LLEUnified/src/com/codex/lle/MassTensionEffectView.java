@@ -110,10 +110,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(2)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.mass_tension_tap, 1);
     }

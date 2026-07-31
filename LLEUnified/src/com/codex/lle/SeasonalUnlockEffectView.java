@@ -548,7 +548,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         if (soundPool != null) {
             return;
         }
-        soundPool = new SoundPool(10, 1, 0);
+        soundPool = new SoundPool(10, EffectAudio.streamType(getContext()), 0);
         loadAllSeasonSounds();
     }
 
@@ -590,8 +590,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                 ? OverlayPrefs.seasonalUnlockPartnerSoundAllowedNow(getContext())
                 : OverlayPrefs.unlockEffectSoundAllowedNow(getContext());
         return allowed
-                && Settings.System.getInt(getContext().getContentResolver(),
-                "lockscreen_sounds_enabled", 1) != 0;
+                && EffectAudio.platformSoundSwitchAllows(getContext());
     }
 
     private void releaseSounds() {

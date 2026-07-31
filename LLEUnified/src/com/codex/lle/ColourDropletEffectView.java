@@ -133,10 +133,7 @@ public class ColourDropletEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
             @Override
@@ -957,8 +954,7 @@ public class ColourDropletEffectView extends FrameLayout
             return "lle_effect_sound_time_window";
         }
         try {
-            if (Settings.System.getInt(context.getContentResolver(),
-                    "lockscreen_sounds_enabled", 1) == 0) {
+            if (!EffectAudio.platformSoundSwitchAllows(context)) {
                 return "system_lockscreen_sounds_disabled";
             }
         } catch (RuntimeException ignored) {
@@ -967,14 +963,10 @@ public class ColourDropletEffectView extends FrameLayout
         if (audioManager == null) {
             return "audio_manager_unavailable";
         }
-        int ringerMode = audioManager.getRingerMode();
-        if (ringerMode == AudioManager.RINGER_MODE_SILENT) {
-            return "ringer_silent";
+        if (!EffectAudio.ringerModeAllows(context, audioManager)) {
+            return "ringer_silent_or_vibrate";
         }
-        if (ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
-            return "ringer_vibrate";
-        }
-        if (audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) <= 0) {
+        if (!EffectAudio.outputHasVolume(context, audioManager)) {
             return "system_stream_volume_zero";
         }
         return null;

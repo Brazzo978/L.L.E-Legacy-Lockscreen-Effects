@@ -91,10 +91,7 @@ final class LockSoundPlayer {
             }
             soundPool = new SoundPool.Builder()
                     .setMaxStreams(2)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build())
+                    .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
                     .build();
             soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
                 @Override
@@ -205,8 +202,7 @@ final class LockSoundPlayer {
     }
 
     private boolean systemLockSoundsEnabled() {
-        return Settings.System.getInt(context.getContentResolver(),
-                "lockscreen_sounds_enabled", 1) != 0;
+        return EffectAudio.platformSoundSwitchAllows(context);
     }
 
     private int resolveSeason(int seasonMode) {

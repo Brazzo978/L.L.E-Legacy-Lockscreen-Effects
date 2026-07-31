@@ -178,10 +178,7 @@ public class LensFlareEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(3)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.lens_flare_tap, 1);
         unlockSound = soundPool.load(context, R.raw.lens_flare_unlock, 1);

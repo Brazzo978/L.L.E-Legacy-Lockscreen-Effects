@@ -4,6 +4,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.os.SystemClock;
@@ -60,6 +62,10 @@ public class SeasonalDoodleView extends View {
     private boolean particleSpecFull;
     private boolean winterParticleSlotsReady;
     private boolean warmParked;
+    private boolean aodFrozen;
+    private float aodBrightness = 1f;
+    private long aodFrozenElapsedMs;
+    private long warmParkedElapsedMs;
     private long resumeFrameRequestedAt;
 
     public SeasonalDoodleView(Context context) {
@@ -81,6 +87,8 @@ public class SeasonalDoodleView extends View {
 
     void resetChargeCycle() {
         chargeStartedAt = SystemClock.uptimeMillis();
+        aodFrozenElapsedMs = 0L;
+        warmParkedElapsedMs = 0L;
         invalidateParticleSpecs();
         invalidate();
     }
@@ -126,20 +134,75 @@ public class SeasonalDoodleView extends View {
         }
     }
 
-    void setWarmParked(boolean parked) {
-        if (warmParked == parked) {
+    void setAodBrightness(float brightness) {
+        float clamped = Math.max(0f, Math.min(1f, brightness));
+        if (Math.abs(aodBrightness - clamped) < 0.001f) {
             return;
         }
-        warmParked = parked;
-        if (!parked) {
-            resumeFrameRequestedAt = SystemClock.uptimeMillis();
+        aodBrightness = clamped;
+        if (clamped >= 0.999f) {
+            paint.setColorFilter(null);
+        } else {
+            ColorMatrix matrix = new ColorMatrix(new float[] {
+                    clamped, 0f, 0f, 0f, 0f,
+                    0f, clamped, 0f, 0f, 0f,
+                    0f, 0f, clamped, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f
+            });
+            paint.setColorFilter(new ColorMatrixColorFilter(matrix));
+        }
+        invalidate();
+    }
+    void setAodFrozen(boolean frozen) {
+        if (aodFrozen == frozen) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        long elapsed = animationElapsedAt(now);
+        if (frozen) {
+            aodFrozenElapsedMs = elapsed;
+        } else if (warmParked) {
+            warmParkedElapsedMs = aodFrozenElapsedMs;
+        } else {
+            chargeStartedAt = now - aodFrozenElapsedMs;
+        }
+        aodFrozen = frozen;
+        invalidate();
+        if (!frozen && !warmParked) {
             postInvalidateOnAnimation();
         }
     }
 
+    void setWarmParked(boolean parked) {
+        if (warmParked == parked) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (parked) {
+            warmParkedElapsedMs = animationElapsedAt(now);
+        } else if (!aodFrozen) {
+            chargeStartedAt = now - warmParkedElapsedMs;
+        }
+        warmParked = parked;
+        if (!parked) {
+            resumeFrameRequestedAt = now;
+            postInvalidateOnAnimation();
+        }
+    }
+
+    private long animationElapsedAt(long now) {
+        if (aodFrozen) {
+            return Math.max(0L, aodFrozenElapsedMs);
+        }
+        if (warmParked) {
+            return Math.max(0L, warmParkedElapsedMs);
+        }
+        return Math.max(0L, now - chargeStartedAt);
+    }
     @Override
     protected void onDraw(Canvas canvas) {
-        long now = SystemClock.uptimeMillis();
+        long systemNow = SystemClock.uptimeMillis();
+        long now = chargeStartedAt + animationElapsedAt(systemNow);
         int theme = resolvedTheme();
         drawSeasonalChargingDoodle(canvas, now, theme);
         if (resumeFrameRequestedAt > 0L) {
@@ -147,7 +210,7 @@ public class SeasonalDoodleView extends View {
                     + Math.max(0L, now - resumeFrameRequestedAt));
             resumeFrameRequestedAt = 0L;
         }
-        if (!warmParked) {
+        if (!warmParked && !aodFrozen) {
             // Samsung's stock ObjectAnimators are driven by Choreographer. Keep this
             // Canvas port on the same vsync clock: a delayed main-looper message can
             // be starved by bursts of accessibility events and then jump the absolute

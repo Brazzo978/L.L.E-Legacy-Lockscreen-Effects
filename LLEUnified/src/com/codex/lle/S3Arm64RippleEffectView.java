@@ -503,10 +503,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         try {
             pool = new SoundPool.Builder()
                     .setMaxStreams(10)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build())
+                    .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                     .build();
             pool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
                 @Override
@@ -598,8 +595,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
     private boolean systemLockSoundsEnabled() {
         try {
-            return Settings.System.getInt(
-                    getContext().getContentResolver(), "lockscreen_sounds_enabled", 1) != 0;
+            return EffectAudio.platformSoundSwitchAllows(getContext());
         } catch (RuntimeException exception) {
             return true;
         }

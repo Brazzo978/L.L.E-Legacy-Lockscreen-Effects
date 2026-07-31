@@ -108,10 +108,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
             @Override
@@ -640,8 +637,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
             return false;
         }
         try {
-            if (Settings.System.getInt(appContext.getContentResolver(),
-                    "lockscreen_sounds_enabled", 1) == 0) {
+            if (!EffectAudio.platformSoundSwitchAllows(appContext)) {
                 return false;
             }
         } catch (RuntimeException ignored) {
@@ -650,10 +646,8 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
         if (audioManager == null) {
             return false;
         }
-        int ringerMode = audioManager.getRingerMode();
-        return ringerMode != AudioManager.RINGER_MODE_SILENT
-                && ringerMode != AudioManager.RINGER_MODE_VIBRATE
-                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+        return EffectAudio.ringerModeAllows(appContext, audioManager)
+                && EffectAudio.outputHasVolume(appContext, audioManager);
     }
 
     private void transition(int state, String detail) {

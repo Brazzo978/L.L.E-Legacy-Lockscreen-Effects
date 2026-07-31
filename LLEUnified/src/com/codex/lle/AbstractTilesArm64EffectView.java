@@ -140,10 +140,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 .getSystemService(Context.AUDIO_SERVICE);
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(4)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.abstracttile_tap, 1);
         dragSound = soundPool.load(context, R.raw.abstracttile_drag, 1);
@@ -281,6 +278,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     @Override
     public void resetEffect() {
         cancelPendingAffordance();
+        lastAffordanceQueuedAt = 0L;
         gestureDownTimeMs = 0L;
         stopDragSoundImmediately();
         if (!canAcceptCommands()) {
@@ -880,12 +878,11 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         if (!OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             return false;
         }
-        if (Settings.System.getInt(getContext().getContentResolver(),
-                "lockscreen_sounds_enabled", 1) == 0) {
+        if (!EffectAudio.platformSoundSwitchAllows(getContext())) {
             return false;
         }
         return audioManager == null
-                || audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+                || EffectAudio.outputHasVolume(getContext(), audioManager);
     }
 
     private void maybeStartDragSound() {

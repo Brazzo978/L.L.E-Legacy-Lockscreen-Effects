@@ -92,10 +92,7 @@ public final class S6WaterDropletEffectView extends FrameLayout
         audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(4)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.s6_water_droplet_tap, 1);
         unlockSound = soundPool.load(context, R.raw.s6_water_droplet_unlock, 1);
@@ -475,16 +472,13 @@ public final class S6WaterDropletEffectView extends FrameLayout
             return false;
         }
         try {
-            if (Settings.System.getInt(
-                    appContext.getContentResolver(),
-                    "lockscreen_sounds_enabled",
-                    1) == 0) {
+            if (!EffectAudio.platformSoundSwitchAllows(appContext)) {
                 return false;
             }
         } catch (RuntimeException ignored) {
         }
         return audioManager != null
-                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+                && EffectAudio.outputHasVolume(appContext, audioManager);
     }
 
     private void transition(int state, String detail) {

@@ -107,10 +107,7 @@ public final class BlindDexEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(4)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         touchSound = soundPool.load(context, R.raw.blind_touch, 1);
         unlockSound = soundPool.load(context, R.raw.blind_unlock, 1);

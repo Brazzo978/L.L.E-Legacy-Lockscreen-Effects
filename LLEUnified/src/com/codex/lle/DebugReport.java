@@ -195,6 +195,9 @@ final class DebugReport {
         body.append("ringer_mode=").append(ringerModeLabel(ringerMode)).append('\n');
         body.append("ringer_mode_value=").append(ringerMode).append('\n');
         body.append("audio_mode=").append(audio.getMode()).append('\n');
+        body.append("lle_audio_route=").append(EffectAudio.routeLabel(context)).append('\n');
+        body.append("lle_audio_route_stream=")
+                .append(EffectAudio.streamType(context)).append('\n');
         body.append("system_stream_volume=")
                 .append(audio.getStreamVolume(AudioManager.STREAM_SYSTEM)).append('\n');
         body.append("system_stream_max_volume=")

@@ -125,10 +125,7 @@ final class BrilliantRingEffectView extends GLSurfaceView
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.brilliantring_tap, 1);
         dragSound = soundPool.load(context, R.raw.brilliantring_drag, 1);
@@ -730,12 +727,11 @@ final class BrilliantRingEffectView extends GLSurfaceView
         if (!OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             return false;
         }
-        if (Settings.System.getInt(getContext().getContentResolver(),
-                "lockscreen_sounds_enabled", 1) == 0) {
+        if (!EffectAudio.platformSoundSwitchAllows(getContext())) {
             return false;
         }
         return audioManager == null
-                || audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+                || EffectAudio.outputHasVolume(getContext(), audioManager);
     }
 
     private void maybeStartDragSound(long now) {
