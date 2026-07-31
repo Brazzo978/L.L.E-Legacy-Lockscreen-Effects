@@ -854,6 +854,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             if (!unlockAffordancePending || unlockAffordanceShownThisWake) {
                 return;
             }
+            if (suppressUnlockAffordanceForActiveDoodle("dispatch")) {
+                return;
+            }
             if (!canDispatchUnlockAffordanceNow()) {
                 Log.i(TAG, "unlock affordance dispatch deferred effect="
                         + OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)
@@ -3492,6 +3495,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " effect=" + OverlayPrefs.unlockEffect(this));
             return;
         }
+        if (suppressUnlockAffordanceForActiveDoodle(reason)) {
+            return;
+        }
         int effect = OverlayPrefs.unlockEffect(this);
         if (!supportsUnlockAffordance(effect)) {
             unlockAffordancePending = false;
@@ -3536,6 +3542,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && unlockEffectView.getAlpha() >= 0.99f
                 && isUnlockEffectFirstFrameReady()
                 && !OverlayPrefs.debugLensLoop(this);
+    }
+
+    private boolean suppressUnlockAffordanceForActiveDoodle(String reason) {
+        if (!isChargingDoodleModeEnabled()) {
+            return false;
+        }
+        unlockAffordancePending = false;
+        unlockAffordanceShownThisWake = true;
+        Log.i(TAG, "unlock affordance suppressed for active doodle reason=" + reason);
+        return true;
     }
 
     private void cancelUnlockAffordanceDispatch(boolean rearm, String reason) {
