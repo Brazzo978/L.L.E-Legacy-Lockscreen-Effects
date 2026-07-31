@@ -148,7 +148,7 @@ powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1
 Build requirements are documented in
 [`LLEUnified/README.md`](LLEUnified/README.md#build-from-source).
 
-<p align="center"><sub><a href="https://support.btsmap.net">L.L.E will always be free - but if you insist... ♡</a></sub></p>
+<p align="center"><sub><a href="https://support.legacylockscreeneffects.app">L.L.E will always be free - but if you insist... ♡</a></sub></p>
 
 ## License
 
