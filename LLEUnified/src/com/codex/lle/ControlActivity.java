@@ -2078,7 +2078,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 current);
         addEffectOptionIfAvailable(effects,
-                "Mass Tension",
+                "T2 Mass Tension",
                 "An elastic ring stretching and snapping back under touch.",
                 OverlayPrefs.EFFECT_MASS_TENSION,
                 current);
