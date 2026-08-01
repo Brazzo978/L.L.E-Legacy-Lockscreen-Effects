@@ -10,6 +10,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.media.SoundPool;
 import android.os.SystemClock;
+import android.util.DisplayMetrics;
 import android.view.View;
 
 import java.util.HashSet;
@@ -62,6 +63,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
+    private final int tensionTargetDensityDpi;
     private final float lineDeletePx;
     private final Object soundLock = new Object();
     private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
@@ -99,13 +101,15 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
 
+        tensionTargetDensityDpi = getResources().getDisplayMetrics().densityDpi;
         centerDot = decode(R.drawable.mass_tension_center_dot);
         centerDotAfter = decode(R.drawable.mass_tension_center_dot_after);
         finger = decode(R.drawable.mass_tension_finger);
         fingerAfter = decode(R.drawable.mass_tension_finger_after);
         line = decode(R.drawable.mass_tension_line);
         outer = decode(R.drawable.mass_tension_outer);
-        lineDeletePx = dp(20f);
+        lineDeletePx = 20f * tensionTargetDensityDpi
+                / DisplayMetrics.DENSITY_DEFAULT;
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(2)
@@ -502,7 +506,15 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     }
 
     private Bitmap decode(int resourceId) {
-        Bitmap bitmap = BitmapFactory.decodeResource(getResources(), resourceId);
+        // Samsung packages every Tension sprite in drawable-hdpi. The PNG ports
+        // live in nodpi only to preserve their recovered bytes, so restore the
+        // framework's original hdpi-to-device scaling explicitly when decoding.
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inScaled = true;
+        options.inDensity = DisplayMetrics.DENSITY_HIGH;
+        options.inTargetDensity = tensionTargetDensityDpi;
+        Bitmap bitmap = BitmapFactory.decodeResource(
+                getResources(), resourceId, options);
         if (bitmap == null) {
             throw new IllegalStateException(
                     "Missing Mass Tension bitmap resource " + resourceId);
@@ -521,10 +533,6 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         synchronized (soundLock) {
             pendingSoundIds.clear();
         }
-    }
-
-    private float dp(float value) {
-        return value * getResources().getDisplayMetrics().density;
     }
 
     private static int alphaFromRemaining(float remaining) {
