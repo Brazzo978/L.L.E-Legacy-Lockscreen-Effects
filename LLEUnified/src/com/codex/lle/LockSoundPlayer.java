@@ -105,6 +105,12 @@ final class LockSoundPlayer {
                     load(R.raw.lens_flare_lock);
             effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
                     load(R.raw.s3_lock);
+            effectSounds[OverlayPrefs.EFFECT_N4_INK_IN_WATER] =
+                    effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE];
+            effectSounds[OverlayPrefs.EFFECT_STONE_SKIPPING] =
+                    effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE];
+            effectSounds[OverlayPrefs.EFFECT_TABS_BLIND] =
+                    load(R.raw.blind_lock);
             effectSounds[OverlayPrefs.EFFECT_S5_POPPING_COLOURS] =
                     load(R.raw.particle_lock);
             effectSounds[OverlayPrefs.EFFECT_WATERCOLOUR] =
@@ -131,6 +137,8 @@ final class LockSoundPlayer {
                     load(R.raw.geometricmosaic_lock);
             effectSounds[OverlayPrefs.EFFECT_BRILLIANT_RING] =
                     load(R.raw.brilliantring_lock);
+            effectSounds[OverlayPrefs.EFFECT_BRILLIANT_CUT] =
+                    load(R.raw.brilliantcut_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);
