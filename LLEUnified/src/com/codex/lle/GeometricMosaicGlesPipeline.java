@@ -488,6 +488,13 @@ public final class GeometricMosaicGlesPipeline {
 
     private void updateRings(double now) {
         float age = Math.max(0.0f, (float) (now - ringStartSeconds));
+        // On the Note 4 oracle the three slow circle bands remain as the colour
+        // pattern for as long as an ordinary dragged mask stays alive. Without
+        // this hold all five reconstructed bands reach alpha zero by 3.6 s and
+        // leave only the triangular colour-origin layer visible.
+        if (ringsActive && !specialActive && hasActiveTouches()) {
+            age = Math.min(age, RING_END[0]);
+        }
         for (int i = 0; i < rings.length; ++i) {
             RingLayer ring = rings[i];
             float progress = clamp((age - RING_DELAY[i])
