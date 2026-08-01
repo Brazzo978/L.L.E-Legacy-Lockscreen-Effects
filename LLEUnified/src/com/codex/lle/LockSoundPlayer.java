@@ -40,10 +40,6 @@ final class LockSoundPlayer {
         if (!systemLockSoundsEnabled()) {
             return;
         }
-        // Samsung's Mass Tension renderer intentionally has no lock sound.
-        if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
-            return;
-        }
         ensureLoaded();
         if (soundPool == null || effect < 0 || effect >= effectSounds.length) {
             return;
@@ -139,6 +135,8 @@ final class LockSoundPlayer {
                     load(R.raw.brilliantring_lock);
             effectSounds[OverlayPrefs.EFFECT_BRILLIANT_CUT] =
                     load(R.raw.brilliantcut_lock);
+            effectSounds[OverlayPrefs.EFFECT_MASS_TENSION] =
+                    load(R.raw.mass_tension_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);

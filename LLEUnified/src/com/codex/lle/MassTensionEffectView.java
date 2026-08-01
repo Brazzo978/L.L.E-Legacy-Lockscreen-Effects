@@ -8,10 +8,12 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.os.SystemClock;
 import android.view.View;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * App-owned, ABI-independent port of Samsung's hidden Mass Tension unlock effect.
@@ -32,9 +34,6 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     private static final float DRAG_THRESHOLD = 2.0999999046325684f;
     private static final float BETWEEN_FACTOR = 40f;
     private static final float CIRCLE_PLACE_ADJUST_PX = 5f;
-    private static final float REFERENCE_SHORT_EDGE_PX = 720f;
-    private static final float MIN_VISUAL_SCALE = 1f;
-    private static final float MAX_VISUAL_SCALE = 2.5f;
     private static final float OUTER_ALPHA_FACTOR = 0.8f;
     private static final int OUTER_MIN_ALPHA = 50;
     private static final int MAX_ALPHA = 255;
@@ -62,9 +61,12 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
     private final SoundPool soundPool;
     private final int tapSound;
-    private final float lineDeleteBasePx;
+    private final int unlockSound;
+    private final float lineDeletePx;
+    private final Object soundLock = new Object();
+    private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
+    private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
 
-    private float visualScale;
     private boolean destroyed;
     private boolean gestureActive;
     private boolean releaseLockedUntilFinish;
@@ -103,16 +105,20 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         fingerAfter = decode(R.drawable.mass_tension_finger_after);
         line = decode(R.drawable.mass_tension_line);
         outer = decode(R.drawable.mass_tension_outer);
-        lineDeleteBasePx = dp(20f);
-        visualScale = resolveVisualScale(
-                getResources().getDisplayMetrics().widthPixels,
-                getResources().getDisplayMetrics().heightPixels);
+        lineDeletePx = dp(20f);
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(2)
                 .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
+        soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+            @Override
+            public void onLoadComplete(SoundPool completedPool, int sampleId, int status) {
+                handleSoundLoadComplete(completedPool, sampleId, status);
+            }
+        });
         tapSound = soundPool.load(context, R.raw.mass_tension_tap, 1);
+        unlockSound = soundPool.load(context, R.raw.mass_tension_unlock, 1);
     }
 
     @Override
@@ -160,7 +166,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         int diffX = (int) (screenX - originX);
         int diffY = (int) (screenY - originY);
         float distance = (float) Math.hypot(diffX, diffY);
-        float threshold = Math.max(1f, outer.getWidth() * 0.5f * visualScale);
+        float threshold = Math.max(1f, outer.getWidth() * 0.5f);
         distanceRatio = distance / threshold;
 
         betweenX = (int) (originX + ((screenX - originX) / BETWEEN_FACTOR));
@@ -168,9 +174,8 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         lineAngle = (float) Math.toDegrees(
                 Math.atan2(screenY - originY, screenX - originX));
 
-        float radius = ((finger.getWidth() * 0.5f)
-                + (outer.getWidth() * 0.5f) - CIRCLE_PLACE_ADJUST_PX)
-                * visualScale;
+        float radius = (finger.getWidth() * 0.5f)
+                + (outer.getWidth() * 0.5f) - CIRCLE_PLACE_ADJUST_PX;
         if (distanceRatio < TEMP_THRESHOLD) {
             fingerX = (int) screenX;
             fingerY = (int) screenY;
@@ -198,17 +203,20 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         if (destroyed || !gestureActive) {
             return;
         }
+        cancelPendingSound(tapSound);
         if (releaseLockedUntilFinish) {
             gestureActive = false;
             releaseLockedUntilFinish = false;
             if (releaseMode != RELEASE_NONE) {
                 postInvalidateOnAnimation();
             }
+            playUnlockIfCompleted(completed);
             return;
         }
         gestureActive = false;
         if (releaseMode != RELEASE_NONE) {
             postInvalidateOnAnimation();
+            playUnlockIfCompleted(completed);
             return;
         }
         if (distanceRatio < RELEASE_THRESHOLD) {
@@ -219,6 +227,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         } else {
             startRelease(RELEASE_SNAP);
         }
+        playUnlockIfCompleted(completed);
     }
 
     @Override
@@ -249,14 +258,6 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     }
 
     @Override
-    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-        super.onSizeChanged(width, height, oldWidth, oldHeight);
-        if (width > 0 && height > 0) {
-            visualScale = resolveVisualScale(width, height);
-        }
-    }
-
-    @Override
     public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
         // Intentionally empty: the Samsung implementation exposes this method but
         // does not draw an affordance for Mass Tension.
@@ -269,6 +270,11 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         }
         clearState();
         destroyed = true;
+        synchronized (soundLock) {
+            soundPool.setOnLoadCompleteListener(null);
+            loadedSoundIds.clear();
+            pendingSoundIds.clear();
+        }
         soundPool.release();
         recycle(centerDot);
         recycle(centerDotAfter);
@@ -395,8 +401,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         float dx = endX - betweenX;
         float dy = endY - betweenY;
         lineSize = (float) Math.hypot(dx, dy)
-                - centerDot.getWidth() * 0.5f * visualScale
-                - lineDeleteBasePx * visualScale;
+                - centerDot.getWidth() * 0.5f - lineDeletePx;
         lineSize = Math.max(0f, lineSize);
     }
 
@@ -418,8 +423,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         bitmapPaint.setAlpha(Math.min(MAX_ALPHA, alpha));
         int save = canvas.save();
         canvas.translate(centerX, centerY);
-        float combinedScale = scale * visualScale;
-        canvas.scale(combinedScale, combinedScale);
+        canvas.scale(scale, scale);
         canvas.drawBitmap(bitmap, -bitmap.getWidth() * 0.5f,
                 -bitmap.getHeight() * 0.5f, bitmapPaint);
         canvas.restoreToCount(save);
@@ -435,7 +439,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         int save = canvas.save();
         canvas.translate(startX, startY);
         canvas.rotate(angle);
-        float halfLineHeight = line.getHeight() * 0.5f * visualScale;
+        float halfLineHeight = line.getHeight() * 0.5f;
         lineDestination.set(0f, -halfLineHeight, length, halfLineHeight);
         canvas.drawBitmap(line, null, lineDestination, bitmapPaint);
         canvas.restoreToCount(save);
@@ -447,7 +451,54 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
                 || !OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             return;
         }
-        soundPool.play(tapSound, TAP_VOLUME, TAP_VOLUME, 1, 0, 1f);
+        playSound(tapSound);
+    }
+
+    private void playUnlockIfCompleted(boolean completed) {
+        if (completed && !destroyed
+                && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+            playSound(unlockSound);
+        }
+    }
+
+    private void playSound(int soundId) {
+        if (soundId == 0) {
+            return;
+        }
+        synchronized (soundLock) {
+            if (destroyed) {
+                return;
+            }
+            if (!loadedSoundIds.contains(soundId)) {
+                pendingSoundIds.add(soundId);
+                return;
+            }
+            soundPool.play(soundId, TAP_VOLUME, TAP_VOLUME, 1, 0, 1f);
+        }
+    }
+
+    private void cancelPendingSound(int soundId) {
+        synchronized (soundLock) {
+            pendingSoundIds.remove(soundId);
+        }
+    }
+
+    private void handleSoundLoadComplete(
+            SoundPool completedPool, int sampleId, int status) {
+        synchronized (soundLock) {
+            if (completedPool != soundPool || destroyed) {
+                return;
+            }
+            if (status != 0) {
+                pendingSoundIds.remove(sampleId);
+                return;
+            }
+            loadedSoundIds.add(sampleId);
+            if (pendingSoundIds.remove(sampleId)
+                    && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+                soundPool.play(sampleId, TAP_VOLUME, TAP_VOLUME, 1, 0, 1f);
+            }
+        }
     }
 
     private Bitmap decode(int resourceId) {
@@ -467,16 +518,9 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         lineSize = 0f;
         lineAngle = 0f;
         pressStartedAt = 0L;
-    }
-
-    private static float resolveVisualScale(int width, int height) {
-        int shortEdge = Math.min(width, height);
-        if (shortEdge <= 0) {
-            return MIN_VISUAL_SCALE;
+        synchronized (soundLock) {
+            pendingSoundIds.clear();
         }
-        return Math.max(MIN_VISUAL_SCALE,
-                Math.min(MAX_VISUAL_SCALE,
-                        shortEdge / REFERENCE_SHORT_EDGE_PX));
     }
 
     private float dp(float value) {
