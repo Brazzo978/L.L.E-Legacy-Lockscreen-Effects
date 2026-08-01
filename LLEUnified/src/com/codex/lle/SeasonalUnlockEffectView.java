@@ -236,19 +236,27 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             }
             touch.x = x - touch.offsetXdp * d;
             touch.y = y - touch.offsetYdp * d;
-            if (advanceDrift && season == SeasonalDoodleView.SEASON_SUMMER) {
+            // Samsung advances this drift on MOVE. Modern 120 Hz input can also deliver
+            // intervening events: retain the accumulated offset on those frames so the
+            // sprite does not alternate between its base and drifted positions.
+            if (season == SeasonalDoodleView.SEASON_SUMMER) {
                 if (i == 1) {
-                    touch.driftDp = Math.min(63f, touch.driftDp + 2f);
+                    if (advanceDrift) {
+                        touch.driftDp = Math.min(63f, touch.driftDp + 2f);
+                    }
                     touch.x -= touch.driftDp * d;
                     touch.y -= touch.driftDp * d;
                 } else if (i == 2) {
-                    touch.driftDp = Math.min(81f, touch.driftDp + 2f);
+                    if (advanceDrift) {
+                        touch.driftDp = Math.min(81f, touch.driftDp + 2f);
+                    }
                     touch.x -= touch.driftDp * d;
                     touch.y -= touch.driftDp * d;
                 }
-            } else if (advanceDrift
-                    && season == SeasonalDoodleView.SEASON_WINTER && i == 1) {
-                touch.driftDp = Math.min(10f, touch.driftDp + 2f);
+            } else if (season == SeasonalDoodleView.SEASON_WINTER && i == 1) {
+                if (advanceDrift) {
+                    touch.driftDp = Math.min(10f, touch.driftDp + 2f);
+                }
                 touch.x -= touch.driftDp * d;
                 touch.y -= touch.driftDp * d;
             }
