@@ -4726,6 +4726,11 @@ public class ControlActivity extends Activity {
             section.addView(infoText("Routes every L.L.E. effect and lock sound through "
                     + "media volume instead of System sounds. This also bypasses the phone's "
                     + "Screen lock/unlock sound switch."));
+            section.addView(toggle("Bypass 2-minute boot safety (debug)",
+                    OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY, false));
+            section.addView(infoText("Debug only. By default L.L.E. keeps every runtime "
+                    + "overlay and touch listener disabled for the first two minutes after "
+                    + "a reboot, leaving the lockscreen available for recovery or uninstall."));
         }
         return section;
     }

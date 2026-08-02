@@ -96,6 +96,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_S6_WATER_DROPLET_MS = 340L;
     private static final long LOCKBG_IDLE_HIDE_DELAY_MS = 700L;
     private static final long PIN_ENTRY_SWIPE_DURATION_MS = 260L;
+    private static final long BOOT_SAFETY_WINDOW_MS = 120_000L;
     private static final long UNLOCK_AFFORDANCE_DELAY_MS = 500L;
     private static final long ACTIVE_EFFECT_PROFILE_SAMPLE_DELAY_MS = 220L;
     private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
@@ -297,6 +298,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             cleanupUnlockEffectAfterPinDelay();
         }
     };
+    private final Runnable bootSafetyReleaseRunnable = new Runnable() {
+        @Override
+        public void run() {
+            startRuntimeAfterBootSafety("timeout");
+        }
+    };
     private final Runnable unlockEffectIdleHideRunnable = new Runnable() {
         @Override
         public void run() {
@@ -479,6 +486,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             new ArrayList<WindowManager.LayoutParams>();
     private final ArrayList<Rect> resolvedTouchBoxesCache = new ArrayList<Rect>();
     private boolean touchDebugTouchable;
+    private boolean bootSafetyHolding;
+    private boolean runtimeStartedAfterBootSafety;
     private boolean resolvedTouchBoxesDirty = true;
     private UnlockEffectRenderer unlockEffectRenderer;
     private View unlockEffectView;
@@ -648,6 +657,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (holdRuntimeForBootSafety("broadcast")) {
+                return;
+            }
             String action = intent == null ? "null" : intent.getAction();
             if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
                 updateChargingState(intent);
@@ -778,6 +790,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             if (intent == null) {
                 return;
             }
+            if (holdRuntimeForBootSafety("debug_broadcast")) {
+                return;
+            }
             if (ACTION_DEBUG_UNLOCK_EFFECT_PROFILE.equals(intent.getAction())) {
                 profileDebugUnlockEffect(intent.getIntExtra("effect",
                         OverlayPrefs.unlockEffect(ChargingAccessibilityService.this)));
@@ -887,6 +902,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         activeService = this;
         serviceAlive = true;
         serviceLifecycleGeneration++;
+        bootSafetyHolding = false;
+        runtimeStartedAfterBootSafety = false;
         Log.i(TAG, "connected abi=" + Lle64Abi.verify());
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         displayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
@@ -913,16 +930,56 @@ public class ChargingAccessibilityService extends AccessibilityService
         loadRuntimeSurfaceBlacklistPackages();
         configurePassiveService();
         refreshChargingState();
-        ensureDoodleLoaded();
-        scheduleTimeWindowRefresh();
-        preloadAndAttachSelectedUnlockEffectParked("connected");
         registerScreenReceiver();
         registerDisplayListener();
+        startRuntimeAfterBootSafety("connected");
+    }
+
+    private long bootSafetyRemainingMs() {
+        if (OverlayPrefs.debugBypassBootSafety(this)) {
+            return 0L;
+        }
+        return Math.max(0L, BOOT_SAFETY_WINDOW_MS - SystemClock.elapsedRealtime());
+    }
+
+    private boolean holdRuntimeForBootSafety(String reason) {
+        long remainingMs = bootSafetyRemainingMs();
+        if (remainingMs <= 0L) {
+            bootSafetyHolding = false;
+            return false;
+        }
+        if (!bootSafetyHolding || runtimeStartedAfterBootSafety) {
+            bootSafetyHolding = true;
+            runtimeStartedAfterBootSafety = false;
+            stopAllRuntimeSurfaces();
+            cancelEffectBackgroundRefreshAlarm();
+            Log.w(TAG, "boot safety active reason=" + reason
+                    + " remainingMs=" + remainingMs);
+        }
+        handler.removeCallbacks(bootSafetyReleaseRunnable);
+        handler.postDelayed(bootSafetyReleaseRunnable, remainingMs + 50L);
+        return true;
+    }
+
+    private void startRuntimeAfterBootSafety(String reason) {
+        if (!serviceAlive || holdRuntimeForBootSafety(reason)) {
+            return;
+        }
+        handler.removeCallbacks(bootSafetyReleaseRunnable);
+        if (runtimeStartedAfterBootSafety) {
+            return;
+        }
+        runtimeStartedAfterBootSafety = true;
+        ensureDoodleLoaded();
+        scheduleTimeWindowRefresh();
+        preloadAndAttachSelectedUnlockEffectParked("boot_safety:" + reason);
         if (powerManager != null && !powerManager.isInteractive()) {
             scheduleScreenOffPrearm();
         }
-        scheduleEffectBackgroundRefreshAlarm("connected");
-        evaluateVisibility("connected");
+        scheduleEffectBackgroundRefreshAlarm("boot_safety:" + reason);
+        Log.i(TAG, "boot safety released reason=" + reason
+                + " elapsedRealtimeMs=" + SystemClock.elapsedRealtime());
+        evaluateVisibility("boot_safety:" + reason);
     }
 
     private void applyPerfDefaultsOnce() {
@@ -944,6 +1001,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) {
+            return;
+        }
+        if (holdRuntimeForBootSafety("accessibility_event")) {
             return;
         }
         int eventType = event.getEventType();
@@ -1070,6 +1130,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         snapshot.append("service_connected=").append(service.serviceAlive).append('\n');
         snapshot.append("service_generation=")
                 .append(service.serviceLifecycleGeneration).append('\n');
+        snapshot.append("boot_safety_holding=")
+                .append(service.bootSafetyHolding).append('\n');
+        snapshot.append("boot_safety_remaining_ms=")
+                .append(service.bootSafetyRemainingMs()).append('\n');
+        snapshot.append("boot_safety_debug_bypass=")
+                .append(OverlayPrefs.debugBypassBootSafety(service)).append('\n');
         snapshot.append("last_window_package=")
                 .append(service.lastWindowPackage == null
                         ? "<none>" : service.lastWindowPackage)
@@ -1143,6 +1209,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX))) {
             // Cache bookkeeping does not change any visible runtime state. The save path
             // schedules the next alarm itself, so avoid one full visibility pass per key.
+            return;
+        }
+        if (OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY.equals(key)) {
+            if (!holdRuntimeForBootSafety("prefs:bypass")) {
+                startRuntimeAfterBootSafety("prefs:bypass");
+            }
+            return;
+        }
+        if (holdRuntimeForBootSafety("prefs:" + key)) {
             return;
         }
         if (OverlayPrefs.MASTER_ENABLED.equals(key) && !OverlayPrefs.masterEnabled(this)) {
@@ -1322,6 +1397,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private void cleanup() {
         serviceAlive = false;
         serviceLifecycleGeneration++;
+        bootSafetyHolding = false;
+        runtimeStartedAfterBootSafety = false;
         handler.removeCallbacksAndMessages(null);
         cancelEffectBackgroundRefreshAlarm();
         if (prefs != null) {
@@ -2254,6 +2331,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void evaluateVisibility(String reason, boolean contentAware) {
+        if (holdRuntimeForBootSafety("visibility:" + reason)) {
+            return;
+        }
+        if (!runtimeStartedAfterBootSafety) {
+            startRuntimeAfterBootSafety("visibility:" + reason);
+            return;
+        }
         boolean interactive = powerManager == null || powerManager.isInteractive();
         boolean locked = isLockscreenLocked(contentAware);
         if (!locked && activeRuntimeBlockPackage != null) {
@@ -5357,6 +5441,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void syncTouchDebugOverlay(boolean mounted, boolean touchable) {
         long startedAt = SystemClock.uptimeMillis();
+        if (holdRuntimeForBootSafety("touch_overlay")) {
+            removeTouchDebugOverlay();
+            return;
+        }
         if (!OverlayPrefs.debugTouchArea(this) || !mounted) {
             removeTouchDebugOverlay();
             return;

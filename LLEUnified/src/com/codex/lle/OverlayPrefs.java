@@ -73,6 +73,7 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
+    static final String DEBUG_BYPASS_BOOT_SAFETY = "debug_bypass_boot_safety";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
@@ -189,6 +190,11 @@ final class OverlayPrefs {
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
     static final int DEFAULT_TOUCH_BOX_BOTTOM = 2100;
+    /** Deliberately small fallback used only until a touch box is explicitly saved. */
+    static final int SAFE_TOUCH_BOX_LEFT = 490;
+    static final int SAFE_TOUCH_BOX_TOP = 1100;
+    static final int SAFE_TOUCH_BOX_RIGHT = 590;
+    static final int SAFE_TOUCH_BOX_BOTTOM = 1200;
     static final int LEGACY_TOUCH_BOX_LEFT = 60;
     static final int LEGACY_TOUCH_BOX_TOP = 710;
     static final int LEGACY_TOUCH_BOX_RIGHT = 1030;
@@ -427,6 +433,10 @@ final class OverlayPrefs {
 
     static boolean debugTouchStandby(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_STANDBY, true);
+    }
+
+    static boolean debugBypassBootSafety(Context context) {
+        return get(context).getBoolean(DEBUG_BYPASS_BOOT_SAFETY, false);
     }
 
     static boolean debugLensLoop(Context context) {
@@ -984,7 +994,8 @@ final class OverlayPrefs {
 
     static int touchBoxLeft(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_LEFT, profile), DEFAULT_TOUCH_BOX_LEFT));
+                touchBoxKey(TOUCH_BOX_LEFT, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_LEFT : SAFE_TOUCH_BOX_LEFT));
     }
 
     static int touchBoxTop(Context context) {
@@ -993,7 +1004,8 @@ final class OverlayPrefs {
 
     static int touchBoxTop(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_TOP, profile), DEFAULT_TOUCH_BOX_TOP));
+                touchBoxKey(TOUCH_BOX_TOP, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_TOP : SAFE_TOUCH_BOX_TOP));
     }
 
     static int touchBoxRight(Context context) {
@@ -1002,7 +1014,8 @@ final class OverlayPrefs {
 
     static int touchBoxRight(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_RIGHT, profile), DEFAULT_TOUCH_BOX_RIGHT));
+                touchBoxKey(TOUCH_BOX_RIGHT, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_RIGHT : SAFE_TOUCH_BOX_RIGHT));
     }
 
     static int touchBoxBottom(Context context) {
@@ -1011,7 +1024,8 @@ final class OverlayPrefs {
 
     static int touchBoxBottom(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_BOTTOM, profile), DEFAULT_TOUCH_BOX_BOTTOM));
+                touchBoxKey(TOUCH_BOX_BOTTOM, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_BOTTOM : SAFE_TOUCH_BOX_BOTTOM));
     }
 
     static void saveTouchBox(Context context, int left, int top, int right, int bottom) {

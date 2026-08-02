@@ -588,6 +588,11 @@ public class SetupWizardActivity extends Activity {
         body.addView(paragraph("Accessibility lets L.L.E detect the lockscreen and show the "
                 + "effect at the right time. The service does not read what you type, and you "
                 + "can disable it at any time."));
+        body.addView(statusCard("RECOVERY SAFETY — READ THIS",
+                "If a lockscreen effect ever blocks touch, restart the phone. For the first "
+                        + "120 seconds after every boot, L.L.E keeps all overlays and touch "
+                        + "listeners disabled so you can turn off its Accessibility service "
+                        + "or uninstall the app.", false));
         body.addView(statusCard(enabled ? "Service enabled" : "Service not enabled yet",
                 enabled ? "Everything is ready to continue." :
                         "Samsung path: Accessibility \u2192 Installed apps \u2192 "
@@ -989,6 +994,7 @@ public class SetupWizardActivity extends Activity {
     private View touchBoxStep() {
         final boolean fold = FoldDisplayTarget.isFoldDevice(this)
                 && OverlayPrefs.foldModeEnabled(this);
+        final boolean unlockEnabled = OverlayPrefs.unlockEffectEnabled(this);
         final boolean configured = fold
                 ? OverlayPrefs.touchBoxConfigured(this, FoldDisplayTarget.PROFILE_COVER)
                         && OverlayPrefs.touchBoxConfigured(
@@ -997,9 +1003,13 @@ public class SetupWizardActivity extends Activity {
                         this, FoldDisplayTarget.PROFILE_SINGLE);
 
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 7", configured ? "CONFIGURED" : "OPTIONAL",
+        body.addView(kicker("STEP 7", configured ? "CONFIGURED"
+                : (unlockEnabled ? "SET THIS NOW" : "OPTIONAL"),
                 configured ? COLOR_OK : COLOR_ACCENT));
-        body.addView(title("Would you like to adjust the touch box?"));
+        body.addView(title(configured
+                ? "Review your touch box"
+                : (unlockEnabled ? "Set your unlock touch area"
+                        : "Would you like to adjust the touch box?")));
         body.addView(paragraph(fold
                 ? "The touch box defines where unlock gestures can activate an effect. "
                         + "The existing dual-panel tool lets you configure independent areas "
@@ -1009,13 +1019,14 @@ public class SetupWizardActivity extends Activity {
                         + "the active area precisely."));
         body.addView(statusCard(configured
                         ? "Touch box already configured"
-                        : "Current default area will be used",
+                        : "Small recovery area is active",
                 configured
                         ? (fold
                                 ? "Both Fold display profiles already have saved touch areas."
                                 : "You can refine the saved area or keep it unchanged.")
-                        : "Open the editor to move, resize or add areas. You may also keep "
-                                + "the safe default and change it later from the main screen.",
+                        : "Until you save an area, only a deliberately tiny region near the "
+                                + "middle of the screen accepts effect gestures. Open the editor "
+                                + "to enlarge it for normal use.",
                 configured));
 
         Button edit = primaryButton(configured
@@ -1031,7 +1042,7 @@ public class SetupWizardActivity extends Activity {
 
         Button keep = quietButton(configured
                 ? "Keep current touch box and finish"
-                : "Use default touch box and finish");
+                : "Keep tiny recovery box and finish");
         keep.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
