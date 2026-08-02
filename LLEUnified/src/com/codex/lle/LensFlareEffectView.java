@@ -37,6 +37,10 @@ public class LensFlareEffectView extends FrameLayout
     private static final long AFFORDANCE_OFF_DURATION_MS = 1100L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
+    // The Note 4 oracle reserves highlight headroom for additive flares. Keep the
+    // modern lockscreen uniformly one 8-bit alpha step below 8% while this effect
+    // is selected so saturated wallpapers do not swallow the stock flare.
+    private static final float BACKGROUND_DIM_ALPHA = 20f / 255f;
     private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
     private static final float BASE_FINGER_Y_OFFSET_PX = -80f;
     private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
@@ -49,13 +53,15 @@ public class LensFlareEffectView extends FrameLayout
             + "uniform shader background;"
             + "uniform shader vignette;"
             + "uniform float vignetteAlpha;"
+            + "uniform float backgroundDimAlpha;"
             + "half4 main(float2 p) {"
             + "  float4 f = float4(flare.eval(p));"
             + "  float flareAlpha = clamp(f.a, 0.0, 1.0);"
             + "  float3 flareRgb = min(max(f.rgb, float3(0.0)), float3(flareAlpha));"
             + "  float4 b = float4(background.eval(p));"
             + "  float mask = clamp(float(vignette.eval(p).a) * vignetteAlpha, 0.0, 1.0);"
-            + "  float3 base = b.rgb * (1.0 - mask);"
+            + "  float3 base = b.rgb * (1.0 - mask)"
+            + "      * (1.0 - clamp(backgroundDimAlpha, 0.0, 1.0));"
             + "  float3 target = min(base + flareRgb, float3(1.0));"
             + "  float3 delta = max(target - base, float3(0.0));"
             + "  float3 room = max(float3(0.0001), float3(1.0) - base);"
@@ -431,8 +437,11 @@ public class LensFlareEffectView extends FrameLayout
         if (vignettingAlpha > 0f) {
             drawBitmapFitXY(canvas, flareVignetting, vignettingAlpha);
         }
+        canvas.drawARGB(Math.round(BACKGROUND_DIM_ALPHA * 255f), 0, 0, 0);
         if (additiveCompositeShader != null) {
             additiveCompositeShader.setFloatUniform("vignetteAlpha", vignettingAlpha);
+            additiveCompositeShader.setFloatUniform(
+                    "backgroundDimAlpha", BACKGROUND_DIM_ALPHA);
         }
     }
 
@@ -856,6 +865,8 @@ public class LensFlareEffectView extends FrameLayout
             additiveCompositeShader.setInputShader("background", backgroundShader);
             additiveCompositeShader.setInputShader("vignette", vignetteShader);
             additiveCompositeShader.setFloatUniform("vignetteAlpha", 0f);
+            additiveCompositeShader.setFloatUniform(
+                    "backgroundDimAlpha", BACKGROUND_DIM_ALPHA);
             flareContentView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(
                     additiveCompositeShader, "flare"));
         } catch (Throwable t) {
