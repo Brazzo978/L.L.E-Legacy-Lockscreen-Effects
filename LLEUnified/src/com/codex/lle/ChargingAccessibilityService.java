@@ -176,6 +176,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             "com.samsung.android.sidegesturepad",
             "com.sec.android.app.camera",
             "com.sec.android.app.clockpackage",
+            "com.samsung.android.app.notes",
             "com.samsung.android.app.reminder",
             "com.samsung.android.calendar",
             "com.samsung.android.emergency",
