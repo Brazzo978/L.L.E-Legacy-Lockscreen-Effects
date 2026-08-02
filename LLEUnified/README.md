@@ -5,7 +5,7 @@ The ARM32 and ARM64 applications share one project and can be installed
 together. ARM32 is permanently named **L.L.E** (`com.codex.lle`); ARM64 is
 permanently named **L.L.E 64** (`com.codex.lle64`).
 
-## IMPORTANT: lockscreen recovery safety
+## ⚠️ DANGER: DO NOT DISABLE BOOT SAFETY UNLESS THIS DEVICE IS PROVEN STABLE
 
 If an effect ever prevents normal touch input, **restart the phone**. For the
 first **120 seconds after every boot**, L.L.E keeps all runtime overlays and
@@ -14,8 +14,12 @@ service or uninstall the app.
 
 New installations also start with a deliberately tiny touch box. Enlarge and
 save it in the setup wizard before normal use. Existing saved touch boxes are
-not changed. The Advanced debug option that bypasses boot safety is for testing
-only and removes this recovery window.
+not changed.
+
+The Advanced debug bypass allows trusted, already-tested devices to run L.L.E
+immediately at boot. **Enabling it completely removes the 120-second recovery
+window. If touch becomes blocked, Safe Mode or ADB may be required to disable
+or uninstall L.L.E. Do not enable it just to skip the wait.**
 
 ARM64 is the actively developed edition. The ARM32 build is retained for
 historical continuity and now receives compatibility and critical bug fixes

@@ -118,6 +118,7 @@ public class SetupWizardActivity extends Activity {
     private static final int COLOR_SURFACE = Color.WHITE;
     private static final int COLOR_OK = Color.rgb(27, 155, 104);
     private static final int COLOR_WARN = Color.rgb(205, 128, 38);
+    private static final int COLOR_DANGER = Color.rgb(190, 36, 45);
 
     private FrameLayout contentHost;
     private LinearLayout progressDots;
@@ -588,11 +589,13 @@ public class SetupWizardActivity extends Activity {
         body.addView(paragraph("Accessibility lets L.L.E detect the lockscreen and show the "
                 + "effect at the right time. The service does not read what you type, and you "
                 + "can disable it at any time."));
-        body.addView(statusCard("RECOVERY SAFETY — READ THIS",
-                "If a lockscreen effect ever blocks touch, restart the phone. For the first "
-                        + "120 seconds after every boot, L.L.E keeps all overlays and touch "
-                        + "listeners disabled so you can turn off its Accessibility service "
-                        + "or uninstall the app.", false));
+        body.addView(dangerCard("⚠  DO NOT DISABLE BOOT SAFETY",
+                "If an effect ever blocks touch, restart the phone. L.L.E stays completely "
+                        + "inactive for the first 120 seconds after every boot so you can turn "
+                        + "off its Accessibility service or uninstall it. Only devices already "
+                        + "proven stable should use the Advanced debug bypass. Enabling that "
+                        + "bypass removes this recovery window and can force you to use Safe "
+                        + "Mode or ADB to recover the phone."));
         body.addView(statusCard(enabled ? "Service enabled" : "Service not enabled yet",
                 enabled ? "Everything is ready to continue." :
                         "Samsung path: Accessibility \u2192 Installed apps \u2192 "
@@ -1737,6 +1740,29 @@ public class SetupWizardActivity extends Activity {
         card.setLayoutParams(params);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(2));
+        }
+        return card;
+    }
+
+    private View dangerCard(String heading, String copy) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(solid(Color.rgb(255, 242, 243), dp(20), COLOR_DANGER));
+        TextView headingView = text(heading, 20f, COLOR_DANGER, true);
+        headingView.setAllCaps(true);
+        card.addView(headingView);
+        TextView copyView = text(copy, 15f, Color.rgb(116, 24, 31), true);
+        copyView.setLineSpacing(dp(2), 1f);
+        copyView.setPadding(0, dp(9), 0, 0);
+        card.addView(copyView);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(18));
+        card.setLayoutParams(params);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(dp(3));
         }
         return card;
     }

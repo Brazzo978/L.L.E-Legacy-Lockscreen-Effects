@@ -4,6 +4,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.TimePickerDialog;
 import android.content.ClipData;
@@ -4726,13 +4727,62 @@ public class ControlActivity extends Activity {
             section.addView(infoText("Routes every L.L.E. effect and lock sound through "
                     + "media volume instead of System sounds. This also bypasses the phone's "
                     + "Screen lock/unlock sound switch."));
-            section.addView(toggle("Bypass 2-minute boot safety (debug)",
-                    OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY, false));
-            section.addView(infoText("Debug only. By default L.L.E. keeps every runtime "
-                    + "overlay and touch listener disabled for the first two minutes after "
-                    + "a reboot, leaving the lockscreen available for recovery or uninstall."));
+            section.addView(bootSafetyBypassToggle());
+            TextView bootSafetyWarning = infoText("⚠ DANGER — THIS REMOVES YOUR RECOVERY "
+                    + "WINDOW. Enable only after L.L.E. has proven stable on this exact device. "
+                    + "If an overlay blocks touch at boot, you may need Safe Mode or ADB to "
+                    + "disable or uninstall the app.");
+            bootSafetyWarning.setTextColor(COLOR_ERROR);
+            bootSafetyWarning.setTextSize(15f);
+            bootSafetyWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            section.addView(bootSafetyWarning);
         }
         return section;
+    }
+
+    private Switch bootSafetyBypassToggle() {
+        final Switch toggle = styledToggle("DANGER: run L.L.E during first 2 boot minutes",
+                prefs.getBoolean(OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY, false));
+        toggle.setTextColor(COLOR_ERROR);
+        toggle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        final boolean[] internalChange = new boolean[]{false};
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(final CompoundButton buttonView,
+                    boolean isChecked) {
+                if (internalChange[0]) {
+                    return;
+                }
+                if (!isChecked) {
+                    prefs.edit().putBoolean(
+                            OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY, false).apply();
+                    return;
+                }
+                internalChange[0] = true;
+                buttonView.setChecked(false);
+                internalChange[0] = false;
+                new AlertDialog.Builder(ControlActivity.this)
+                        .setTitle("Disable boot recovery safety?")
+                        .setMessage("L.L.E will be allowed to mount lockscreen overlays "
+                                + "immediately after boot. If touch becomes blocked, the normal "
+                                + "120-second recovery window will not exist. Continue only if "
+                                + "this exact device has already been tested and is stable.")
+                        .setNegativeButton("Keep safety", null)
+                        .setPositiveButton("I understand — disable safety",
+                                new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                prefs.edit().putBoolean(
+                                        OverlayPrefs.DEBUG_BYPASS_BOOT_SAFETY, true).apply();
+                                internalChange[0] = true;
+                                buttonView.setChecked(true);
+                                internalChange[0] = false;
+                            }
+                        })
+                        .show();
+            }
+        });
+        return toggle;
     }
 
     private View customAppBlacklistControls() {
