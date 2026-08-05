@@ -1,0 +1,55 @@
+# L.L.E Companion compatibility contract
+
+These rules are mandatory for every agent or developer preparing an L.L.E build or public release.
+
+Before changing version numbers, package names, signing configuration, build scripts, GitHub tags, release assets, or `LLE_VERSION.txt`, read and follow this document completely.
+
+## Companion contract
+
+The public L.L.E Companion recognizes only the stable ARM64 application:
+
+- Stable package: `com.codex.lle64`
+- Private tester package: `com.codex.lle64.test`
+- Companion package: `com.codex.lle.companion`
+
+The tester package is intentionally ignored by Companion. Tester builds must never be announced through `LLE_VERSION.txt` and must never replace the stable GitHub release.
+
+The source package in `LLEUnified/AndroidManifest.xml` remains `com.codex.lle`. The ARM64 build script is responsible for generating the final stable package `com.codex.lle64`.
+
+Do not globally rename the Java source package or JNI package paths.
+
+## Stable version format
+
+Every public stable version must contain exactly four numeric components:
+
+`MAJOR.MINOR.PATCH.REVISION`
+
+Valid examples:
+
+- `1.0.5.3`
+- `1.0.5.4`
+- `1.1.0.0`
+
+Invalid examples:
+
+- `1.0.5`
+- `1.0.5.4-beta`
+- `v1.0.5.4` inside the Android manifest
+- `1.0.5.4.1`
+
+For the next stable release, update both fields in:
+
+`LLEUnified/AndroidManifest.xml`
+
+Requirements:
+
+- `android:versionName` must use the exact four-part public version.
+- `android:versionCode` must be a positive integer greater than every previously published stable build.
+- Never reuse or decrease a stable `versionCode`.
+- Never publish a tester suffix in the stable `versionName`.
+
+Example:
+
+```xml
+android:versionCode="26"
+android:versionName="1.0.5.4"
