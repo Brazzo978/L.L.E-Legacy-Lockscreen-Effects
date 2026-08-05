@@ -5,6 +5,7 @@ Bring classic Android lockscreen effects back to modern devices—without root.
 [Download the latest release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/latest)
 · [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
 · [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
+. [Telegram Group For Support](https://t.me/legacylockscreeneffect)
 
 > **Open source and local by design.** L.L.E's source code is published so its
 > permission and data handling can be inspected. The app does not request the
@@ -87,8 +88,6 @@ the user.
 - Seasonal Spring, Summer, Autumn, and Winter effects
 - Charging doodles and seasonal companion effects
 
-Some effects are marked **Beta** because rendering can still vary slightly
-between GPUs, refresh rates, and Android versions.
 
 ## Requirements
 
@@ -135,18 +134,6 @@ sent anywhere automatically.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
 - Beta effects can show small timing or rendering differences across GPUs.
 
-## Build from source
-
-The active source is under [`LLEUnified/`](LLEUnified/).
-
-Build the ARM64 application:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build-arm64.ps1
-```
-
-Build requirements are documented in
-[`LLEUnified/README.md`](LLEUnified/README.md#build-from-source).
 
 <p align="center"><sub><a href="https://support.legacylockscreeneffects.app">L.L.E will always be free - but if you insist... ♡</a></sub></p>
 
