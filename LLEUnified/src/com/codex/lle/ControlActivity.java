@@ -1497,7 +1497,7 @@ public class ControlActivity extends Activity {
                 doodleExtras));
         root.addView(controls);
         root.addView(seasonalEffectsCard());
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+        if (FoldDisplayTarget.usesFoldProfiles(this)) {
             root.addView(foldPanelRoutingControls());
         }
         root.addView(positionControls());
@@ -2178,16 +2178,8 @@ public class ControlActivity extends Activity {
             return null;
         }
         final ArrayList<String> missingProfiles = new ArrayList<String>();
-        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
-        if (foldProfiles) {
-            addMissingAutomaticColormapProfile(
-                    missingProfiles, effect, FoldDisplayTarget.PROFILE_COVER);
-            addMissingAutomaticColormapProfile(
-                    missingProfiles, effect, FoldDisplayTarget.PROFILE_MAIN);
-        } else {
-            addMissingAutomaticColormapProfile(missingProfiles, effect,
-                    FoldDisplayTarget.cacheProfileForContext(this));
+        for (String profile : FoldDisplayTarget.backgroundProfiles(this)) {
+            addMissingAutomaticColormapProfile(missingProfiles, effect, profile);
         }
         if (missingProfiles.isEmpty()) {
             return null;
@@ -2298,13 +2290,8 @@ public class ControlActivity extends Activity {
         if (isReadableImageFile(screenshot)) {
             return;
         }
-        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
-            missingProfiles.add("Cover");
-        } else if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
-            missingProfiles.add("Main");
-        } else {
-            missingProfiles.add("this display");
-        }
+        missingProfiles.add(FoldDisplayTarget.PROFILE_SINGLE.equals(profile)
+                ? "this display" : FoldDisplayTarget.profileLabel(profile));
     }
 
     private boolean isReadableImageFile(File file) {
@@ -2389,18 +2376,16 @@ public class ControlActivity extends Activity {
             return section;
         }
         final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
-        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
-        boolean coverImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
-                this, currentEffect, FoldDisplayTarget.PROFILE_COVER);
-        boolean mainImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
-                this, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
-        boolean activeImported = !foldProfiles
-                && OverlayPrefs.importedEffectBackgroundEnabled(
-                        this, currentEffect, activeProfile);
-        boolean directModeActive = activeImported || coverImported || mainImported;
-        boolean automaticModeActive = foldProfiles
-                ? !coverImported || !mainImported : !activeImported;
+        final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        boolean multipleProfiles = profiles.length > 1;
+        boolean directModeActive = false;
+        boolean automaticModeActive = false;
+        for (String profile : profiles) {
+            boolean imported = OverlayPrefs.importedEffectBackgroundEnabled(
+                    this, currentEffect, profile);
+            directModeActive |= imported;
+            automaticModeActive |= !imported;
+        }
 
         if (directModeActive) {
             section.addView(sectionLabel("EXTRA / BETA - Direct wallpaper active"));
@@ -2408,15 +2393,10 @@ public class ControlActivity extends Activity {
                     "Beta feature. LLE sends a private, display-sized wallpaper directly "
                             + "to screenshot-driven effects. Some effect UI masks may still "
                             + "need refinement."));
-            if (foldProfiles) {
-                addDirectWallpaperProfileControls(
-                        section, currentEffect, FoldDisplayTarget.PROFILE_COVER);
-                addDirectWallpaperProfileControls(
-                        section, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
-            } else {
-                addDirectWallpaperProfileControls(section, currentEffect, activeProfile);
+            for (String profile : profiles) {
+                addDirectWallpaperProfileControls(section, currentEffect, profile);
             }
-            section.addView(outlineButton(foldProfiles
+            section.addView(outlineButton(multipleProfiles
                     ? "View direct wallpapers"
                     : "View direct wallpaper", new View.OnClickListener() {
                 @Override
@@ -2438,8 +2418,8 @@ public class ControlActivity extends Activity {
                             Toast.LENGTH_SHORT).show();
                 }
             }));
-            section.addView(outlineButton(foldProfiles
-                    ? "View automatic panel screenshots"
+            section.addView(outlineButton(multipleProfiles
+                    ? "View automatic profile screenshots"
                     : "View colormap screenshot", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -2457,8 +2437,7 @@ public class ControlActivity extends Activity {
         final int[] targetSize = effectBackgroundTargetSize(profile);
         final boolean imported = OverlayPrefs.importedEffectBackgroundEnabled(
                 this, effect, profile);
-        String profileLabel = FoldDisplayTarget.PROFILE_COVER.equals(profile)
-                ? "Cover" : FoldDisplayTarget.PROFILE_MAIN.equals(profile) ? "Main" : "Display";
+        String profileLabel = FoldDisplayTarget.profileLabel(profile);
         String sourceLabel = imported ? "DIRECT active" : "AUTO screenshot";
         section.addView(infoText(profileLabel.toUpperCase(Locale.US)
                 + "  |  " + targetSize[0] + " x " + targetSize[1]
@@ -2501,48 +2480,7 @@ public class ControlActivity extends Activity {
     }
 
     private int[] effectBackgroundTargetSize(String requestedProfile) {
-        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
-        DisplayMetrics activeMetrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getRealMetrics(activeMetrics);
-        int activeWidth = Math.max(1, activeMetrics.widthPixels);
-        int activeHeight = Math.max(1, activeMetrics.heightPixels);
-        int[] fallback = new int[] {
-                Math.min(activeWidth, activeHeight),
-                Math.max(activeWidth, activeHeight)
-        };
-        if (FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
-            return fallback;
-        }
-        try {
-            DisplayManager manager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
-            Display defaultDisplay = manager == null
-                    ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
-            String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
-            if (manager != null) {
-                Display[] displays = manager.getDisplays(
-                        DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
-                if (displays == null || displays.length == 0) {
-                    displays = manager.getDisplays();
-                }
-                for (Display display : displays) {
-                    if (display == null || (display.getDisplayId() != Display.DEFAULT_DISPLAY
-                            && (builtInName == null || !builtInName.equals(display.getName())))) {
-                        continue;
-                    }
-                    DisplayMetrics metrics = new DisplayMetrics();
-                    display.getRealMetrics(metrics);
-                    int width = Math.max(1, metrics.widthPixels);
-                    int height = Math.max(1, metrics.heightPixels);
-                    if (profile.equals(FoldDisplayTarget.profileForSize(width, height))) {
-                        return new int[] {
-                                Math.min(width, height), Math.max(width, height)};
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.d("LLEControl", "Fold panel wallpaper size lookup failed", t);
-        }
-        return fallback;
+        return FoldDisplayTarget.displaySizeForProfile(this, requestedProfile);
     }
 
     private void startImportedEffectBackgroundPicker(int effect, String requestedProfile) {
@@ -2664,11 +2602,17 @@ public class ControlActivity extends Activity {
             return "Screenshot cache: not used by this effect.";
         }
         String profile = FoldDisplayTarget.cacheProfileForContext(this);
-        if (OverlayPrefs.foldModeEnabled(this)) {
-            return effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_COVER)
-                    + "\n"
-                    + effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_MAIN)
-                    + "\nActive panel: " + profile;
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        if (profiles.length > 1) {
+            StringBuilder status = new StringBuilder();
+            for (String candidate : profiles) {
+                if (status.length() > 0) {
+                    status.append('\n');
+                }
+                status.append(effectBackgroundProfileStatus(effect, candidate));
+            }
+            status.append("\nActive profile: ").append(profile);
+            return status.toString();
         }
         return effectBackgroundProfileStatus(effect, profile);
     }
@@ -2888,8 +2832,8 @@ public class ControlActivity extends Activity {
 
     private void showEffectBackgroundScreenshot() {
         int effect = OverlayPrefs.unlockEffect(this);
-        if (OverlayPrefs.foldModeEnabled(this)) {
-            showFoldEffectBackgroundScreenshots(effect);
+        if (FoldDisplayTarget.backgroundProfiles(this).length > 1) {
+            showProfileEffectBackgroundScreenshots(effect);
             return;
         }
         File screenshot = colormapScreenshotFileForPreview(effect);
@@ -2956,13 +2900,14 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private void showFoldEffectBackgroundScreenshots(int effect) {
+    private void showProfileEffectBackgroundScreenshots(int effect) {
         final ArrayList<Bitmap> previews = new ArrayList<Bitmap>();
-        File cover = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_COVER);
-        File main = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_MAIN);
-        if ((!cover.exists() || cover.length() <= 0L)
-                && (!main.exists() || main.length() <= 0L)) {
-            Toast.makeText(this, "No Fold screenshots yet", Toast.LENGTH_SHORT).show();
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        File first = colormapScreenshotFileForPreview(effect, profiles[0]);
+        File second = colormapScreenshotFileForPreview(effect, profiles[1]);
+        if ((!first.exists() || first.length() <= 0L)
+                && (!second.exists() || second.length() <= 0L)) {
+            Toast.makeText(this, "No profile screenshots yet", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -2971,8 +2916,9 @@ public class ControlActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
         root.setBackground(pageBackground());
-        root.addView(sectionTitle("Fold colormap screenshots"));
-        root.addView(infoText("The cover and main caches are independent. Missing panels are shown explicitly."));
+        root.addView(sectionTitle(FoldDisplayTarget.usesFoldProfiles(this)
+                ? "Fold colormap screenshots" : "Tablet colormap screenshots"));
+        root.addView(infoText("The two caches are independent. Missing profiles are shown explicitly."));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -2980,9 +2926,11 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         rowParams.setMargins(0, dp(10), 0, dp(10));
         root.addView(row, rowParams);
-        row.addView(foldScreenshotPreview("Cover", cover, previews),
+        row.addView(profileScreenshotPreview(
+                        FoldDisplayTarget.profileLabel(profiles[0]), first, previews),
                 foldScreenshotColumnParams(false));
-        row.addView(foldScreenshotPreview("Main", main, previews),
+        row.addView(profileScreenshotPreview(
+                        FoldDisplayTarget.profileLabel(profiles[1]), second, previews),
                 foldScreenshotColumnParams(true));
 
         root.addView(outlineButton("Close", new View.OnClickListener() {
@@ -3013,12 +2961,12 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private View foldScreenshotPreview(String label, File file, ArrayList<Bitmap> previews) {
+    private View profileScreenshotPreview(String label, File file, ArrayList<Bitmap> previews) {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(10), dp(10), dp(10), dp(10));
         column.setBackground(infoBackground());
-        column.addView(sectionLabel(label + " panel"));
+        column.addView(sectionLabel(label));
         if (file == null || !file.exists() || file.length() <= 0L) {
             TextView missing = infoText("No screenshot cached");
             missing.setGravity(Gravity.CENTER);
@@ -4643,7 +4591,7 @@ public class ControlActivity extends Activity {
         }
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
-        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
+        section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
                 ? "Dual touch box wizard"
                 : "Touch box screenshot wizard", new View.OnClickListener() {
             @Override
@@ -4653,8 +4601,8 @@ public class ControlActivity extends Activity {
                 startActivity(intent);
             }
         }));
-        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
-                ? "Reset active panel touch box"
+        section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
+                ? "Reset active profile touch box"
                 : "Reset touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -4709,9 +4657,18 @@ public class ControlActivity extends Activity {
         }));
         if (lockscreenDebugExpanded) {
             section.addView(setupWizardControls());
-            section.addView(toggle("FOLD MODE (dual panels)", OverlayPrefs.FOLD_MODE,
-                    FoldDisplayTarget.isFoldDevice(this)));
-            if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            section.addView(exclusiveDisplayModeToggle(
+                    "FOLD MODE (Cover + Main)", OverlayPrefs.FOLD_MODE,
+                    FoldDisplayTarget.isFoldDevice(this), OverlayPrefs.TABLET_MODE));
+            section.addView(exclusiveDisplayModeToggle(
+                    "TABLET MODE (portrait + landscape)", OverlayPrefs.TABLET_MODE,
+                    FoldDisplayTarget.isTabletDevice(this)
+                            && !FoldDisplayTarget.isFoldDevice(this),
+                    OverlayPrefs.FOLD_MODE));
+            section.addView(infoText("Display profile: "
+                    + FoldDisplayTarget.cacheProfileForContext(this)
+                    + ". Enabling either mode disables the other."));
+            if (FoldDisplayTarget.usesFoldProfiles(this)) {
                 section.addView(foldPanelRoutingControls());
             }
             int current = pendingUnlockEffect >= 0
@@ -4780,6 +4737,23 @@ public class ControlActivity extends Activity {
                             }
                         })
                         .show();
+            }
+        });
+        return toggle;
+    }
+
+    private Switch exclusiveDisplayModeToggle(String label, final String key,
+            boolean defaultValue, final String otherKey) {
+        Switch toggle = styledToggle(label, prefs.getBoolean(key, defaultValue));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                SharedPreferences.Editor editor = prefs.edit().putBoolean(key, isChecked);
+                if (isChecked) {
+                    editor.putBoolean(otherKey, false);
+                }
+                editor.apply();
+                showTab(selectedTab, false, 0);
             }
         });
         return toggle;
@@ -4981,13 +4955,14 @@ public class ControlActivity extends Activity {
         if (touchBoxSummary == null) {
             return;
         }
-        if (OverlayPrefs.foldModeEnabled(this)) {
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        if (profiles.length > 1) {
             String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
-            touchBoxSummary.setText(touchBoxProfileSummary("Cover",
-                    FoldDisplayTarget.PROFILE_COVER)
-                    + "\n" + touchBoxProfileSummary("Main",
-                    FoldDisplayTarget.PROFILE_MAIN)
-                    + "\nActive panel: " + activeProfile);
+            touchBoxSummary.setText(touchBoxProfileSummary(
+                            FoldDisplayTarget.profileLabel(profiles[0]), profiles[0])
+                    + "\n" + touchBoxProfileSummary(
+                            FoldDisplayTarget.profileLabel(profiles[1]), profiles[1])
+                    + "\nActive profile: " + activeProfile);
             return;
         }
         boolean configured = OverlayPrefs.touchBoxConfigured(this);

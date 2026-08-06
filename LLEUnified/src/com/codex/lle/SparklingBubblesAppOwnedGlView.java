@@ -12,6 +12,7 @@ import android.util.Log;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -41,6 +42,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     private volatile boolean resourcesReady;
     private volatile boolean destroyed;
     private volatile long minimumRenderUntilMs;
+    private final AtomicInteger animationGeneration = new AtomicInteger();
     private int surfaceWidth;
     private int surfaceHeight;
     private int drawCount;
@@ -380,6 +382,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     }
 
     private void activateAnimation(long minimumDurationMs, int minimumFrames) {
+        animationGeneration.incrementAndGet();
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
         keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
@@ -390,15 +393,19 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     }
 
     private void stopAnimationFromGlThread() {
+        final int generation = animationGeneration.get();
         post(new Runnable() {
             @Override
             public void run() {
-                stopAnimation();
+                if (generation == animationGeneration.get()) {
+                    stopAnimation();
+                }
             }
         });
     }
 
     private void stopAnimation() {
+        animationGeneration.incrementAndGet();
         if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
             setRenderMode(RENDERMODE_WHEN_DIRTY);
         }

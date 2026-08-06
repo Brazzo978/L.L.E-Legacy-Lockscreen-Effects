@@ -19,8 +19,8 @@ import javax.microedition.khronos.opengles.GL10;
  * Transparent GLES host for the app-owned Galaxy S6 Water Droplet core.
  *
  * <p>Every stateful JNI operation is serialized through the GLSurfaceView GL
- * thread. Like the vendor renderer, each valid continuous draw advances the
- * simulation exactly once.</p>
+ * thread. Drawing follows the display refresh, while the recovered stock
+ * simulation advances on its fixed 60 Hz clock.</p>
  */
 final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         implements GLSurfaceView.Renderer {
@@ -36,6 +36,9 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private static final long DETERMINISTIC_SEED = 1L;
     private static final int WARM_KEEP_ALIVE_STEPS = 100;
     private static final long DESTROY_TIMEOUT_MS = 500L;
+    private static final long SIMULATION_STEP_NS = 16_666_667L;
+    private static final long STALLED_FRAME_NS = SIMULATION_STEP_NS * 4L;
+    private static final int MAX_SIMULATION_STEPS_PER_DRAW = 2;
 
     private final Listener listener;
     private final Object bitmapLock = new Object();
@@ -60,6 +63,9 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private int surfaceWidth;
     private int surfaceHeight;
     private int idleTicks;
+    private long lastSimulationTimeNs;
+    private long simulationAccumulatorNs;
+    private volatile boolean simulationClockResetPending = true;
 
     S6WaterDropletAppOwnedGlView(
             Context context,
@@ -116,6 +122,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
             resourcesReady = false;
             drawCount = 0;
             idleTicks = 0;
+            resetSimulationClockFromGlThread();
             notifySurfaceReady();
         } catch (Throwable error) {
             fail(error);
@@ -166,6 +173,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 uploadAllResources();
             }
             S6WaterDropletAppOwnedNative.nativeResetBackgroundScale(nativeHandle);
+            resetSimulationClockFromGlThread();
             if (resourcesReady) {
                 activateAnimation(0L, WARM_KEEP_ALIVE_STEPS);
             } else {
@@ -194,11 +202,16 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
              */
             if (drawCount == 0) {
                 drawCount = 1;
+                resetSimulationClockFromGlThread();
                 return;
             }
-            if (!S6WaterDropletAppOwnedNative.nativeStep(nativeHandle)) {
-                throw new IllegalStateException(
-                        "native step failed: " + nativeError());
+            int simulationSteps = simulationStepsForDraw(
+                    SystemClock.elapsedRealtimeNanos());
+            for (int step = 0; step < simulationSteps; step++) {
+                if (!S6WaterDropletAppOwnedNative.nativeStep(nativeHandle)) {
+                    throw new IllegalStateException(
+                            "native step failed: " + nativeError());
+                }
             }
             if (!S6WaterDropletAppOwnedNative.nativeDraw(
                     nativeHandle, surfaceWidth, surfaceHeight)) {
@@ -210,16 +223,18 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 notifySecondDrawReady();
             }
 
-            keepAliveSteps = Math.max(0, keepAliveSteps - 1);
-            if (S6WaterDropletAppOwnedNative.nativeIsIdle(nativeHandle)
-                    && keepAliveSteps <= 0
-                    && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
-                idleTicks++;
-                if (idleTicks >= 2) {
-                    stopAnimationFromGlThread();
+            keepAliveSteps = Math.max(0, keepAliveSteps - simulationSteps);
+            if (simulationSteps > 0) {
+                if (S6WaterDropletAppOwnedNative.nativeIsIdle(nativeHandle)
+                        && keepAliveSteps <= 0
+                        && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
+                    idleTicks++;
+                    if (idleTicks >= 2) {
+                        stopAnimationFromGlThread();
+                    }
+                } else {
+                    idleTicks = 0;
                 }
-            } else {
-                idleTicks = 0;
             }
         } catch (Throwable error) {
             fail(error);
@@ -278,6 +293,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                         uploadAllResources();
                         S6WaterDropletAppOwnedNative.nativeResetBackgroundScale(
                                 nativeHandle);
+                        resetSimulationClockFromGlThread();
                         activateAnimation(0L, WARM_KEEP_ALIVE_STEPS);
                     } catch (Throwable error) {
                         fail(error);
@@ -321,6 +337,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                                     S6WaterDropletAppOwnedNative
                                             .TEXTURE_LANDSCAPE_BACKGROUND);
                             S6WaterDropletAppOwnedNative.nativeReset(nativeHandle);
+                            resetSimulationClockFromGlThread();
                         }
                     } finally {
                         recycle(oldPortrait);
@@ -429,6 +446,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         final long generation = advanceCommandGeneration();
         queueSerializedCommand(new Runnable() {
             @Override
@@ -436,6 +454,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 if (isCurrentCommandGeneration(generation)
                         && nativeHandle != 0L) {
                     S6WaterDropletAppOwnedNative.nativeReset(nativeHandle);
+                    resetSimulationClockFromGlThread();
                 }
             }
         });
@@ -447,6 +466,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         final long generation = advanceCommandGeneration();
         queueSerializedCommand(new Runnable() {
             @Override
@@ -456,6 +476,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                     S6WaterDropletAppOwnedNative.nativeReset(nativeHandle);
                     S6WaterDropletAppOwnedNative.nativeResetBackgroundScale(
                             nativeHandle);
+                    resetSimulationClockFromGlThread();
                 }
             }
         });
@@ -469,6 +490,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     }
 
     void pauseRenderer() {
+        requestSimulationClockReset();
         stopAnimation();
     }
 
@@ -614,6 +636,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 keepAliveSteps, Math.max(1, minimumSteps));
         boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
         if (wasStopped) {
+            requestSimulationClockReset();
             setRenderMode(RENDERMODE_CONTINUOUSLY);
         }
         requestRender();
@@ -640,6 +663,49 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         resourcesReady = false;
         drawCount = 0;
         glOwnerThread = null;
+        requestSimulationClockReset();
+    }
+
+    /**
+     * Returns the number of recovered 60 Hz app ticks due for this display
+     * draw. The first draw after a reset advances once immediately. Normal
+     * 30 Hz rendering may advance twice; a longer stall is deliberately
+     * collapsed to one tick so resume/screen-on cannot replay a time backlog.
+     */
+    private int simulationStepsForDraw(long nowNs) {
+        if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
+            resetSimulationClockFromGlThread();
+            lastSimulationTimeNs = nowNs;
+            return 1;
+        }
+        long elapsedNs = nowNs - lastSimulationTimeNs;
+        lastSimulationTimeNs = nowNs;
+        if (elapsedNs <= 0L) {
+            return 0;
+        }
+        if (elapsedNs > STALLED_FRAME_NS) {
+            simulationAccumulatorNs = 0L;
+            return 1;
+        }
+        long maximumAccumulationNs =
+                SIMULATION_STEP_NS * MAX_SIMULATION_STEPS_PER_DRAW;
+        simulationAccumulatorNs = Math.min(
+                maximumAccumulationNs,
+                simulationAccumulatorNs + elapsedNs);
+        int steps = (int) (simulationAccumulatorNs / SIMULATION_STEP_NS);
+        steps = Math.min(steps, MAX_SIMULATION_STEPS_PER_DRAW);
+        simulationAccumulatorNs -= steps * SIMULATION_STEP_NS;
+        return steps;
+    }
+
+    private void requestSimulationClockReset() {
+        simulationClockResetPending = true;
+    }
+
+    private void resetSimulationClockFromGlThread() {
+        lastSimulationTimeNs = 0L;
+        simulationAccumulatorNs = 0L;
+        simulationClockResetPending = false;
     }
 
     private void notifySurfaceReady() {

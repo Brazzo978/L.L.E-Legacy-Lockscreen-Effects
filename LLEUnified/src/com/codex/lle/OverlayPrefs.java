@@ -78,6 +78,7 @@ final class OverlayPrefs {
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
     static final String FOLD_MODE = "fold_mode";
+    static final String TABLET_MODE = "tablet_mode";
     static final String FOLD_COVER_UNLOCK_EFFECT_ENABLED =
             "fold_cover_unlock_effect_enabled";
     static final String FOLD_COVER_DOODLE_ENABLED = "fold_cover_doodle_enabled";
@@ -224,9 +225,17 @@ final class OverlayPrefs {
         return get(context).getBoolean(FOLD_MODE, FoldDisplayTarget.isFoldDevice(context));
     }
 
+    static boolean tabletModeEnabled(Context context) {
+        return get(context).getBoolean(TABLET_MODE,
+                FoldDisplayTarget.isTabletDevice(context)
+                        && !FoldDisplayTarget.isFoldDevice(context));
+    }
+
     static boolean foldPanelUnlockEffectEnabled(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
-        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+        if (!foldModeEnabled(context)
+                || (!FoldDisplayTarget.PROFILE_COVER.equals(normalized)
+                && !FoldDisplayTarget.PROFILE_MAIN.equals(normalized))) {
             return true;
         }
         String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
@@ -237,7 +246,9 @@ final class OverlayPrefs {
 
     static boolean foldPanelDoodleEnabled(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
-        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+        if (!foldModeEnabled(context)
+                || (!FoldDisplayTarget.PROFILE_COVER.equals(normalized)
+                && !FoldDisplayTarget.PROFILE_MAIN.equals(normalized))) {
             return true;
         }
         String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
@@ -962,7 +973,7 @@ final class OverlayPrefs {
     }
 
     private static String touchBoxProfile(Context context) {
-        return FoldDisplayTarget.cacheProfileForContext(context);
+        return FoldDisplayTarget.touchBoxProfileForContext(context);
     }
 
     private static String touchBoxKey(String base, String profile) {
@@ -1215,8 +1226,10 @@ final class OverlayPrefs {
             int referenceWidth = prefs.getInt(TOUCH_BOX_REFERENCE_WIDTH,
                     DEFAULT_TOUCH_BOX_RIGHT);
             int referenceHeight = prefs.getInt(TOUCH_BOX_REFERENCE_HEIGHT, 2316);
-            String legacyProfile = FoldDisplayTarget.profileForSize(
-                    referenceWidth, referenceHeight);
+            String legacyProfile = (FoldDisplayTarget.PROFILE_TABLET_PORTRAIT.equals(normalized)
+                    || FoldDisplayTarget.PROFILE_TABLET_LANDSCAPE.equals(normalized))
+                    ? FoldDisplayTarget.tabletProfileForSize(referenceWidth, referenceHeight)
+                    : FoldDisplayTarget.profileForSize(referenceWidth, referenceHeight);
             if (normalized.equals(legacyProfile)) {
                 SharedPreferences.Editor editor = prefs.edit()
                         .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, normalized), true)

@@ -73,7 +73,7 @@ public class TouchBoxSetupActivity extends Activity {
         }
         setImmersive();
 
-        foldMode = OverlayPrefs.foldModeEnabled(this);
+        foldMode = FoldDisplayTarget.backgroundProfiles(this).length > 1;
         selectedProfile = foldMode
                 ? FoldDisplayTarget.cacheProfileForContext(this)
                 : FoldDisplayTarget.PROFILE_SINGLE;
@@ -390,19 +390,20 @@ public class TouchBoxSetupActivity extends Activity {
         if (!foldMode) {
             return;
         }
+        final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         row.setPadding(dp(20), dp(8), dp(20), dp(8));
         row.setBackgroundColor(Color.WHITE);
 
-        TextView cover = bodyText("Cover");
+        TextView cover = bodyText(FoldDisplayTarget.profileLabel(profiles[0]));
         cover.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         row.addView(cover, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
         Switch slider = new Switch(this);
-        slider.setChecked(FoldDisplayTarget.PROFILE_MAIN.equals(selectedProfile));
-        slider.setContentDescription("Switch between cover and main touch boxes");
+        slider.setChecked(profiles[1].equals(selectedProfile));
+        slider.setContentDescription("Switch between display-profile touch boxes");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             slider.setShowText(false);
         }
@@ -411,7 +412,7 @@ public class TouchBoxSetupActivity extends Activity {
         sliderParams.setMargins(dp(12), 0, dp(12), 0);
         row.addView(slider, sliderParams);
 
-        TextView main = bodyText("Main");
+        TextView main = bodyText(FoldDisplayTarget.profileLabel(profiles[1]));
         main.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         row.addView(main, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
@@ -419,8 +420,7 @@ public class TouchBoxSetupActivity extends Activity {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 switchProfile(isChecked
-                        ? FoldDisplayTarget.PROFILE_MAIN
-                        : FoldDisplayTarget.PROFILE_COVER);
+                        ? profiles[1] : profiles[0]);
             }
         });
         root.addView(row, new LinearLayout.LayoutParams(
@@ -461,7 +461,10 @@ public class TouchBoxSetupActivity extends Activity {
         recycleOverviewBitmaps();
 
         LinearLayout root = graceRoot();
-        root.addView(appBar("Dual touch box setup", "Cover + main panel"));
+        final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        boolean foldProfiles = FoldDisplayTarget.usesFoldProfiles(this);
+        root.addView(appBar("Dual touch box setup", foldProfiles
+                ? "Cover + Main" : "Portrait + Landscape"));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -474,17 +477,22 @@ public class TouchBoxSetupActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        TextView explanation = bodyText("Each panel has its own lockscreen image and touch areas. "
-                + "Configure either panel below; captures only run when that physical panel is active and locked.");
+        TextView explanation = bodyText(foldProfiles
+                ? "Each panel has its own lockscreen image and touch areas. Configure either "
+                        + "panel below; captures only run when that physical panel is active and locked."
+                : "Portrait and landscape have independent lockscreen images and touch areas. "
+                        + "Rotate the tablet to the requested orientation before each capture.");
         explanation.setBackground(overviewInfoBackground());
         explanation.setPadding(dp(16), dp(14), dp(16), dp(14));
         content.addView(explanation, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        content.addView(profileOverviewCard("Cover panel", FoldDisplayTarget.PROFILE_COVER),
+        content.addView(profileOverviewCard(
+                        FoldDisplayTarget.profileLabel(profiles[0]), profiles[0]),
                 overviewCardParams());
-        content.addView(profileOverviewCard("Main panel", FoldDisplayTarget.PROFILE_MAIN),
+        content.addView(profileOverviewCard(
+                        FoldDisplayTarget.profileLabel(profiles[1]), profiles[1]),
                 overviewCardParams());
         content.addView(materialButton("Close", false, new View.OnClickListener() {
             @Override
@@ -692,13 +700,10 @@ public class TouchBoxSetupActivity extends Activity {
     }
 
     private String profileLabel(String profile) {
-        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
-            return "cover";
-        }
-        if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
-            return "main";
-        }
-        return "current";
+        return FoldDisplayTarget.PROFILE_SINGLE.equals(
+                FoldDisplayTarget.normalizeProfile(profile))
+                ? "current"
+                : FoldDisplayTarget.profileLabel(profile).toLowerCase(java.util.Locale.US);
     }
 
     private LinearLayout graceRoot() {

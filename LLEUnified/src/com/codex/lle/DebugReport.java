@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -114,8 +115,34 @@ final class DebugReport {
         body.append("product=").append(Build.PRODUCT).append('\n');
         body.append("android_release=").append(Build.VERSION.RELEASE).append('\n');
         body.append("android_sdk=").append(Build.VERSION.SDK_INT).append('\n');
+        body.append("android_security_patch=")
+                .append(Build.VERSION.SECURITY_PATCH).append('\n');
+        body.append("build_incremental=")
+                .append(Build.VERSION.INCREMENTAL).append('\n');
         body.append("build_display=").append(Build.DISPLAY).append('\n');
+        body.append("build_fingerprint=").append(Build.FINGERPRINT).append('\n');
+        appendPackageVersion(body, context, "systemui", "com.android.systemui");
         body.append('\n');
+    }
+
+    private static void appendPackageVersion(
+            StringBuilder body, Context context, String label, String packageName) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(packageName, 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode() : info.versionCode;
+            body.append(label).append("_package=").append(packageName).append('\n');
+            body.append(label).append("_version_name=")
+                    .append(info.versionName == null ? "unknown" : info.versionName)
+                    .append('\n');
+            body.append(label).append("_version_code=")
+                    .append(versionCode).append('\n');
+        } catch (PackageManager.NameNotFoundException error) {
+            body.append(label).append("_version=unavailable\n");
+        } catch (RuntimeException error) {
+            body.append(label).append("_version=error:")
+                    .append(error.getClass().getSimpleName()).append('\n');
+        }
     }
 
     private static void appendRuntimeState(StringBuilder body, Context context) {
@@ -142,6 +169,32 @@ final class DebugReport {
                 .append('\n');
         body.append("active_display_profile=")
                 .append(FoldDisplayTarget.cacheProfileForContext(context)).append('\n');
+        String colormapProfile = FoldDisplayTarget.cacheProfileForContext(context);
+        body.append("display_profile_mode=")
+                .append(FoldDisplayTarget.modeLabel(context)).append('\n');
+        body.append("tablet_mode_enabled=")
+                .append(OverlayPrefs.tabletModeEnabled(context)).append('\n');
+        boolean importedColormap = OverlayPrefs.importedEffectBackgroundEnabled(
+                context, resolvedUnlockEffect, colormapProfile);
+        body.append("active_colormap_source=")
+                .append(importedColormap ? "imported" : "automatic").append('\n');
+        int colormapWidth = importedColormap
+                ? OverlayPrefs.importedEffectBackgroundWidth(
+                        context, resolvedUnlockEffect, colormapProfile) : 0;
+        int colormapHeight = importedColormap
+                ? OverlayPrefs.importedEffectBackgroundHeight(
+                        context, resolvedUnlockEffect, colormapProfile) : 0;
+        if (!importedColormap) {
+            File colormapFile = OverlayPrefs.effectBackgroundFile(
+                    context, resolvedUnlockEffect, colormapProfile);
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(colormapFile.getAbsolutePath(), bounds);
+            colormapWidth = Math.max(0, bounds.outWidth);
+            colormapHeight = Math.max(0, bounds.outHeight);
+        }
+        body.append("active_colormap_dimensions=")
+                .append(colormapWidth).append('x').append(colormapHeight).append('\n');
 
         Intent battery = context.registerReceiver(
                 null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));

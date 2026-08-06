@@ -29,9 +29,11 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -335,7 +337,8 @@ public class SetupWizardActivity extends Activity {
                         && !pendingWallpaperNextProfile.isEmpty()) {
                     String nextProfile = pendingWallpaperNextProfile;
                     pendingWallpaperNextProfile = "";
-                    Toast.makeText(this, "Now choose the " + nextProfile
+                    Toast.makeText(this, "Now choose the "
+                                    + FoldDisplayTarget.profileLabel(nextProfile)
                                     + " lockscreen wallpaper",
                             Toast.LENGTH_LONG).show();
                     startWallpaperPicker(savedMode, nextProfile);
@@ -776,6 +779,12 @@ public class SetupWizardActivity extends Activity {
         body.addView(title("How should L.L.E get the wallpaper?"));
         body.addView(paragraph("Choose the source shown behind the effect. You can change it "
                 + "later from the main screen."));
+        if (FoldDisplayTarget.isTabletDevice(this)
+                && !FoldDisplayTarget.isFoldDevice(this)) {
+            body.addView(tabletModeToggle());
+            body.addView(paragraph("Tablet mode keeps independent portrait and landscape "
+                    + "colormaps and selects the matching one after rotation."));
+        }
 
         final boolean automaticSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R;
         View automatic = optionCard("01", "Automatic screenshot",
@@ -793,38 +802,32 @@ public class SetupWizardActivity extends Activity {
                             Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (FoldDisplayTarget.isFoldDevice(SetupWizardActivity.this)
-                        && OverlayPrefs.foldModeEnabled(SetupWizardActivity.this)) {
+                for (String profile : FoldDisplayTarget.backgroundProfiles(
+                        SetupWizardActivity.this)) {
                     OverlayPrefs.useAutomaticEffectBackgroundForAll(
-                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_COVER);
-                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
-                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_MAIN);
-                } else {
-                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
-                            SetupWizardActivity.this, FoldDisplayTarget.PROFILE_SINGLE);
+                            SetupWizardActivity.this, profile);
                 }
                 completeWallpaperChoice(MODE_AUTOMATIC_SCREENSHOT);
             }
         });
         body.addView(automatic, optionParams());
 
-        final boolean foldDevice = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
+        final boolean multipleProfiles = FoldDisplayTarget.backgroundProfiles(this).length > 1;
         View setAndCache = optionCard("02", "Set lockscreen + cache (Beta)",
-                foldDevice
-                        ? "Unavailable on Fold devices: Samsung routes Cover and Main "
-                                + "wallpapers through protected panel-specific APIs."
+                multipleProfiles
+                        ? "Unavailable with dual display profiles: provide the exact wallpaper "
+                                + "separately for each profile or use automatic capture."
                         : "Choose a picture, move it, and zoom it. L.L.E will use the same crop "
                                 + "as both the lockscreen wallpaper and the renderer's fixed source.",
                 "BETA", true);
-        setAndCache.setAlpha(foldDevice ? 0.55f : 1f);
+        setAndCache.setAlpha(multipleProfiles ? 0.55f : 1f);
         setAndCache.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (foldDevice) {
+                if (multipleProfiles) {
                     Toast.makeText(SetupWizardActivity.this,
                             "Use automatic capture or provide the exact wallpaper separately "
-                                    + "for Cover and Main",
+                                    + "for both display profiles",
                             Toast.LENGTH_LONG).show();
                     return;
                 }
@@ -859,6 +862,29 @@ public class SetupWizardActivity extends Activity {
         });
         body.addView(exactCache, optionParams());
         return scroll(body);
+    }
+
+    private Switch tabletModeToggle() {
+        final Switch toggle = new Switch(this);
+        toggle.setText("Tablet mode: separate portrait + landscape colormaps");
+        toggle.setTextColor(COLOR_INK);
+        toggle.setTextSize(15f);
+        toggle.setGravity(Gravity.CENTER_VERTICAL);
+        toggle.setPadding(dp(16), dp(8), dp(12), dp(8));
+        toggle.setChecked(OverlayPrefs.tabletModeEnabled(this));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                SharedPreferences.Editor editor = OverlayPrefs.get(
+                        SetupWizardActivity.this).edit()
+                        .putBoolean(OverlayPrefs.TABLET_MODE, isChecked);
+                if (isChecked) {
+                    editor.putBoolean(OverlayPrefs.FOLD_MODE, false);
+                }
+                editor.apply();
+            }
+        });
+        return toggle;
     }
 
     private View featuresStep() {
@@ -918,16 +944,23 @@ public class SetupWizardActivity extends Activity {
         body.addView(kicker("STEP 6", captureReady ? "READY" : "CAPTURE REQUIRED",
                 captureReady ? COLOR_OK : COLOR_WARN));
         if (automatic && unlockEnabled) {
+            boolean tabletProfiles = FoldDisplayTarget.usesTabletProfiles(this);
             body.addView(title("Capture the lockscreen once"));
-            body.addView(paragraph("Lock the phone, wait on the visible lockscreen for about "
-                    + "2–3 seconds, then unlock and return to L.L.E. This gives the selected "
-                    + "effect a clean wallpaper source before touch-area calibration."));
+            body.addView(paragraph(tabletProfiles
+                    ? "Lock the tablet once in portrait and once in landscape. In each "
+                            + "orientation, wait on the visible lockscreen for about 2–3 seconds "
+                            + "before unlocking. L.L.E stores the two colormaps separately."
+                    : "Lock the phone, wait on the visible lockscreen for about "
+                            + "2–3 seconds, then unlock and return to L.L.E. This gives the "
+                            + "selected effect a clean wallpaper source before touch-area calibration."));
             body.addView(statusCard(captureReady
                             ? "Lockscreen screenshot captured"
                             : "Waiting for the lockscreen screenshot",
                     captureReady
-                            ? "The source for the active " + activeProfileLabel()
-                                    + " display is ready."
+                            ? (tabletProfiles
+                                    ? "Portrait and landscape colormaps are ready."
+                                    : "The source for the active " + activeProfileLabel()
+                                            + " display is ready.")
                             : "Complete one lock → wait → unlock cycle. This page checks the "
                                     + "saved source automatically when you return.",
                     captureReady));
@@ -995,15 +1028,14 @@ public class SetupWizardActivity extends Activity {
     }
 
     private View touchBoxStep() {
-        final boolean fold = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
+        final String[] touchProfiles = FoldDisplayTarget.backgroundProfiles(this);
+        final boolean multipleProfiles = touchProfiles.length > 1;
         final boolean unlockEnabled = OverlayPrefs.unlockEffectEnabled(this);
-        final boolean configured = fold
-                ? OverlayPrefs.touchBoxConfigured(this, FoldDisplayTarget.PROFILE_COVER)
-                        && OverlayPrefs.touchBoxConfigured(
-                                this, FoldDisplayTarget.PROFILE_MAIN)
-                : OverlayPrefs.touchBoxConfigured(
-                        this, FoldDisplayTarget.PROFILE_SINGLE);
+        boolean allConfigured = true;
+        for (String profile : touchProfiles) {
+            allConfigured &= OverlayPrefs.touchBoxConfigured(this, profile);
+        }
+        final boolean configured = allConfigured;
 
         LinearLayout body = stepBody();
         body.addView(kicker("STEP 7", configured ? "CONFIGURED"
@@ -1013,10 +1045,11 @@ public class SetupWizardActivity extends Activity {
                 ? "Review your touch box"
                 : (unlockEnabled ? "Set your unlock touch area"
                         : "Would you like to adjust the touch box?")));
-        body.addView(paragraph(fold
+        body.addView(paragraph(multipleProfiles
                 ? "The touch box defines where unlock gestures can activate an effect. "
-                        + "The existing dual-panel tool lets you configure independent areas "
-                        + "for the Cover and Main displays."
+                        + "The dual-profile tool lets you configure independent areas for "
+                        + FoldDisplayTarget.profileLabel(touchProfiles[0]) + " and "
+                        + FoldDisplayTarget.profileLabel(touchProfiles[1]) + "."
                 : "The touch box defines where unlock gestures can activate an effect. "
                         + "The editor uses your prepared lockscreen image so you can position "
                         + "the active area precisely."));
@@ -1024,8 +1057,8 @@ public class SetupWizardActivity extends Activity {
                         ? "Touch box already configured"
                         : "Small recovery area is active",
                 configured
-                        ? (fold
-                                ? "Both Fold display profiles already have saved touch areas."
+                        ? (multipleProfiles
+                                ? "Both display profiles already have saved touch areas."
                                 : "You can refine the saved area or keep it unchanged.")
                         : "Until you save an area, only a deliberately tiny region near the "
                                 + "middle of the screen accepts effect gestures. Open the editor "
@@ -1126,12 +1159,8 @@ public class SetupWizardActivity extends Activity {
         }
         importingPulledWallpaper = true;
         pendingWallpaperMode = MODE_CACHE_ONLY;
-        final boolean fold = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
-        final String[] profiles = fold
-                ? new String[] {FoldDisplayTarget.PROFILE_COVER,
-                        FoldDisplayTarget.PROFILE_MAIN}
-                : new String[] {FoldDisplayTarget.PROFILE_SINGLE};
+        final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        final boolean multipleProfiles = profiles.length > 1;
         Toast.makeText(this, "Reading current lockscreen wallpaper…",
                 Toast.LENGTH_SHORT).show();
 
@@ -1161,7 +1190,7 @@ public class SetupWizardActivity extends Activity {
                     for (int i = 0; i < profiles.length; i++) {
                         imported[i] = ManualEffectBackground.importPulledLockWallpaper(
                                 SetupWizardActivity.this, loaded[i].bitmap, effect,
-                                profiles[i], fold
+                                profiles[i], multipleProfiles
                                 ? "Current " + profiles[i] + " lockscreen wallpaper"
                                 : "Current lockscreen wallpaper");
                     }
@@ -1202,8 +1231,8 @@ public class SetupWizardActivity extends Activity {
                         }
                         pendingWallpaperMode = "";
                         Toast.makeText(SetupWizardActivity.this,
-                                fold
-                                ? "Cover and Main lockscreen wallpapers are active for L.L.E"
+                                multipleProfiles
+                                ? "Both display-profile wallpapers are active for L.L.E"
                                 : "Current lockscreen wallpaper is active for L.L.E",
                                 Toast.LENGTH_LONG).show();
                         completeWallpaperChoice(MODE_CACHE_ONLY);
@@ -1231,21 +1260,21 @@ public class SetupWizardActivity extends Activity {
         if (message != null && !message.trim().isEmpty()) {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         }
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
-            pendingWallpaperNextProfile = FoldDisplayTarget.PROFILE_MAIN;
-            Toast.makeText(this, "Choose the Cover wallpaper first, then Main.",
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        if (profiles.length > 1) {
+            pendingWallpaperNextProfile = profiles[1];
+            Toast.makeText(this, "Choose the " + FoldDisplayTarget.profileLabel(profiles[0])
+                            + " wallpaper first, then "
+                            + FoldDisplayTarget.profileLabel(profiles[1]) + ".",
                     Toast.LENGTH_LONG).show();
-            startWallpaperPicker(MODE_CACHE_ONLY, FoldDisplayTarget.PROFILE_COVER);
+            startWallpaperPicker(MODE_CACHE_ONLY, profiles[0]);
         } else {
             startWallpaperPicker(MODE_CACHE_ONLY);
         }
     }
 
     private void startWallpaperPicker(String mode) {
-        String profile = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this)
-                ? FoldDisplayTarget.cacheProfileForContext(this)
-                : FoldDisplayTarget.PROFILE_SINGLE;
+        String profile = FoldDisplayTarget.cacheProfileForContext(this);
         startWallpaperPicker(mode, profile);
     }
 
@@ -1337,22 +1366,26 @@ public class SetupWizardActivity extends Activity {
     }
 
     private boolean isAutomaticBackgroundReady() {
-        String profile = activeDisplayProfile();
         int effect = OverlayPrefs.unlockEffect(this);
-        File source = OverlayPrefs.effectBackgroundFile(
-                this, effect, profile);
-        if (!source.exists() || source.length() <= 0L) {
-            return false;
-        }
         long requestedAt = wizardPrefs(this).getLong(PREF_CAPTURE_REQUESTED_AT, 0L);
-        long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(
-                this, effect, profile);
-        return requestedAt <= 0L || capturedAt >= requestedAt;
+        for (String profile : FoldDisplayTarget.backgroundProfiles(this)) {
+            File source = OverlayPrefs.effectBackgroundFile(this, effect, profile);
+            if (!source.exists() || source.length() <= 0L) {
+                return false;
+            }
+            long capturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(
+                    this, effect, profile);
+            if (requestedAt > 0L && capturedAt < requestedAt) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean hasTouchBoxEditorSource() {
         String profile = activeDisplayProfile();
-        File dedicated = OverlayPrefs.touchBoxScreenshotFile(this, profile);
+        File dedicated = OverlayPrefs.touchBoxScreenshotFile(
+                this, FoldDisplayTarget.touchBoxProfileForContext(this));
         if (dedicated.exists() && dedicated.length() > 0L) {
             return true;
         }
@@ -1368,21 +1401,13 @@ public class SetupWizardActivity extends Activity {
     }
 
     private String activeDisplayProfile() {
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
-            return FoldDisplayTarget.cacheProfileForContext(this);
-        }
-        return FoldDisplayTarget.PROFILE_SINGLE;
+        return FoldDisplayTarget.cacheProfileForContext(this);
     }
 
     private String activeProfileLabel() {
         String profile = activeDisplayProfile();
-        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
-            return "Cover";
-        }
-        if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
-            return "Main";
-        }
-        return "current";
+        return FoldDisplayTarget.PROFILE_SINGLE.equals(profile)
+                ? "current" : FoldDisplayTarget.profileLabel(profile);
     }
 
     private void completeWizard() {

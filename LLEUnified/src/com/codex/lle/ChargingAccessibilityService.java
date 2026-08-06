@@ -13,6 +13,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Path;
@@ -29,6 +31,7 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -44,7 +47,9 @@ import java.io.FileOutputStream;
 import java.util.Calendar;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -107,8 +112,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long LOCKSCREEN_SESSION_FAST_POLL_MS = 10L;
     private static final long LOCKSCREEN_SESSION_STABLE_POLL_MS = 25L;
     private static final long LOCKSCREEN_SESSION_INITIAL_CONTENT_DELAY_MS = 20L;
-    private static final long LOCKSCREEN_SESSION_CONTENT_POLL_MS = 20L;
-    private static final long LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS = 25L;
+    private static final long LOCKSCREEN_SESSION_CONTENT_POLL_MS = 60L;
+    private static final long LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS = 80L;
     private static final long WINDOW_CONTENT_EVENT_MIN_INTERVAL_MS = 32L;
     private static final long DISPLAY_CANDIDATE_WAKE_COALESCE_MS = 32L;
     private static final long LOCKSCREEN_EXIT_FAST_POLL_MS = 20L;
@@ -128,6 +133,20 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long WARM_BURST_LATE_MS = 180L;
     private static final long READINESS_GESTURE_TIMEOUT_MS = 650L;
     private static final long BLOCKED_SURFACE_CLEAR_GRACE_MS = 120L;
+    private static final long NOTIFICATION_SHADE_CLEAR_STABLE_MS = 250L;
+    private static final long BLOCKED_SURFACE_SCAN_MIN_INTERVAL_MS = 60L;
+    private static final long NOTIFICATION_SHADE_SCAN_MIN_INTERVAL_MS = 120L;
+    private static final long NOTIFICATION_SHADE_STRUCTURAL_LOG_INTERVAL_MS = 750L;
+    private static final long BLOCKED_SURFACE_SCAN_DIAGNOSTIC_INTERVAL_MS = 500L;
+    private static final long NOTIFICATION_SHADE_OEM_DIAGNOSTIC_INTERVAL_MS = 5000L;
+    private static final long NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS = 500L;
+    private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_NODES = 48;
+    private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS = 2400;
+    private static final int NOTIFICATION_SHADE_OEM_LOG_CHUNK_CHARS = 1800;
+    private static final int NOTIFICATION_SHADE_CLEAR_SUCCESS_COUNT = 2;
+    private static final int BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY = 4;
+    private static final int BLOCKED_SURFACE_SCAN_MAX_NODES = 320;
+    private static final long BLOCKED_SURFACE_SCAN_MAX_ELAPSED_MS = 12L;
     private static final long GLOBAL_ACTIONS_EVENT_CLEAR_GRACE_MS = 250L;
     private static final long GLOBAL_ACTIONS_FALLBACK_CLEAR_MS = 9000L;
     private static final long RUNTIME_BLOCK_WINDOW_RECHECK_MS = 450L;
@@ -151,6 +170,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int PIN_ENTRY_NODE_SCAN_CHILD_LIMIT = 80;
     private static final int BLOCKED_SURFACE_PIN_ENTRY = 1;
     private static final int BLOCKED_SURFACE_NOTIFICATION_SHADE = 1 << 1;
+    private static final int BLOCKED_SURFACE_SCAN_UNKNOWN = 0;
+    private static final int BLOCKED_SURFACE_SCAN_SUCCESS = 1;
+    private static final int BLOCKED_SURFACE_SCAN_PARTIAL = 2;
     private static final String ACTION_CLOSE_SYSTEM_DIALOGS =
             "android.intent.action.CLOSE_SYSTEM_DIALOGS";
     private static final String SYSTEM_DIALOG_REASON_KEY = "reason";
@@ -259,7 +281,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             "qs_detail",
             "quick_settings_panel",
             "quick_panel",
+            "expanded_qs_scroll_view",
             "brightness_slider",
+            "brightness_bar_container",
             "brightness_mirror",
             "sec_brightness"
     };
@@ -270,6 +294,84 @@ public class ChargingAccessibilityService extends AccessibilityService
             "impostazioni rapide",
             "pannello rapido"
     };
+
+    private static final class BlockedSurfaceScanResult {
+        int surfaces;
+        int quality = BLOCKED_SURFACE_SCAN_UNKNOWN;
+        int windowsVisited;
+        int systemUiRootsScanned;
+        int nodesVisited;
+        boolean budgetExhausted;
+        boolean deepScanPerformed;
+        String shadeMatch;
+        String windowSignature;
+        String nodeSignature;
+    }
+
+    private static final class BlockedSurfaceNodeScanBudget {
+        long deadlineAt;
+        int remainingNodes = BLOCKED_SURFACE_SCAN_MAX_NODES;
+        int nodesVisited;
+        boolean exhausted;
+        String shadeMatch;
+        final LinkedHashSet<String> diagnosticNodes = new LinkedHashSet<String>();
+        int diagnosticChars;
+
+        BlockedSurfaceNodeScanBudget() {
+        }
+
+        boolean tryVisit() {
+            long now = SystemClock.uptimeMillis();
+            if (deadlineAt <= 0L) {
+                deadlineAt = now + BLOCKED_SURFACE_SCAN_MAX_ELAPSED_MS;
+            }
+            if (remainingNodes <= 0 || now > deadlineAt) {
+                exhausted = true;
+                return false;
+            }
+            remainingNodes--;
+            nodesVisited++;
+            return true;
+        }
+
+        void recordDiagnosticNode(int depth, AccessibilityNodeInfo node) {
+            if (node == null
+                    || diagnosticNodes.size() >= NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_NODES
+                    || diagnosticChars >= NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS
+                    || !node.isVisibleToUser()) {
+                return;
+            }
+            CharSequence viewId = node.getViewIdResourceName();
+            CharSequence className = node.getClassName();
+            if (viewId == null && className == null) {
+                return;
+            }
+            String entry = "d" + depth
+                    + ":id=" + (viewId == null ? "-" : viewId)
+                    + ",class=" + (className == null ? "-" : className);
+            if (diagnosticChars + entry.length()
+                    > NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS) {
+                return;
+            }
+            if (diagnosticNodes.add(entry)) {
+                diagnosticChars += entry.length();
+            }
+        }
+
+        String diagnosticSignature() {
+            if (diagnosticNodes.isEmpty()) {
+                return "<none>";
+            }
+            StringBuilder signature = new StringBuilder(diagnosticChars + 32);
+            for (String entry : diagnosticNodes) {
+                if (signature.length() > 0) {
+                    signature.append(" | ");
+                }
+                signature.append(entry);
+            }
+            return signature.toString();
+        }
+    }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
@@ -367,6 +469,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         @Override
         public void run() {
             validateActiveRuntimeBlockWindow();
+        }
+    };
+    private final Runnable notificationShadeProbeFailOpenRunnable = new Runnable() {
+        @Override
+        public void run() {
+            failOpenUnconfirmedNotificationShadeProbe();
         }
     };
     private final Runnable lockscreenSessionPollRunnable = new Runnable() {
@@ -517,6 +625,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean pinEntrySurfaceSeen;
     private boolean pinEntrySurfaceVisible;
     private boolean notificationShadeVisible;
+    private boolean notificationShadeSuspected;
+    private boolean notificationShadeProbePending;
+    private boolean notificationShadeOemPositiveLoggedForCurrentVisibility;
     private boolean globalActionsVisible;
     private boolean unlockTouchCachedWhileScreenOff;
     private boolean unlockAffordancePending;
@@ -546,6 +657,24 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long lastActiveDisplayResolveAt;
     private long pinEntryLastSeenAt;
     private long notificationShadeLastSeenAt;
+    private long notificationShadeLastClearScanAt;
+    private long notificationShadeSuspectedAt;
+    private long lastNotificationShadeStructuralLogAt;
+    private long lastBlockedSurfaceScanDiagnosticAt;
+    private long lastBlockedSurfaceScanRequestedAt;
+    private long lastNotificationShadeOemDiagnosticAt;
+    private long lastNotificationShadeDiagnosticCapturedAt;
+    private int lastNotificationShadeDiagnosticQuality;
+    private int lastNotificationShadeDiagnosticWindows;
+    private int lastNotificationShadeDiagnosticRoots;
+    private int lastNotificationShadeDiagnosticNodes;
+    private boolean lastNotificationShadeDiagnosticMatched;
+    private boolean lastNotificationShadeDiagnosticExhausted;
+    private String lastNotificationShadeDiagnosticReason = "<none>";
+    private String lastNotificationShadeWindowSignature = "<none>";
+    private String lastNotificationShadeNodeSignature = "<none>";
+    private String lastConfirmedNotificationShadeWindowSignature = "<none>";
+    private String lastConfirmedNotificationShadeNodeSignature = "<none>";
     private long globalActionsShownAt;
     private long lastScreenOnAt;
     private long lastScreenOffAt;
@@ -601,6 +730,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int lockscreenSessionGeneration;
     private int blockedSurfaceScanRequestGeneration;
     private int blockedSurfaceScanInFlightRequestId;
+    private int notificationShadeClearSuccessCount;
+    private int inputSafetyGeneration;
+    private int scheduledPinEntrySafetyGeneration;
+    private int queuedPinSwipeSafetyGeneration;
     private int lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
     private int unlockEffectRendererDisplayWidth;
     private int unlockEffectRendererDisplayHeight;
@@ -754,11 +887,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                     detachRuntimeSurfacesForBackgroundCapture("screen_on");
                 } else if (unlockTouchCachedWhileScreenOff) {
                     notificationShadeVisible = false;
+                    notificationShadeOemPositiveLoggedForCurrentVisibility = false;
                     notificationShadeLastSeenAt = 0L;
                     restoreUnlockEffectOverlayAfterScreenOff();
                     syncTouchDebugOverlay(true, true);
                 }
                 evaluateVisibility("broadcast:" + action + ":fast", false);
+                refreshTouchDebugInputAfterScreenOn();
                 unlockTouchCachedWhileScreenOff = false;
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
                 startLockscreenSessionPolling();
@@ -922,7 +1057,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         lockSoundPlayer = new LockSoundPlayer(this);
         prefs = OverlayPrefs.get(this);
-        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeDisplayProfile);
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeTouchBoxProfile());
         applyPerfDefaultsOnce();
         ensureInternalTouchAreaEnabled();
         prefs.registerOnSharedPreferenceChangeListener(this);
@@ -930,6 +1065,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         loadCallPackages();
         loadRuntimeSurfaceBlacklistPackages();
         configurePassiveService();
+        logNotificationShadeDiagnosticEnvironment();
         refreshChargingState();
         registerScreenReceiver();
         registerDisplayListener();
@@ -1075,17 +1211,26 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
         } else if (interactive && isNotificationShadeEvent(event)) {
-            notificationShadeVisible = true;
-            notificationShadeLastSeenAt = SystemClock.uptimeMillis();
-            removeTouchDebugOverlay();
-            removeUnlockEffectOverlay();
-            evaluateVisibility("event:" + eventTypeName(event) + ":notification_shade_fast", false);
+            // Some Samsung bouncer transitions briefly expose a SystemUI event whose
+            // accessible label looks like the notification shade. Treat event metadata
+            // as an immediate safety probe only; the bounded window-tree scan is the
+            // authority that confirms the shade and avoids a false positive on PIN entry.
+            String shadeEventReason = "event:" + eventTypeName(event) + ":shade_hint";
+            armNotificationShadeProbe(shadeEventReason, true);
+            requestContentBlockedSurfaceScan(shadeEventReason);
+            evaluateVisibility(shadeEventReason, false);
             handler.removeCallbacks(screenOnRefreshRunnable);
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
         }
         String eventReason = "event:" + eventTypeName(event);
+        if (interactive && isLockscreenLocked(false)
+                && shouldProbeNotificationShade(event)) {
+            boolean neutralizeTouch = eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
+            armNotificationShadeProbe(eventReason, neutralizeTouch);
+            requestContentBlockedSurfaceScan(eventReason + ":shade_probe");
+        }
         if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             // Pin entry, notification shade and call surfaces were handled above. Generic
             // content churn only needs a cheap state pass; the session poll performs the
@@ -1152,6 +1297,23 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .append(service.batteryPercent).append('\n');
         snapshot.append("display_profile=")
                 .append(service.activeDisplayProfile).append('\n');
+        snapshot.append("display_profile_mode=")
+                .append(FoldDisplayTarget.modeLabel(service)).append('\n');
+        snapshot.append("display_dimensions=")
+                .append(service.activeDisplayWidth).append('x')
+                .append(service.activeDisplayHeight).append('\n');
+        int snapshotEffect = OverlayPrefs.unlockEffect(service);
+        snapshot.append("background_source_type=")
+                .append(OverlayPrefs.importedEffectBackgroundEnabled(
+                        service, snapshotEffect, service.activeDisplayProfile)
+                        ? "imported" : "automatic")
+                .append('\n');
+        Bitmap snapshotBackground = service.cachedUnlockEffectBackgroundBitmap;
+        snapshot.append("background_bitmap_dimensions=")
+                .append(snapshotBackground == null || snapshotBackground.isRecycled()
+                        ? "unavailable"
+                        : snapshotBackground.getWidth() + "x" + snapshotBackground.getHeight())
+                .append('\n');
         snapshot.append("doodle_attached=")
                 .append(service.doodleOverlayAttached).append('\n');
         snapshot.append("doodle_parked=")
@@ -1180,6 +1342,34 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .append(service.pinEntrySurfaceVisible).append('\n');
         snapshot.append("notification_shade_visible=")
                 .append(service.notificationShadeVisible).append('\n');
+        snapshot.append("notification_shade_diagnostic_age_ms=")
+                .append(service.lastNotificationShadeDiagnosticCapturedAt <= 0L
+                        ? -1L
+                        : SystemClock.uptimeMillis()
+                                - service.lastNotificationShadeDiagnosticCapturedAt)
+                .append('\n');
+        snapshot.append("notification_shade_diagnostic_reason=")
+                .append(service.lastNotificationShadeDiagnosticReason).append('\n');
+        snapshot.append("notification_shade_diagnostic_matched=")
+                .append(service.lastNotificationShadeDiagnosticMatched).append('\n');
+        snapshot.append("notification_shade_diagnostic_quality=")
+                .append(service.lastNotificationShadeDiagnosticQuality).append('\n');
+        snapshot.append("notification_shade_diagnostic_windows=")
+                .append(service.lastNotificationShadeDiagnosticWindows).append('\n');
+        snapshot.append("notification_shade_diagnostic_roots=")
+                .append(service.lastNotificationShadeDiagnosticRoots).append('\n');
+        snapshot.append("notification_shade_diagnostic_nodes=")
+                .append(service.lastNotificationShadeDiagnosticNodes).append('\n');
+        snapshot.append("notification_shade_diagnostic_exhausted=")
+                .append(service.lastNotificationShadeDiagnosticExhausted).append('\n');
+        snapshot.append("notification_shade_window_signature=")
+                .append(service.lastNotificationShadeWindowSignature).append('\n');
+        snapshot.append("notification_shade_visible_node_signature=")
+                .append(service.lastNotificationShadeNodeSignature).append('\n');
+        snapshot.append("notification_shade_confirmed_window_signature=")
+                .append(service.lastConfirmedNotificationShadeWindowSignature).append('\n');
+        snapshot.append("notification_shade_confirmed_node_signature=")
+                .append(service.lastConfirmedNotificationShadeNodeSignature).append('\n');
         snapshot.append("global_actions_visible=")
                 .append(service.globalActionsVisible).append('\n');
         snapshot.append("global_actions_age_ms=")
@@ -1249,9 +1439,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             }, 100L);
             Log.i(TAG, "audio route changed to " + EffectAudio.routeLabel(this));
             return;
-        }        if (OverlayPrefs.FOLD_MODE.equals(key)) {
-            refreshActiveDisplayTarget("prefs_fold_mode");
-            OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeDisplayProfile);
+        }        if (OverlayPrefs.FOLD_MODE.equals(key)
+                || OverlayPrefs.TABLET_MODE.equals(key)) {
+            refreshActiveDisplayTarget(OverlayPrefs.FOLD_MODE.equals(key)
+                    ? "prefs_fold_mode" : "prefs_tablet_mode");
+            OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeTouchBoxProfile());
         }
         if (OverlayPrefs.EFFECT_BACKGROUND_REFRESH_TOKEN.equals(key)
                 || OverlayPrefs.POPPING_COLOR_REFRESH_TOKEN.equals(key)) {
@@ -1565,6 +1757,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         activeDisplayWidth = target.width;
         activeDisplayHeight = target.height;
         activeDisplayProfile = target.cacheProfile;
+        OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeTouchBoxProfile());
         invalidateResolvedTouchBoxes();
         unlockEffectBackgroundGeneration++;
         colorScreenshotInFlight = false;
@@ -1593,6 +1786,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private Context rendererContext() {
         return activeDisplayContext == null ? this : activeDisplayContext;
+    }
+
+    private String activeTouchBoxProfile() {
+        return activeDisplayProfile;
     }
 
     private DisplayMetrics activeDisplayMetrics() {
@@ -1940,6 +2137,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         lastScreenOnAt = now;
         unlockAffordancePending = true;
         notificationShadeVisible = false;
+        notificationShadeOemPositiveLoggedForCurrentVisibility = false;
         notificationShadeLastSeenAt = 0L;
         boolean backgroundCaptureOwnsWake =
                 shouldSuppressWakeSurfacesForBackgroundCapture();
@@ -1989,6 +2187,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         lockscreenSessionGeneration++;
         blockedSurfaceScanInFlight = false;
         blockedSurfaceScanInFlightRequestId = ++blockedSurfaceScanRequestGeneration;
+        lastBlockedSurfaceScanRequestedAt = 0L;
         lockscreenSessionPollingStartedAt = 0L;
         lockscreenExitFollowupUntil = 0L;
         handler.removeCallbacks(lockscreenSessionPollRunnable);
@@ -2279,9 +2478,96 @@ public class ChargingAccessibilityService extends AccessibilityService
         pinEntrySurfaceSeen = false;
         pinEntrySurfaceVisible = false;
         notificationShadeVisible = false;
+        notificationShadeSuspected = false;
+        notificationShadeProbePending = false;
+        notificationShadeSuspectedAt = 0L;
+        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+        notificationShadeOemPositiveLoggedForCurrentVisibility = false;
         pinEntryLastSeenAt = 0L;
         notificationShadeLastSeenAt = 0L;
+        notificationShadeLastClearScanAt = 0L;
+        notificationShadeClearSuccessCount = 0;
         clearPinEntryTrace();
+    }
+
+    private boolean isNotificationShadeInputBlocked() {
+        return notificationShadeSuspected || notificationShadeVisible;
+    }
+
+    private void armNotificationShadeProbe(String reason, boolean neutralizeTouch) {
+        notificationShadeProbePending = true;
+        if (!neutralizeTouch || notificationShadeVisible || notificationShadeSuspected) {
+            return;
+        }
+        notificationShadeSuspected = true;
+        notificationShadeSuspectedAt = SystemClock.uptimeMillis();
+        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+        handler.postDelayed(notificationShadeProbeFailOpenRunnable,
+                NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS);
+        setTouchDebugSafetyBlocked(true);
+        Log.i(TAG, "notification shade probe armed reason=" + reason);
+    }
+
+    private void failOpenUnconfirmedNotificationShadeProbe() {
+        if (!notificationShadeSuspected || notificationShadeVisible) {
+            return;
+        }
+        long ageMs = notificationShadeSuspectedAt <= 0L
+                ? Long.MAX_VALUE
+                : SystemClock.uptimeMillis() - notificationShadeSuspectedAt;
+        if (ageMs < NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS) {
+            handler.postDelayed(notificationShadeProbeFailOpenRunnable,
+                    NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS - ageMs);
+            return;
+        }
+        notificationShadeSuspected = false;
+        notificationShadeProbePending = false;
+        notificationShadeSuspectedAt = 0L;
+        notificationShadeLastClearScanAt = 0L;
+        notificationShadeClearSuccessCount = 0;
+        Log.i(TAG, "notification shade probe timed out unconfirmed ageMs=" + ageMs);
+        evaluateVisibility("notification_shade_probe_timeout", false);
+    }
+
+    private void confirmNotificationShade(String reason) {
+        long now = SystemClock.uptimeMillis();
+        boolean changed = !notificationShadeVisible;
+        notificationShadeVisible = true;
+        notificationShadeSuspected = false;
+        notificationShadeProbePending = false;
+        notificationShadeSuspectedAt = 0L;
+        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+        notificationShadeLastSeenAt = now;
+        notificationShadeLastClearScanAt = 0L;
+        notificationShadeClearSuccessCount = 0;
+        if (changed) {
+            invalidatePendingInputForNotificationShade();
+            Log.i(TAG, "notification shade confirmed reason=" + reason);
+        }
+        removeTouchDebugOverlay();
+        removeUnlockEffectOverlay();
+    }
+
+    private void invalidatePendingInputForNotificationShade() {
+        inputSafetyGeneration++;
+        handler.removeCallbacks(pinEntryRunnable);
+        handler.removeCallbacks(pinEntrySwipeRunnable);
+        pinEntryPending = false;
+        pinEntryRequested = false;
+        pinEntrySurfaceSeen = false;
+        pinEntrySurfaceVisible = false;
+        clearPinEntryTrace();
+        cancelBufferedReadinessGesture("notification_shade", false);
+    }
+
+    private void setTouchDebugSafetyBlocked(boolean blocked) {
+        if (touchDebugView == null || touchDebugParams == null) {
+            return;
+        }
+        for (int i = 0; i < touchDebugWindowCount(); i++) {
+            touchDebugViewAt(i).setListeningEnabled(!blocked);
+        }
+        updateTouchDebugLayouts(resolveTouchBoxes(), !blocked);
     }
 
     private void showGlobalActionsSuppression() {
@@ -2323,8 +2609,42 @@ public class ChargingAccessibilityService extends AccessibilityService
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.notificationTimeout = WINDOW_CONTENT_EVENT_MIN_INTERVAL_MS;
         info.flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-                | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+                | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
         setServiceInfo(info);
+    }
+
+    private void logNotificationShadeDiagnosticEnvironment() {
+        AccessibilityServiceInfo serviceInfo = getServiceInfo();
+        Log.i(TAG, "shade diagnostic environment"
+                + " manufacturer=" + Build.MANUFACTURER
+                + " brand=" + Build.BRAND
+                + " model=" + Build.MODEL
+                + " device=" + Build.DEVICE
+                + " product=" + Build.PRODUCT
+                + " sdk=" + Build.VERSION.SDK_INT
+                + " release=" + Build.VERSION.RELEASE
+                + " securityPatch=" + Build.VERSION.SECURITY_PATCH
+                + " display=" + Build.DISPLAY
+                + " fingerprint=" + Build.FINGERPRINT
+                + " locale=" + Locale.getDefault().toLanguageTag()
+                + " systemUi=" + packageVersionSummary(SYSTEM_UI_PACKAGE)
+                + " serviceFlags=" + (serviceInfo == null ? -1 : serviceInfo.flags));
+    }
+
+    private String packageVersionSummary(String packageName) {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(packageName, 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode() : info.versionCode;
+            return packageName + "/"
+                    + (info.versionName == null ? "unknown" : info.versionName)
+                    + "(" + versionCode + ")";
+        } catch (PackageManager.NameNotFoundException error) {
+            return packageName + "/unavailable";
+        } catch (RuntimeException error) {
+            return packageName + "/error:" + error.getClass().getSimpleName();
+        }
     }
 
     private void evaluateVisibility(String reason) {
@@ -2642,7 +2962,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean shouldLogVisibility(String reason) {
         return reason == null
                 || (!reason.startsWith("lockscreen_poll")
-                && !reason.startsWith("lockscreen_exit_poll"));
+                && !reason.startsWith("lockscreen_exit_poll")
+                && !reason.startsWith("async_surface_scan"));
     }
 
     private void syncDoodleOverlay() {
@@ -3766,6 +4087,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + " locked=" + isLockscreenLocked(false)
                         + " displayState=" + displayStateName(currentDisplayState())
                         + " sinceScreenOnMs=" + elapsedSinceScreenOn()
+                        + " pinEntryPending=" + pinEntryPending
+                        + " pinEntryRequested=" + pinEntryRequested
+                        + " pinEntrySurface=" + pinEntrySurfaceVisible
+                        + " notificationShade=" + notificationShadeVisible
+                        + " blockedSurface=" + isRuntimeSurfaceBlocked()
+                        + " effectGesture=" + unlockEffectGestureActive
+                        + " effectAttached=" + unlockEffectOverlayAttached
+                        + " effectParked=" + unlockEffectOverlayParked
+                        + " lensLoopGesture=" + debugLensLoopGestureActive
                         + " pkg=" + lastWindowPackage);
             }
             return;
@@ -3924,19 +4254,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return false;
         }
-        if (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
-                || colorScreenshotInFlight
-                || !hasUsableEffectBackgroundCache(effect)) {
-            return true;
+        return colorScreenshotInFlight
+                || hasPendingUnlockEffectBackgroundRefresh(effect, "wake_gate");
+    }
+
+    private boolean hasPendingUnlockEffectBackgroundRefresh(int effect, String reason) {
+        if (!effectUsesCachedScreenshotBackground(effect)
+                || usesImportedEffectBackground(effect, activeDisplayProfile)) {
+            return false;
         }
-        if (OverlayPrefs.effectBackgroundRefreshToken(this)
-                != OverlayPrefs.effectBackgroundHandledRefreshToken(
-                        this, effect, activeDisplayProfile)) {
-            return true;
-        }
-        return OverlayPrefs.effectBackgroundAutoRefreshEnabled(this)
-                && shouldRefreshUnlockEffectBackground(
-                        effect, hasUnlockEffectBackgroundSource(effect), "wake_gate");
+        return shouldRefreshUnlockEffectBackground(
+                effect, hasUnlockEffectBackgroundSource(effect), reason);
     }
 
     private void detachRuntimeSurfacesForBackgroundCapture(String reason) {
@@ -3974,15 +4302,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return false;
         }
-        if (OverlayPrefs.effectBackgroundRefreshToken(this)
-                != OverlayPrefs.effectBackgroundHandledRefreshToken(
-                        this, effect, activeDisplayProfile)) {
-            return true;
-        }
-        if (!hasUsableEffectBackgroundCache(effect)) {
-            return true;
-        }
-        return OverlayPrefs.effectBackgroundAutoRefreshEnabled(this);
+        return hasPendingUnlockEffectBackgroundRefresh(effect, "preflight");
     }
 
     private boolean shouldRefreshUnlockEffectBackground(int effect, boolean hasBackground,
@@ -4062,8 +4382,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean shouldRetryUnlockEffectBackgroundCapture(int effect) {
         return !usesImportedEffectBackground(effect, activeDisplayProfile)
                 && effectUsesScreenshotBackground(effect)
-                && (OverlayPrefs.effectBackgroundWakeCaptureActive(this)
-                || !hasUnlockEffectBackgroundSource(effect))
+                && hasPendingUnlockEffectBackgroundRefresh(effect, "capture_retry")
                 && unlockEffectBackgroundCaptureAttempts
                 < UNLOCK_EFFECT_SCREENSHOT_MAX_ATTEMPTS;
     }
@@ -4156,12 +4475,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (colorScreenshotInFlight) {
             return;
         }
-        boolean missingRequiredBackground = effectUsesCachedScreenshotBackground(effect)
-                && !hasUnlockEffectBackgroundSource(effect);
-        if (!OverlayPrefs.effectBackgroundWakeCaptureActive(this)
-                && !missingRequiredBackground) {
+        if (!hasPendingUnlockEffectBackgroundRefresh(effect, "retry_gate:" + reason)) {
             // Normal wakes keep an existing cache. Only a truly missing first-run cache,
-            // an explicit one-shot request or the scheduled refresh receives retries.
+            // a profile-specific refresh token, an explicit one-shot request or a due
+            // scheduled refresh receives retries.
             handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
             unlockEffectBackgroundNextAttemptAt = Long.MAX_VALUE;
             return;
@@ -4643,7 +4960,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (isUsableEffectBackgroundCacheFileForActiveProfile(profileFile)) {
             return profileFile;
         }
-        if (!FoldDisplayTarget.PROFILE_SINGLE.equals(activeDisplayProfile)) {
+        if (FoldDisplayTarget.PROFILE_COVER.equals(activeDisplayProfile)
+                || FoldDisplayTarget.PROFILE_MAIN.equals(activeDisplayProfile)) {
             File oldShared = OverlayPrefs.effectBackgroundFile(this, effect);
             if (isUsableEffectBackgroundCacheFileForActiveProfile(oldShared)
                     && copyEffectBackgroundCacheFile(oldShared, profileFile)) {
@@ -4651,6 +4969,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + activeDisplayProfile);
                 return profileFile;
             }
+        }
+        if (FoldDisplayTarget.PROFILE_TABLET_PORTRAIT.equals(activeDisplayProfile)
+                || FoldDisplayTarget.PROFILE_TABLET_LANDSCAPE.equals(activeDisplayProfile)) {
+            // A pre-tablet-mode single cache has no trustworthy orientation identity.
+            // Keep it intact for phone mode, but require a clean capture for each tablet profile.
+            return null;
         }
         File legacy = findLatestLegacyEffectBackgroundCacheFile();
         if (legacy != null && copyEffectBackgroundCacheFile(legacy, profileFile)) {
@@ -4949,7 +5273,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         String pendingProfile = pendingTouchBoxScreenshotProfile();
-        if (!pendingProfile.equals(activeDisplayProfile)) {
+        if (!pendingProfile.equals(activeTouchBoxProfile())) {
             if (touchBoxScreenshotScheduled) {
                 touchBoxScreenshotScheduled = false;
                 handler.removeCallbacks(touchBoxScreenshotDelayRunnable);
@@ -4985,7 +5309,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!isTouchBoxScreenshotPending()) {
             return;
         }
-        if (!pendingTouchBoxScreenshotProfile().equals(activeDisplayProfile)) {
+        if (!pendingTouchBoxScreenshotProfile().equals(activeTouchBoxProfile())) {
             markTouchBoxCaptureWaitingForLockscreen();
             evaluateVisibility("touch_box_capture_wrong_panel", false);
             return;
@@ -5015,7 +5339,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         removeTouchDebugOverlay();
         handler.postDelayed(touchBoxScreenshotCaptureRunnable,
                 TOUCH_BOX_SCREENSHOT_OVERLAY_CLEAR_MS);
-        Log.i(TAG, "touch box screenshot capture armed profile=" + activeDisplayProfile);
+        Log.i(TAG, "touch box screenshot capture armed profile=" + activeTouchBoxProfile());
     }
 
     private void runTouchBoxScreenshotCapture() {
@@ -5031,7 +5355,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             evaluateVisibility("touch_box_capture_cancelled", false);
             return;
         }
-        if (!pendingTouchBoxScreenshotProfile().equals(activeDisplayProfile)) {
+        if (!pendingTouchBoxScreenshotProfile().equals(activeTouchBoxProfile())) {
             finishTouchBoxScreenshotAttempt(captureRequestId);
             markTouchBoxCaptureWaitingForLockscreen();
             evaluateVisibility("touch_box_capture_panel_changed", false);
@@ -5045,7 +5369,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
                 ? Display.DEFAULT_DISPLAY : activeDisplayId;
-        final String captureProfile = activeDisplayProfile;
+        final String captureProfile = activeTouchBoxProfile();
         try {
             touchBoxScreenshotCallbackPending = true;
             takeScreenshot(captureDisplayId, mainExecutor, new TakeScreenshotCallback() {
@@ -5067,7 +5391,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                         return;
                     }
                     if (captureDisplayId != activeDisplayId
-                            || !captureProfile.equals(activeDisplayProfile)
+                            || !captureProfile.equals(activeTouchBoxProfile())
                             || !touchBoxCaptureMatches(captureRequestId, captureProfile)) {
                         bitmap.recycle();
                         evaluateVisibility("touch_box_capture_display_changed", false);
@@ -5140,10 +5464,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private String pendingTouchBoxScreenshotProfile() {
         if (prefs == null) {
-            return activeDisplayProfile;
+            return activeTouchBoxProfile();
         }
         return FoldDisplayTarget.normalizeProfile(prefs.getString(
-                OverlayPrefs.TOUCH_BOX_CAPTURE_PROFILE, activeDisplayProfile));
+                OverlayPrefs.TOUCH_BOX_CAPTURE_PROFILE, activeTouchBoxProfile()));
     }
 
     private boolean touchBoxCaptureMatches(int requestId, String profile) {
@@ -5452,9 +5776,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         List<Rect> boxes = resolveTouchBoxes();
         boolean standbyEnabled = OverlayPrefs.debugTouchStandby(this);
-        boolean standbyTouchable = touchable || standbyEnabled;
+        boolean standbyTouchable = !isNotificationShadeInputBlocked()
+                && (touchable || standbyEnabled);
         // Let an early wake touch try the same readiness gate used by normal gestures.
-        boolean listening = touchable || standbyEnabled;
+        boolean listening = standbyTouchable;
         if (touchDebugView != null) {
             if (touchDebugWindowCount() == boxes.size()) {
                 for (int i = 0; i < boxes.size(); i++) {
@@ -6076,6 +6401,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void updateTouchDebugLayouts(List<Rect> boxes, boolean touchable) {
+        updateTouchDebugLayouts(boxes, touchable, false);
+    }
+
+    private void updateTouchDebugLayouts(
+            List<Rect> boxes, boolean touchable, boolean forceRelayout) {
         if (touchDebugView == null || touchDebugParams == null
                 || touchDebugWindowCount() != boxes.size()) {
             return;
@@ -6085,7 +6415,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             Rect box = boxes.get(i);
             TouchDebugView view = touchDebugViewAt(i);
             WindowManager.LayoutParams params = touchDebugParamsAt(i);
-            boolean changed = params.x != box.left || params.y != box.top
+            boolean changed = forceRelayout
+                    || params.x != box.left || params.y != box.top
                     || params.width != box.width() || params.height != box.height()
                     || params.flags != flags || touchDebugTouchable != touchable;
             if (!changed) {
@@ -6107,6 +6438,22 @@ public class ChargingAccessibilityService extends AccessibilityService
         touchDebugTouchable = touchable;
     }
 
+    private void refreshTouchDebugInputAfterScreenOn() {
+        if (touchDebugView == null) {
+            return;
+        }
+        // Some Samsung builds make accessibility-overlay input handles NOT_TOUCHABLE
+        // while the display is off without changing the app-owned LayoutParams. A normal
+        // sync then sees identical flags and skips updateViewLayout(), leaving the stale
+        // InputWindowHandle in place after wake. Force one relayout once SCREEN_ON is
+        // delivered so the configured regions become touchable again; keep the current
+        // desired touchability so shade/PIN suppression remains authoritative.
+        updateTouchDebugLayouts(resolveTouchBoxes(), touchDebugTouchable, true);
+        Log.i(TAG, "touch listen input refreshed after screen on"
+                + " touchable=" + touchDebugTouchable
+                + " areas=" + touchDebugWindowCount());
+    }
+
     private int touchListenBoxFlags(boolean touchable) {
         int flags = TOUCH_LISTEN_BOX_BASE_FLAGS;
         if (!touchable) {
@@ -6122,13 +6469,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!resolvedTouchBoxesDirty
                 && resolvedTouchBoxesWidth == screenWidth
                 && resolvedTouchBoxesHeight == screenHeight
-                && activeDisplayProfile.equals(resolvedTouchBoxesProfile)) {
+                && activeTouchBoxProfile().equals(resolvedTouchBoxesProfile)) {
             return resolvedTouchBoxesCache;
         }
         int minSize = dp(48);
         resolvedTouchBoxesCache.clear();
         List<Rect> saved = OverlayPrefs.touchBoxRegions(
-                rendererContext(), activeDisplayProfile);
+                rendererContext(), activeTouchBoxProfile());
         for (Rect source : saved) {
             int left = clamp(source.left, 0, screenWidth - minSize);
             int top = clamp(source.top, 0, screenHeight - minSize);
@@ -6144,7 +6491,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         resolvedTouchBoxesWidth = screenWidth;
         resolvedTouchBoxesHeight = screenHeight;
-        resolvedTouchBoxesProfile = activeDisplayProfile;
+        resolvedTouchBoxesProfile = activeTouchBoxProfile();
         resolvedTouchBoxesDirty = false;
         return resolvedTouchBoxesCache;
     }
@@ -6614,7 +6961,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible || isRuntimeSurfaceBlocked()) {
+                || isNotificationShadeInputBlocked() || isRuntimeSurfaceBlocked()) {
             Log.i(TAG, "unlock effect gesture blocked by content surface");
             evaluateVisibility("gesture_blocked_surface");
             return false;
@@ -6768,7 +7115,8 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void completeReadinessFallbackGesture(float distance, String reason) {
         boolean unlockTriggered = distance >= dp(UNLOCK_TRIGGER_DISTANCE_DP);
-        if (unlockTriggered && isUnlockEffectGestureReady()) {
+        if (unlockTriggered && isUnlockEffectGestureReady()
+                && !isNotificationShadeInputBlocked()) {
             // This is based solely on the received UP and its measured distance. No synthetic
             // gesture or unlock is generated when the renderer misses its readiness deadline.
             schedulePinEntry();
@@ -6816,7 +7164,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         if (pinEntryPending || pinEntryRequested || pinEntrySurfaceVisible
-                || notificationShadeVisible || isRuntimeSurfaceBlocked()) {
+                || isNotificationShadeInputBlocked() || isRuntimeSurfaceBlocked()) {
             Log.i(TAG, "seasonal unlock partner blocked by content surface");
             evaluateVisibility("seasonal_partner_blocked_surface");
             return false;
@@ -6980,8 +7328,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void schedulePinEntry(long delayMs, String source) {
+        if (isNotificationShadeInputBlocked()) {
+            Log.i(TAG, "pin entry not scheduled; notification shade input blocked");
+            return;
+        }
         startPinEntryTrace(delayMs);
         pinEntryPending = true;
+        scheduledPinEntrySafetyGeneration = inputSafetyGeneration;
         handler.removeCallbacks(pinEntryRunnable);
         handler.postDelayed(pinEntryRunnable, delayMs);
         Log.i(TAG, "pin entry scheduled delayMs=" + delayMs
@@ -7019,6 +7372,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void openPinEntry() {
+        if (scheduledPinEntrySafetyGeneration != inputSafetyGeneration
+                || isNotificationShadeInputBlocked()) {
+            pinEntryPending = false;
+            clearPinEntryTrace();
+            Log.i(TAG, "pin entry dropped by input safety generation");
+            return;
+        }
         pinEntryPending = false;
         pinEntryTraceOpenAt = SystemClock.uptimeMillis();
         Log.i(TAG, "pin entry trace open"
@@ -7039,6 +7399,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         removeTouchDebugOverlay();
         scheduleUnlockEffectCleanup();
         handler.removeCallbacks(pinEntrySwipeRunnable);
+        queuedPinSwipeSafetyGeneration = inputSafetyGeneration;
         handler.postDelayed(pinEntrySwipeRunnable, PIN_ENTRY_SWIPE_START_DELAY_MS);
         Log.i(TAG, "pin entry swipe queued delayMs=" + PIN_ENTRY_SWIPE_START_DELAY_MS
                 + " sinceReleaseMs=" + sincePinEntryRelease(SystemClock.uptimeMillis()));
@@ -7046,6 +7407,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void runPinEntrySwipe() {
+        if (queuedPinSwipeSafetyGeneration != inputSafetyGeneration
+                || isNotificationShadeInputBlocked()) {
+            Log.i(TAG, "pin entry swipe dropped by input safety generation");
+            return;
+        }
         boolean accepted = performPinEntrySwipe();
         if (!accepted) {
             clearBlockedSurfaceState();
@@ -7093,6 +7459,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean performPinEntrySwipe() {
+        if (queuedPinSwipeSafetyGeneration != inputSafetyGeneration
+                || isNotificationShadeInputBlocked()) {
+            Log.i(TAG, "pin entry swipe blocked before dispatch");
+            return false;
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             Log.w(TAG, "pin entry swipe unavailable below Android N");
             return false;
@@ -7385,6 +7756,16 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!serviceAlive || !lockscreenSessionPolling || blockedSurfaceScanInFlight) {
             return;
         }
+        long now = SystemClock.uptimeMillis();
+        long minimumIntervalMs = notificationShadeVisible
+                && !notificationShadeProbePending
+                ? NOTIFICATION_SHADE_SCAN_MIN_INTERVAL_MS
+                : BLOCKED_SURFACE_SCAN_MIN_INTERVAL_MS;
+        if (lastBlockedSurfaceScanRequestedAt > 0L
+                && now - lastBlockedSurfaceScanRequestedAt < minimumIntervalMs) {
+            return;
+        }
+        lastBlockedSurfaceScanRequestedAt = now;
         blockedSurfaceScanInFlight = true;
         final int lifecycleGeneration = serviceLifecycleGeneration;
         final int sessionGeneration = lockscreenSessionGeneration;
@@ -7396,12 +7777,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || pinEntryRequestedSnapshot
                 || pinEntrySurfaceSeen
                 || pinEntrySurfaceVisible
-                || notificationShadeVisible;
+                || notificationShadeVisible
+                || notificationShadeSuspected
+                || notificationShadeProbePending;
+        if (deepNodeScanNeeded) {
+            notificationShadeProbePending = false;
+        }
         try {
             blockedSurfaceScanExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    final int surfaces = detectContentBlockedSurfaces(
+                    final BlockedSurfaceScanResult result = detectContentBlockedSurfaces(
                             deepNodeScanNeeded, pinEntryRequestedSnapshot);
                     final long elapsedMs = SystemClock.uptimeMillis() - requestedAt;
                     handler.post(new Runnable() {
@@ -7418,7 +7804,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                                 return;
                             }
                             applyContentBlockedSurfaceScanResult(
-                                    surfaces, reason, requestedAt, elapsedMs);
+                                    result, reason, requestedAt, elapsedMs);
                         }
                     });
                 }
@@ -7430,7 +7816,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void applyContentBlockedSurfaceScanResult(
-            int surfaces, String reason, long requestedAt, long elapsedMs) {
+            BlockedSurfaceScanResult result, String reason,
+            long requestedAt, long elapsedMs) {
         long now = SystemClock.uptimeMillis();
         boolean wasPinEntryVisible = pinEntrySurfaceVisible;
         boolean wasNotificationShadeVisible = notificationShadeVisible;
@@ -7438,22 +7825,86 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && pinEntryLastSeenAt > 0L;
         boolean shadeObservedSinceRequest = notificationShadeLastSeenAt >= requestedAt
                 && notificationShadeLastSeenAt > 0L;
-        boolean detectedPinEntry = (surfaces & BLOCKED_SURFACE_PIN_ENTRY) != 0
+        boolean detectedPinEntry = (result.surfaces & BLOCKED_SURFACE_PIN_ENTRY) != 0
                 || (pinObservedSinceRequest && wasPinEntryVisible);
         boolean detectedNotificationShade =
-                (surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0
+                (result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0
                         || (shadeObservedSinceRequest && wasNotificationShadeVisible);
+        boolean structuralShadeMatch =
+                (result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0;
+        boolean shadeDiagnosticRelevant = result.deepScanPerformed
+                && (structuralShadeMatch
+                || notificationShadeSuspected
+                || notificationShadeVisible
+                || (reason != null && reason.contains("shade")));
+        if (shadeDiagnosticRelevant) {
+            captureNotificationShadeOemDiagnostic(
+                    result, reason, structuralShadeMatch, now);
+        }
+        if (result.deepScanPerformed
+                && now - lastBlockedSurfaceScanDiagnosticAt
+                        >= BLOCKED_SURFACE_SCAN_DIAGNOSTIC_INTERVAL_MS) {
+            lastBlockedSurfaceScanDiagnosticAt = now;
+            Log.i(TAG, "blocked surface scan result"
+                    + " surfaces=" + result.surfaces
+                    + " quality=" + result.quality
+                    + " windows=" + result.windowsVisited
+                    + " roots=" + result.systemUiRootsScanned
+                    + " nodes=" + result.nodesVisited
+                    + " exhausted=" + result.budgetExhausted
+                    + " shadeMatch=" + (result.shadeMatch == null
+                            ? "-" : result.shadeMatch));
+        }
+        if ((result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0
+                && now - lastNotificationShadeStructuralLogAt
+                        >= NOTIFICATION_SHADE_STRUCTURAL_LOG_INTERVAL_MS) {
+            lastNotificationShadeStructuralLogAt = now;
+            Log.i(TAG, "notification shade structural match"
+                    + " quality=" + result.quality
+                    + " windows=" + result.windowsVisited
+                    + " roots=" + result.systemUiRootsScanned
+                    + " nodes=" + result.nodesVisited
+                    + " exhausted=" + result.budgetExhausted
+                    + " shadeMatch=" + (result.shadeMatch == null
+                            ? "-" : result.shadeMatch));
+        }
         if (detectedPinEntry) {
             pinEntryLastSeenAt = now;
         }
-        if (detectedNotificationShade) {
-            notificationShadeLastSeenAt = now;
-        }
         pinEntrySurfaceVisible = detectedPinEntry;
-        notificationShadeVisible = detectedNotificationShade
-                || (wasNotificationShadeVisible
-                        && now - notificationShadeLastSeenAt
-                                < BLOCKED_SURFACE_CLEAR_GRACE_MS);
+        if (detectedNotificationShade) {
+            confirmNotificationShade("scan:" + reason);
+        } else if (result.quality == BLOCKED_SURFACE_SCAN_SUCCESS) {
+            if (wasNotificationShadeVisible) {
+                long sincePositiveMs = notificationShadeLastSeenAt <= 0L
+                        ? Long.MAX_VALUE : now - notificationShadeLastSeenAt;
+                if (sincePositiveMs >= BLOCKED_SURFACE_CLEAR_GRACE_MS
+                        && (notificationShadeLastClearScanAt <= 0L
+                        || now - notificationShadeLastClearScanAt
+                                >= BLOCKED_SURFACE_CLEAR_GRACE_MS)) {
+                    notificationShadeLastClearScanAt = now;
+                    notificationShadeClearSuccessCount++;
+                }
+                if (notificationShadeClearSuccessCount
+                        >= NOTIFICATION_SHADE_CLEAR_SUCCESS_COUNT
+                        && sincePositiveMs >= NOTIFICATION_SHADE_CLEAR_STABLE_MS) {
+                    notificationShadeVisible = false;
+                    notificationShadeSuspected = false;
+                    notificationShadeOemPositiveLoggedForCurrentVisibility = false;
+                    notificationShadeLastSeenAt = 0L;
+                    notificationShadeLastClearScanAt = 0L;
+                    notificationShadeClearSuccessCount = 0;
+                    Log.i(TAG, "notification shade cleared by verified scans");
+                }
+            } else if (notificationShadeSuspected) {
+                notificationShadeSuspected = false;
+                notificationShadeSuspectedAt = 0L;
+                handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+                notificationShadeLastClearScanAt = 0L;
+                notificationShadeClearSuccessCount = 0;
+                Log.i(TAG, "notification shade probe cleared by structural scan");
+            }
+        }
         if (pinEntrySurfaceVisible != wasPinEntryVisible) {
             Log.i(TAG, "pin entry surface visible=" + pinEntrySurfaceVisible);
         }
@@ -7464,42 +7915,124 @@ public class ChargingAccessibilityService extends AccessibilityService
             pinEntrySurfaceSeen = true;
         }
         if (elapsedMs > LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS) {
-            Log.w(TAG, "blocked surface async scan slow elapsedMs=" + elapsedMs);
+            Log.w(TAG, "blocked surface async scan slow elapsedMs=" + elapsedMs
+                    + " quality=" + result.quality
+                    + " windows=" + result.windowsVisited
+                    + " roots=" + result.systemUiRootsScanned
+                    + " nodes=" + result.nodesVisited
+                    + " exhausted=" + result.budgetExhausted);
         }
         evaluateVisibility("async_surface_scan:" + reason, false);
     }
 
-    private int detectContentBlockedSurfaces(
+    private void captureNotificationShadeOemDiagnostic(
+            BlockedSurfaceScanResult result, String reason,
+            boolean structuralShadeMatch, long now) {
+        String windows = nonEmptyShadeDiagnostic(result.windowSignature);
+        String nodes = nonEmptyShadeDiagnostic(result.nodeSignature);
+        boolean firstStructuralMatch = structuralShadeMatch
+                && !notificationShadeOemPositiveLoggedForCurrentVisibility;
+        if (structuralShadeMatch) {
+            notificationShadeOemPositiveLoggedForCurrentVisibility = true;
+        }
+        lastNotificationShadeDiagnosticCapturedAt = now;
+        lastNotificationShadeDiagnosticQuality = result.quality;
+        lastNotificationShadeDiagnosticWindows = result.windowsVisited;
+        lastNotificationShadeDiagnosticRoots = result.systemUiRootsScanned;
+        lastNotificationShadeDiagnosticNodes = result.nodesVisited;
+        lastNotificationShadeDiagnosticMatched = structuralShadeMatch;
+        lastNotificationShadeDiagnosticExhausted = result.budgetExhausted;
+        lastNotificationShadeDiagnosticReason = reason == null ? "<none>" : reason;
+        lastNotificationShadeWindowSignature = windows;
+        lastNotificationShadeNodeSignature = nodes;
+        if (structuralShadeMatch) {
+            lastConfirmedNotificationShadeWindowSignature = windows;
+            lastConfirmedNotificationShadeNodeSignature = nodes;
+        }
+
+        if (!firstStructuralMatch
+                && now - lastNotificationShadeOemDiagnosticAt
+                        < NOTIFICATION_SHADE_OEM_DIAGNOSTIC_INTERVAL_MS) {
+            return;
+        }
+        lastNotificationShadeOemDiagnosticAt = now;
+        Log.i(TAG, "shade OEM diagnostic"
+                + " reason=" + lastNotificationShadeDiagnosticReason
+                + " matched=" + structuralShadeMatch
+                + " quality=" + result.quality
+                + " windows=" + result.windowsVisited
+                + " roots=" + result.systemUiRootsScanned
+                + " nodes=" + result.nodesVisited
+                + " exhausted=" + result.budgetExhausted
+                + " shadeMatch=" + (result.shadeMatch == null
+                        ? "-" : result.shadeMatch));
+        logNotificationShadeDiagnosticChunks("windows", windows);
+        logNotificationShadeDiagnosticChunks("visibleNodes", nodes);
+    }
+
+    private String nonEmptyShadeDiagnostic(String value) {
+        return value == null || value.length() == 0 ? "<none>" : value;
+    }
+
+    private void logNotificationShadeDiagnosticChunks(String label, String value) {
+        String safeValue = nonEmptyShadeDiagnostic(value);
+        ArrayList<String> chunks = new ArrayList<String>();
+        int start = 0;
+        while (start < safeValue.length()) {
+            int end = Math.min(safeValue.length(),
+                    start + NOTIFICATION_SHADE_OEM_LOG_CHUNK_CHARS);
+            if (end < safeValue.length()) {
+                int delimiter = safeValue.lastIndexOf(" | ", end);
+                if (delimiter > start) {
+                    end = delimiter;
+                }
+            }
+            chunks.add(safeValue.substring(start, end));
+            start = end;
+            if (safeValue.startsWith(" | ", start)) {
+                start += 3;
+            }
+        }
+        int chunkCount = chunks.size();
+        for (int chunk = 0; chunk < chunkCount; chunk++) {
+            Log.i(TAG, "shade OEM " + label + "["
+                    + (chunk + 1) + "/" + chunkCount + "]="
+                    + chunks.get(chunk));
+        }
+    }
+
+    private BlockedSurfaceScanResult detectContentBlockedSurfaces(
             boolean deepNodeScanNeeded, boolean pinEntryRequestedSnapshot) {
+        BlockedSurfaceScanResult result = new BlockedSurfaceScanResult();
+        result.deepScanPerformed = deepNodeScanNeeded;
         List<AccessibilityWindowInfo> windows;
         try {
-            windows = getWindows();
+            windows = collectBlockedSurfaceScanWindows();
         } catch (RuntimeException e) {
             Log.w(TAG, "content window scan failed", e);
-            return 0;
+            return result;
         }
         if (windows == null || windows.isEmpty()) {
-            return 0;
+            return result;
         }
-        int blockedSurfaces = 0;
+        BlockedSurfaceNodeScanBudget budget = deepNodeScanNeeded
+                ? new BlockedSurfaceNodeScanBudget() : null;
+        StringBuilder windowSignature = deepNodeScanNeeded
+                ? new StringBuilder(512) : null;
+        boolean scanError = false;
         for (int i = 0; i < windows.size(); i++) {
             AccessibilityWindowInfo window = windows.get(i);
             if (window == null) {
                 continue;
             }
-            if (!isActiveOrFocusedWindow(window)) {
-                continue;
-            }
+            result.windowsVisited++;
             CharSequence title = windowTitle(window);
             if (containsStrongPinEntryKeyword(title)) {
-                blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+                result.surfaces |= BLOCKED_SURFACE_PIN_ENTRY;
             }
             if (containsStrongNotificationShadeKeyword(title)
                     || containsNotificationShadeTextKeyword(title)) {
-                blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
-            }
-            if (blockedSurfaces != 0) {
-                return blockedSurfaces;
+                result.surfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
             }
             if (!deepNodeScanNeeded) {
                 continue;
@@ -7508,65 +8041,195 @@ public class ChargingAccessibilityService extends AccessibilityService
             AccessibilityNodeInfo root = null;
             try {
                 root = window.getRoot();
+                appendNotificationShadeWindowDiagnostic(
+                        windowSignature, window, title, root);
                 if (root != null && pinEntryRequestedSnapshot
                         && isKeyboardPackage(root.getPackageName())) {
-                    blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+                    result.surfaces |= BLOCKED_SURFACE_PIN_ENTRY;
                     continue;
                 }
                 if (root == null || !isSystemKeyguardNode(root)) {
                     continue;
                 }
-                blockedSurfaces |= detectBlockedSurfaceNodes(root, 0);
-                if ((blockedSurfaces & BLOCKED_SURFACE_PIN_ENTRY) != 0
-                        && (blockedSurfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0) {
-                    return blockedSurfaces;
-                }
+                result.systemUiRootsScanned++;
+                result.surfaces |= detectBlockedSurfaceNodes(root, budget);
             } catch (RuntimeException e) {
+                scanError = true;
                 Log.w(TAG, "content node scan failed", e);
             } finally {
                 if (root != null) {
                     root.recycle();
                 }
             }
+            if (budget != null && budget.exhausted) {
+                break;
+            }
         }
-        return blockedSurfaces;
+        if (budget != null) {
+            result.nodesVisited = budget.nodesVisited;
+            result.budgetExhausted = budget.exhausted;
+            result.shadeMatch = budget.shadeMatch;
+            result.nodeSignature = budget.diagnosticSignature();
+            result.windowSignature = windowSignature == null
+                    || windowSignature.length() == 0
+                    ? "<none>" : windowSignature.toString();
+        }
+        if ((result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0) {
+            result.quality = scanError || result.budgetExhausted
+                    ? BLOCKED_SURFACE_SCAN_PARTIAL : BLOCKED_SURFACE_SCAN_SUCCESS;
+        } else if (deepNodeScanNeeded && result.systemUiRootsScanned > 0) {
+            result.quality = scanError || result.budgetExhausted
+                    ? BLOCKED_SURFACE_SCAN_PARTIAL : BLOCKED_SURFACE_SCAN_SUCCESS;
+        }
+        return result;
+    }
+
+    private void appendNotificationShadeWindowDiagnostic(
+            StringBuilder signature, AccessibilityWindowInfo window,
+            CharSequence title, AccessibilityNodeInfo root) {
+        if (signature == null || window == null
+                || signature.length() >= NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS) {
+            return;
+        }
+        if (signature.length() > 0) {
+            signature.append(" | ");
+        }
+        String titleSignal;
+        if (containsStrongNotificationShadeKeyword(title)
+                || containsNotificationShadeTextKeyword(title)) {
+            titleSignal = "shade";
+        } else if (containsStrongPinEntryKeyword(title)) {
+            titleSignal = "pin";
+        } else {
+            titleSignal = title == null ? "none" : "other";
+        }
+        boolean systemRoot = root != null && isSystemKeyguardNode(root);
+        signature.append("id=").append(window.getId())
+                .append(",display=")
+                .append(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        ? window.getDisplayId() : 0)
+                .append(",type=").append(window.getType())
+                .append(",layer=").append(window.getLayer())
+                .append(",active=").append(window.isActive())
+                .append(",focused=").append(window.isFocused())
+                .append(",titleSignal=").append(titleSignal)
+                .append(",rootPackage=")
+                .append(root == null ? "-"
+                        : (systemRoot && root.getPackageName() != null
+                                ? root.getPackageName() : "<non-system>"))
+                .append(",rootClass=")
+                .append(!systemRoot || root.getClassName() == null
+                        ? "-" : root.getClassName());
+    }
+
+    private List<AccessibilityWindowInfo> collectBlockedSurfaceScanWindows() {
+        ArrayList<AccessibilityWindowInfo> result =
+                new ArrayList<AccessibilityWindowInfo>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            SparseArray<List<AccessibilityWindowInfo>> windowsByDisplay =
+                    getWindowsOnAllDisplays();
+            if (windowsByDisplay == null) {
+                return result;
+            }
+            for (int displayIndex = 0; displayIndex < windowsByDisplay.size(); displayIndex++) {
+                List<AccessibilityWindowInfo> displayWindows =
+                        windowsByDisplay.valueAt(displayIndex);
+                if (displayWindows == null) {
+                    continue;
+                }
+                int addedForDisplay = 0;
+                for (int i = 0; i < displayWindows.size()
+                        && addedForDisplay < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
+                    AccessibilityWindowInfo window = displayWindows.get(i);
+                    if (isBlockedSurfaceScanCandidateWindow(window)) {
+                        result.add(window);
+                        addedForDisplay++;
+                    }
+                }
+            }
+            return result;
+        }
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) {
+            return result;
+        }
+        for (int i = 0; i < windows.size()
+                && result.size() < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
+            if (isBlockedSurfaceScanCandidateWindow(windows.get(i))) {
+                result.add(windows.get(i));
+            }
+        }
+        return result;
+    }
+
+    private boolean isBlockedSurfaceScanCandidateWindow(AccessibilityWindowInfo window) {
+        return window != null
+                && window.getType() != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY;
     }
 
     private boolean isActiveOrFocusedWindow(AccessibilityWindowInfo window) {
         return window != null && (window.isActive() || window.isFocused());
     }
 
-    private int detectBlockedSurfaceNodes(AccessibilityNodeInfo node, int depth) {
-        if (node == null || depth > PIN_ENTRY_NODE_SCAN_DEPTH) {
+    private int detectBlockedSurfaceNodes(
+            AccessibilityNodeInfo root, BlockedSurfaceNodeScanBudget budget) {
+        if (root == null || budget == null) {
             return 0;
         }
+        ArrayList<AccessibilityNodeInfo> queue = new ArrayList<AccessibilityNodeInfo>();
+        ArrayList<Integer> depths = new ArrayList<Integer>();
+        queue.add(root);
+        depths.add(Integer.valueOf(0));
         int blockedSurfaces = 0;
-        if (nodeMatchesPinEntry(node)) {
-            blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
-        }
-        if (nodeMatchesNotificationShade(node)) {
-            blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
-        }
-        if (blockedSurfaces == (BLOCKED_SURFACE_PIN_ENTRY
-                | BLOCKED_SURFACE_NOTIFICATION_SHADE)) {
-            return blockedSurfaces;
-        }
-        int childCount = Math.min(node.getChildCount(), PIN_ENTRY_NODE_SCAN_CHILD_LIMIT);
-        for (int i = 0; i < childCount; i++) {
-            AccessibilityNodeInfo child = null;
+        int queueIndex = 0;
+        while (queueIndex < queue.size() && budget.tryVisit()) {
+            AccessibilityNodeInfo node = queue.get(queueIndex);
+            int depth = depths.get(queueIndex).intValue();
+            queueIndex++;
+            boolean recycleNode = node != root;
             try {
-                child = node.getChild(i);
-                blockedSurfaces |= detectBlockedSurfaceNodes(child, depth + 1);
+                budget.recordDiagnosticNode(depth, node);
+                if (nodeMatchesPinEntry(node)) {
+                    blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+                }
+                if (nodeMatchesNotificationShade(node)) {
+                    blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
+                    if (budget.shadeMatch == null) {
+                        CharSequence viewId = node.getViewIdResourceName();
+                        CharSequence className = node.getClassName();
+                        budget.shadeMatch = viewId != null
+                                ? viewId.toString()
+                                : (className == null ? "unknown" : className.toString());
+                    }
+                }
                 if (blockedSurfaces == (BLOCKED_SURFACE_PIN_ENTRY
                         | BLOCKED_SURFACE_NOTIFICATION_SHADE)) {
-                    return blockedSurfaces;
+                    break;
+                }
+                if (depth >= PIN_ENTRY_NODE_SCAN_DEPTH) {
+                    continue;
+                }
+                int childCount = Math.min(
+                        node.getChildCount(), PIN_ENTRY_NODE_SCAN_CHILD_LIMIT);
+                for (int i = 0; i < childCount; i++) {
+                    AccessibilityNodeInfo child = node.getChild(i);
+                    if (child != null) {
+                        queue.add(child);
+                        depths.add(Integer.valueOf(depth + 1));
+                    }
                 }
             } catch (RuntimeException e) {
                 Log.w(TAG, "blocked surface child scan failed", e);
             } finally {
-                if (child != null) {
-                    child.recycle();
+                if (recycleNode) {
+                    node.recycle();
                 }
+            }
+        }
+        for (int i = queueIndex; i < queue.size(); i++) {
+            AccessibilityNodeInfo queuedNode = queue.get(i);
+            if (queuedNode != null && queuedNode != root) {
+                queuedNode.recycle();
             }
         }
         return blockedSurfaces;
@@ -7580,10 +8243,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean nodeMatchesNotificationShade(AccessibilityNodeInfo node) {
-        return containsStrongNotificationShadeKeyword(node.getViewIdResourceName())
-                || containsStrongNotificationShadeKeyword(node.getClassName())
-                || containsNotificationShadeTextKeyword(node.getText())
-                || containsNotificationShadeTextKeyword(node.getContentDescription());
+        return node.isVisibleToUser()
+                && (containsStrongNotificationShadeKeyword(node.getViewIdResourceName())
+                || containsStrongNotificationShadeKeyword(node.getClassName()));
     }
 
     private boolean isSystemKeyguardNode(AccessibilityNodeInfo node) {
@@ -7672,7 +8334,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (value == null) {
             return false;
         }
-        String normalized = value.toString().toLowerCase();
+        String normalized = value.toString().toLowerCase(Locale.ROOT);
         for (int i = 0; i < keywords.length; i++) {
             if (normalized.contains(keywords[i])) {
                 return true;
@@ -7750,6 +8412,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return "window_state";
             case AccessibilityEvent.TYPE_WINDOWS_CHANGED:
                 return "windows";
+            case AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED:
+                return "window_content";
             default:
                 return String.valueOf(event.getEventType());
         }
@@ -7763,17 +8427,22 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         int type = event.getEventType();
-        if (!pinEntryRequested
-                && type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            return;
+            if (type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                    || !pinEntryRequested) {
+                return;
+            }
         }
         CharSequence className = event.getClassName();
-        CharSequence contentDescription = event.getContentDescription();
+        int windowChanges = type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? event.getWindowChanges() : 0;
         Log.i(TAG, "event detail type=" + eventTypeName(event)
                 + " class=" + (className == null ? "-" : className)
-                + " text=" + event.getText()
-                + " desc=" + (contentDescription == null ? "-" : contentDescription)
+                + " windowId=" + event.getWindowId()
+                + " contentChanges=" + event.getContentChangeTypes()
+                + " windowChanges=" + windowChanges
                 + " pinEntryRequested=" + pinEntryRequested);
     }
 
@@ -7795,6 +8464,17 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || containsNotificationShadeTextKeyword(event.getContentDescription());
     }
 
+    private boolean shouldProbeNotificationShade(AccessibilityEvent event) {
+        if (event == null || event.getPackageName() == null
+                || !SYSTEM_UI_PACKAGE.equals(event.getPackageName().toString())) {
+            return false;
+        }
+        int type = event.getEventType();
+        return type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+                || type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
+    }
+
     private boolean isGlobalActionsEvent(AccessibilityEvent event) {
         if (event == null || !SYSTEM_UI_PACKAGE.equals(
                 event.getPackageName() == null
@@ -7805,7 +8485,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (className == null) {
             return false;
         }
-        String normalized = className.toString().toLowerCase();
+        String normalized = className.toString().toLowerCase(Locale.ROOT);
         return normalized.contains("globalactions")
                 || normalized.contains("global_actions")
                 || normalized.contains("actionsdialog");
