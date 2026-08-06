@@ -6,6 +6,7 @@ Bring classic Android lockscreen effects back to modern devices—without root.
 · [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
 · [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
 . [Telegram Group For Support](https://t.me/legacylockscreeneffect)
+. [Test L.L.E Companion](https://github.com/Brazzo978/LLE-Companion/releases/latest)
 
 > **Open source and local by design.** L.L.E's source code is published so its
 > permission and data handling can be inspected. The app does not request the
@@ -32,6 +33,19 @@ Choose the installation method:
 
 The first-launch wizard configures Accessibility, battery optimization,
 wallpaper dimming, lockscreen capture, enabled features, and the touch region.
+
+### Stay updated with L.L.E Companion
+
+[L.L.E Companion](https://github.com/Brazzo978/LLE-Companion) is an optional
+companion app that checks the installed public L.L.E version and helps users
+reach new official GitHub releases. Tester builds are intentionally ignored.
+Android still keeps the user in control of downloading and confirming each
+installation.
+
+The Companion is currently looking for testers. Install the
+[latest Companion release](https://github.com/Brazzo978/LLE-Companion/releases/latest)
+to receive update notifications, try its guided download/setup tutorials, and
+[report any problem or suggestion](https://github.com/Brazzo978/LLE-Companion/issues).
 
 ### Samsung Restricted Settings
 

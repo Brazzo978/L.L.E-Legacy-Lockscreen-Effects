@@ -114,8 +114,34 @@ final class DebugReport {
         body.append("product=").append(Build.PRODUCT).append('\n');
         body.append("android_release=").append(Build.VERSION.RELEASE).append('\n');
         body.append("android_sdk=").append(Build.VERSION.SDK_INT).append('\n');
+        body.append("android_security_patch=")
+                .append(Build.VERSION.SECURITY_PATCH).append('\n');
+        body.append("build_incremental=")
+                .append(Build.VERSION.INCREMENTAL).append('\n');
         body.append("build_display=").append(Build.DISPLAY).append('\n');
+        body.append("build_fingerprint=").append(Build.FINGERPRINT).append('\n');
+        appendPackageVersion(body, context, "systemui", "com.android.systemui");
         body.append('\n');
+    }
+
+    private static void appendPackageVersion(
+            StringBuilder body, Context context, String label, String packageName) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(packageName, 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode() : info.versionCode;
+            body.append(label).append("_package=").append(packageName).append('\n');
+            body.append(label).append("_version_name=")
+                    .append(info.versionName == null ? "unknown" : info.versionName)
+                    .append('\n');
+            body.append(label).append("_version_code=")
+                    .append(versionCode).append('\n');
+        } catch (PackageManager.NameNotFoundException error) {
+            body.append(label).append("_version=unavailable\n");
+        } catch (RuntimeException error) {
+            body.append(label).append("_version=error:")
+                    .append(error.getClass().getSimpleName()).append('\n');
+        }
     }
 
     private static void appendRuntimeState(StringBuilder body, Context context) {
