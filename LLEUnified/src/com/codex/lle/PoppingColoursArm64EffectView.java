@@ -8,6 +8,7 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -37,6 +38,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
 
     private static final int DRAG_SOUND_COUNT_START_POINT = 40;
     private static final int DRAG_SOUND_COUNT_INTERVAL = 60;
+    private static final long DRAG_SOUND_MOVE_SAMPLE_MS = 16L;
     private static final float TOUCH_SOUND_VOLUME = 0.3f;
 
     private final List<Particle> particlePool =
@@ -68,6 +70,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private int drawingRight = 1;
     private int drawingBottom = 1;
     private int dragSoundCount;
+    private long lastDragSoundMoveAtMs;
     private float lastGestureX;
     private float lastGestureY;
     private float lastAddedX;
@@ -126,10 +129,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.particle_tap, 1);
         dragSound = soundPool.load(context, R.raw.particle_drag, 1);
@@ -170,6 +170,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         lastGestureX = screenX;
         lastGestureY = screenY;
         dragSoundCount = DRAG_SOUND_COUNT_START_POINT;
+        lastDragSoundMoveAtMs = SystemClock.uptimeMillis();
         play(tapSound, TOUCH_SOUND_VOLUME);
         addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY,
                 getColor(screenX, screenY));
@@ -188,10 +189,14 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
         lastGestureX = screenX;
         lastGestureY = screenY;
-        dragSoundCount++;
-        if (dragSoundCount >= DRAG_SOUND_COUNT_INTERVAL) {
-            play(dragSound, TOUCH_SOUND_VOLUME);
-            dragSoundCount = 0;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastDragSoundMoveAtMs >= DRAG_SOUND_MOVE_SAMPLE_MS) {
+            lastDragSoundMoveAtMs = now;
+            dragSoundCount++;
+            if (dragSoundCount >= DRAG_SOUND_COUNT_INTERVAL) {
+                play(dragSound, TOUCH_SOUND_VOLUME);
+                dragSoundCount = 0;
+            }
         }
         addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY,
                 getColor(screenX, screenY));
@@ -203,6 +208,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             return;
         }
         gestureActive = false;
+        lastDragSoundMoveAtMs = 0L;
         if (completed) {
             unlockDots();
             play(unlockSound, 1f);
@@ -218,6 +224,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             return;
         }
         gestureActive = false;
+        lastDragSoundMoveAtMs = 0L;
         Log.i(TAG, "popping colours ARM64 cancel");
     }
 
@@ -225,6 +232,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     public void resetEffect() {
         gestureActive = false;
         dragSoundCount = 0;
+        lastDragSoundMoveAtMs = 0L;
         removeCallbacks(affordanceRunnable);
         stopDrawing();
         aliveParticles.clear();

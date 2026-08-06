@@ -27,6 +27,7 @@ final class OverlayPrefs {
     static final String UNLOCK_EFFECT_TIME_START = "unlock_effect_time_start";
     static final String UNLOCK_EFFECT_TIME_END = "unlock_effect_time_end";
     static final String UNLOCK_EFFECT_SOUND_ENABLED = "unlock_effect_sound_enabled";
+    static final String LLE_AUDIO_ROUTE_MEDIA = "lle_audio_route_media";
     static final String UNLOCK_EFFECT_SOUND_TIME_ENABLED =
             "unlock_effect_sound_time_enabled";
     static final String UNLOCK_EFFECT_SOUND_TIME_START = "unlock_effect_sound_time_start";
@@ -61,9 +62,18 @@ final class OverlayPrefs {
     static final String POSITION_OFFSET_X = "position_offset_x";
     static final String POSITION_OFFSET_Y = "position_offset_y";
     static final String DEBUG_ROLLING_CHARGE = "debug_rolling_charge";
+    // Keep the original preference value so existing tester installs retain their choice.
+    static final String DOODLE_AOD_ENABLED = "debug_doodle_aod_freeze";
+    static final String DOODLE_AOD_BRIGHTNESS_PERCENT = "doodle_aod_brightness_percent";
+    static final String DOODLE_AOD_OPACITY_PERCENT = "doodle_aod_opacity_percent";
+    static final String DOODLE_OPACITY_PERCENT = "doodle_opacity_percent";
+    static final int DOODLE_AOD_BRIGHTNESS_DEFAULT_PERCENT = 50;
+    static final int DOODLE_AOD_OPACITY_DEFAULT_PERCENT = 50;
+    static final int DOODLE_OPACITY_DEFAULT_PERCENT = 100;
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
+    static final String DEBUG_BYPASS_BOOT_SAFETY = "debug_bypass_boot_safety";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
@@ -180,13 +190,18 @@ final class OverlayPrefs {
     static final int DEFAULT_TOUCH_BOX_TOP = 730;
     static final int DEFAULT_TOUCH_BOX_RIGHT = 1080;
     static final int DEFAULT_TOUCH_BOX_BOTTOM = 2100;
+    /** Deliberately small fallback used only until a touch box is explicitly saved. */
+    static final int SAFE_TOUCH_BOX_LEFT = 490;
+    static final int SAFE_TOUCH_BOX_TOP = 1100;
+    static final int SAFE_TOUCH_BOX_RIGHT = 590;
+    static final int SAFE_TOUCH_BOX_BOTTOM = 1200;
     static final int LEGACY_TOUCH_BOX_LEFT = 60;
     static final int LEGACY_TOUCH_BOX_TOP = 710;
     static final int LEGACY_TOUCH_BOX_RIGHT = 1030;
     static final int LEGACY_TOUCH_BOX_BOTTOM = 1900;
     static final int TOUCH_BOX_ROUNDING_PX = 10;
-    static final int POSITION_OFFSET_MIN = -100;
-    static final int POSITION_OFFSET_MAX = 100;
+    static final int POSITION_OFFSET_MIN = -2000;
+    static final int POSITION_OFFSET_MAX = 2000;
     static final int DOODLE_SIZE_MIN_PERCENT = 60;
     static final int DOODLE_SIZE_MAX_PERCENT = 125;
     static final int DOODLE_SIZE_DEFAULT_PERCENT = 75;
@@ -265,10 +280,13 @@ final class OverlayPrefs {
                 UNLOCK_EFFECT_TIME_END);
     }
 
+    static boolean useMediaAudioRoute(Context context) {
+        return get(context).getBoolean(LLE_AUDIO_ROUTE_MEDIA, false);
+    }
+
     static boolean unlockEffectSoundAllowedNow(Context context) {
         return get(context).getBoolean(UNLOCK_EFFECT_SOUND_ENABLED, true)
-                && Settings.System.getInt(context.getContentResolver(),
-                        "lockscreen_sounds_enabled", 1) != 0
+                && EffectAudio.platformSoundSwitchAllows(context)
                 && timeWindowAllows(context,
                 UNLOCK_EFFECT_SOUND_TIME_ENABLED,
                 UNLOCK_EFFECT_SOUND_TIME_START,
@@ -382,6 +400,29 @@ final class OverlayPrefs {
         return get(context).getBoolean(DEBUG_ROLLING_CHARGE, false);
     }
 
+    static boolean doodleAodEnabled(Context context) {
+        return get(context).getBoolean(DOODLE_AOD_ENABLED, false);
+    }
+
+    static int doodleAodBrightnessPercent(Context context) {
+        return clampPercent(get(context).getInt(DOODLE_AOD_BRIGHTNESS_PERCENT,
+                DOODLE_AOD_BRIGHTNESS_DEFAULT_PERCENT));
+    }
+
+    static int doodleAodOpacityPercent(Context context) {
+        return clampPercent(get(context).getInt(DOODLE_AOD_OPACITY_PERCENT,
+                DOODLE_AOD_OPACITY_DEFAULT_PERCENT));
+    }
+
+    static int doodleOpacityPercent(Context context) {
+        return clampPercent(get(context).getInt(DOODLE_OPACITY_PERCENT,
+                DOODLE_OPACITY_DEFAULT_PERCENT));
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(100, value));
+    }
+
     static boolean debugTouchArea(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_AREA, true);
     }
@@ -392,6 +433,10 @@ final class OverlayPrefs {
 
     static boolean debugTouchStandby(Context context) {
         return get(context).getBoolean(DEBUG_TOUCH_STANDBY, true);
+    }
+
+    static boolean debugBypassBootSafety(Context context) {
+        return get(context).getBoolean(DEBUG_BYPASS_BOOT_SAFETY, false);
     }
 
     static boolean debugLensLoop(Context context) {
@@ -949,7 +994,8 @@ final class OverlayPrefs {
 
     static int touchBoxLeft(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_LEFT, profile), DEFAULT_TOUCH_BOX_LEFT));
+                touchBoxKey(TOUCH_BOX_LEFT, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_LEFT : SAFE_TOUCH_BOX_LEFT));
     }
 
     static int touchBoxTop(Context context) {
@@ -958,7 +1004,8 @@ final class OverlayPrefs {
 
     static int touchBoxTop(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_TOP, profile), DEFAULT_TOUCH_BOX_TOP));
+                touchBoxKey(TOUCH_BOX_TOP, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_TOP : SAFE_TOUCH_BOX_TOP));
     }
 
     static int touchBoxRight(Context context) {
@@ -967,7 +1014,8 @@ final class OverlayPrefs {
 
     static int touchBoxRight(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_RIGHT, profile), DEFAULT_TOUCH_BOX_RIGHT));
+                touchBoxKey(TOUCH_BOX_RIGHT, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_RIGHT : SAFE_TOUCH_BOX_RIGHT));
     }
 
     static int touchBoxBottom(Context context) {
@@ -976,7 +1024,8 @@ final class OverlayPrefs {
 
     static int touchBoxBottom(Context context, String profile) {
         return roundTouchCoordinate(get(context).getInt(
-                touchBoxKey(TOUCH_BOX_BOTTOM, profile), DEFAULT_TOUCH_BOX_BOTTOM));
+                touchBoxKey(TOUCH_BOX_BOTTOM, profile), touchBoxConfigured(context, profile)
+                        ? DEFAULT_TOUCH_BOX_BOTTOM : SAFE_TOUCH_BOX_BOTTOM));
     }
 
     static void saveTouchBox(Context context, int left, int top, int right, int bottom) {

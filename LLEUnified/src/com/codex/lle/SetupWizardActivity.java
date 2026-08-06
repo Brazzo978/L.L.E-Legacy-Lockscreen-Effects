@@ -118,6 +118,7 @@ public class SetupWizardActivity extends Activity {
     private static final int COLOR_SURFACE = Color.WHITE;
     private static final int COLOR_OK = Color.rgb(27, 155, 104);
     private static final int COLOR_WARN = Color.rgb(205, 128, 38);
+    private static final int COLOR_DANGER = Color.rgb(190, 36, 45);
 
     private FrameLayout contentHost;
     private LinearLayout progressDots;
@@ -588,6 +589,13 @@ public class SetupWizardActivity extends Activity {
         body.addView(paragraph("Accessibility lets L.L.E detect the lockscreen and show the "
                 + "effect at the right time. The service does not read what you type, and you "
                 + "can disable it at any time."));
+        body.addView(dangerCard("⚠  DO NOT DISABLE BOOT SAFETY",
+                "If an effect ever blocks touch, restart the phone. L.L.E stays completely "
+                        + "inactive for the first 120 seconds after every boot so you can turn "
+                        + "off its Accessibility service or uninstall it. Only devices already "
+                        + "proven stable should use the Advanced debug bypass. Enabling that "
+                        + "bypass removes this recovery window and can force you to use Safe "
+                        + "Mode or ADB to recover the phone."));
         body.addView(statusCard(enabled ? "Service enabled" : "Service not enabled yet",
                 enabled ? "Everything is ready to continue." :
                         "Samsung path: Accessibility \u2192 Installed apps \u2192 "
@@ -989,6 +997,7 @@ public class SetupWizardActivity extends Activity {
     private View touchBoxStep() {
         final boolean fold = FoldDisplayTarget.isFoldDevice(this)
                 && OverlayPrefs.foldModeEnabled(this);
+        final boolean unlockEnabled = OverlayPrefs.unlockEffectEnabled(this);
         final boolean configured = fold
                 ? OverlayPrefs.touchBoxConfigured(this, FoldDisplayTarget.PROFILE_COVER)
                         && OverlayPrefs.touchBoxConfigured(
@@ -997,9 +1006,13 @@ public class SetupWizardActivity extends Activity {
                         this, FoldDisplayTarget.PROFILE_SINGLE);
 
         LinearLayout body = stepBody();
-        body.addView(kicker("STEP 7", configured ? "CONFIGURED" : "OPTIONAL",
+        body.addView(kicker("STEP 7", configured ? "CONFIGURED"
+                : (unlockEnabled ? "SET THIS NOW" : "OPTIONAL"),
                 configured ? COLOR_OK : COLOR_ACCENT));
-        body.addView(title("Would you like to adjust the touch box?"));
+        body.addView(title(configured
+                ? "Review your touch box"
+                : (unlockEnabled ? "Set your unlock touch area"
+                        : "Would you like to adjust the touch box?")));
         body.addView(paragraph(fold
                 ? "The touch box defines where unlock gestures can activate an effect. "
                         + "The existing dual-panel tool lets you configure independent areas "
@@ -1009,13 +1022,14 @@ public class SetupWizardActivity extends Activity {
                         + "the active area precisely."));
         body.addView(statusCard(configured
                         ? "Touch box already configured"
-                        : "Current default area will be used",
+                        : "Small recovery area is active",
                 configured
                         ? (fold
                                 ? "Both Fold display profiles already have saved touch areas."
                                 : "You can refine the saved area or keep it unchanged.")
-                        : "Open the editor to move, resize or add areas. You may also keep "
-                                + "the safe default and change it later from the main screen.",
+                        : "Until you save an area, only a deliberately tiny region near the "
+                                + "middle of the screen accepts effect gestures. Open the editor "
+                                + "to enlarge it for normal use.",
                 configured));
 
         Button edit = primaryButton(configured
@@ -1031,7 +1045,7 @@ public class SetupWizardActivity extends Activity {
 
         Button keep = quietButton(configured
                 ? "Keep current touch box and finish"
-                : "Use default touch box and finish");
+                : "Keep tiny recovery box and finish");
         keep.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1726,6 +1740,29 @@ public class SetupWizardActivity extends Activity {
         card.setLayoutParams(params);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(2));
+        }
+        return card;
+    }
+
+    private View dangerCard(String heading, String copy) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(solid(Color.rgb(255, 242, 243), dp(20), COLOR_DANGER));
+        TextView headingView = text(heading, 20f, COLOR_DANGER, true);
+        headingView.setAllCaps(true);
+        card.addView(headingView);
+        TextView copyView = text(copy, 15f, Color.rgb(116, 24, 31), true);
+        copyView.setLineSpacing(dp(2), 1f);
+        copyView.setPadding(0, dp(9), 0, 0);
+        card.addView(copyView);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(18));
+        card.setLayoutParams(params);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(dp(3));
         }
         return card;
     }

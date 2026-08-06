@@ -104,10 +104,7 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
         tapSound = soundPool.load(context, R.raw.ve_sparklingbubbles_tap, 1);
@@ -522,15 +519,14 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
             return false;
         }
         try {
-            if (Settings.System.getInt(appContext.getContentResolver(),
-                    "lockscreen_sounds_enabled", 1) == 0) {
+            if (!EffectAudio.platformSoundSwitchAllows(appContext)) {
                 return false;
             }
         } catch (RuntimeException ignored) {
             // Match Samsung's permissive behavior when the setting cannot be queried.
         }
         return audioManager != null
-                && audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+                && EffectAudio.outputHasVolume(appContext, audioManager);
     }
 
     private void transition(int state, String detail) {

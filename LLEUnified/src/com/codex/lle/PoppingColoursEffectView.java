@@ -66,10 +66,7 @@ public class PoppingColoursEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.particle_tap, 1);
         dragSound = soundPool.load(context, R.raw.particle_drag, 1);

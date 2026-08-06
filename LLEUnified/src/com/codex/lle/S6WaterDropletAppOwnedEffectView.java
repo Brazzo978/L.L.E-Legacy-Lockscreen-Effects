@@ -48,6 +48,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
     private final AudioManager audioManager;
     private final SoundPool soundPool;
     private final int tapSound;
+    private final int unlockSound;
     private final Object soundLock = new Object();
     private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
     private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
@@ -111,10 +112,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(4)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         soundPool.setOnLoadCompleteListener(
                 new SoundPool.OnLoadCompleteListener() {
@@ -132,6 +130,8 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
                         Context.AUDIO_SERVICE);
         tapSound =
                 soundPool.load(context, R.raw.s6_water_droplet_tap, 1);
+        unlockSound =
+                soundPool.load(context, R.raw.s6_water_droplet_unlock, 1);
 
         sensorManager =
                 (SensorManager) appContext.getSystemService(
@@ -265,10 +265,11 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
         if (completed) {
             /*
              * Stock's successful terminal path is key event 91 by itself.
-             * It does not precede it with touch UP, and the shared LLE audio
-             * pipeline owns completion audio, so do not duplicate it here.
+             * It does not precede it with touch UP. This renderer also owns
+             * the matching stock unlock sample.
              */
             glView.unlock();
+            play(unlockSound, "unlock");
         } else {
             glView.touch(
                     MotionEvent.ACTION_UP,
@@ -801,10 +802,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
             return false;
         }
         try {
-            if (Settings.System.getInt(
-                    appContext.getContentResolver(),
-                    "lockscreen_sounds_enabled",
-                    1) == 0) {
+            if (!EffectAudio.platformSoundSwitchAllows(appContext)) {
                 return false;
             }
         } catch (RuntimeException ignored) {
@@ -813,11 +811,8 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
         if (audioManager == null) {
             return false;
         }
-        int ringerMode = audioManager.getRingerMode();
-        return ringerMode != AudioManager.RINGER_MODE_SILENT
-                && ringerMode != AudioManager.RINGER_MODE_VIBRATE
-                && audioManager.getStreamVolume(
-                        AudioManager.STREAM_SYSTEM) > 0;
+        return EffectAudio.ringerModeAllows(appContext, audioManager)
+                && EffectAudio.outputHasVolume(appContext, audioManager);
     }
 
     private void transition(int state, String detail) {

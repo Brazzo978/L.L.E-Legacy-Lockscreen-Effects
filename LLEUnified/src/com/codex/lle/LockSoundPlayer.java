@@ -40,10 +40,6 @@ final class LockSoundPlayer {
         if (!systemLockSoundsEnabled()) {
             return;
         }
-        // Samsung's Mass Tension renderer intentionally has no lock sound.
-        if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
-            return;
-        }
         ensureLoaded();
         if (soundPool == null || effect < 0 || effect >= effectSounds.length) {
             return;
@@ -91,10 +87,7 @@ final class LockSoundPlayer {
             }
             soundPool = new SoundPool.Builder()
                     .setMaxStreams(2)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build())
+                    .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
                     .build();
             soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
                 @Override
@@ -108,6 +101,12 @@ final class LockSoundPlayer {
                     load(R.raw.lens_flare_lock);
             effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
                     load(R.raw.s3_lock);
+            effectSounds[OverlayPrefs.EFFECT_N4_INK_IN_WATER] =
+                    effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE];
+            effectSounds[OverlayPrefs.EFFECT_STONE_SKIPPING] =
+                    effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE];
+            effectSounds[OverlayPrefs.EFFECT_TABS_BLIND] =
+                    load(R.raw.blind_lock);
             effectSounds[OverlayPrefs.EFFECT_S5_POPPING_COLOURS] =
                     load(R.raw.particle_lock);
             effectSounds[OverlayPrefs.EFFECT_WATERCOLOUR] =
@@ -134,6 +133,10 @@ final class LockSoundPlayer {
                     load(R.raw.geometricmosaic_lock);
             effectSounds[OverlayPrefs.EFFECT_BRILLIANT_RING] =
                     load(R.raw.brilliantring_lock);
+            effectSounds[OverlayPrefs.EFFECT_BRILLIANT_CUT] =
+                    load(R.raw.brilliantcut_lock);
+            effectSounds[OverlayPrefs.EFFECT_MASS_TENSION] =
+                    load(R.raw.mass_tension_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);
@@ -205,8 +208,7 @@ final class LockSoundPlayer {
     }
 
     private boolean systemLockSoundsEnabled() {
-        return Settings.System.getInt(context.getContentResolver(),
-                "lockscreen_sounds_enabled", 1) != 0;
+        return EffectAudio.platformSoundSwitchAllows(context);
     }
 
     private int resolveSeason(int seasonMode) {

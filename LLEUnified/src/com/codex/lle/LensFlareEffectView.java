@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
@@ -37,6 +38,14 @@ public class LensFlareEffectView extends FrameLayout
     private static final long AFFORDANCE_OFF_DURATION_MS = 1100L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
+    // The Note 4 oracle reserves highlight headroom for additive flares. Apply the
+    // measured 8% compensation only to broadly saturated backgrounds: the matched
+    // S23 wallpaper had 39.74% of pixels at max(R,G,B) >= 240, versus 0.15% on the
+    // oracle. Sampling happens once per background update, never per frame.
+    private static final float HIGH_BACKGROUND_DIM_ALPHA = 20f / 255f;
+    private static final int BACKGROUND_HIGHLIGHT_CHANNEL = 240;
+    private static final float BACKGROUND_HIGHLIGHT_FRACTION = 0.10f;
+    private static final int BACKGROUND_BRIGHTNESS_SAMPLE_SIDE = 64;
     private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
     private static final float BASE_FINGER_Y_OFFSET_PX = -80f;
     private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
@@ -49,13 +58,15 @@ public class LensFlareEffectView extends FrameLayout
             + "uniform shader background;"
             + "uniform shader vignette;"
             + "uniform float vignetteAlpha;"
+            + "uniform float backgroundDimAlpha;"
             + "half4 main(float2 p) {"
             + "  float4 f = float4(flare.eval(p));"
             + "  float flareAlpha = clamp(f.a, 0.0, 1.0);"
             + "  float3 flareRgb = min(max(f.rgb, float3(0.0)), float3(flareAlpha));"
             + "  float4 b = float4(background.eval(p));"
             + "  float mask = clamp(float(vignette.eval(p).a) * vignetteAlpha, 0.0, 1.0);"
-            + "  float3 base = b.rgb * (1.0 - mask);"
+            + "  float3 base = b.rgb * (1.0 - mask)"
+            + "      * (1.0 - clamp(backgroundDimAlpha, 0.0, 1.0));"
             + "  float3 target = min(base + flareRgb, float3(1.0));"
             + "  float3 delta = max(target - base, float3(0.0));"
             + "  float3 room = max(float3(0.0001), float3(1.0) - base);"
@@ -102,6 +113,7 @@ public class LensFlareEffectView extends FrameLayout
     private RuntimeShader additiveCompositeShader;
     private BitmapShader backgroundShader;
     private BitmapShader vignetteShader;
+    private float backgroundDimAlpha;
 
     private boolean destroyed;
     private boolean warmUpPending;
@@ -178,10 +190,7 @@ public class LensFlareEffectView extends FrameLayout
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(3)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         tapSound = soundPool.load(context, R.raw.lens_flare_tap, 1);
         unlockSound = soundPool.load(context, R.raw.lens_flare_unlock, 1);
@@ -354,9 +363,11 @@ public class LensFlareEffectView extends FrameLayout
         backgroundBitmap = next;
         ownsBackgroundBitmap = !borrow;
         backgroundSource = sourceName == null ? "external" : sourceName;
+        updateAdaptiveBackgroundDim();
         configureAdditiveComposite();
         Log.i(TAG, "lens flare additive background ready source=" + backgroundSource
                 + " size=" + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight()
+                + " dimAlpha=" + backgroundDimAlpha
                 + " shader=" + (additiveCompositeShader != null));
         invalidateEffect();
     }
@@ -366,6 +377,7 @@ public class LensFlareEffectView extends FrameLayout
         clearAdditiveComposite();
         recycleBackgroundBitmap();
         backgroundSource = "none";
+        backgroundDimAlpha = 0f;
         invalidateEffect();
     }
 
@@ -420,6 +432,7 @@ public class LensFlareEffectView extends FrameLayout
             backgroundBitmap = resized;
             ownsBackgroundBitmap = true;
             backgroundBitmap.prepareToDraw();
+            updateAdaptiveBackgroundDim();
         }
         configureAdditiveComposite();
         if (warmUpPending && width > 0 && height > 0) {
@@ -434,8 +447,13 @@ public class LensFlareEffectView extends FrameLayout
         if (vignettingAlpha > 0f) {
             drawBitmapFitXY(canvas, flareVignetting, vignettingAlpha);
         }
+        if (backgroundDimAlpha > 0f) {
+            canvas.drawARGB(Math.round(backgroundDimAlpha * 255f), 0, 0, 0);
+        }
         if (additiveCompositeShader != null) {
             additiveCompositeShader.setFloatUniform("vignetteAlpha", vignettingAlpha);
+            additiveCompositeShader.setFloatUniform(
+                    "backgroundDimAlpha", backgroundDimAlpha);
         }
     }
 
@@ -859,6 +877,8 @@ public class LensFlareEffectView extends FrameLayout
             additiveCompositeShader.setInputShader("background", backgroundShader);
             additiveCompositeShader.setInputShader("vignette", vignetteShader);
             additiveCompositeShader.setFloatUniform("vignetteAlpha", 0f);
+            additiveCompositeShader.setFloatUniform(
+                    "backgroundDimAlpha", backgroundDimAlpha);
             flareContentView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(
                     additiveCompositeShader, "flare"));
         } catch (Throwable t) {
@@ -874,6 +894,48 @@ public class LensFlareEffectView extends FrameLayout
         additiveCompositeShader = null;
         backgroundShader = null;
         vignetteShader = null;
+    }
+
+    private void updateAdaptiveBackgroundDim() {
+        if (backgroundBitmap == null || backgroundBitmap.isRecycled()) {
+            backgroundDimAlpha = 0f;
+            return;
+        }
+        int width = backgroundBitmap.getWidth();
+        int height = backgroundBitmap.getHeight();
+        int columns = Math.max(1, Math.min(BACKGROUND_BRIGHTNESS_SAMPLE_SIDE, width));
+        int rows = Math.max(1, Math.min(BACKGROUND_BRIGHTNESS_SAMPLE_SIDE, height));
+        int brightSamples = 0;
+        int sampleCount = 0;
+        try {
+            for (int row = 0; row < rows; row++) {
+                int y = rows == 1 ? 0 : Math.round(row * (height - 1f) / (rows - 1f));
+                for (int column = 0; column < columns; column++) {
+                    int x = columns == 1
+                            ? 0 : Math.round(column * (width - 1f) / (columns - 1f));
+                    int color = backgroundBitmap.getPixel(x, y);
+                    if (Math.max(Color.red(color),
+                            Math.max(Color.green(color), Color.blue(color)))
+                            >= BACKGROUND_HIGHLIGHT_CHANNEL) {
+                        brightSamples++;
+                    }
+                    sampleCount++;
+                }
+            }
+        } catch (RuntimeException error) {
+            backgroundDimAlpha = 0f;
+            Log.w(TAG, "lens flare background brightness sample unavailable", error);
+            return;
+        }
+        float brightFraction = sampleCount <= 0 ? 0f : brightSamples / (float) sampleCount;
+        backgroundDimAlpha = brightFraction >= BACKGROUND_HIGHLIGHT_FRACTION
+                ? HIGH_BACKGROUND_DIM_ALPHA : 0f;
+        Log.i(TAG, "lens flare adaptive background dim source=" + backgroundSource
+                + " brightFraction=" + brightFraction
+                + " threshold=" + BACKGROUND_HIGHLIGHT_FRACTION
+                + " channel=" + BACKGROUND_HIGHLIGHT_CHANNEL
+                + " dimAlpha=" + backgroundDimAlpha
+                + " samples=" + sampleCount);
     }
 
     private void recycleBackgroundBitmap() {

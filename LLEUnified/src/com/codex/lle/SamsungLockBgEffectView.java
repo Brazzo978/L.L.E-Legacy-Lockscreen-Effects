@@ -159,10 +159,7 @@ public class SamsungLockBgEffectView extends FrameLayout
         long soundStartedAt = SystemClock.uptimeMillis();
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(10)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(getContext()))
                 .build();
         boolean geometricMosaic = samsungEffectId == SAMSUNG_GEOMETRIC_MOSAIC;
         boolean brilliantCut = samsungEffectId == SAMSUNG_BRILLIANT_CUT;
@@ -978,12 +975,11 @@ public class SamsungLockBgEffectView extends FrameLayout
         if (!OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             return false;
         }
-        if (Settings.System.getInt(getContext().getContentResolver(),
-                "lockscreen_sounds_enabled", 1) == 0) {
+        if (!EffectAudio.platformSoundSwitchAllows(getContext())) {
             return false;
         }
         return audioManager == null
-                || audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) > 0;
+                || EffectAudio.outputHasVolume(getContext(), audioManager);
     }
 
     private void recycle(Bitmap bitmap) {
