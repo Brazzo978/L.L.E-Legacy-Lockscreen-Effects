@@ -140,6 +140,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long BLOCKED_SURFACE_SCAN_DIAGNOSTIC_INTERVAL_MS = 500L;
     private static final long NOTIFICATION_SHADE_OEM_DIAGNOSTIC_INTERVAL_MS = 5000L;
     private static final long NOTIFICATION_SHADE_PROBE_RECHECK_MS = 500L;
+    private static final long NOTIFICATION_SHADE_SCREEN_OFF_GUARD_MS = 1000L;
     private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_NODES = 48;
     private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS = 2400;
     private static final int NOTIFICATION_SHADE_OEM_LOG_CHUNK_CHARS = 1800;
@@ -147,6 +148,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY = 4;
     private static final int BLOCKED_SURFACE_SCAN_MAX_NODES = 320;
     private static final long BLOCKED_SURFACE_SCAN_MAX_ELAPSED_MS = 12L;
+    private static final long NOTIFICATION_SHADE_EXTENDED_SCAN_MAX_ELAPSED_MS = 160L;
     private static final long GLOBAL_ACTIONS_EVENT_CLEAR_GRACE_MS = 250L;
     private static final long GLOBAL_ACTIONS_FALLBACK_CLEAR_MS = 9000L;
     private static final long RUNTIME_BLOCK_WINDOW_RECHECK_MS = 450L;
@@ -316,14 +318,16 @@ public class ChargingAccessibilityService extends AccessibilityService
         String shadeMatch;
         final LinkedHashSet<String> diagnosticNodes = new LinkedHashSet<String>();
         int diagnosticChars;
+        final long maxElapsedMs;
 
-        BlockedSurfaceNodeScanBudget() {
+        BlockedSurfaceNodeScanBudget(long maxElapsedMs) {
+            this.maxElapsedMs = maxElapsedMs;
         }
 
         boolean tryVisit() {
             long now = SystemClock.uptimeMillis();
             if (deadlineAt <= 0L) {
-                deadlineAt = now + BLOCKED_SURFACE_SCAN_MAX_ELAPSED_MS;
+                deadlineAt = now + maxElapsedMs;
             }
             if (remainingNodes <= 0 || now > deadlineAt) {
                 exhausted = true;
@@ -659,6 +663,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long notificationShadeLastSeenAt;
     private long notificationShadeLastClearScanAt;
     private long notificationShadeSuspectedAt;
+    private boolean notificationShadeNeedsExtendedScan;
     private long lastNotificationShadeStructuralLogAt;
     private long lastBlockedSurfaceScanDiagnosticAt;
     private long lastBlockedSurfaceScanRequestedAt;
@@ -678,6 +683,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long globalActionsShownAt;
     private long lastScreenOnAt;
     private long lastScreenOffAt;
+    private boolean screenOffTransitionPending;
     private long lastLockSoundPlayedAt;
     private long lastLockscreenSessionSeenAt;
     private long lockscreenExitFollowupUntil;
@@ -810,6 +816,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 interactiveSessionWasUnlocked = false;
                 lastInteractive = false;
                 lastScreenOffAt = SystemClock.uptimeMillis();
+                screenOffTransitionPending = true;
                 lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
                 seasonalUnlockSurfaceHoldUntil = 0L;
                 suppressUnlockFxAfterDoodleDisconnect = false;
@@ -829,7 +836,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 cacheUnlockTouchForScreenOff();
                 scheduleScreenOffPrearm();
                 scheduleEffectBackgroundRefreshAlarm("screen_off");
+                // PowerManager can still report interactive=true for a short time after this
+                // broadcast. Falling through to evaluateVisibility() would misclassify that
+                // stale state as a new lockscreen wake and reopen shade probing mid-transition.
+                return;
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+                screenOffTransitionPending = false;
                 cancelUnlockAffordanceDispatch(false, "user_present");
                 clearGlobalActionsSuppression("user_present", false);
                 clearActiveRuntimeBlock("user_present");
@@ -854,6 +866,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                         .apply();
                 scheduleEffectBackgroundRefreshAlarm("user_present");
             } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                screenOffTransitionPending = false;
                 clearGlobalActionsSuppression("screen_on", false);
                 boolean duplicateScreenOn = lastInteractive && lastScreenOnAt > 0L;
                 lastInteractive = true;
@@ -1208,18 +1221,24 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
         } else if (interactive && isNotificationShadeEvent(event)) {
-            // Some Samsung bouncer transitions briefly expose a SystemUI event whose
-            // accessible label looks like the notification shade. Treat event metadata
-            // as an immediate safety probe only; the bounded window-tree scan is the
-            // authority that confirms the shade and avoids a false positive on PIN entry.
-            String shadeEventReason = "event:" + eventTypeName(event) + ":shade_hint";
-            armNotificationShadeProbe(shadeEventReason, true);
-            requestContentBlockedSurfaceScan(shadeEventReason);
-            evaluateVisibility(shadeEventReason, false);
-            handler.removeCallbacks(screenOnRefreshRunnable);
-            handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
-            handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
-            return;
+            if (isNotificationShadeProbeSuppressedForScreenOffTransition()) {
+                Log.i(TAG, "notification shade hint ignored during screen-off transition"
+                        + " type=" + eventTypeName(event)
+                        + " sinceScreenOffMs=" + elapsedSinceScreenOff());
+            } else {
+                // Some Samsung bouncer transitions briefly expose a SystemUI event whose
+                // accessible label looks like the notification shade. Treat event metadata
+                // as an immediate safety probe only; the bounded window-tree scan is the
+                // authority that confirms the shade and avoids a false positive on PIN entry.
+                String shadeEventReason = "event:" + eventTypeName(event) + ":shade_hint";
+                armNotificationShadeProbe(shadeEventReason, true);
+                requestContentBlockedSurfaceScan(shadeEventReason);
+                evaluateVisibility(shadeEventReason, false);
+                handler.removeCallbacks(screenOnRefreshRunnable);
+                handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
+                handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
+                return;
+            }
         }
         String eventReason = "event:" + eventTypeName(event);
         if (interactive && isLockscreenLocked(false)
@@ -2484,6 +2503,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         notificationShadeLastSeenAt = 0L;
         notificationShadeLastClearScanAt = 0L;
         notificationShadeClearSuccessCount = 0;
+        notificationShadeNeedsExtendedScan = false;
         clearPinEntryTrace();
     }
 
@@ -2493,6 +2513,12 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void armNotificationShadeProbe(String reason, boolean neutralizeTouch) {
         notificationShadeProbePending = true;
+        if (neutralizeTouch) {
+            // Slow SystemUI implementations may not fit the normal bounded tree scan.
+            // Give the first authoritative shade probe enough time to either confirm the
+            // panel or clear the safety latch instead of waiting for a lucky cached tree.
+            notificationShadeNeedsExtendedScan = true;
+        }
         if (!neutralizeTouch || notificationShadeVisible || notificationShadeSuspected) {
             return;
         }
@@ -2531,6 +2557,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         notificationShadeLastSeenAt = now;
         notificationShadeLastClearScanAt = 0L;
         notificationShadeClearSuccessCount = 0;
+        notificationShadeNeedsExtendedScan = false;
         if (changed) {
             invalidatePendingInputForNotificationShade();
             Log.i(TAG, "notification shade confirmed reason=" + reason);
@@ -2743,6 +2770,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         } else {
             lastInteractive = false;
+        }
+        if (!interactive && locked && !unlockTouchCachedWhileScreenOff) {
+            // On rapid unlock -> power-off -> wake cycles Samsung can publish the display-off
+            // state before ACTION_SCREEN_OFF reaches this service. Prearm from that stronger
+            // state immediately so the accessibility input handle already exists at wake.
+            cacheUnlockTouchForScreenOff();
         }
         if (!interactive && unlockTouchCachedWhileScreenOff) {
             boolean showDoodle = isDoodleVisible(false, locked, false, false);
@@ -7772,6 +7805,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || notificationShadeVisible
                 || notificationShadeSuspected
                 || notificationShadeProbePending;
+        final boolean extendedShadeScan = (notificationShadeVisible
+                || notificationShadeSuspected)
+                && notificationShadeNeedsExtendedScan;
         if (deepNodeScanNeeded) {
             notificationShadeProbePending = false;
         }
@@ -7780,7 +7816,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 @Override
                 public void run() {
                     final BlockedSurfaceScanResult result = detectContentBlockedSurfaces(
-                            deepNodeScanNeeded, pinEntryRequestedSnapshot);
+                            deepNodeScanNeeded, pinEntryRequestedSnapshot,
+                            extendedShadeScan);
                     final long elapsedMs = SystemClock.uptimeMillis() - requestedAt;
                     handler.post(new Runnable() {
                         @Override
@@ -7886,6 +7923,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                     notificationShadeLastSeenAt = 0L;
                     notificationShadeLastClearScanAt = 0L;
                     notificationShadeClearSuccessCount = 0;
+                    notificationShadeNeedsExtendedScan = false;
                     Log.i(TAG, "notification shade cleared by verified scans");
                 }
             } else if (notificationShadeSuspected
@@ -7895,12 +7933,22 @@ public class ChargingAccessibilityService extends AccessibilityService
                 handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
                 notificationShadeLastClearScanAt = 0L;
                 notificationShadeClearSuccessCount = 0;
+                notificationShadeNeedsExtendedScan = false;
                 Log.i(TAG, "notification shade probe cleared by structural scan");
             } else if (notificationShadeSuspected) {
                 Log.i(TAG, "notification shade probe kept after stale scan"
                         + " requestedAt=" + requestedAt
                         + " suspectedAt=" + notificationShadeSuspectedAt);
             }
+        } else if (wasNotificationShadeVisible
+                && result.quality == BLOCKED_SURFACE_SCAN_PARTIAL
+                && !detectedNotificationShade) {
+            if (!notificationShadeNeedsExtendedScan) {
+                Log.i(TAG, "notification shade partial negative; extended clear scan armed"
+                        + " nodes=" + result.nodesVisited
+                        + " exhausted=" + result.budgetExhausted);
+            }
+            notificationShadeNeedsExtendedScan = true;
         }
         if (notificationShadeSuspected && !notificationShadeVisible) {
             handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
@@ -8004,7 +8052,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private BlockedSurfaceScanResult detectContentBlockedSurfaces(
-            boolean deepNodeScanNeeded, boolean pinEntryRequestedSnapshot) {
+            boolean deepNodeScanNeeded, boolean pinEntryRequestedSnapshot,
+            boolean extendedShadeScan) {
         BlockedSurfaceScanResult result = new BlockedSurfaceScanResult();
         result.deepScanPerformed = deepNodeScanNeeded;
         List<AccessibilityWindowInfo> windows;
@@ -8018,7 +8067,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             return result;
         }
         BlockedSurfaceNodeScanBudget budget = deepNodeScanNeeded
-                ? new BlockedSurfaceNodeScanBudget() : null;
+                ? new BlockedSurfaceNodeScanBudget(extendedShadeScan
+                        ? NOTIFICATION_SHADE_EXTENDED_SCAN_MAX_ELAPSED_MS
+                        : BLOCKED_SURFACE_SCAN_MAX_ELAPSED_MS) : null;
         StringBuilder windowSignature = deepNodeScanNeeded
                 ? new StringBuilder(512) : null;
         boolean scanError = false;
@@ -8472,9 +8523,25 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         int type = event.getEventType();
+        if (isNotificationShadeProbeSuppressedForScreenOffTransition()) {
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                    || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+                Log.i(TAG, "generic notification shade probe ignored during screen-off"
+                        + " transition type=" + eventTypeName(event)
+                        + " sinceScreenOffMs=" + elapsedSinceScreenOff());
+            }
+            return false;
+        }
         return type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
                 || type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
+    }
+
+    private boolean isNotificationShadeProbeSuppressedForScreenOffTransition() {
+        long sinceScreenOffMs = elapsedSinceScreenOff();
+        return screenOffTransitionPending
+                && sinceScreenOffMs >= 0L
+                && sinceScreenOffMs < NOTIFICATION_SHADE_SCREEN_OFF_GUARD_MS;
     }
 
     private boolean isGlobalActionsEvent(AccessibilityEvent event) {
