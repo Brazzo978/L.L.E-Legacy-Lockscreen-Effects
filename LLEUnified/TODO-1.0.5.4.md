@@ -74,9 +74,12 @@ different lockscreen wallpapers in portrait and landscape, so one shared
   an independent unconfigured safety box (`178x72`).
 - [ ] Validate independent imported sources and previews in both orientations.
 - [ ] Run phone `single` and Fold `cover/main` regression checks.
-- [ ] Revalidate repeated tablet OFF/ON after the forced SCREEN_ON input-handle
-  relayout and the 500 ms fail-open for an unconfirmed shade probe. Also verify
-  that a genuinely open quick panel remains input-safe.
+- [x] Revalidate repeated tablet OFF/ON after the forced SCREEN_ON input-handle
+  relayout. Replace the unsafe 500 ms fail-open with bounded rechecks: a
+  suspected shade now suppresses both renderer and touch input until a fresh
+  complete negative scan clears it. On Galaxy Tab A11+, three consecutive real
+  quick-panel open/close cycles removed every touch region while open, restored
+  it after verified close, and delivered zero touch events to L.L.E.
 
 ### Acceptance
 
@@ -233,6 +236,15 @@ but every L.L.E. visibility record keeps `notificationShade=false`.
 - [x] First implementation completed for `1.0.5.4`.
 - [x] Galaxy S23/Android 16: open, interaction suppression, close and one-time
   restoration validated with the ARM64 tester.
+- [x] Galaxy Tab A11+/Android 16: delayed structural confirmation reproduced
+  (738 ms after the probable-shade event). The probable state remained blocked
+  beyond the former 500 ms timeout; tap pass-through was zero and three
+  open/close cycles restored the effect and touch region exactly once.
+- [x] Galaxy S23/Android 16 regression with the same build: the touch listener
+  was absent for the open quick panel and a tap inside its former region
+  produced no L.L.E. input event. Automatic biometric unlock was left
+  untouched, so same-session close restoration continues to rely on the prior
+  S23 validation above.
 - [x] PIN transition, Google Assistant, WhatsApp, Telegram and Samsung global
   actions regression checks passed on the S23.
 - [x] OEM diagnostics added: device/SystemUI version, bounded window metadata

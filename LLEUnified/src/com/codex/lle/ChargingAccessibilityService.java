@@ -139,7 +139,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long NOTIFICATION_SHADE_STRUCTURAL_LOG_INTERVAL_MS = 750L;
     private static final long BLOCKED_SURFACE_SCAN_DIAGNOSTIC_INTERVAL_MS = 500L;
     private static final long NOTIFICATION_SHADE_OEM_DIAGNOSTIC_INTERVAL_MS = 5000L;
-    private static final long NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS = 500L;
+    private static final long NOTIFICATION_SHADE_PROBE_RECHECK_MS = 500L;
     private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_NODES = 48;
     private static final int NOTIFICATION_SHADE_OEM_DIAGNOSTIC_MAX_CHARS = 2400;
     private static final int NOTIFICATION_SHADE_OEM_LOG_CHUNK_CHARS = 1800;
@@ -471,10 +471,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             validateActiveRuntimeBlockWindow();
         }
     };
-    private final Runnable notificationShadeProbeFailOpenRunnable = new Runnable() {
+    private final Runnable notificationShadeProbeRecheckRunnable = new Runnable() {
         @Override
         public void run() {
-            failOpenUnconfirmedNotificationShadeProbe();
+            recheckUnconfirmedNotificationShadeProbe();
         }
     };
     private final Runnable lockscreenSessionPollRunnable = new Runnable() {
@@ -886,9 +886,6 @@ public class ChargingAccessibilityService extends AccessibilityService
                 if (backgroundCaptureOwnsWake) {
                     detachRuntimeSurfacesForBackgroundCapture("screen_on");
                 } else if (unlockTouchCachedWhileScreenOff) {
-                    notificationShadeVisible = false;
-                    notificationShadeOemPositiveLoggedForCurrentVisibility = false;
-                    notificationShadeLastSeenAt = 0L;
                     restoreUnlockEffectOverlayAfterScreenOff();
                     syncTouchDebugOverlay(true, true);
                 }
@@ -2481,7 +2478,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         notificationShadeSuspected = false;
         notificationShadeProbePending = false;
         notificationShadeSuspectedAt = 0L;
-        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+        handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
         notificationShadeOemPositiveLoggedForCurrentVisibility = false;
         pinEntryLastSeenAt = 0L;
         notificationShadeLastSeenAt = 0L;
@@ -2501,32 +2498,26 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         notificationShadeSuspected = true;
         notificationShadeSuspectedAt = SystemClock.uptimeMillis();
-        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
-        handler.postDelayed(notificationShadeProbeFailOpenRunnable,
-                NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS);
+        handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
+        handler.postDelayed(notificationShadeProbeRecheckRunnable,
+                NOTIFICATION_SHADE_PROBE_RECHECK_MS);
         setTouchDebugSafetyBlocked(true);
         Log.i(TAG, "notification shade probe armed reason=" + reason);
     }
 
-    private void failOpenUnconfirmedNotificationShadeProbe() {
+    private void recheckUnconfirmedNotificationShadeProbe() {
         if (!notificationShadeSuspected || notificationShadeVisible) {
             return;
         }
-        long ageMs = notificationShadeSuspectedAt <= 0L
-                ? Long.MAX_VALUE
-                : SystemClock.uptimeMillis() - notificationShadeSuspectedAt;
-        if (ageMs < NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS) {
-            handler.postDelayed(notificationShadeProbeFailOpenRunnable,
-                    NOTIFICATION_SHADE_PROBE_FAIL_OPEN_MS - ageMs);
+        if (blockedSurfaceScanInFlight) {
+            handler.postDelayed(notificationShadeProbeRecheckRunnable,
+                    NOTIFICATION_SHADE_SCAN_MIN_INTERVAL_MS);
             return;
         }
-        notificationShadeSuspected = false;
-        notificationShadeProbePending = false;
-        notificationShadeSuspectedAt = 0L;
-        notificationShadeLastClearScanAt = 0L;
-        notificationShadeClearSuccessCount = 0;
-        Log.i(TAG, "notification shade probe timed out unconfirmed ageMs=" + ageMs);
-        evaluateVisibility("notification_shade_probe_timeout", false);
+        notificationShadeProbePending = true;
+        requestContentBlockedSurfaceScan("notification_shade_probe_recheck");
+        handler.postDelayed(notificationShadeProbeRecheckRunnable,
+                NOTIFICATION_SHADE_PROBE_RECHECK_MS);
     }
 
     private void confirmNotificationShade(String reason) {
@@ -2536,7 +2527,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         notificationShadeSuspected = false;
         notificationShadeProbePending = false;
         notificationShadeSuspectedAt = 0L;
-        handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+        handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
         notificationShadeLastSeenAt = now;
         notificationShadeLastClearScanAt = 0L;
         notificationShadeClearSuccessCount = 0;
@@ -2801,7 +2792,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean seasonalSurfaceHoldActive = isSeasonalUnlockSurfaceHoldActive(
                 pinEntrySurfaceVisible, notificationShadeVisible, blockedPackageSurface);
         boolean blockedSurfaceActive =
-                pinEntryActive || notificationShadeVisible || blockedPackageSurface;
+                pinEntryActive || notificationShadeSuspected
+                        || notificationShadeVisible || blockedPackageSurface;
         boolean touchBoxCapturePending = isTouchBoxScreenshotPending();
         boolean hideOverlaysForTouchBoxCapture = touchBoxCapturePending && interactive && locked;
         boolean aodSurface = isActualAodSurface(interactive, displayOn);
@@ -7896,14 +7888,24 @@ public class ChargingAccessibilityService extends AccessibilityService
                     notificationShadeClearSuccessCount = 0;
                     Log.i(TAG, "notification shade cleared by verified scans");
                 }
-            } else if (notificationShadeSuspected) {
+            } else if (notificationShadeSuspected
+                    && requestedAt >= notificationShadeSuspectedAt) {
                 notificationShadeSuspected = false;
                 notificationShadeSuspectedAt = 0L;
-                handler.removeCallbacks(notificationShadeProbeFailOpenRunnable);
+                handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
                 notificationShadeLastClearScanAt = 0L;
                 notificationShadeClearSuccessCount = 0;
                 Log.i(TAG, "notification shade probe cleared by structural scan");
+            } else if (notificationShadeSuspected) {
+                Log.i(TAG, "notification shade probe kept after stale scan"
+                        + " requestedAt=" + requestedAt
+                        + " suspectedAt=" + notificationShadeSuspectedAt);
             }
+        }
+        if (notificationShadeSuspected && !notificationShadeVisible) {
+            handler.removeCallbacks(notificationShadeProbeRecheckRunnable);
+            handler.postDelayed(notificationShadeProbeRecheckRunnable,
+                    NOTIFICATION_SHADE_PROBE_RECHECK_MS);
         }
         if (pinEntrySurfaceVisible != wasPinEntryVisible) {
             Log.i(TAG, "pin entry surface visible=" + pinEntrySurfaceVisible);
