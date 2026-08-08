@@ -29,7 +29,8 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     }
 
     private static final String TAG = "LLEColourDropletGl";
-    private static final float FIXED_STEP_SECONDS = 1f / 60f;
+    private static final float TARGET_TICK_SECONDS = 1f / 60f;
+    private static final long STALLED_FRAME_NS = 66_666_668L;
     private static final long DESTROY_TIMEOUT_MS = 500L;
     private static final int WARM_KEEP_ALIVE_FRAMES = 100;
     private static final int MAX_PENDING_COMMANDS = 100;
@@ -83,6 +84,8 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     private int drawCount;
     private volatile int keepAliveFrames;
     private int emptyFrames;
+    private long lastSimulationTimeNs;
+    private volatile boolean simulationClockResetPending = true;
 
     ColourDropletAppOwnedGlView(
             Context context,
@@ -129,6 +132,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             resourcesReady = false;
             drawCount = 0;
             emptyFrames = 0;
+            resetSimulationClockFromGlThread();
             if (listener != null) {
                 post(new Runnable() {
                     @Override
@@ -172,6 +176,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             }
             ColourDropletNative.nativeResetBackgroundScale(nativeHandle);
             uploadCurrentBackground();
+            resetSimulationClockFromGlThread();
         } catch (Throwable error) {
             fail(error);
         }
@@ -191,7 +196,9 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
              */
             flushPendingCommandsIfReady();
             if (!ColourDropletNative.nativeStep(
-                    nativeHandle, FIXED_STEP_SECONDS)) {
+                    nativeHandle,
+                    simulationElapsedSecondsForDraw(
+                            SystemClock.elapsedRealtimeNanos()))) {
                 throw new IllegalStateException(nativeError());
             }
             if (!ColourDropletNative.nativeDraw(
@@ -375,6 +382,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         final long generation = advanceCommandGeneration();
         queueEvent(new Runnable() {
             @Override
@@ -393,6 +401,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         final long generation = advanceCommandGeneration();
         queueEvent(new Runnable() {
             @Override
@@ -504,7 +513,9 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
         keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
-        if (getRenderMode() != RENDERMODE_CONTINUOUSLY) {
+        boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
+        if (wasStopped) {
+            requestSimulationClockReset();
             setRenderMode(RENDERMODE_CONTINUOUSLY);
         }
         requestRender();
@@ -520,9 +531,36 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     }
 
     private void stopAnimation() {
+        requestSimulationClockReset();
         if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
             setRenderMode(RENDERMODE_WHEN_DIRTY);
         }
+    }
+
+    private float simulationElapsedSecondsForDraw(long nowNs) {
+        if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
+            resetSimulationClockFromGlThread();
+            lastSimulationTimeNs = nowNs;
+            return TARGET_TICK_SECONDS;
+        }
+        long elapsedNs = nowNs - lastSimulationTimeNs;
+        lastSimulationTimeNs = nowNs;
+        if (elapsedNs <= 0L) {
+            return 0.0f;
+        }
+        if (elapsedNs > STALLED_FRAME_NS) {
+            return TARGET_TICK_SECONDS;
+        }
+        return (float) elapsedNs / 1_000_000_000.0f;
+    }
+
+    private void requestSimulationClockReset() {
+        simulationClockResetPending = true;
+    }
+
+    private void resetSimulationClockFromGlThread() {
+        lastSimulationTimeNs = 0L;
+        simulationClockResetPending = false;
     }
 
     private boolean canIssueNativeCommand() {

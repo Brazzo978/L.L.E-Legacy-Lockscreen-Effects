@@ -19,8 +19,8 @@ import javax.microedition.khronos.opengles.GL10;
  * Transparent GLES host for the app-owned Galaxy S6 Water Droplet core.
  *
  * <p>Every stateful JNI operation is serialized through the GLSurfaceView GL
- * thread. Drawing follows the display refresh, while the recovered stock
- * simulation advances on its fixed 60 Hz clock.</p>
+ * thread. Drawing follows the display refresh while the recovered simulation
+ * remains on its stock 60 Hz clock; intermediate frames are extrapolated.</p>
  */
 final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         implements GLSurfaceView.Renderer {
@@ -37,8 +37,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private static final int WARM_KEEP_ALIVE_STEPS = 100;
     private static final long DESTROY_TIMEOUT_MS = 500L;
     private static final long SIMULATION_STEP_NS = 16_666_667L;
-    private static final long STALLED_FRAME_NS = SIMULATION_STEP_NS * 4L;
-    private static final int MAX_SIMULATION_STEPS_PER_DRAW = 2;
+    private static final int MAX_SIMULATION_STEPS_PER_DRAW = 3;
 
     private final Listener listener;
     private final Object bitmapLock = new Object();
@@ -48,6 +47,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private final int projectKind;
     private final int logicalShortSide;
     private final int logicalLongSide;
+    private final long simulationStepNs;
 
     private Bitmap portraitBackground;
     private Bitmap landscapeBackground;
@@ -81,6 +81,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         this.projectKind = projectKind;
         this.logicalShortSide = Math.max(1, logicalShortSide);
         this.logicalLongSide = Math.max(this.logicalShortSide, logicalLongSide);
+        this.simulationStepNs = SIMULATION_STEP_NS;
         this.listener = listener;
 
         setZOrderOnTop(true);
@@ -214,7 +215,10 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 }
             }
             if (!S6WaterDropletAppOwnedNative.nativeDraw(
-                    nativeHandle, surfaceWidth, surfaceHeight)) {
+                    nativeHandle,
+                    surfaceWidth,
+                    surfaceHeight,
+                    simulationPresentationFraction())) {
                 throw new IllegalStateException(
                         "native draw failed: " + nativeError());
             }
@@ -667,10 +671,11 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     }
 
     /**
-     * Returns the number of recovered 60 Hz app ticks due for this display
+     * Returns the number of recovered app ticks due for this display
      * draw. The first draw after a reset advances once immediately. Normal
-     * 30 Hz rendering may advance twice; a longer stall is deliberately
-     * collapsed to one tick so resume/screen-on cannot replay a time backlog.
+     * A delayed display frame may advance up to three times; a longer
+     * stall is deliberately collapsed to one tick so resume/screen-on cannot
+     * replay a time backlog.
      */
     private int simulationStepsForDraw(long nowNs) {
         if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
@@ -683,19 +688,28 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         if (elapsedNs <= 0L) {
             return 0;
         }
-        if (elapsedNs > STALLED_FRAME_NS) {
+        if (elapsedNs > simulationStepNs * 4L) {
             simulationAccumulatorNs = 0L;
             return 1;
         }
         long maximumAccumulationNs =
-                SIMULATION_STEP_NS * MAX_SIMULATION_STEPS_PER_DRAW;
+                simulationStepNs * MAX_SIMULATION_STEPS_PER_DRAW;
         simulationAccumulatorNs = Math.min(
                 maximumAccumulationNs,
                 simulationAccumulatorNs + elapsedNs);
-        int steps = (int) (simulationAccumulatorNs / SIMULATION_STEP_NS);
+        int steps = (int) (simulationAccumulatorNs / simulationStepNs);
         steps = Math.min(steps, MAX_SIMULATION_STEPS_PER_DRAW);
-        simulationAccumulatorNs -= steps * SIMULATION_STEP_NS;
+        simulationAccumulatorNs -= steps * simulationStepNs;
         return steps;
+    }
+
+    private float simulationPresentationFraction() {
+        return Math.max(
+                0.0f,
+                Math.min(
+                        1.0f,
+                        (float) simulationAccumulatorNs
+                                / (float) simulationStepNs));
     }
 
     private void requestSimulationClockReset() {

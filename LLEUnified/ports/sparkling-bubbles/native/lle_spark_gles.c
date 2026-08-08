@@ -493,6 +493,7 @@ static void spark_upload_buffers(LleSparkGles *gles, size_t point_count) {
 bool lle_spark_gles_draw(
         LleSparkGles *gles,
         const LleSparkSim *sim,
+        float presentation_fraction,
         int width,
         int height,
         char *error,
@@ -517,7 +518,8 @@ bool lle_spark_gles_draw(
         return spark_capture_error("Sparkling transparent wait", error, error_size);
     }
     const size_t required = lle_spark_sim_export_draw_data(
-            sim, NULL, NULL, NULL, NULL, 0U, NULL, 0U);
+            sim, presentation_fraction,
+            NULL, NULL, NULL, NULL, 0U, NULL, 0U);
     if (required == 0U) {
         return spark_capture_error("Sparkling idle draw", error, error_size);
     }
@@ -532,6 +534,7 @@ bool lle_spark_gles_draw(
     }
     const size_t exported = lle_spark_sim_export_draw_data(
             sim,
+            presentation_fraction,
             gles->positions_xy,
             gles->initial_positions_xy,
             gles->sizes,

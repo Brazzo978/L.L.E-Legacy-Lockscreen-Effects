@@ -172,6 +172,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final int PIN_ENTRY_NODE_SCAN_CHILD_LIMIT = 80;
     private static final int BLOCKED_SURFACE_PIN_ENTRY = 1;
     private static final int BLOCKED_SURFACE_NOTIFICATION_SHADE = 1 << 1;
+    private static final int BLOCKED_SURFACE_GLOBAL_ACTIONS = 1 << 2;
     private static final int BLOCKED_SURFACE_SCAN_UNKNOWN = 0;
     private static final int BLOCKED_SURFACE_SCAN_SUCCESS = 1;
     private static final int BLOCKED_SURFACE_SCAN_PARTIAL = 2;
@@ -316,6 +317,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         int nodesVisited;
         boolean exhausted;
         String shadeMatch;
+        boolean visibleKeyguardRootSeen;
+        boolean notificationShadeCandidateSeen;
+        boolean definitiveNotificationShadeStructureSeen;
+        String notificationShadeCandidateMatch;
         final LinkedHashSet<String> diagnosticNodes = new LinkedHashSet<String>();
         int diagnosticChars;
         final long maxElapsedMs;
@@ -1181,7 +1186,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (globalActionsVisible && isGlobalActionsDismissEvent(event)) {
-            clearGlobalActionsSuppression("window_state_changed", true);
+            // Samsung emits generic FrameLayout window-state events while the power menu is
+            // still open. Let the structural window scan prove that Phone options disappeared
+            // instead of clearing suppression from one ambiguous event.
+            requestContentBlockedSurfaceScan(
+                    "event:" + eventTypeName(event) + ":global_actions_dismiss_probe");
         }
         noteExternalLockscreenSurface(event, interactive);
         if (blockedPackage) {
@@ -1221,7 +1230,20 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
             return;
         } else if (interactive && isNotificationShadeEvent(event)) {
-            if (isNotificationShadeProbeSuppressedForScreenOffTransition()) {
+            if (OverlayPrefs.debugLegacyQuickPanelDetection(this)) {
+                // Compatibility path: this is the 1.0.5.3 behavior. Event metadata is
+                // authoritative and hides the runtime surfaces immediately.
+                notificationShadeVisible = true;
+                notificationShadeLastSeenAt = SystemClock.uptimeMillis();
+                removeTouchDebugOverlay();
+                removeUnlockEffectOverlay();
+                evaluateVisibility("event:" + eventTypeName(event)
+                        + ":notification_shade_fast", false);
+                handler.removeCallbacks(screenOnRefreshRunnable);
+                handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_FAST_MS);
+                handler.postDelayed(screenOnRefreshRunnable, SCREEN_ON_REFRESH_SETTLE_MS);
+                return;
+            } else if (isNotificationShadeProbeSuppressedForScreenOffTransition()) {
                 Log.i(TAG, "notification shade hint ignored during screen-off transition"
                         + " type=" + eventTypeName(event)
                         + " sinceScreenOffMs=" + elapsedSinceScreenOff());
@@ -1424,6 +1446,16 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             return;
         }
+        if (OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION.equals(key)) {
+            blockedSurfaceScanInFlightRequestId = ++blockedSurfaceScanRequestGeneration;
+            blockedSurfaceScanInFlight = false;
+            clearBlockedSurfaceState();
+            Log.i(TAG, "quick panel detector="
+                    + (OverlayPrefs.debugLegacyQuickPanelDetection(this)
+                    ? "legacy_1.0.5.3" : "structural"));
+            evaluateVisibility("prefs:quick_panel_detector", false);
+            return;
+        }
         if (holdRuntimeForBootSafety("prefs:" + key)) {
             return;
         }
@@ -1455,7 +1487,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             }, 100L);
             Log.i(TAG, "audio route changed to " + EffectAudio.routeLabel(this));
             return;
-        }        if (OverlayPrefs.FOLD_MODE.equals(key)
+        }
+        if (OverlayPrefs.FOLD_MODE.equals(key)
                 || OverlayPrefs.TABLET_MODE.equals(key)) {
             refreshActiveDisplayTarget(OverlayPrefs.FOLD_MODE.equals(key)
                     ? "prefs_fold_mode" : "prefs_tablet_mode");
@@ -2589,17 +2622,20 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void showGlobalActionsSuppression() {
+        boolean wasVisible = globalActionsVisible;
         globalActionsVisible = true;
         globalActionsShownAt = SystemClock.uptimeMillis();
         handler.removeCallbacks(globalActionsFallbackClearRunnable);
         handler.postDelayed(
                 globalActionsFallbackClearRunnable,
                 GLOBAL_ACTIONS_FALLBACK_CLEAR_MS);
-        unlockAffordancePending = false;
-        unlockTouchCachedWhileScreenOff = false;
-        hideRuntimeSurfacesForBlockedPackage("global_actions");
-        Log.i(TAG, "global actions visible=true");
-        evaluateVisibility("global_actions:shown", false);
+        if (!wasVisible) {
+            unlockAffordancePending = false;
+            unlockTouchCachedWhileScreenOff = false;
+            hideRuntimeSurfacesForBlockedPackage("global_actions");
+            Log.i(TAG, "global actions visible=true");
+            evaluateVisibility("global_actions:shown", false);
+        }
     }
 
     private void clearGlobalActionsSuppression(String reason, boolean evaluate) {
@@ -7798,14 +7834,18 @@ public class ChargingAccessibilityService extends AccessibilityService
         blockedSurfaceScanInFlightRequestId = requestId;
         final long requestedAt = SystemClock.uptimeMillis();
         final boolean pinEntryRequestedSnapshot = pinEntryRequested;
+        final boolean legacyQuickPanelDetection =
+                OverlayPrefs.debugLegacyQuickPanelDetection(this);
         final boolean deepNodeScanNeeded = pinEntryPending
                 || pinEntryRequestedSnapshot
                 || pinEntrySurfaceSeen
                 || pinEntrySurfaceVisible
+                || globalActionsVisible
                 || notificationShadeVisible
-                || notificationShadeSuspected
-                || notificationShadeProbePending;
-        final boolean extendedShadeScan = (notificationShadeVisible
+                || (!legacyQuickPanelDetection
+                && (notificationShadeSuspected || notificationShadeProbePending));
+        final boolean extendedShadeScan = !legacyQuickPanelDetection
+                && (notificationShadeVisible
                 || notificationShadeSuspected)
                 && notificationShadeNeedsExtendedScan;
         if (deepNodeScanNeeded) {
@@ -7815,9 +7855,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             blockedSurfaceScanExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    final BlockedSurfaceScanResult result = detectContentBlockedSurfaces(
-                            deepNodeScanNeeded, pinEntryRequestedSnapshot,
-                            extendedShadeScan);
+                    final BlockedSurfaceScanResult result = legacyQuickPanelDetection
+                            ? detectLegacyContentBlockedSurfaces(
+                                    deepNodeScanNeeded, pinEntryRequestedSnapshot)
+                            : detectContentBlockedSurfaces(
+                                    deepNodeScanNeeded, pinEntryRequestedSnapshot,
+                                    extendedShadeScan);
                     final long elapsedMs = SystemClock.uptimeMillis() - requestedAt;
                     handler.post(new Runnable() {
                         @Override
@@ -7832,8 +7875,13 @@ public class ChargingAccessibilityService extends AccessibilityService
                                     || !lockscreenSessionPolling) {
                                 return;
                             }
-                            applyContentBlockedSurfaceScanResult(
-                                    result, reason, requestedAt, elapsedMs);
+                            if (legacyQuickPanelDetection) {
+                                applyLegacyContentBlockedSurfaceScanResult(
+                                        result.surfaces, reason, requestedAt, elapsedMs);
+                            } else {
+                                applyContentBlockedSurfaceScanResult(
+                                        result, reason, requestedAt, elapsedMs);
+                            }
                         }
                     });
                 }
@@ -7842,6 +7890,54 @@ public class ChargingAccessibilityService extends AccessibilityService
             blockedSurfaceScanInFlight = false;
             Log.w(TAG, "blocked surface scan rejected", e);
         }
+    }
+
+    private void applyLegacyContentBlockedSurfaceScanResult(
+            int surfaces, String reason, long requestedAt, long elapsedMs) {
+        long now = SystemClock.uptimeMillis();
+        boolean wasPinEntryVisible = pinEntrySurfaceVisible;
+        boolean wasNotificationShadeVisible = notificationShadeVisible;
+        boolean pinObservedSinceRequest = pinEntryLastSeenAt >= requestedAt
+                && pinEntryLastSeenAt > 0L;
+        boolean shadeObservedSinceRequest = notificationShadeLastSeenAt >= requestedAt
+                && notificationShadeLastSeenAt > 0L;
+        boolean detectedPinEntry = (surfaces & BLOCKED_SURFACE_PIN_ENTRY) != 0
+                || (pinObservedSinceRequest && wasPinEntryVisible);
+        boolean detectedNotificationShade =
+                (surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0
+                        || (shadeObservedSinceRequest && wasNotificationShadeVisible);
+        boolean detectedGlobalActions =
+                (surfaces & BLOCKED_SURFACE_GLOBAL_ACTIONS) != 0;
+        if (detectedGlobalActions) {
+            showGlobalActionsSuppression();
+        } else if (globalActionsVisible) {
+            clearGlobalActionsSuppression("legacy_structural_scan", false);
+        }
+        if (detectedPinEntry) {
+            pinEntryLastSeenAt = now;
+        }
+        if (detectedNotificationShade) {
+            notificationShadeLastSeenAt = now;
+        }
+        pinEntrySurfaceVisible = detectedPinEntry;
+        notificationShadeVisible = detectedNotificationShade
+                || (wasNotificationShadeVisible
+                && now - notificationShadeLastSeenAt < BLOCKED_SURFACE_CLEAR_GRACE_MS);
+        if (pinEntrySurfaceVisible != wasPinEntryVisible) {
+            Log.i(TAG, "pin entry surface visible=" + pinEntrySurfaceVisible);
+        }
+        if (notificationShadeVisible != wasNotificationShadeVisible) {
+            Log.i(TAG, "notification shade visible=" + notificationShadeVisible
+                    + " detector=legacy_1.0.5.3");
+        }
+        if (pinEntrySurfaceVisible) {
+            pinEntrySurfaceSeen = true;
+        }
+        if (elapsedMs > LOCKSCREEN_SESSION_STABLE_CONTENT_POLL_MS) {
+            Log.w(TAG, "blocked surface async scan slow elapsedMs=" + elapsedMs
+                    + " detector=legacy_1.0.5.3");
+        }
+        evaluateVisibility("async_surface_scan:" + reason, false);
     }
 
     private void applyContentBlockedSurfaceScanResult(
@@ -7861,6 +7957,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                         || (shadeObservedSinceRequest && wasNotificationShadeVisible);
         boolean structuralShadeMatch =
                 (result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0;
+        boolean detectedGlobalActions =
+                (result.surfaces & BLOCKED_SURFACE_GLOBAL_ACTIONS) != 0;
+        if (detectedGlobalActions) {
+            showGlobalActionsSuppression();
+        } else if (globalActionsVisible
+                && result.quality == BLOCKED_SURFACE_SCAN_SUCCESS
+                && requestedAt >= globalActionsShownAt) {
+            clearGlobalActionsSuppression("verified_structural_scan", false);
+        }
         boolean shadeDiagnosticRelevant = result.deepScanPerformed
                 && (structuralShadeMatch
                 || notificationShadeSuspected
@@ -8051,6 +8156,116 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     }
 
+    private BlockedSurfaceScanResult detectLegacyContentBlockedSurfaces(
+            boolean deepNodeScanNeeded, boolean pinEntryRequestedSnapshot) {
+        BlockedSurfaceScanResult result = new BlockedSurfaceScanResult();
+        List<AccessibilityWindowInfo> windows;
+        try {
+            windows = getWindows();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "legacy content window scan failed", e);
+            return result;
+        }
+        if (windows == null || windows.isEmpty()) {
+            return result;
+        }
+        for (int i = 0; i < windows.size(); i++) {
+            AccessibilityWindowInfo window = windows.get(i);
+            if (window == null || !isActiveOrFocusedWindow(window)) {
+                continue;
+            }
+            CharSequence title = windowTitle(window);
+            if (containsStrongPinEntryKeyword(title)) {
+                result.surfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+            }
+            if (containsStrongNotificationShadeKeyword(title)
+                    || containsNotificationShadeTextKeyword(title)) {
+                result.surfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
+            }
+            if (containsStrongGlobalActionsKeyword(title)) {
+                result.surfaces |= BLOCKED_SURFACE_GLOBAL_ACTIONS;
+            }
+            if (result.surfaces != 0) {
+                return result;
+            }
+            if (!deepNodeScanNeeded) {
+                continue;
+            }
+
+            AccessibilityNodeInfo root = null;
+            try {
+                root = window.getRoot();
+                if (root != null && pinEntryRequestedSnapshot
+                        && isKeyboardPackage(root.getPackageName())) {
+                    result.surfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+                    continue;
+                }
+                if (root == null || !isSystemKeyguardNode(root)) {
+                    continue;
+                }
+                result.surfaces |= detectLegacyBlockedSurfaceNodes(root, 0);
+                if ((result.surfaces & BLOCKED_SURFACE_PIN_ENTRY) != 0
+                        && (result.surfaces & BLOCKED_SURFACE_NOTIFICATION_SHADE) != 0) {
+                    return result;
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "legacy content node scan failed", e);
+            } finally {
+                if (root != null) {
+                    root.recycle();
+                }
+            }
+        }
+        return result;
+    }
+
+    private int detectLegacyBlockedSurfaceNodes(AccessibilityNodeInfo node, int depth) {
+        if (node == null || depth > PIN_ENTRY_NODE_SCAN_DEPTH) {
+            return 0;
+        }
+        int blockedSurfaces = 0;
+        if (nodeMatchesPinEntry(node)) {
+            blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
+        }
+        if (nodeMatchesLegacyNotificationShade(node)) {
+            blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
+        }
+        if (nodeMatchesGlobalActions(node)) {
+            blockedSurfaces |= BLOCKED_SURFACE_GLOBAL_ACTIONS;
+        }
+        if (blockedSurfaces == (BLOCKED_SURFACE_PIN_ENTRY
+                | BLOCKED_SURFACE_NOTIFICATION_SHADE)) {
+            return blockedSurfaces;
+        }
+        int childCount = Math.min(node.getChildCount(), PIN_ENTRY_NODE_SCAN_CHILD_LIMIT);
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = node.getChild(i);
+                blockedSurfaces |= detectLegacyBlockedSurfaceNodes(child, depth + 1);
+                if (blockedSurfaces == (BLOCKED_SURFACE_PIN_ENTRY
+                        | BLOCKED_SURFACE_NOTIFICATION_SHADE
+                        | BLOCKED_SURFACE_GLOBAL_ACTIONS)) {
+                    return blockedSurfaces;
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "legacy blocked surface child scan failed", e);
+            } finally {
+                if (child != null) {
+                    child.recycle();
+                }
+            }
+        }
+        return blockedSurfaces;
+    }
+
+    private boolean nodeMatchesLegacyNotificationShade(AccessibilityNodeInfo node) {
+        return containsStrongNotificationShadeKeyword(node.getViewIdResourceName())
+                || containsStrongNotificationShadeKeyword(node.getClassName())
+                || containsNotificationShadeTextKeyword(node.getText())
+                || containsNotificationShadeTextKeyword(node.getContentDescription());
+    }
+
     private BlockedSurfaceScanResult detectContentBlockedSurfaces(
             boolean deepNodeScanNeeded, boolean pinEntryRequestedSnapshot,
             boolean extendedShadeScan) {
@@ -8086,6 +8301,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             if (containsStrongNotificationShadeKeyword(title)
                     || containsNotificationShadeTextKeyword(title)) {
                 result.surfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
+            }
+            if (containsStrongGlobalActionsKeyword(title)) {
+                result.surfaces |= BLOCKED_SURFACE_GLOBAL_ACTIONS;
             }
             if (!deepNodeScanNeeded) {
                 continue;
@@ -8191,10 +8409,20 @@ public class ChargingAccessibilityService extends AccessibilityService
                     continue;
                 }
                 int addedForDisplay = 0;
-                for (int i = 0; i < displayWindows.size()
-                        && addedForDisplay < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
-                    AccessibilityWindowInfo window = displayWindows.get(i);
-                    if (isBlockedSurfaceScanCandidateWindow(window)) {
+                // Modal SystemUI windows are not consistently first in Samsung's list.
+                // Prefer active/focused candidates, then fill the bounded scan with the rest.
+                for (int pass = 0; pass < 2
+                        && addedForDisplay < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY;
+                        pass++) {
+                    for (int i = 0; i < displayWindows.size()
+                            && addedForDisplay
+                                    < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
+                        AccessibilityWindowInfo window = displayWindows.get(i);
+                        boolean priority = isActiveOrFocusedWindow(window);
+                        if (!isBlockedSurfaceScanCandidateWindow(window)
+                                || (pass == 0) != priority) {
+                            continue;
+                        }
                         result.add(window);
                         addedForDisplay++;
                     }
@@ -8206,10 +8434,16 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (windows == null) {
             return result;
         }
-        for (int i = 0; i < windows.size()
-                && result.size() < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
-            if (isBlockedSurfaceScanCandidateWindow(windows.get(i))) {
-                result.add(windows.get(i));
+        for (int pass = 0; pass < 2
+                && result.size() < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; pass++) {
+            for (int i = 0; i < windows.size()
+                    && result.size() < BLOCKED_SURFACE_SCAN_MAX_WINDOWS_PER_DISPLAY; i++) {
+                AccessibilityWindowInfo window = windows.get(i);
+                boolean priority = isActiveOrFocusedWindow(window);
+                if (isBlockedSurfaceScanCandidateWindow(window)
+                        && (pass == 0) == priority) {
+                    result.add(window);
+                }
             }
         }
         return result;
@@ -8245,19 +8479,27 @@ public class ChargingAccessibilityService extends AccessibilityService
                 if (nodeMatchesPinEntry(node)) {
                     blockedSurfaces |= BLOCKED_SURFACE_PIN_ENTRY;
                 }
-                if (nodeMatchesNotificationShade(node)) {
-                    blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
-                    if (budget.shadeMatch == null) {
-                        CharSequence viewId = node.getViewIdResourceName();
-                        CharSequence className = node.getClassName();
-                        budget.shadeMatch = viewId != null
-                                ? viewId.toString()
-                                : (className == null ? "unknown" : className.toString());
-                    }
+                if (nodeMatchesGlobalActions(node)) {
+                    blockedSurfaces |= BLOCKED_SURFACE_GLOBAL_ACTIONS;
                 }
-                if (blockedSurfaces == (BLOCKED_SURFACE_PIN_ENTRY
-                        | BLOCKED_SURFACE_NOTIFICATION_SHADE)) {
-                    break;
+                if (isVisibleKeyguardRootNode(node)) {
+                    budget.visibleKeyguardRootSeen = true;
+                }
+                boolean definitiveNotificationShadeNode =
+                        isDefinitiveNotificationShadeStructuralNode(node);
+                boolean notificationShadeNode = nodeMatchesNotificationShade(node)
+                        || definitiveNotificationShadeNode;
+                if (notificationShadeNode) {
+                    budget.notificationShadeCandidateSeen = true;
+                    String match = notificationShadeNodeMatch(node);
+                    if (budget.notificationShadeCandidateMatch == null) {
+                        budget.notificationShadeCandidateMatch = match;
+                    }
+                    if (definitiveNotificationShadeNode) {
+                        budget.definitiveNotificationShadeStructureSeen = true;
+                        // Prefer the active container in diagnostics over a dormant child.
+                        budget.notificationShadeCandidateMatch = match;
+                    }
                 }
                 if (depth >= PIN_ENTRY_NODE_SCAN_DEPTH) {
                     continue;
@@ -8285,6 +8527,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 queuedNode.recycle();
             }
         }
+        if (budget.notificationShadeCandidateSeen
+                && (!budget.visibleKeyguardRootSeen
+                || budget.definitiveNotificationShadeStructureSeen)) {
+            blockedSurfaces |= BLOCKED_SURFACE_NOTIFICATION_SHADE;
+            budget.shadeMatch = budget.notificationShadeCandidateMatch;
+        }
         return blockedSurfaces;
     }
 
@@ -8295,10 +8543,43 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || containsPinEntryTextKeyword(node.getContentDescription());
     }
 
+    private boolean nodeMatchesGlobalActions(AccessibilityNodeInfo node) {
+        return node != null && node.isVisibleToUser()
+                && (containsStrongGlobalActionsKeyword(node.getViewIdResourceName())
+                || containsStrongGlobalActionsKeyword(node.getClassName()));
+    }
+
     private boolean nodeMatchesNotificationShade(AccessibilityNodeInfo node) {
         return node.isVisibleToUser()
                 && (containsStrongNotificationShadeKeyword(node.getViewIdResourceName())
                 || containsStrongNotificationShadeKeyword(node.getClassName()));
+    }
+
+    private boolean isVisibleKeyguardRootNode(AccessibilityNodeInfo node) {
+        return node != null && node.isVisibleToUser()
+                && containsIdentifierFragment(
+                        node.getViewIdResourceName(), "keyguard_root_view");
+    }
+
+    private boolean isDefinitiveNotificationShadeStructuralNode(AccessibilityNodeInfo node) {
+        if (node == null || !node.isVisibleToUser()) {
+            return false;
+        }
+        CharSequence viewId = node.getViewIdResourceName();
+        return containsIdentifierFragment(viewId, "sec_quick_panel_compose_root");
+    }
+
+    private String notificationShadeNodeMatch(AccessibilityNodeInfo node) {
+        CharSequence viewId = node.getViewIdResourceName();
+        CharSequence className = node.getClassName();
+        return viewId != null
+                ? viewId.toString()
+                : (className == null ? "unknown" : className.toString());
+    }
+
+    private boolean containsIdentifierFragment(CharSequence value, String fragment) {
+        return value != null && fragment != null
+                && value.toString().toLowerCase(Locale.ROOT).contains(fragment);
     }
 
     private boolean isSystemKeyguardNode(AccessibilityNodeInfo node) {
@@ -8326,6 +8607,30 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean containsStrongNotificationShadeKeyword(CharSequence value) {
         return containsKeyword(value, NOTIFICATION_SHADE_STRONG_KEYWORDS);
+    }
+
+    private boolean containsStrongGlobalActionsKeyword(CharSequence value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toString().toLowerCase(Locale.ROOT);
+        return normalized.contains("globalactions")
+                || normalized.contains("global_actions")
+                || normalized.contains("sec_global_actions")
+                || normalized.contains("actionsdialog")
+                || normalized.contains("phone options");
+    }
+
+    private boolean containsStrongGlobalActionsKeyword(List<CharSequence> values) {
+        if (values == null) {
+            return false;
+        }
+        for (int i = 0; i < values.size(); i++) {
+            if (containsStrongGlobalActionsKeyword(values.get(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean containsNotificationShadeTextKeyword(CharSequence value) {
@@ -8550,14 +8855,55 @@ public class ChargingAccessibilityService extends AccessibilityService
                         ? null : event.getPackageName().toString())) {
             return false;
         }
-        CharSequence className = event.getClassName();
-        if (className == null) {
+        return containsStrongGlobalActionsKeyword(event.getClassName())
+                || containsStrongGlobalActionsKeyword(event.getText())
+                || containsStrongGlobalActionsKeyword(event.getContentDescription())
+                || eventSourceContainsGlobalActions(event);
+    }
+
+    private boolean eventSourceContainsGlobalActions(AccessibilityEvent event) {
+        AccessibilityNodeInfo source = null;
+        try {
+            source = event == null ? null : event.getSource();
+            return source != null
+                    && nodeTreeContainsGlobalActions(source, 0, new int[]{48});
+        } catch (RuntimeException e) {
+            Log.w(TAG, "global actions event-source scan failed", e);
+            return false;
+        } finally {
+            if (source != null) {
+                source.recycle();
+            }
+        }
+    }
+
+    private boolean nodeTreeContainsGlobalActions(
+            AccessibilityNodeInfo node, int depth, int[] remaining) {
+        if (node == null || remaining == null || remaining[0] <= 0 || depth > 6) {
             return false;
         }
-        String normalized = className.toString().toLowerCase(Locale.ROOT);
-        return normalized.contains("globalactions")
-                || normalized.contains("global_actions")
-                || normalized.contains("actionsdialog");
+        remaining[0]--;
+        if (nodeMatchesGlobalActions(node)) {
+            return true;
+        }
+        int childCount = Math.min(node.getChildCount(), PIN_ENTRY_NODE_SCAN_CHILD_LIMIT);
+        for (int i = 0; i < childCount && remaining[0] > 0; i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = node.getChild(i);
+                if (child != null
+                        && nodeTreeContainsGlobalActions(child, depth + 1, remaining)) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "global actions child scan failed", e);
+            } finally {
+                if (child != null) {
+                    child.recycle();
+                }
+            }
+        }
+        return false;
     }
 
     private boolean isGlobalActionsDismissEvent(AccessibilityEvent event) {

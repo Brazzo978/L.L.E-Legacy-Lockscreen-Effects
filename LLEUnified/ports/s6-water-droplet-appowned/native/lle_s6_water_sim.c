@@ -777,8 +777,11 @@ static void s6_grow_particle(const LleS6WaterSim *sim,
 static void s6_advance_affordance(LleS6WaterSim *sim, LleS6Group *group) {
   bool mature = group->count >= LLE_S6_WATER_AFFORDANCE_PARTICLE_LIMIT;
   bool finished = false;
-  const float project_scale =
-      sim->project_kind == LLE_S6_WATER_PROJECT_TABLET ? 0.5f : 1.0f;
+  /*
+   * Stock keeps custom-event field 2 at its 1.0 default for both projects.
+   * Do not conflate it with the separate tablet wall scale (0.5).
+   */
+  const float interaction_scale = 1.0f;
   size_t index;
   if (group->age >= 1.0f) {
     const float source = 2.0f - group->age;
@@ -819,8 +822,8 @@ static void s6_advance_affordance(LleS6WaterSim *sim, LleS6Group *group) {
         const float dx = group->center_x - particle->x;
         const float dy = group->center_y - particle->y;
         if (sqrtf(dx * dx + dy * dy) > sim->width * 0.16f) {
-          const float attraction = 1.75f - project_scale;
-          const float velocity_scale = 1.9f - project_scale;
+          const float attraction = 1.75f - interaction_scale;
+          const float velocity_scale = 1.9f - interaction_scale;
           particle->transient_force_x += attraction * dx;
           particle->transient_force_y += attraction * dy;
           particle->velocity_x *= velocity_scale;
@@ -909,10 +912,10 @@ static void s6_advance_group(LleS6WaterSim *sim, LleS6Group *group) {
     return;
   }
   if (group->phase == LLE_S6_GROUP_TOUCH) {
-    const float project_scale =
-        sim->project_kind == LLE_S6_WATER_PROJECT_TABLET ? 0.5f : 1.0f;
-    const float attraction = 2.5f - project_scale;
-    const float velocity_scale = 1.6f - project_scale;
+    /* See the stock custom-event field distinction above. */
+    const float interaction_scale = 1.0f;
+    const float attraction = 2.5f - interaction_scale;
+    const float velocity_scale = 1.6f - interaction_scale;
     const float attraction_threshold =
         fminf(sim->width, sim->height) * 0.16f;
     for (index = 0u; index < group->count; ++index) {
@@ -1496,6 +1499,8 @@ size_t lle_s6_water_sim_export_density_particles(
               : sim->particle_size;
       output->center_x_px = particle->x + particle->render_offset_x;
       output->center_y_px = particle->y + particle->render_offset_y;
+      output->velocity_x_px_per_second = particle->velocity_x;
+      output->velocity_y_px_per_second = particle->velocity_y;
       output->diameter_px =
           horizontal_scale * base_size *
           (s6_sine80(particle->phase) + particle->extra_scale) *

@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-/** Transparent, fixed-60-Hz GLES host for the app-owned Sparkling Bubbles core. */
+/** Transparent, refresh-independent GLES host for the app-owned Sparkling Bubbles core. */
 final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
         implements GLSurfaceView.Renderer {
     interface Listener {
@@ -28,7 +28,8 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     }
 
     private static final String TAG = "LLESparklingBubblesGl";
-    private static final float FIXED_STEP_SECONDS = 1f / 60f;
+    private static final float TARGET_TICK_SECONDS = 1f / 60f;
+    private static final long STALLED_FRAME_NS = 66_666_668L;
     private static final long DESTROY_TIMEOUT_MS = 500L;
     private static final int WARM_KEEP_ALIVE_FRAMES = 100;
 
@@ -48,6 +49,8 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     private int drawCount;
     private volatile int keepAliveFrames;
     private int emptyFrames;
+    private long lastSimulationTimeNs;
+    private volatile boolean simulationClockResetPending = true;
 
     SparklingBubblesAppOwnedGlView(
             Context context, Bitmap blurMask, Listener listener) {
@@ -73,8 +76,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
         clearTransparent();
         try {
             if (nativeHandle == 0L) {
-                nativeHandle = SparklingBubblesNative.nativeCreate(
-                        1L);
+                nativeHandle = SparklingBubblesNative.nativeCreate(1L);
                 if (nativeHandle == 0L) {
                     throw new IllegalStateException("nativeCreate returned zero");
                 }
@@ -85,6 +87,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             resourcesReady = false;
             drawCount = 0;
             emptyFrames = 0;
+            resetSimulationClockFromGlThread();
             if (listener != null) {
                 post(new Runnable() {
                     @Override
@@ -134,6 +137,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             } else {
                 stopAnimationFromGlThread();
             }
+            resetSimulationClockFromGlThread();
         } catch (Throwable error) {
             fail(error);
         }
@@ -146,11 +150,10 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             return;
         }
         try {
-            // The stock Note 5 engine advances once per draw, so its speed follows
-            // the display cadence. Mirror the vendor oracle instead of wall-clock
-            // normalising it to 60 Hz.
             if (!SparklingBubblesNative.nativeStep(
-                    nativeHandle, FIXED_STEP_SECONDS)) {
+                    nativeHandle,
+                    simulationElapsedSecondsForDraw(
+                            SystemClock.elapsedRealtimeNanos()))) {
                 throw new IllegalStateException(nativeError());
             }
             if (!SparklingBubblesNative.nativeDraw(
@@ -319,6 +322,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         queueEvent(new Runnable() {
             @Override
             public void run() {
@@ -386,7 +390,9 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
         keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
-        if (getRenderMode() != RENDERMODE_CONTINUOUSLY) {
+        boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
+        if (wasStopped) {
+            requestSimulationClockReset();
             setRenderMode(RENDERMODE_CONTINUOUSLY);
         }
         requestRender();
@@ -406,9 +412,36 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
 
     private void stopAnimation() {
         animationGeneration.incrementAndGet();
+        requestSimulationClockReset();
         if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
             setRenderMode(RENDERMODE_WHEN_DIRTY);
         }
+    }
+
+    private float simulationElapsedSecondsForDraw(long nowNs) {
+        if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
+            resetSimulationClockFromGlThread();
+            lastSimulationTimeNs = nowNs;
+            return TARGET_TICK_SECONDS;
+        }
+        long elapsedNs = nowNs - lastSimulationTimeNs;
+        lastSimulationTimeNs = nowNs;
+        if (elapsedNs <= 0L) {
+            return 0.0f;
+        }
+        if (elapsedNs > STALLED_FRAME_NS) {
+            return TARGET_TICK_SECONDS;
+        }
+        return (float) elapsedNs / 1_000_000_000.0f;
+    }
+
+    private void requestSimulationClockReset() {
+        simulationClockResetPending = true;
+    }
+
+    private void resetSimulationClockFromGlThread() {
+        lastSimulationTimeNs = 0L;
+        simulationClockResetPending = false;
     }
 
     private boolean canIssueNativeCommand() {

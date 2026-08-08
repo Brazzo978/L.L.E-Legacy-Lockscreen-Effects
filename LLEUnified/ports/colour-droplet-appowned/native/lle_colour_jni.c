@@ -16,7 +16,9 @@
 #define LLE_COLOUR_HANDLE_MAGIC UINT64_C(0x4c4c45434f4c4f52)
 #define LLE_COLOUR_DEFAULT_WIDTH 1440
 #define LLE_COLOUR_DEFAULT_HEIGHT 2560
-#define LLE_COLOUR_FIXED_SECONDS (1.0 / (double) LLE_COLOUR_TICK_HZ)
+#define LLE_COLOUR_TARGET_SECONDS_PER_TICK (1.0 / 60.0)
+#define LLE_COLOUR_STOCK_TICK_SECONDS \
+    (1.0 / (double) LLE_COLOUR_TICK_HZ)
 #define LLE_COLOUR_MAX_TICKS_PER_STEP 8
 #define LLE_COLOUR_MAX_ELAPSED_SECONDS 0.25
 
@@ -157,7 +159,6 @@ Java_com_codex_lle_ColourDropletNative_nativeCreate(
                 project_kind);
         return 0;
     }
-
     LleColourHandle *handle =
             (LleColourHandle *) calloc(1U, sizeof(*handle));
     if (handle == NULL) {
@@ -557,15 +558,20 @@ Java_com_codex_lle_ColourDropletNative_nativeStep(
             (double) elapsed_seconds, LLE_COLOUR_MAX_ELAPSED_SECONDS);
     handle->accumulator_seconds += bounded;
     int tick_count = 0;
-    while (handle->accumulator_seconds >= LLE_COLOUR_FIXED_SECONDS
+    /*
+     * Intentional L.L.E cadence: retain each recovered full simulation tick
+     * at the selected app-owned simulation cadence.
+     */
+    while (handle->accumulator_seconds >= LLE_COLOUR_TARGET_SECONDS_PER_TICK
             && tick_count < LLE_COLOUR_MAX_TICKS_PER_STEP) {
         lle_colour_sim_tick(handle->sim);
-        handle->accumulator_seconds -= LLE_COLOUR_FIXED_SECONDS;
+        handle->accumulator_seconds -= LLE_COLOUR_TARGET_SECONDS_PER_TICK;
         ++tick_count;
     }
-    if (handle->accumulator_seconds >= LLE_COLOUR_FIXED_SECONDS) {
+    if (handle->accumulator_seconds >= LLE_COLOUR_TARGET_SECONDS_PER_TICK) {
         handle->accumulator_seconds =
-                fmod(handle->accumulator_seconds, LLE_COLOUR_FIXED_SECONDS);
+                fmod(handle->accumulator_seconds,
+                     LLE_COLOUR_TARGET_SECONDS_PER_TICK);
     }
     colour_clear_error(handle);
     return JNI_TRUE;
@@ -635,6 +641,22 @@ Java_com_codex_lle_ColourDropletNative_nativeDraw(
     if (exported > handle->draw_particle_capacity) {
         colour_set_error(handle, "Particle export changed during a GL-thread draw");
         return JNI_FALSE;
+    }
+
+    const float presentation_fraction = (float) fmax(
+            0.0,
+            fmin(1.0,
+                 handle->accumulator_seconds /
+                          LLE_COLOUR_TARGET_SECONDS_PER_TICK));
+    for (size_t index = 0U; index < exported; ++index) {
+        LleColourDrawParticle *particle = &handle->draw_particles[index];
+        const float presentation_step =
+                (particle->flags & LLE_COLOUR_PARTICLE_SATELLITE) != 0U
+                        ? presentation_fraction
+                        : presentation_fraction *
+                                (float) LLE_COLOUR_STOCK_TICK_SECONDS;
+        particle->x += particle->velocity_x * presentation_step;
+        particle->y += particle->velocity_y * presentation_step;
     }
 
     LleColourDrawParams params;

@@ -75,6 +75,7 @@ void lle_spark_gles_clear_bitmap(LleSparkGles *gles, int slot);
 bool lle_spark_gles_draw(
         LleSparkGles *gles,
         const LleSparkSim *sim,
+        float presentation_fraction,
         int width,
         int height,
         char *error,

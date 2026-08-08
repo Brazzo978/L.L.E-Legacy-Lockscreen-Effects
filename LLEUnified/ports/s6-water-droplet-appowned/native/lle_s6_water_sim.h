@@ -36,6 +36,8 @@ typedef struct LleS6WaterSim LleS6WaterSim;
 typedef struct LleS6WaterDensityParticle {
   float center_x_px;
   float center_y_px;
+  float velocity_x_px_per_second;
+  float velocity_y_px_per_second;
   float diameter_px;
   float phase;
   uint32_t flags;

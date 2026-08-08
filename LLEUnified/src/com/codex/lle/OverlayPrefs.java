@@ -74,6 +74,8 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
     static final String DEBUG_BYPASS_BOOT_SAFETY = "debug_bypass_boot_safety";
+    static final String DEBUG_LEGACY_QUICK_PANEL_DETECTION =
+            "debug_legacy_quick_panel_detection";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
@@ -448,6 +450,10 @@ final class OverlayPrefs {
 
     static boolean debugBypassBootSafety(Context context) {
         return get(context).getBoolean(DEBUG_BYPASS_BOOT_SAFETY, false);
+    }
+
+    static boolean debugLegacyQuickPanelDetection(Context context) {
+        return get(context).getBoolean(DEBUG_LEGACY_QUICK_PANEL_DETECTION, false);
     }
 
     static boolean debugLensLoop(Context context) {

@@ -107,6 +107,7 @@ bool lle_spark_sim_get_particle(
  */
 size_t lle_spark_sim_export_draw_data(
         const LleSparkSim *sim,
+        float presentation_fraction,
         float *positions_xy,
         float *initial_positions_xy,
         float *sizes,

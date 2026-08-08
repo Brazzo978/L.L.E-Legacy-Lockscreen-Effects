@@ -4684,6 +4684,14 @@ public class ControlActivity extends Activity {
             section.addView(infoText("Routes every L.L.E. effect and lock sound through "
                     + "media volume instead of System sounds. This also bypasses the phone's "
                     + "Screen lock/unlock sound switch."));
+            section.addView(toggle("Legacy quick-panel detection (1.0.5.3)",
+                    OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION, false));
+            TextView legacyQuickPanelWarning = infoText("Compatibility fallback only. "
+                    + "Restores the exact 1.0.5.3 quick-panel event and tree detector. "
+                    + "On recent or localized SystemUI versions it may leave L.L.E. active "
+                    + "over Quick Settings; keep it off unless the default detector fails.");
+            legacyQuickPanelWarning.setTextColor(COLOR_ERROR);
+            section.addView(legacyQuickPanelWarning);
             section.addView(bootSafetyBypassToggle());
             TextView bootSafetyWarning = infoText("⚠ DANGER — THIS REMOVES YOUR RECOVERY "
                     + "WINDOW. Enable only after L.L.E. has proven stable on this exact device. "

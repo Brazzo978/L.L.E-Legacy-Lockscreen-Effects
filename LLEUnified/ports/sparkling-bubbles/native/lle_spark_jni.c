@@ -14,7 +14,7 @@
 #define LLE_SPARK_HANDLE_MAGIC UINT64_C(0x4c4c45535041524b)
 #define LLE_SPARK_DEFAULT_WIDTH 1440
 #define LLE_SPARK_DEFAULT_HEIGHT 2560
-#define LLE_SPARK_FIXED_SECONDS (1.0 / 60.0)
+#define LLE_SPARK_TARGET_SECONDS_PER_TICK (1.0 / 60.0)
 #define LLE_SPARK_MAX_TICKS_PER_STEP 8
 #define LLE_SPARK_MAX_ELAPSED_SECONDS 0.25
 
@@ -252,15 +252,20 @@ Java_com_codex_lle_SparklingBubblesNative_nativeStep(
             (double) elapsed_seconds, LLE_SPARK_MAX_ELAPSED_SECONDS);
     handle->accumulator_seconds += bounded;
     int tick_count = 0;
-    while (handle->accumulator_seconds >= LLE_SPARK_FIXED_SECONDS
+    /*
+     * Intentional L.L.E cadence: retain each recovered full simulation tick
+     * at the selected app-owned simulation cadence.
+     */
+    while (handle->accumulator_seconds >= LLE_SPARK_TARGET_SECONDS_PER_TICK
             && tick_count < LLE_SPARK_MAX_TICKS_PER_STEP) {
         lle_spark_sim_tick(handle->sim);
-        handle->accumulator_seconds -= LLE_SPARK_FIXED_SECONDS;
+        handle->accumulator_seconds -= LLE_SPARK_TARGET_SECONDS_PER_TICK;
         ++tick_count;
     }
-    if (handle->accumulator_seconds >= LLE_SPARK_FIXED_SECONDS) {
+    if (handle->accumulator_seconds >= LLE_SPARK_TARGET_SECONDS_PER_TICK) {
         handle->accumulator_seconds =
-                fmod(handle->accumulator_seconds, LLE_SPARK_FIXED_SECONDS);
+                fmod(handle->accumulator_seconds,
+                     LLE_SPARK_TARGET_SECONDS_PER_TICK);
     }
     spark_clear_handle_error(handle);
     return JNI_TRUE;
@@ -286,9 +291,15 @@ Java_com_codex_lle_SparklingBubblesNative_nativeDraw(
         lle_spark_sim_set_surface(handle->sim, (float) width, (float) height);
     }
     spark_clear_handle_error(handle);
+    const float presentation_fraction = (float) fmax(
+            0.0,
+            fmin(1.0,
+                 handle->accumulator_seconds /
+                          LLE_SPARK_TARGET_SECONDS_PER_TICK));
     if (!lle_spark_gles_draw(
             &handle->gles,
             handle->sim,
+            presentation_fraction,
             width,
             height,
             handle->error,

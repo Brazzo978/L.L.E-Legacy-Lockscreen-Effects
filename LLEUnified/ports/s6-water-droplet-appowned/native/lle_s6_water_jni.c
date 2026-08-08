@@ -15,7 +15,8 @@
 #include <string.h>
 
 #define LLE_S6_WATER_LOG_TAG "LLES6WaterDroplet"
-#define LLE_S6_WATER_BRIDGE_VERSION 1
+#define LLE_S6_WATER_BRIDGE_VERSION 2
+#define LLE_S6_WATER_STOCK_DT (1.0f / 60.0f)
 #define LLE_S6_WATER_HANDLE_MAGIC UINT64_C(0x4c4c455336574154)
 #define LLE_S6_WATER_DEFAULT_WIDTH 1440
 #define LLE_S6_WATER_DEFAULT_HEIGHT 2560
@@ -814,7 +815,8 @@ Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw(
         jclass clazz,
         jlong native_handle,
         jint width,
-        jint height) {
+        jint height,
+        jfloat presentation_fraction) {
     (void) env;
     (void) clazz;
     LleS6WaterHandle *handle = s6_water_handle(native_handle);
@@ -830,6 +832,14 @@ Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw(
     if (width <= 0 || height <= 0) {
         s6_water_set_error_locked(
                 handle, "nativeDraw received invalid dimensions");
+        s6_water_unlock(handle);
+        return JNI_FALSE;
+    }
+    if (!isfinite(presentation_fraction)
+            || presentation_fraction < 0.0f
+            || presentation_fraction > 1.0f) {
+        s6_water_set_error_locked(
+                handle, "nativeDraw received invalid presentation fraction");
         s6_water_unlock(handle);
         return JNI_FALSE;
     }
@@ -879,6 +889,22 @@ Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw(
                 handle, "Particle export changed during serialized draw");
         s6_water_unlock(handle);
         return JNI_FALSE;
+    }
+
+    /*
+     * Stock physics advances at 60 Hz. On modern 80/120 Hz panels, present
+     * the fractional time remaining in the fixed-step accumulator instead of
+     * displaying every particle position for two consecutive refreshes.
+     * This affects only the immutable draw snapshot, never simulation state.
+     */
+    const float presentation_seconds =
+            presentation_fraction * LLE_S6_WATER_STOCK_DT;
+    for (size_t index = 0U; index < exported; ++index) {
+        LleS6WaterDensityParticle *particle = &handle->draw_particles[index];
+        particle->center_x_px +=
+                particle->velocity_x_px_per_second * presentation_seconds;
+        particle->center_y_px +=
+                particle->velocity_y_px_per_second * presentation_seconds;
     }
 
     LleS6WaterRenderState render_state;

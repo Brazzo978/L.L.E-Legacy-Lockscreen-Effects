@@ -861,6 +861,7 @@ bool lle_spark_sim_get_particle(
 
 size_t lle_spark_sim_export_draw_data(
         const LleSparkSim *sim,
+        float presentation_fraction,
         float *positions_xy,
         float *initial_positions_xy,
         float *sizes,
@@ -876,6 +877,11 @@ size_t lle_spark_sim_export_draw_data(
     if (sim == NULL) {
         return 0;
     }
+    const float presentation_step =
+            isfinite(presentation_fraction)
+                    ? fmaxf(0.0f, fminf(1.0f, presentation_fraction)) *
+                            LLE_SPARK_FIXED_DT
+                    : 0.0f;
     required_points =
             sim->active_order_count * LLE_SPARK_PARTICLES_PER_GROUP;
 
@@ -912,8 +918,10 @@ size_t lle_spark_sim_export_draw_data(
                 ++particle_index, ++output_index) {
             const LleSparkParticle *particle =
                     &group->particles[particle_index];
-            positions_xy[output_index * 2u] = particle->x;
-            positions_xy[output_index * 2u + 1u] = particle->y;
+            positions_xy[output_index * 2u] =
+                    particle->x + particle->velocity_x * presentation_step;
+            positions_xy[output_index * 2u + 1u] =
+                    particle->y + particle->velocity_y * presentation_step;
             initial_positions_xy[output_index * 2u] =
                     particle->initial_x;
             initial_positions_xy[output_index * 2u + 1u] =
