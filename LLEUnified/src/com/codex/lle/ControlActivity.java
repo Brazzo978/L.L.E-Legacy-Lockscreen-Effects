@@ -2974,6 +2974,9 @@ public class ControlActivity extends Activity {
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
             return column;
         }
+        BitmapFactory.Options sourceBounds = new BitmapFactory.Options();
+        sourceBounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), sourceBounds);
         Bitmap bitmap = decodeFoldPreviewBitmap(file);
         if (bitmap == null || bitmap.isRecycled()) {
             TextView missing = infoText("Screenshot unreadable");
@@ -2983,8 +2986,10 @@ public class ControlActivity extends Activity {
             return column;
         }
         previews.add(bitmap);
-        column.addView(infoText(bitmap.getWidth() + " x " + bitmap.getHeight()
-                + " preview | " + Math.max(1L, file.length() / 1024L) + " KB"));
+        column.addView(infoText("source " + sourceBounds.outWidth + " x "
+                + sourceBounds.outHeight + " \u2022 preview " + bitmap.getWidth() + " x "
+                + bitmap.getHeight() + " \u2022 "
+                + Math.max(1L, file.length() / 1024L) + " KB"));
         ImageView image = new ImageView(this);
         image.setBackgroundColor(Color.BLACK);
         image.setAdjustViewBounds(true);

@@ -27,10 +27,14 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Creates a user-shareable, non-root diagnostic report without collecting images. */
 final class DebugReport {
@@ -38,6 +42,52 @@ final class DebugReport {
     private static final String PREFIX = "LLE-debug-";
     private static final int MAX_LOGCAT_CHARS = 512 * 1024;
     private static final int MAX_REPORT_FILES = 4;
+    private static final int MAX_RUNTIME_SIGNATURE_CHARS = 4096;
+    private static final Pattern LOGCAT_THREADTIME_PRIORITY = Pattern.compile(
+            "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+"
+                    + "\\d+\\s+\\d+\\s+([VDIWEAFS])\\s+");
+    private static final Pattern SAFE_RUNTIME_VALUE = Pattern.compile(
+            "^[a-zA-Z0-9_.:<>=,| -]{0,512}$");
+    private static final Pattern SAFE_RUNTIME_WINDOW_ENTRY = Pattern.compile(
+            "^id=-?\\d+,display=-?\\d+,type=-?\\d+,layer=-?\\d+,active=(?:true|false),"
+                    + "focused=(?:true|false),titleSignal=(?:shade|pin|none|other),"
+                    + "rootPackage=(?:[A-Za-z0-9_.-]+|<non-system>|-),"
+                    + "rootClass=(?:[A-Za-z0-9_.$-]+|-)$");
+    private static final Pattern SAFE_RUNTIME_NODE_ENTRY = Pattern.compile(
+            "^d\\d+:id=(?:-|[A-Za-z0-9_.-]+:id/[A-Za-z0-9_.-]+),"
+                    + "class=(?:-|[A-Za-z_$][A-Za-z0-9_.$-]*)$");
+    private static final Set<String> SAFE_RUNTIME_SNAPSHOT_FIELDS = new HashSet<String>(
+            Arrays.asList(
+                    "service_connected", "service_generation", "boot_safety_holding",
+                    "boot_safety_remaining_ms", "boot_safety_debug_bypass",
+                    "active_runtime_block_window_id", "charging", "service_battery_percent",
+                    "display_profile", "display_profile_mode", "display_dimensions",
+                    "background_source_type", "background_bitmap_dimensions", "doodle_attached",
+                    "doodle_parked", "effect_attached", "effect_parked", "effect_visible",
+                    "affordance_pending", "affordance_shown_this_wake",
+                    "affordance_dispatch_queued", "affordance_dispatch_generation",
+                    "effect_renderer_type", "effect_gesture_active", "pin_entry_pending",
+                    "pin_entry_surface_visible", "pin_entry_handoff_active",
+                    "pin_entry_handoff_attempt", "pin_entry_handoff_callback",
+                    "pin_entry_handoff_terminal", "pin_entry_handoff_outcome",
+                    "pin_entry_handoff_observed_age_ms", "pin_entry_handoff_interactive",
+                    "pin_entry_handoff_keyguard_locked", "pin_entry_handoff_device_locked",
+                    "notification_shade_visible",
+                    "notification_shade_diagnostic_age_ms",
+                    "notification_shade_diagnostic_reason",
+                    "notification_shade_diagnostic_matched",
+                    "notification_shade_diagnostic_quality",
+                    "notification_shade_diagnostic_windows",
+                    "notification_shade_diagnostic_roots",
+                    "notification_shade_diagnostic_nodes",
+                    "notification_shade_diagnostic_exhausted", "global_actions_visible",
+                    "global_actions_age_ms", "background_capture_active"));
+    private static final Set<String> RUNTIME_SIGNATURE_FIELDS = new HashSet<String>(
+            Arrays.asList(
+                    "notification_shade_window_signature",
+                    "notification_shade_visible_node_signature",
+                    "notification_shade_confirmed_window_signature",
+                    "notification_shade_confirmed_node_signature"));
 
     private DebugReport() {
     }
@@ -87,6 +137,8 @@ final class DebugReport {
 
     private static void appendHeader(StringBuilder body, Context context) {
         body.append("L.L.E debug report\n");
+        body.append("privacy_notice=notification and accessibility UI contents are not "
+                + "intentionally collected; app log messages are redacted\n");
         body.append("created_utc=").append(utcTimestamp("yyyy-MM-dd'T'HH:mm:ss'Z'"))
                 .append('\n');
         body.append("package=").append(context.getPackageName()).append('\n');
@@ -195,6 +247,22 @@ final class DebugReport {
         }
         body.append("active_colormap_dimensions=")
                 .append(colormapWidth).append('x').append(colormapHeight).append('\n');
+        int[] expectedColormapSize = FoldDisplayTarget.displaySizeForProfile(
+                context, colormapProfile);
+        int expectedColormapWidth = expectedColormapSize[0];
+        int expectedColormapHeight = expectedColormapSize[1];
+        body.append("active_colormap_expected_dimensions=")
+                .append(expectedColormapWidth).append('x')
+                .append(expectedColormapHeight).append('\n');
+        body.append("active_colormap_validation=")
+                .append(colormapValidationLabel(
+                        importedColormap,
+                        colormapProfile,
+                        colormapWidth,
+                        colormapHeight,
+                        expectedColormapWidth,
+                        expectedColormapHeight))
+                .append('\n');
 
         Intent battery = context.registerReceiver(
                 null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -219,8 +287,123 @@ final class DebugReport {
         Debug.MemoryInfo memoryInfo = new Debug.MemoryInfo();
         Debug.getMemoryInfo(memoryInfo);
         body.append("process_total_pss_kb=").append(memoryInfo.getTotalPss()).append('\n');
-        body.append(ChargingAccessibilityService.debugRuntimeSnapshot());
+        appendSanitizedRuntimeSnapshot(body, ChargingAccessibilityService.debugRuntimeSnapshot());
         body.append('\n');
+    }
+
+    private static String colormapValidationLabel(
+            boolean imported, String profile, int bitmapWidth, int bitmapHeight,
+            int targetWidth, int targetHeight) {
+        if (imported) {
+            return "imported_not_size_gated";
+        }
+        if (bitmapWidth <= 0 || bitmapHeight <= 0) {
+            return "missing";
+        }
+        if (!FoldDisplayTarget.bitmapMatches(
+                profile, bitmapWidth, bitmapHeight, targetWidth, targetHeight)) {
+            return "invalid_profile_shape";
+        }
+        if (!ChargingAccessibilityService.automaticProfileScreenshotResolutionMatches(
+                profile, bitmapWidth, bitmapHeight, targetWidth, targetHeight)) {
+            return "invalid_low_resolution";
+        }
+        return "valid";
+    }
+
+    /**
+     * The service snapshot is intentionally structured, but it is still fed by SystemUI.
+     * Keep only its known diagnostic fields and categorise package/blacklist values so a
+     * future free-form field cannot accidentally turn a shareable report into UI telemetry.
+     */
+    private static void appendSanitizedRuntimeSnapshot(StringBuilder body, String snapshot) {
+        if (snapshot == null || snapshot.length() == 0) {
+            body.append("service_snapshot=unavailable\n");
+            return;
+        }
+        int omitted = 0;
+        String[] lines = snapshot.split("\\n");
+        for (String line : lines) {
+            int separator = line.indexOf('=');
+            if (separator <= 0) {
+                omitted++;
+                continue;
+            }
+            String key = line.substring(0, separator);
+            String value = line.substring(separator + 1);
+            if ("last_window_package".equals(key)
+                    || "active_runtime_block_package".equals(key)) {
+                body.append(key).append('=').append(packageCategory(value)).append('\n');
+            } else if ("custom_blacklist_packages".equals(key)) {
+                body.append("custom_blacklist_configured=")
+                        .append(value.length() > 2).append('\n');
+            } else if (RUNTIME_SIGNATURE_FIELDS.contains(key)) {
+                String signature = sanitizeRuntimeSignature(key, value);
+                if (signature == null) {
+                    omitted++;
+                } else {
+                    body.append(key).append('=').append(signature).append('\n');
+                }
+            } else if (SAFE_RUNTIME_SNAPSHOT_FIELDS.contains(key)
+                    && SAFE_RUNTIME_VALUE.matcher(value).matches()
+                    && !containsPrivateReference(value)) {
+                body.append(key).append('=').append(value).append('\n');
+            } else {
+                omitted++;
+            }
+        }
+        if (omitted > 0) {
+            body.append("runtime_snapshot_omitted_fields=").append(omitted).append('\n');
+        }
+    }
+
+    private static String packageCategory(String packageName) {
+        if (packageName == null || "<none>".equals(packageName)) {
+            return "none";
+        }
+        if ("com.android.systemui".equals(packageName)) {
+            return "systemui";
+        }
+        if ("com.samsung.android.app.aodservice".equals(packageName)) {
+            return "aod";
+        }
+        return "other";
+    }
+
+    private static String sanitizeRuntimeSignature(String key, String value) {
+        if (value == null) {
+            return null;
+        }
+        if ("<none>".equals(value) || "unknown".equals(value)) {
+            return value;
+        }
+        boolean windowSignature = key.contains("window_signature");
+        Pattern entryPattern = windowSignature
+                ? SAFE_RUNTIME_WINDOW_ENTRY : SAFE_RUNTIME_NODE_ENTRY;
+        StringBuilder sanitized = new StringBuilder(
+                Math.min(value.length(), MAX_RUNTIME_SIGNATURE_CHARS));
+        String[] entries = value.split(" \\| ", -1);
+        for (String entry : entries) {
+            if (!entryPattern.matcher(entry).matches()) {
+                return null;
+            }
+            String safeEntry = windowSignature
+                    ? entry : entry.replace(":id/", ":id_");
+            int delimiterLength = sanitized.length() == 0 ? 0 : 3;
+            if (sanitized.length() + delimiterLength + safeEntry.length()
+                    > MAX_RUNTIME_SIGNATURE_CHARS) {
+                if (sanitized.length() == 0) {
+                    return null;
+                }
+                sanitized.append(" | <truncated>");
+                break;
+            }
+            if (sanitized.length() > 0) {
+                sanitized.append(" | ");
+            }
+            sanitized.append(safeEntry);
+        }
+        return sanitized.length() == 0 ? null : sanitized.toString();
     }
 
     private static boolean isAccessibilityEnabled(Context context) {
@@ -317,22 +500,25 @@ final class DebugReport {
     }
 
     private static boolean isSensitivePreference(String key, Object value) {
-        String lowerKey = key == null ? "" : key.toLowerCase(Locale.US);
+        String lowerKey = key == null ? "" : key.toLowerCase(Locale.ROOT);
         if (lowerKey.contains("uri")
                 || lowerKey.contains("path")
                 || lowerKey.contains("file")
                 || lowerKey.contains("password")
-                || lowerKey.contains("token")) {
+                || lowerKey.contains("token")
+                || lowerKey.contains("label")
+                || lowerKey.contains("package")
+                || lowerKey.contains("blacklist")
+                || lowerKey.contains("error")) {
             return true;
         }
-        if (!(value instanceof String)) {
-            return false;
+        // SharedPreferences strings and sets can contain imported filenames, arbitrary app
+        // identifiers, or old diagnostic text. Numeric/boolean settings retain the useful
+        // configuration state without exporting any free-form value.
+        if (value instanceof String || value instanceof Set) {
+            return true;
         }
-        String text = ((String) value).trim().toLowerCase(Locale.US);
-        return text.startsWith("/")
-                || text.startsWith("content:")
-                || text.startsWith("file:")
-                || text.length() > 160;
+        return false;
     }
 
     private static void appendInternalFiles(StringBuilder body, Context context) {
@@ -342,13 +528,20 @@ final class DebugReport {
             body.append("none\n\n");
             return;
         }
-        Arrays.sort(files);
+        int fileCount = 0;
+        int directoryCount = 0;
+        long fileBytes = 0L;
         for (File file : files) {
-            body.append(file.getName())
-                    .append(" type=").append(file.isDirectory() ? "directory" : "file")
-                    .append(" bytes=").append(file.isFile() ? file.length() : -1)
-                    .append('\n');
+            if (file.isFile()) {
+                fileCount++;
+                fileBytes += Math.max(0L, file.length());
+            } else if (file.isDirectory()) {
+                directoryCount++;
+            }
         }
+        body.append("file_count=").append(fileCount).append('\n');
+        body.append("directory_count=").append(directoryCount).append('\n');
+        body.append("file_bytes_total=").append(fileBytes).append('\n');
         body.append('\n');
     }
 
@@ -361,7 +554,61 @@ final class DebugReport {
         } else {
             body.append("filter=uid\n");
         }
-        body.append(output);
+        appendSanitizedLogcatSummary(body, output);
+    }
+
+    /**
+     * Logcat is a shared append-only buffer. Even after telemetry is corrected, its UID
+     * history can contain old accessibility text. Report only line-count/severity metadata;
+     * no tag or message survives, including for lines the parser does not recognise.
+     */
+    private static void appendSanitizedLogcatSummary(StringBuilder body, String output) {
+        int total = 0;
+        int unparsed = 0;
+        int verbose = 0;
+        int debug = 0;
+        int info = 0;
+        int warning = 0;
+        int error = 0;
+        int assertCount = 0;
+        int fatal = 0;
+        int silent = 0;
+        if (output != null) {
+            String[] lines = output.split("\\n");
+            for (String line : lines) {
+                if (line.length() == 0 || "<logcat truncated>".equals(line)) {
+                    continue;
+                }
+                total++;
+                Matcher matcher = LOGCAT_THREADTIME_PRIORITY.matcher(line);
+                if (!matcher.find()) {
+                    unparsed++;
+                    continue;
+                }
+                switch (matcher.group(1).charAt(0)) {
+                    case 'V': verbose++; break;
+                    case 'D': debug++; break;
+                    case 'I': info++; break;
+                    case 'W': warning++; break;
+                    case 'E': error++; break;
+                    case 'A': assertCount++; break;
+                    case 'F': fatal++; break;
+                    case 'S': silent++; break;
+                    default: unparsed++; break;
+                }
+            }
+        }
+        body.append("message_content=redacted\n");
+        body.append("captured_lines=").append(total).append('\n');
+        body.append("unparsed_lines=").append(unparsed).append('\n');
+        body.append("severity_v=").append(verbose).append('\n');
+        body.append("severity_d=").append(debug).append('\n');
+        body.append("severity_i=").append(info).append('\n');
+        body.append("severity_w=").append(warning).append('\n');
+        body.append("severity_e=").append(error).append('\n');
+        body.append("severity_a=").append(assertCount).append('\n');
+        body.append("severity_f=").append(fatal).append('\n');
+        body.append("severity_s=").append(silent).append('\n');
     }
 
     private static String captureLogcat(String selector) {
@@ -395,7 +642,7 @@ final class DebugReport {
             }
         } catch (Throwable error) {
             output.append("unavailable=").append(error.getClass().getSimpleName())
-                    .append(": ").append(error.getMessage()).append('\n');
+                    .append('\n');
         } finally {
             if (reader != null) {
                 try {
@@ -415,9 +662,23 @@ final class DebugReport {
         if (output == null) {
             return false;
         }
-        String lower = output.toLowerCase(Locale.US);
+        String lower = output.toLowerCase(Locale.ROOT);
         return lower.contains("unknown option")
                 && lower.contains(selectorName.toLowerCase(Locale.US));
+    }
+
+    private static boolean containsPrivateReference(String value) {
+        if (value == null) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.indexOf('/') >= 0
+                || lower.indexOf('\\') >= 0
+                || lower.contains("content:")
+                || lower.contains("file:")
+                || lower.contains("://")
+                || lower.contains("token")
+                || lower.contains("password");
     }
 
     private static void pruneOldReports(File directory) {

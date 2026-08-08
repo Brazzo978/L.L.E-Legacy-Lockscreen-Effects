@@ -91,6 +91,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final float WARM_PARK_ALPHA = 0.01f;
     private static final float CANVAS_WARM_PARK_ALPHA = 1f;
     private static final long PIN_ENTRY_SWIPE_START_DELAY_MS = 60L;
+    private static final long PIN_ENTRY_HANDOFF_VERIFY_DELAY_MS = 360L;
+    private static final long PIN_ENTRY_HANDOFF_CANCEL_VERIFY_DELAY_MS = 180L;
+    private static final long PIN_ENTRY_HANDOFF_SCAN_RECHECK_MS = 120L;
+    private static final long PIN_ENTRY_HANDOFF_SCAN_WAIT_MAX_MS = 720L;
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_DEFAULT_MS = 900L;
     private static final long PIN_ENTRY_EFFECT_CLEANUP_DELAY_LOCKBG_MS = 300L;
     // Pin entry opens after 340 ms and its shared dispatch starts 60 ms later.
@@ -133,6 +137,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long WARM_BURST_LATE_MS = 180L;
     private static final long READINESS_GESTURE_TIMEOUT_MS = 650L;
     private static final long BLOCKED_SURFACE_CLEAR_GRACE_MS = 120L;
+    private static final long PIN_ENTRY_PARTIAL_CLEAR_STABLE_MS = 800L;
     private static final long NOTIFICATION_SHADE_CLEAR_STABLE_MS = 250L;
     private static final long BLOCKED_SURFACE_SCAN_MIN_INTERVAL_MS = 60L;
     private static final long NOTIFICATION_SHADE_SCAN_MIN_INTERVAL_MS = 120L;
@@ -158,6 +163,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long UNLOCK_EFFECT_SCREENSHOT_RETRY_MS = 90L;
     private static final long UNLOCK_EFFECT_SCREENSHOT_WAIT_LOG_INTERVAL_MS = 1000L;
     private static final int UNLOCK_EFFECT_SCREENSHOT_MAX_ATTEMPTS = 2;
+    private static final float PROFILE_SCREENSHOT_MIN_TARGET_SCALE = 0.90f;
     // The persisted colormap is shared by every screenshot-backed effect, so its
     // capture quality must not depend on whichever renderer happens to be selected.
     private static final long SHARED_COLORMAP_CAPTURE_MIN_SCREEN_ON_MS = 1400L;
@@ -402,6 +408,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         @Override
         public void run() {
             runPinEntrySwipe();
+        }
+    };
+    private final Runnable pinEntryHandoffVerifyRunnable = new Runnable() {
+        @Override
+        public void run() {
+            verifyPinEntryHandoff();
         }
     };
     private final Runnable pinEntryEffectCleanupRunnable = new Runnable() {
@@ -707,6 +719,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long pinEntryTraceGestureEndAt;
     private long pinEntryTraceOpenAt;
     private long pinEntryTraceDispatchAt;
+    private long pinEntryHandoffLastObservedAt;
+    private long pinEntryHandoffAttemptDispatchedAt;
+    private long pinEntryHandoffLastSafeScanAt;
     private int unlockEffectBackgroundEffect = -1;
     private int pinEntryTraceEffect = -1;
     private int activeEffectProfileEffect = -1;
@@ -745,6 +760,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int inputSafetyGeneration;
     private int scheduledPinEntrySafetyGeneration;
     private int queuedPinSwipeSafetyGeneration;
+    private int pinEntryHandoffGeneration;
+    private int pinEntryHandoffSafetyGeneration;
+    private int pinEntryHandoffAttempt;
+    private int pinEntryHandoffVerifyGeneration;
+    private int pinEntryHandoffVerifyAttempt;
     private int lastScreenOffPrearmDisplayState = Integer.MIN_VALUE;
     private int unlockEffectRendererDisplayWidth;
     private int unlockEffectRendererDisplayHeight;
@@ -758,6 +778,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     private String cachedUnlockEffectBackgroundProfile = "";
     private String cachedUnlockEffectBackgroundFilePath = "";
     private String unlockEffectReadinessDetail = "detached";
+    private String pinEntryHandoffLastCallback = "none";
+    private String pinEntryHandoffLastTerminal = "none";
+    private String pinEntryHandoffLastOutcome = "none";
+    private boolean pinEntryHandoffActive;
+    private boolean pinEntryHandoffLastInteractive;
+    private boolean pinEntryHandoffLastKeyguardLocked;
+    private boolean pinEntryHandoffLastDeviceLocked;
     private float bufferedReadinessDownX;
     private float bufferedReadinessDownY;
     private float bufferedReadinessMoveX;
@@ -1207,6 +1234,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean keyboardPinEntryEvent = isKeyboardPinEntryEvent(event);
         if (interactive && (pinEntryEvent || keyboardPinEntryEvent)) {
             boolean wasPinEntryRequested = pinEntryRequested;
+            boolean completingActiveHandoff = pinEntryHandoffActive;
             pinEntryPending = false;
             pinEntryRequested = true;
             pinEntrySurfaceSeen = true;
@@ -1220,8 +1248,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                 Log.i(TAG, "pin entry keyboard surface visible pkg="
                         + event.getPackageName());
             }
+            if (completingActiveHandoff) {
+                // A current bouncer/keyboard event is stronger evidence than a later
+                // bounded scan on slow SystemUI hardware. Complete immediately so a
+                // partial negative scan cannot re-arm L.L.E over the PIN surface.
+                finishSuccessfulPinEntryHandoff("pin_surface");
+            }
             removeTouchDebugOverlay();
-            if (!wasPinEntryRequested) {
+            if (!wasPinEntryRequested && !completingActiveHandoff) {
                 scheduleUnlockEffectCleanup();
             }
             evaluateVisibility("event:" + eventTypeName(event) + ":pin_fast", false);
@@ -1378,6 +1412,28 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .append(service.pinEntryPending).append('\n');
         snapshot.append("pin_entry_surface_visible=")
                 .append(service.pinEntrySurfaceVisible).append('\n');
+        snapshot.append("pin_entry_handoff_active=")
+                .append(service.pinEntryHandoffActive).append('\n');
+        snapshot.append("pin_entry_handoff_attempt=")
+                .append(service.pinEntryHandoffAttempt).append('\n');
+        snapshot.append("pin_entry_handoff_callback=")
+                .append(service.pinEntryHandoffLastCallback).append('\n');
+        snapshot.append("pin_entry_handoff_terminal=")
+                .append(service.pinEntryHandoffLastTerminal).append('\n');
+        snapshot.append("pin_entry_handoff_outcome=")
+                .append(service.pinEntryHandoffLastOutcome).append('\n');
+        snapshot.append("pin_entry_handoff_observed_age_ms=")
+                .append(service.pinEntryHandoffLastObservedAt <= 0L
+                        ? -1L
+                        : SystemClock.uptimeMillis()
+                                - service.pinEntryHandoffLastObservedAt)
+                .append('\n');
+        snapshot.append("pin_entry_handoff_interactive=")
+                .append(service.pinEntryHandoffLastInteractive).append('\n');
+        snapshot.append("pin_entry_handoff_keyguard_locked=")
+                .append(service.pinEntryHandoffLastKeyguardLocked).append('\n');
+        snapshot.append("pin_entry_handoff_device_locked=")
+                .append(service.pinEntryHandoffLastDeviceLocked).append('\n');
         snapshot.append("notification_shade_visible=")
                 .append(service.notificationShadeVisible).append('\n');
         snapshot.append("notification_shade_diagnostic_age_ms=")
@@ -2522,6 +2578,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void clearBlockedSurfaceState() {
+        cancelPinEntryHandoff("blocked_surface_state_cleared");
         pinEntryPending = false;
         pinEntryRequested = false;
         pinEntrySurfaceSeen = false;
@@ -2603,6 +2660,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         inputSafetyGeneration++;
         handler.removeCallbacks(pinEntryRunnable);
         handler.removeCallbacks(pinEntrySwipeRunnable);
+        cancelPinEntryHandoff("notification_shade");
         pinEntryPending = false;
         pinEntryRequested = false;
         pinEntrySurfaceSeen = false;
@@ -4471,6 +4529,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " target=" + activeDisplayWidth + "x" + activeDisplayHeight);
             return false;
         }
+        if (!automaticProfileScreenshotResolutionMatches(
+                profile, bitmap.getWidth(), bitmap.getHeight(),
+                activeDisplayWidth, activeDisplayHeight)) {
+            Log.i(TAG, "background screenshot rejected: low profile resolution reason="
+                    + reason
+                    + " profile=" + profile
+                    + " bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight()
+                    + " target=" + activeDisplayWidth + "x" + activeDisplayHeight);
+            return false;
+        }
         int displayState = currentDisplayState();
         if (AOD_PACKAGE.equals(lastWindowPackage)
                 || (displayState != Display.STATE_UNKNOWN && displayState != Display.STATE_ON)) {
@@ -5195,10 +5263,33 @@ public class ChargingAccessibilityService extends AccessibilityService
                     bounds.outWidth,
                     bounds.outHeight,
                     activeDisplayWidth,
-                    activeDisplayHeight);
+                    activeDisplayHeight)
+                    && automaticProfileScreenshotResolutionMatches(
+                            activeDisplayProfile,
+                            bounds.outWidth,
+                            bounds.outHeight,
+                            activeDisplayWidth,
+                            activeDisplayHeight);
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    static boolean automaticProfileScreenshotResolutionMatches(
+            String profile, int bitmapWidth, int bitmapHeight,
+            int targetWidth, int targetHeight) {
+        if (FoldDisplayTarget.PROFILE_SINGLE.equals(
+                FoldDisplayTarget.normalizeProfile(profile))) {
+            return true;
+        }
+        if (targetWidth <= 0 || targetHeight <= 0) {
+            return false;
+        }
+        int minimumWidth = Math.max(
+                100, (int) Math.ceil(targetWidth * PROFILE_SCREENSHOT_MIN_TARGET_SCALE));
+        int minimumHeight = Math.max(
+                100, (int) Math.ceil(targetHeight * PROFILE_SCREENSHOT_MIN_TARGET_SCALE));
+        return bitmapWidth >= minimumWidth && bitmapHeight >= minimumHeight;
     }
 
     private boolean hasCachedUnlockEffectBackground(int effect, String profile, long fileLength,
@@ -7389,11 +7480,20 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void schedulePinEntry(long delayMs, String source) {
+        if (pinEntryPending || pinEntryRequested || pinEntryHandoffActive) {
+            Log.i(TAG, "pin entry duplicate schedule ignored"
+                    + " pending=" + pinEntryPending
+                    + " requested=" + pinEntryRequested
+                    + " handoffActive=" + pinEntryHandoffActive
+                    + " source=" + source);
+            return;
+        }
         if (isNotificationShadeInputBlocked()) {
             Log.i(TAG, "pin entry not scheduled; notification shade input blocked");
             return;
         }
         startPinEntryTrace(delayMs);
+        beginPinEntryHandoff();
         pinEntryPending = true;
         scheduledPinEntrySafetyGeneration = inputSafetyGeneration;
         handler.removeCallbacks(pinEntryRunnable);
@@ -7434,8 +7534,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void openPinEntry() {
         if (scheduledPinEntrySafetyGeneration != inputSafetyGeneration
+                || pinEntryHandoffSafetyGeneration != inputSafetyGeneration
                 || isNotificationShadeInputBlocked()) {
             pinEntryPending = false;
+            cancelPinEntryHandoff("input_safety_generation");
             clearPinEntryTrace();
             Log.i(TAG, "pin entry dropped by input safety generation");
             return;
@@ -7452,8 +7554,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             clearBlockedSurfaceState();
             return;
         }
-        if (!locked) {
-            Log.w(TAG, "pin entry swipe continuing while keyguard reports locked=false");
+        String dispatchBlock = pinEntrySwipeDispatchBlockReason(false);
+        if (dispatchBlock != null) {
+            Log.i(TAG, "pin entry swipe not queued reason=" + dispatchBlock
+                    + " locked=" + locked);
+            finishBlockedPinEntryHandoff(dispatchBlock);
+            return;
         }
 
         pinEntryRequested = true;
@@ -7469,15 +7575,22 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void runPinEntrySwipe() {
         if (queuedPinSwipeSafetyGeneration != inputSafetyGeneration
+                || pinEntryHandoffSafetyGeneration != inputSafetyGeneration
                 || isNotificationShadeInputBlocked()) {
             Log.i(TAG, "pin entry swipe dropped by input safety generation");
+            finishBlockedPinEntryHandoff("input_safety_generation");
             return;
         }
-        boolean accepted = performPinEntrySwipe();
-        if (!accepted) {
-            clearBlockedSurfaceState();
-            evaluateVisibility("pin_entry_swipe_rejected");
+        int attempt = pinEntryHandoffAttempt + 1;
+        String dispatchBlock = pinEntrySwipeDispatchBlockReason(attempt > 1);
+        if (dispatchBlock != null) {
+            Log.i(TAG, "pin entry swipe blocked attempt=" + attempt
+                    + " reason=" + dispatchBlock);
+            finishBlockedPinEntryHandoff(dispatchBlock);
+            return;
         }
+        pinEntryHandoffAttempt = attempt;
+        performPinEntrySwipe(pinEntryHandoffGeneration, attempt);
     }
 
     private void scheduleUnlockEffectCleanup() {
@@ -7519,14 +7632,20 @@ public class ChargingAccessibilityService extends AccessibilityService
         return PIN_ENTRY_EFFECT_CLEANUP_DELAY_DEFAULT_MS;
     }
 
-    private boolean performPinEntrySwipe() {
+    private boolean performPinEntrySwipe(final int handoffGeneration, final int attempt) {
         if (queuedPinSwipeSafetyGeneration != inputSafetyGeneration
+                || !pinEntryHandoffActive
+                || handoffGeneration != pinEntryHandoffGeneration
+                || attempt != pinEntryHandoffAttempt
                 || isNotificationShadeInputBlocked()) {
             Log.i(TAG, "pin entry swipe blocked before dispatch");
+            finishBlockedPinEntryHandoff("pre_dispatch_safety");
             return false;
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             Log.w(TAG, "pin entry swipe unavailable below Android N");
+            pinEntryHandoffLastCallback = "unavailable";
+            recoverTouchPathAfterPinEntryHandoffFailure("gesture_api_unavailable");
             return false;
         }
 
@@ -7544,11 +7663,17 @@ public class ChargingAccessibilityService extends AccessibilityService
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(stroke)
                 .build();
+        pinEntryHandoffAttemptDispatchedAt = SystemClock.uptimeMillis();
+        pinEntryHandoffLastSafeScanAt = 0L;
+        pinEntryTraceDispatchAt = pinEntryHandoffAttemptDispatchedAt;
         boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
             @Override
             public void onCompleted(GestureDescription gestureDescription) {
                 long now = SystemClock.uptimeMillis();
-                Log.i(TAG, "pin entry swipe completed"
+                notePinEntryHandoffCallback(
+                        handoffGeneration, attempt, "completed",
+                        PIN_ENTRY_HANDOFF_VERIFY_DELAY_MS);
+                Log.i(TAG, "pin entry swipe completed attempt=" + attempt
                         + " sinceReleaseMs=" + sincePinEntryRelease(now)
                         + " sinceDispatchMs=" + sincePinEntryDispatch(now));
             }
@@ -7556,16 +7681,306 @@ public class ChargingAccessibilityService extends AccessibilityService
             @Override
             public void onCancelled(GestureDescription gestureDescription) {
                 long now = SystemClock.uptimeMillis();
-                Log.w(TAG, "pin entry swipe cancelled"
+                notePinEntryHandoffCallback(
+                        handoffGeneration, attempt, "cancelled",
+                        PIN_ENTRY_HANDOFF_CANCEL_VERIFY_DELAY_MS);
+                Log.w(TAG, "pin entry swipe cancelled attempt=" + attempt
                         + " sinceReleaseMs=" + sincePinEntryRelease(now)
                         + " sinceDispatchMs=" + sincePinEntryDispatch(now));
             }
         }, handler);
-        pinEntryTraceDispatchAt = SystemClock.uptimeMillis();
-        Log.i(TAG, "pin entry swipe dispatched accepted=" + accepted
+        pinEntryHandoffLastCallback = accepted ? "accepted" : "rejected";
+        schedulePinEntryHandoffVerification(
+                handoffGeneration,
+                attempt,
+                accepted
+                        ? PIN_ENTRY_SWIPE_DURATION_MS + PIN_ENTRY_HANDOFF_VERIFY_DELAY_MS
+                        : PIN_ENTRY_HANDOFF_CANCEL_VERIFY_DELAY_MS,
+                accepted ? "callback_watchdog" : "dispatch_rejected");
+        Log.i(TAG, "pin entry swipe dispatched attempt=" + attempt
+                + " accepted=" + accepted
                 + " sinceReleaseMs=" + sincePinEntryRelease(pinEntryTraceDispatchAt)
                 + " sinceOpenMs=" + sincePinEntryOpen(pinEntryTraceDispatchAt));
         return accepted;
+    }
+
+    private void beginPinEntryHandoff() {
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        pinEntryHandoffGeneration++;
+        pinEntryHandoffSafetyGeneration = inputSafetyGeneration;
+        pinEntryHandoffAttempt = 0;
+        pinEntryHandoffVerifyGeneration = 0;
+        pinEntryHandoffVerifyAttempt = 0;
+        pinEntryHandoffAttemptDispatchedAt = 0L;
+        pinEntryHandoffLastSafeScanAt = 0L;
+        pinEntryHandoffLastCallback = "none";
+        pinEntryHandoffLastTerminal = "pending";
+        pinEntryHandoffLastOutcome = "pending";
+        pinEntryHandoffActive = true;
+    }
+
+    private void cancelPinEntryHandoff(String reason) {
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        if (!pinEntryHandoffActive) {
+            return;
+        }
+        pinEntryHandoffActive = false;
+        pinEntryHandoffGeneration++;
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean keyguardLocked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+        boolean deviceLocked = keyguardManager != null && keyguardManager.isDeviceLocked();
+        pinEntryHandoffLastObservedAt = SystemClock.uptimeMillis();
+        pinEntryHandoffLastInteractive = interactive;
+        pinEntryHandoffLastKeyguardLocked = keyguardLocked;
+        pinEntryHandoffLastDeviceLocked = deviceLocked;
+        if (interactive && keyguardManager != null && !keyguardLocked) {
+            pinEntryHandoffLastTerminal = "keyguard_dismissed";
+            pinEntryHandoffLastOutcome = "success:keyguard_dismissed";
+        } else {
+            pinEntryHandoffLastOutcome = "cancelled:" + reason;
+        }
+        Log.i(TAG, "pin entry handoff cancelled reason=" + reason
+                + " attempt=" + pinEntryHandoffAttempt);
+    }
+
+    private void notePinEntryHandoffCallback(
+            int handoffGeneration, int attempt, String result, long verifyDelayMs) {
+        if (!pinEntryHandoffActive
+                || handoffGeneration != pinEntryHandoffGeneration
+                || attempt != pinEntryHandoffAttempt) {
+            return;
+        }
+        pinEntryHandoffLastCallback = result;
+        requestContentBlockedSurfaceScan("pin_handoff_callback:" + result);
+        schedulePinEntryHandoffVerification(
+                handoffGeneration, attempt, verifyDelayMs, "callback:" + result);
+    }
+
+    private void schedulePinEntryHandoffVerification(
+            int handoffGeneration, int attempt, long delayMs, String reason) {
+        if (!pinEntryHandoffActive
+                || handoffGeneration != pinEntryHandoffGeneration
+                || attempt != pinEntryHandoffAttempt) {
+            return;
+        }
+        pinEntryHandoffVerifyGeneration = handoffGeneration;
+        pinEntryHandoffVerifyAttempt = attempt;
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        handler.postDelayed(pinEntryHandoffVerifyRunnable, Math.max(0L, delayMs));
+        Log.i(TAG, "pin entry handoff verification scheduled attempt=" + attempt
+                + " delayMs=" + delayMs
+                + " reason=" + reason);
+    }
+
+    private void verifyPinEntryHandoff() {
+        int handoffGeneration = pinEntryHandoffVerifyGeneration;
+        int attempt = pinEntryHandoffVerifyAttempt;
+        if (!pinEntryHandoffActive
+                || handoffGeneration != pinEntryHandoffGeneration
+                || attempt != pinEntryHandoffAttempt) {
+            return;
+        }
+
+        String terminal = observePinEntryHandoffTerminal();
+        Log.i(TAG, "pin entry handoff observed attempt=" + attempt
+                + " callback=" + pinEntryHandoffLastCallback
+                + " terminal=" + terminal
+                + " interactive=" + pinEntryHandoffLastInteractive
+                + " keyguardLocked=" + pinEntryHandoffLastKeyguardLocked
+                + " deviceLocked=" + pinEntryHandoffLastDeviceLocked);
+        if ("pin_surface".equals(terminal) || "keyguard_dismissed".equals(terminal)) {
+            finishSuccessfulPinEntryHandoff(terminal);
+            return;
+        }
+        if (!"ordinary_lockscreen".equals(terminal)) {
+            finishBlockedPinEntryHandoff(terminal);
+            return;
+        }
+        if (attempt >= 2) {
+            recoverTouchPathAfterPinEntryHandoffFailure("retry_still_locked");
+            return;
+        }
+
+        long now = SystemClock.uptimeMillis();
+        boolean safeScanObserved = pinEntryHandoffAttemptDispatchedAt > 0L
+                && pinEntryHandoffLastSafeScanAt >= pinEntryHandoffAttemptDispatchedAt;
+        if (!safeScanObserved) {
+            long sinceDispatchMs = pinEntryHandoffAttemptDispatchedAt <= 0L
+                    ? Long.MAX_VALUE
+                    : now - pinEntryHandoffAttemptDispatchedAt;
+            if (sinceDispatchMs < PIN_ENTRY_HANDOFF_SCAN_WAIT_MAX_MS) {
+                requestContentBlockedSurfaceScan("pin_handoff_safe_retry_probe");
+                schedulePinEntryHandoffVerification(
+                        handoffGeneration,
+                        attempt,
+                        PIN_ENTRY_HANDOFF_SCAN_RECHECK_MS,
+                        "await_safe_surface_scan");
+                return;
+            }
+            recoverTouchPathAfterPinEntryHandoffFailure("safe_scan_unconfirmed");
+            return;
+        }
+
+        String retryBlock = pinEntrySwipeDispatchBlockReason(true);
+        if (retryBlock != null) {
+            finishBlockedPinEntryHandoff(retryBlock);
+            return;
+        }
+        pinEntryHandoffLastCallback = "retry_queued";
+        Log.i(TAG, "pin entry handoff retrying after verified ordinary lockscreen");
+        runPinEntrySwipe();
+    }
+
+    private String observePinEntryHandoffTerminal() {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean keyguardLocked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+        boolean deviceLocked = keyguardManager != null && keyguardManager.isDeviceLocked();
+        pinEntryHandoffLastObservedAt = SystemClock.uptimeMillis();
+        pinEntryHandoffLastInteractive = interactive;
+        pinEntryHandoffLastKeyguardLocked = keyguardLocked;
+        pinEntryHandoffLastDeviceLocked = deviceLocked;
+
+        String terminal;
+        if (!interactive) {
+            terminal = "not_interactive";
+        } else if (keyguardManager == null) {
+            terminal = "keyguard_state_unavailable";
+        } else if (!keyguardLocked) {
+            terminal = "keyguard_dismissed";
+        } else if (isCurrentPinEntrySurfaceForHandoff()) {
+            terminal = "pin_surface";
+        } else if (notificationShadeVisible || notificationShadeSuspected) {
+            terminal = "notification_shade";
+        } else if (globalActionsVisible) {
+            terminal = "global_actions";
+        } else if (activeRuntimeBlockPackage != null
+                || isRuntimeSurfaceBlockPackage(lastWindowPackage)
+                || isCallAudioActive()) {
+            terminal = "runtime_block";
+        } else if (isHomePackage(lastWindowPackage)) {
+            terminal = "launcher";
+        } else if (SYSTEM_UI_PACKAGE.equals(lastWindowPackage)) {
+            terminal = "ordinary_lockscreen";
+        } else {
+            terminal = "external_or_unknown_surface";
+        }
+        pinEntryHandoffLastTerminal = terminal;
+        return terminal;
+    }
+
+    private String pinEntrySwipeDispatchBlockReason(boolean retry) {
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        boolean keyguardLocked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+        if (!interactive) {
+            return "not_interactive";
+        }
+        if (!keyguardLocked) {
+            return "keyguard_dismissed";
+        }
+        if (isCurrentPinEntrySurfaceForHandoff()) {
+            return "pin_surface";
+        }
+        if (notificationShadeVisible || notificationShadeSuspected) {
+            return "notification_shade";
+        }
+        if (globalActionsVisible) {
+            return "global_actions";
+        }
+        if (activeRuntimeBlockPackage != null
+                || isRuntimeSurfaceBlockPackage(lastWindowPackage)
+                || isCallAudioActive()) {
+            return "runtime_block";
+        }
+        if (isHomePackage(lastWindowPackage)) {
+            return "launcher";
+        }
+        if (retry && !SYSTEM_UI_PACKAGE.equals(lastWindowPackage)) {
+            return "non_ordinary_retry_surface";
+        }
+        return null;
+    }
+
+    private void finishSuccessfulPinEntryHandoff(String terminal) {
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        pinEntryHandoffActive = false;
+        pinEntryHandoffLastTerminal = terminal;
+        pinEntryHandoffLastOutcome = "success:" + terminal;
+        Log.i(TAG, "pin entry handoff complete terminal=" + terminal
+                + " attempts=" + pinEntryHandoffAttempt
+                + " callback=" + pinEntryHandoffLastCallback);
+        if ("pin_surface".equals(terminal)) {
+            pinEntryPending = false;
+            pinEntryRequested = true;
+            removeTouchDebugOverlay();
+            if (pinEntryHandoffAttempt == 0) {
+                scheduleUnlockEffectCleanup();
+            }
+        } else if ("keyguard_dismissed".equals(terminal)) {
+            pinEntryPending = false;
+            pinEntryRequested = false;
+            clearPinEntryTrace();
+            evaluateVisibility("pin_entry_handoff:keyguard_dismissed", false);
+        }
+    }
+
+    private boolean isCurrentPinEntrySurfaceForHandoff() {
+        // pinEntryLastSeenAt is historical evidence and intentionally not sufficient:
+        // the bouncer may have appeared after dispatch and already returned to the
+        // ordinary lockscreen before verification. The live surface state is cleared by
+        // the bounded scan; a foreground keyboard is independently authoritative.
+        return pinEntrySurfaceVisible || isKeyboardPackage(lastWindowPackage);
+    }
+
+    private void finishBlockedPinEntryHandoff(String terminal) {
+        if ("keyguard_dismissed".equals(terminal) || "pin_surface".equals(terminal)) {
+            finishSuccessfulPinEntryHandoff(terminal);
+            return;
+        }
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
+        pinEntryHandoffActive = false;
+        pinEntryHandoffLastTerminal = terminal;
+        pinEntryHandoffLastOutcome = "blocked:" + terminal;
+        pinEntryPending = false;
+        pinEntryRequested = false;
+        clearPinEntryTrace();
+        removeTouchDebugOverlay();
+        Log.i(TAG, "pin entry handoff stopped terminal=" + terminal
+                + " attempts=" + pinEntryHandoffAttempt
+                + " callback=" + pinEntryHandoffLastCallback);
+        evaluateVisibility("pin_entry_handoff:blocked:" + terminal, false);
+    }
+
+    private void recoverTouchPathAfterPinEntryHandoffFailure(String reason) {
+        handler.removeCallbacks(pinEntryHandoffVerifyRunnable);
+        handler.removeCallbacks(pinEntryEffectCleanupRunnable);
+        pinEntryHandoffActive = false;
+        pinEntryHandoffLastTerminal = "ordinary_lockscreen";
+        pinEntryHandoffLastOutcome = "failed_rearmed:" + reason;
+        pinEntryPending = false;
+        pinEntryRequested = false;
+        pinEntrySurfaceSeen = false;
+        pinEntrySurfaceVisible = false;
+        pinEntryLastSeenAt = 0L;
+        clearPinEntryTrace();
+        Log.w(TAG, "pin entry handoff failed; restoring touch path reason=" + reason
+                + " attempts=" + pinEntryHandoffAttempt
+                + " callback=" + pinEntryHandoffLastCallback);
+        evaluateVisibility("pin_entry_handoff:rearm:" + reason, true);
+    }
+
+    private void notePinEntryHandoffSurfaceScan(
+            long requestedAt, int quality, int surfaces) {
+        if (!pinEntryHandoffActive
+                || quality != BLOCKED_SURFACE_SCAN_SUCCESS
+                || requestedAt < pinEntryHandoffAttemptDispatchedAt) {
+            return;
+        }
+        if (surfaces == 0) {
+            pinEntryHandoffLastSafeScanAt = SystemClock.uptimeMillis();
+        } else {
+            pinEntryHandoffLastSafeScanAt = 0L;
+        }
     }
 
     private void startPinEntryTrace(long scheduledDelayMs) {
@@ -7834,8 +8249,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         blockedSurfaceScanInFlightRequestId = requestId;
         final long requestedAt = SystemClock.uptimeMillis();
         final boolean pinEntryRequestedSnapshot = pinEntryRequested;
+        // The legacy toggle controls only Quick Panel routing. Unlock handoff always
+        // needs the bounded detector's quality result before a second gesture is safe.
         final boolean legacyQuickPanelDetection =
-                OverlayPrefs.debugLegacyQuickPanelDetection(this);
+                OverlayPrefs.debugLegacyQuickPanelDetection(this)
+                        && !pinEntryHandoffActive
+                        && !pinEntryRequested
+                        && !pinEntrySurfaceSeen
+                        && !pinEntrySurfaceVisible;
         final boolean deepNodeScanNeeded = pinEntryPending
                 || pinEntryRequestedSnapshot
                 || pinEntrySurfaceSeen
@@ -7944,6 +8365,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             BlockedSurfaceScanResult result, String reason,
             long requestedAt, long elapsedMs) {
         long now = SystemClock.uptimeMillis();
+        notePinEntryHandoffSurfaceScan(requestedAt, result.quality, result.surfaces);
         boolean wasPinEntryVisible = pinEntrySurfaceVisible;
         boolean wasNotificationShadeVisible = notificationShadeVisible;
         boolean pinObservedSinceRequest = pinEntryLastSeenAt >= requestedAt
@@ -8004,8 +8426,25 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         if (detectedPinEntry) {
             pinEntryLastSeenAt = now;
+            pinEntrySurfaceVisible = true;
+        } else if (result.quality == BLOCKED_SURFACE_SCAN_SUCCESS) {
+            pinEntrySurfaceVisible = false;
+        } else if (wasPinEntryVisible
+                && result.quality == BLOCKED_SURFACE_SCAN_PARTIAL) {
+            // A 12 ms scan frequently exhausts on low-end tablets while the bouncer is
+            // already visible. Never let one partial negative flicker the touch box back
+            // over PIN. After the PIN events have genuinely stopped, repeated partial
+            // negatives may clear the latch after a conservative stable interval.
+            boolean pinEvidenceStale = pinEntryLastSeenAt > 0L
+                    && requestedAt >= pinEntryLastSeenAt
+                    && now - pinEntryLastSeenAt >= PIN_ENTRY_PARTIAL_CLEAR_STABLE_MS;
+            pinEntrySurfaceVisible = !pinEvidenceStale;
+            if (pinEvidenceStale) {
+                Log.i(TAG, "pin entry surface cleared after stable partial negatives");
+            }
+        } else {
+            pinEntrySurfaceVisible = wasPinEntryVisible;
         }
-        pinEntrySurfaceVisible = detectedPinEntry;
         if (detectedNotificationShade) {
             confirmNotificationShade("scan:" + reason);
         } else if (result.quality == BLOCKED_SURFACE_SCAN_SUCCESS) {

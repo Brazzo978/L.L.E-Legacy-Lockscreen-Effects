@@ -47,6 +47,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             new ArrayList<Particle>(PARTICLE_MAX_ALIVE);
     private final float[] hsvOrigin = new float[3];
     private final float[] hsvTemp = new float[3];
+    private final int[] sampledColor = new int[1];
     private final UnlockEffectReadinessCoordinator readiness =
             new UnlockEffectReadinessCoordinator(this, "Popping Colours ARM64");
 
@@ -76,10 +77,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private float lastAddedX;
     private float lastAddedY;
     private int lastAddedColor;
+    private boolean lastAddedColorAvailable;
 
     private float pendingAffordanceX;
     private float pendingAffordanceY;
     private int pendingAffordanceColor;
+    private boolean pendingAffordanceColorAvailable;
 
     private final Runnable drawingRunnable = new Runnable() {
         @Override
@@ -105,7 +108,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private final Runnable affordanceRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!destroyed) {
+            if (!destroyed && pendingAffordanceColorAvailable) {
                 addDots(CREATED_DOTS_AMOUNT_AFFORDANCE,
                         pendingAffordanceX,
                         pendingAffordanceY,
@@ -172,8 +175,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         dragSoundCount = DRAG_SOUND_COUNT_START_POINT;
         lastDragSoundMoveAtMs = SystemClock.uptimeMillis();
         play(tapSound, TOUCH_SOUND_VOLUME);
-        addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY,
-                getColor(screenX, screenY));
+        if (sampleColor(screenX, screenY, sampledColor)) {
+            addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY, sampledColor[0]);
+        }
         Log.i(TAG, "popping colours ARM64 begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY));
     }
@@ -198,8 +202,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 dragSoundCount = 0;
             }
         }
-        addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY,
-                getColor(screenX, screenY));
+        if (sampleColor(screenX, screenY, sampledColor)) {
+            addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY, sampledColor[0]);
+        }
     }
 
     @Override
@@ -233,6 +238,8 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         gestureActive = false;
         dragSoundCount = 0;
         lastDragSoundMoveAtMs = 0L;
+        lastAddedColorAvailable = false;
+        pendingAffordanceColorAvailable = false;
         removeCallbacks(affordanceRunnable);
         stopDrawing();
         aliveParticles.clear();
@@ -259,10 +266,17 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         Rect rect = safeRect(screenRect);
         pendingAffordanceX = rect.exactCenterX();
         pendingAffordanceY = rect.exactCenterY();
-        pendingAffordanceColor = getColor(pendingAffordanceX, pendingAffordanceY);
+        pendingAffordanceColorAvailable = sampleColor(
+                pendingAffordanceX, pendingAffordanceY, sampledColor);
+        if (pendingAffordanceColorAvailable) {
+            pendingAffordanceColor = sampledColor[0];
+        }
         removeCallbacks(affordanceRunnable);
-        postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+        if (pendingAffordanceColorAvailable) {
+            postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+        }
         Log.i(TAG, "popping colours ARM64 affordance queued delayMs=" + startDelayMs
+                + " colorMap=" + pendingAffordanceColorAvailable
                 + " rect=" + rect.left + "," + rect.top + ","
                 + rect.right + "," + rect.bottom);
     }
@@ -300,6 +314,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     public void clearBackgroundSourceBitmap() {
         externalColorSource = false;
         backgroundSource = "none";
+        lastAddedColorAvailable = false;
+        pendingAffordanceColorAvailable = false;
+        removeCallbacks(affordanceRunnable);
         releaseBackgroundBitmap();
     }
 
@@ -380,6 +397,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         lastAddedX = x;
         lastAddedY = y;
         lastAddedColor = color;
+        lastAddedColorAvailable = true;
 
         Color.RGBToHSV(Color.red(color), Color.green(color), Color.blue(color), hsvOrigin);
         for (int index = 0; index < amount; index++) {
@@ -405,8 +423,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     }
 
     private void unlockDots() {
-        addDots(PARTICLE_MAX_ALIVE - aliveParticles.size(),
-                lastAddedX, lastAddedY, lastAddedColor);
+        if (lastAddedColorAvailable) {
+            addDots(PARTICLE_MAX_ALIVE - aliveParticles.size(),
+                    lastAddedX, lastAddedY, lastAddedColor);
+        }
         for (Particle particle : aliveParticles) {
             particle.unlock(PARTICLE_UNLOCK_SPEED);
         }
@@ -434,17 +454,19 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 && drawingBottom > 0;
     }
 
-    private int getColor(float x, float y) {
-        int color = 0x00ffffff;
+    private boolean sampleColor(float x, float y, int[] output) {
+        if (output == null || output.length == 0) {
+            return false;
+        }
         float stageWidth = Math.max(1f, getRenderWidth());
         float stageHeight = Math.max(1f, getRenderHeight());
         if (x <= 0f || x > stageWidth || y <= 0f || y > stageHeight) {
-            return color;
+            return false;
         }
 
         Bitmap bitmap = getBackgroundBitmap();
         if (bitmap == null || bitmap.isRecycled()) {
-            return color;
+            return false;
         }
         int bitmapWidth = bitmap.getWidth();
         int bitmapHeight = bitmap.getHeight();
@@ -465,29 +487,27 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         int sampleX = clamp(offsetX + (int) (x * ratio), 0, bitmapWidth - 1);
         int sampleY = clamp(offsetY + (int) (y * ratio), 0, bitmapHeight - 1);
         try {
-            return bitmap.getPixel(sampleX, sampleY);
+            output[0] = bitmap.getPixel(sampleX, sampleY);
+            return true;
         } catch (IllegalArgumentException ignored) {
-            return color;
+            return false;
         }
     }
 
     private Bitmap getBackgroundBitmap() {
-        int width = Math.max(1, getRenderWidth());
-        int height = Math.max(1, getRenderHeight());
         if (backgroundBitmap != null
-                && !backgroundBitmap.isRecycled()
-                && backgroundBitmap.getWidth() == width
-                && backgroundBitmap.getHeight() == height) {
+                && !backgroundBitmap.isRecycled()) {
+            // Sampling already center-crops arbitrary source dimensions. Retain the last
+            // valid map across layout/display-size changes until the service installs the
+            // correctly sized replacement instead of flashing a fabricated white map.
             return backgroundBitmap;
         }
-        releaseBackgroundBitmap();
-        backgroundBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        backgroundBitmap.eraseColor(Color.WHITE);
-        backgroundBitmap.prepareToDraw();
-        ownsBackgroundBitmap = true;
+        if (backgroundBitmap != null) {
+            releaseBackgroundBitmap();
+        }
         externalColorSource = false;
-        backgroundSource = "white_fallback";
-        return backgroundBitmap;
+        backgroundSource = "none";
+        return null;
     }
 
     private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {

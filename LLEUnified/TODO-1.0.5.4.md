@@ -12,11 +12,14 @@ behavior, hint lifecycle and unlock readiness.
 - [ ] Tablet orientation profiles and two independent colormaps.
 - [ ] Modern Android delayed/unrecognized-touch compatibility issue.
 - [ ] Failed PIN/unlock handoff that leaves the user on the normal lockscreen.
-- [ ] White, missing, stale or corrupt effect colormap handling.
+- [x] White, missing, stale or corrupt effect colormap handling. The targeted
+  Popping Colours race is fixed; invalid-cache rejection and atomic replacement
+  are in place. A destructive corrupt-cache fixture remains an optional hardening
+  test rather than a release requirement.
 - [x] Notification-shade/quick-panel detection with safe touch release
   implemented and validated on Galaxy S23/One UI; affected-device and
   additional-OEM validation remains tracked below.
-- [ ] Debug reports never include notification text or other accessibility UI
+- [x] Debug reports never include notification text or other accessibility UI
   content.
 - [ ] ARM64 tester build passes the full regression matrix.
 - [ ] Version bump, signing, tag, push and publication only with explicit user
@@ -73,7 +76,19 @@ different lockscreen wallpapers in portrait and landscape, so one shared
 - [x] Portrait retained its configured touch box (`1200x1090`); landscape used
   an independent unconfigured safety box (`178x72`).
 - [ ] Validate independent imported sources and previews in both orientations.
-- [ ] Run phone `single` and Fold `cover/main` regression checks.
+- [x] Run phone `single` and Fold `cover/main` regression checks. The final
+  `1.0.5.4` tester passed on Galaxy S23 and Galaxy Z Fold7 on 2026-08-08.
+  Fold runtime routing loaded distinct native-size caches for `cover`
+  (`1080x2520`) and `main` (`1968x2184`). Both Fold profiles and the S23
+  reached the PIN surface after one completed handoff gesture.
+- [x] Verify automatic cache resolution on the Galaxy Tab A11+: retained
+  runtime logs load `1200x1920` portrait and `1920x1200` landscape PNGs. The
+  apparent `960x600` landscape image was the deliberately sampled UI preview,
+  not the persisted colormap; the preview now labels source and preview
+  dimensions separately.
+- [x] Reject undersized automatic Fold/Tablet captures and persisted caches:
+  each axis must be at least 90% of the active physical display. Imported maps
+  remain intentionally independent from this automatic-capture quality gate.
 - [x] Revalidate repeated tablet OFF/ON after the forced SCREEN_ON input-handle
   relayout. Replace the unsafe 500 ms fail-open with bounded rechecks: a
   suspected shade now suppresses both renderer and touch input until a fresh
@@ -111,7 +126,7 @@ window is not a substitute for fixing runtime touch delivery.
 
 - [ ] Reproduce with a fresh debug report and touch-event trace from an affected
   device.
-- [ ] Verify the packaged APK's actual min/target SDK and compatibility flags,
+- [x] Verify the packaged APK's actual min/target SDK and compatibility flags,
   not only the source manifest.
 - [ ] Identify whether the warning originates from Android compatibility,
   accessibility, overlay/window type, restricted settings or vendor input
@@ -136,6 +151,12 @@ window is not a substitute for fixing runtime touch delivery.
 - Tiny/default touch-box behavior and user-expanded wizard configuration both
   remain usable.
 
+Status 2026-08-08: external validation is blocked because the Motorola
+reporter has not supplied a fresh report or device trace. Keep the validated
+120-second boot safety and wizard warning for `1.0.5.4`; resume device-specific
+touch diagnosis in `1.0.5.5` when suitable Motorola/Lenovo/Xiaomi hardware is
+available.
+
 ## 3. Unlock handoff occasionally requires a second swipe
 
 ### Reported symptom
@@ -146,21 +167,30 @@ second stock swipe to reach PIN entry or unlock.
 
 ### Work
 
-- [ ] Trace renderer completion, touch-box removal, synthetic SystemUI swipe,
+- [x] Trace renderer completion, touch-box removal, synthetic SystemUI swipe,
   `dispatchGesture` callback, PIN-surface detection and keyguard state as one
   handoff transaction.
-- [ ] Do not treat `dispatchGesture` acceptance alone as proof that SystemUI
+- [x] Do not treat `dispatchGesture` acceptance alone as proof that SystemUI
   opened PIN entry or dismissed keyguard.
-- [ ] After the expected transition delay, verify one of these terminal states:
+- [x] After the expected transition delay, verify one of these terminal states:
   PIN/security surface visible, keyguard dismissed, or device unlocked.
-- [ ] If the device is still locked on the ordinary lockscreen, perform one
+- [x] If the device is still locked on the ordinary lockscreen, perform one
   bounded retry using the current display/touch geometry.
-- [ ] Never retry after PIN entry, notification shade, global actions, a
+- [x] Never retry after PIN entry, notification shade, global actions, a
   blacklisted surface or launcher becomes visible.
-- [ ] If the bounded retry also fails, restore a safe usable touch path instead
+- [x] If the bounded retry also fails, restore a safe usable touch path instead
   of leaving L.L.E. hidden with no listener.
-- [ ] Record attempt count, callback result, keyguard state and observed
+- [x] Record attempt count, callback result, keyguard state and observed
   terminal surface in the debug report.
+
+Implementation validation 2026-08-08: two fresh Galaxy Tab A11+ handoffs each
+reached the PIN surface after one accepted/completed gesture. Returning from
+PIN no longer lets a stale PIN observation complete the next transaction. The
+second-attempt recovery path is implemented but still needs a physical case in
+which SystemUI ignores the first gesture before this release gate is closed.
+Scheduling is single-flight, historical PIN timestamps cannot complete an
+active handoff, and the optional legacy Quick Panel route temporarily uses the
+bounded structural scan only while certifying whether an unlock retry is safe.
 
 ### Acceptance
 
@@ -183,26 +213,45 @@ consistent with this race rather than a missing screenshot.
 
 ### Work
 
-- [ ] Never replace a valid colormap with a fabricated white bitmap during
+- [x] Never replace a valid colormap with a fabricated white bitmap during
   layout, inset, navigation-mode, surface or orientation changes.
-- [ ] Keep the last valid source available for sampling until a validated
+- [x] Keep the last valid source available for sampling until a validated
   replacement is installed. Popping Colours already supports scaled sampling,
   so a size mismatch must request refresh without destroying the usable map.
-- [ ] If no valid map has ever loaded, suppress/queue color-dependent visuals
+- [x] If no valid map has ever loaded, suppress/queue color-dependent visuals
   instead of emitting white particles. Touch and unlock safety must remain
   functional.
-- [ ] Validate decoded dimensions, bitmap state and profile/orientation before
+- [x] Validate decoded dimensions, bitmap state and profile/orientation before
   applying a cache entry.
-- [ ] Persist screenshots atomically so a killed process cannot leave a partial
+- [x] Persist screenshots atomically so a killed process cannot leave a partial
   PNG as the active cache.
-- [ ] On decode failure, quarantine/replace only the invalid entry and recapture
+- [x] On decode failure, quarantine/replace only the invalid entry and recapture
   it; preserve valid maps for other effects and display profiles.
-- [ ] Reapply an in-memory or persisted valid cache if a renderer loses its
+- [x] Reapply an in-memory or persisted valid cache if a renderer loses its
   source during recreation.
-- [ ] Audit only active ARM64 screenshot/color-map renderers for the same white
+- [x] Audit only active ARM64 screenshot/color-map renderers for the same white
   fallback or destructive size-mismatch pattern. Do not touch/build ARM32.
 - [ ] Add debug fields for renderer source state, cache validation result,
   bitmap dimensions, expected profile dimensions and last replacement reason.
+  Persisted active-map dimensions, expected profile dimensions and the
+  structured validation result are now present; renderer replacement state and
+  last replacement reason remain to be added with the full white-fallback fix.
+
+Implementation validation 2026-08-08: the rebuilt ARM64 tester physically
+switched Popping Colours from Fold `main` (`1968x2184`) to `cover`
+(`1080x2520`). Each profile loaded its distinct persisted map, the hint reported
+`colorMap=true`, coloured touch/unlock particles remained visible, and the
+cover gesture reached PIN after one handoff. No `white_fallback`, crash or
+fabricated white map was produced. A deliberately corrupt-cache fixture remains
+an optional destructive hardening test rather than being inferred from this
+targeted regression.
+
+Static ARM64 product audit 2026-08-08: remaining `Color.WHITE` fallback code is
+confined to legacy/non-product renderers (`PoppingColoursEffectView`,
+`ColourDropletEffectView`, `SparklingBubblesEffectView`,
+`S6WaterDropletEffectView` and `Note5NativeEffectView`). The Samsung-free
+ARM64 routing uses the ARM64/app-owned replacements and cannot select those
+fallback paths. No ARM32 source or build was touched.
 
 ### Acceptance
 
@@ -252,6 +301,11 @@ but every L.L.E. visibility record keeps `notificationShade=false`.
 - [ ] Validate the fix on the affected Galaxy A16/One UI 8.5 report.
 - [ ] Validate or adapt the structural signature on non-Samsung SystemUI from
   privacy-safe debug reports.
+
+External status 2026-08-08: the Galaxy A16 reporter has not supplied a new
+validation report, so that check remains blocked externally. Non-Samsung
+SystemUI validation moves to the `1.0.5.5` Lenovo/Xiaomi device matrix rather
+than blocking the local `1.0.5.4` Samsung regression.
 
 ### Confirmed weaknesses in the current detector
 
@@ -319,12 +373,16 @@ names and message content in public issue attachments.
   non-sensitive metadata needed for classification: event type, package,
   generic class, window ID/change flags, boolean signal matches, detector score,
   state transition reason and bounded timing.
-- [ ] Sanitize captured logcat as defense in depth so legacy/stale sensitive log
+- [x] Sanitize captured logcat as defense in depth so legacy/stale sensitive log
   lines cannot enter a newly generated report.
-- [ ] Review preference and internal-file output for identifiers in addition to
+- [x] Review preference and internal-file output for identifiers in addition to
   the existing URI/path/token redaction.
-- [ ] Add a clear report header stating that notification and UI content were
+- [x] Add a clear report header stating that notification and UI content were
   not collected.
+
+The shareable report now emits only log severity/count metadata, redacts every
+string/set preference, summarizes internal storage by counts/bytes, categorizes
+runtime package values and allowlists structured detector/handoff fields.
 
 ### Research questions before implementation
 
@@ -395,6 +453,9 @@ names and message content in public issue attachments.
 - System and Media audio routes.
 - Doodle off/on and runtime blacklist transitions.
 - Default 120-second cold-boot guard and explicit debug bypass.
+
+S6 Water Droplet cadence was physically accepted by the user on 2026-08-08
+after the stock-rate simulation plus high-refresh presentation correction.
 
 Normal local validation command after reading `BUILD_TEST_RELEASE.md`:
 
