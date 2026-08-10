@@ -20,6 +20,8 @@ $ErrorActionPreference = "Stop"
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
 if ($LegacyVendorEffects) {
+$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 31 } else { 0 }
+$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.5.5" } else { "" }
     $launcherLabel += " Legacy"
 }
 if ($ValidationVersionCode -gt 0) {
@@ -182,27 +184,48 @@ if ($generatedManifestText -eq $manifestText -or
         $generatedManifestText -match 'android:name="\.') {
     throw "ARM64 LLE64 manifest patch failed"
 }
-if ($ValidationVersionCode -gt 0) {
+if ($ValidationVersionCode -gt 0 -or $testerVersionCode -gt 0) {
     $versionCodePattern = 'android:versionCode="\d+"'
     if ([regex]::Matches($generatedManifestText, $versionCodePattern).Count -ne 1) {
         throw "Validation manifest versionCode patch point not found"
     }
+    $stagedVersionCode = if ($ValidationVersionCode -gt 0) {
+        $ValidationVersionCode
+    } else {
+        $testerVersionCode
+    }
     $generatedManifestText = [regex]::Replace(
             $generatedManifestText,
             $versionCodePattern,
-            "android:versionCode=`"$ValidationVersionCode`"",
+            "android:versionCode=`"$stagedVersionCode`"",
             1)
     if ($generatedManifestText -notmatch
-            "android:versionCode=`"$ValidationVersionCode`"") {
-        throw "Validation manifest versionCode override failed"
+            "android:versionCode=`"$stagedVersionCode`"") {
+        throw "Staged manifest versionCode override failed"
     }
     $canonicalVersionName = [regex]::Match(
             $manifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    if ($testerVersionName) {
+        $versionNamePattern = 'android:versionName="[^"]+"'
+        if ([regex]::Matches($generatedManifestText, $versionNamePattern).Count -ne 1) {
+            throw "Tester manifest versionName patch point not found"
+        }
+        $generatedManifestText = [regex]::Replace(
+                $generatedManifestText,
+                $versionNamePattern,
+                "android:versionName=`"$testerVersionName`"",
+                1)
+    }
     $generatedVersionName = [regex]::Match(
             $generatedManifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    $expectedVersionName = if ($testerVersionName) {
+        $testerVersionName
+    } else {
+        $canonicalVersionName
+    }
     if ([string]::IsNullOrWhiteSpace($canonicalVersionName) -or
-            $generatedVersionName -ne $canonicalVersionName) {
-        throw "Validation build must preserve the canonical versionName"
+            $generatedVersionName -ne $expectedVersionName) {
+        throw "Staged manifest versionName override failed"
     }
 }
 if ($includeNativeProbeActivity) {
@@ -479,7 +502,9 @@ $expectedSparklingAppOwnedExports = @(
     "Java_com_codex_lle_SparklingBubblesNative_nativeTouch",
     "Java_com_codex_lle_SparklingBubblesNative_nativeAffordance",
     "Java_com_codex_lle_SparklingBubblesNative_nativeUnlock",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeSetAdaptivePhysics",
     "Java_com_codex_lle_SparklingBubblesNative_nativeStep",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeStepAdaptive",
     "Java_com_codex_lle_SparklingBubblesNative_nativeDraw",
     "Java_com_codex_lle_SparklingBubblesNative_nativeIsIdle",
     "Java_com_codex_lle_SparklingBubblesNative_nativeGetLastError"
@@ -568,6 +593,7 @@ $expectedColourDropletAppOwnedExports = @(
     "Java_com_codex_lle_ColourDropletNative_nativeUnlock",
     "Java_com_codex_lle_ColourDropletNative_nativeResetBackgroundScale",
     "Java_com_codex_lle_ColourDropletNative_nativeStep",
+    "Java_com_codex_lle_ColourDropletNative_nativeStepAtRefresh",
     "Java_com_codex_lle_ColourDropletNative_nativeDraw",
     "Java_com_codex_lle_ColourDropletNative_nativeIsIdle",
     "Java_com_codex_lle_ColourDropletNative_nativeGetLastError"
@@ -656,6 +682,7 @@ $expectedS6WaterDropletAppOwnedExports = @(
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeUnlock",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeResetBackgroundScale",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStep",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStepNativeRefresh",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeIsIdle",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeGetLastError"
@@ -753,6 +780,7 @@ if ($LASTEXITCODE -ne 0) {
 $expectedRippleExports = @(
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_initWaters",
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_move",
+    "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_moveAdaptive",
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_ripple",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeBridgeVersion",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeInitGpu",
@@ -852,10 +880,14 @@ if ($abstractTilesStageHash -notmatch "^[0-9A-F]{64}$") {
 
 $watercolorNative = Join-Path $root "ports\watercolor\native"
 $watercolorCommonSource = Join-Path $watercolorNative "watercolor_arm64.c"
+$watercolorRefreshSource = Join-Path $watercolorNative "watercolor_refresh.c"
 $watercolorEffectSource = Join-Path $watercolorNative "watercolor_effect_stub.c"
 $watercolorCommonLibrary = Join-Path $arm64Stage "libsecveSrkCommon.so"
 $watercolorEffectLibrary = Join-Path $arm64Stage "libsecveWaterColor.so"
-foreach ($watercolorSource in @($watercolorCommonSource, $watercolorEffectSource)) {
+foreach ($watercolorSource in @(
+        $watercolorCommonSource,
+        $watercolorRefreshSource,
+        $watercolorEffectSource)) {
     if (-not (Test-Path -LiteralPath $watercolorSource)) {
         throw "Missing Watercolor native source: $watercolorSource"
     }
@@ -870,6 +902,7 @@ if ($WatercolorFeedbackMode -eq "StockFeedback") {
 }
 $watercolorCommonArgs += @(
     $watercolorCommonSource,
+    $watercolorRefreshSource,
     "-lGLESv2", "-llog", "-lm",
     "-o", $watercolorCommonLibrary
 )
@@ -906,6 +939,7 @@ $expectedWatercolorExports = @(
     "Java_com_samsung_android_visualeffect_lock_common_Native_loadTexture",
     "Java_com_samsung_android_visualeffect_lock_common_Native_init",
     "Java_com_samsung_android_visualeffect_lock_common_Native_draw",
+    "Java_com_codex_lle_WatercolorArm64Native_drawAdaptive",
     "Java_com_samsung_android_visualeffect_lock_common_Native_onTouch",
     "Java_com_samsung_android_visualeffect_lock_common_Native_showUnlock",
     "Java_com_samsung_android_visualeffect_lock_common_Native_showAffordance",
@@ -1007,10 +1041,10 @@ if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
 if ($badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'") {
     throw "ARM64 launcher label verification failed"
 }
-if ($ValidationVersionCode -gt 0 -and
+if (($ValidationVersionCode -gt 0 -or $testerVersionCode -gt 0) -and
         $badging -notmatch
-        "versionCode='$ValidationVersionCode'.*versionName='$([regex]::Escape($canonicalVersionName))'") {
-    throw "Validation APK version metadata verification failed"
+        "versionCode='$stagedVersionCode'.*versionName='$([regex]::Escape($expectedVersionName))'") {
+    throw "Staged APK version metadata verification failed"
 }
 
 $entries = @(& "jar.exe" tf $signed)
@@ -1202,6 +1236,9 @@ Write-Host "Application ID: $expectedPackage"
 Write-Host "Build flavor: $buildFlavorName"
 if ($ValidationVersionCode -gt 0) {
     Write-Host "Validation-only versionCode override: $ValidationVersionCode"
+    Write-Host "Canonical manifest SHA-256: $canonicalManifestHashAfter"
+} elseif ($testerVersionCode -gt 0) {
+    Write-Host "Tester-only version override: $testerVersionName (versionCode $testerVersionCode)"
     Write-Host "Canonical manifest SHA-256: $canonicalManifestHashAfter"
 }
 if ($LegacyVendorEffects) {

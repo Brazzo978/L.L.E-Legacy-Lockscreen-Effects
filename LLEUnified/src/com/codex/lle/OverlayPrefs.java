@@ -73,7 +73,32 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
+    static final String THREE_FINGER_SAFETY_BYPASS_ENABLED =
+            "three_finger_safety_bypass_enabled";
     static final String DEBUG_BYPASS_BOOT_SAFETY = "debug_bypass_boot_safety";
+    static final String DEBUG_CONSERVATIVE_UNLOCK_HANDOFF =
+            "debug_conservative_unlock_handoff";
+    /**
+     * Opt-in comparison path for high-refresh unlock effects. Legacy motion and
+     * presentation stay the production default until device testing confirms
+     * the display-refresh path.
+     */
+    static final String DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS =
+            "debug_experimental_native_refresh_physics";
+    /** 1.0x–2.0x, stored as integer tenths to avoid preference float drift. */
+    static final String DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS =
+            "debug_experimental_native_refresh_physics_speed_tenths";
+    /** One-shot migration marker for the per-effect native-refresh preferences. */
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA =
+            "experimental_native_refresh_physics_per_effect_schema";
+    private static final int EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION = 1;
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX =
+            "experimental_native_refresh_physics_effect_";
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX =
+            "experimental_native_refresh_physics_speed_tenths_effect_";
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT = 10;
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN = 10;
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX = 20;
     static final String DEBUG_LEGACY_QUICK_PANEL_DETECTION =
             "debug_legacy_quick_panel_detection";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
@@ -91,6 +116,8 @@ final class OverlayPrefs {
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
     static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
+    static final String N5_COLOUR_DROPLET_GYRO_ENABLED =
+            "n5_colour_droplet_gyro_enabled";
     static final String EFFECT_PROFILE_LAST_SUMMARY = "effect_profile_last_summary";
     static final String EFFECT_PROFILE_DIAGNOSTIC_SUMMARY =
             "effect_profile_diagnostic_summary";
@@ -448,8 +475,63 @@ final class OverlayPrefs {
         return get(context).getBoolean(DEBUG_TOUCH_STANDBY, true);
     }
 
+    static boolean threeFingerSafetyBypassEnabled(Context context) {
+        return get(context).getBoolean(THREE_FINGER_SAFETY_BYPASS_ENABLED, true);
+    }
+
     static boolean debugBypassBootSafety(Context context) {
         return get(context).getBoolean(DEBUG_BYPASS_BOOT_SAFETY, false);
+    }
+
+    static boolean debugConservativeUnlockHandoff(Context context) {
+        return get(context).getBoolean(DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false);
+    }
+
+    static boolean debugExperimentalNativeRefreshPhysics(Context context) {
+        return get(context).getBoolean(DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS, false);
+    }
+
+    static int debugExperimentalNativeRefreshPhysicsSpeedTenths(Context context) {
+        int tenths = get(context).getInt(
+                DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS,
+                NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT);
+        return Math.max(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN,
+                Math.min(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX, tenths));
+    }
+
+    /**
+     * Copies the former global native-refresh controls into every renderer that supports
+     * them. Keep the legacy keys intact so a tester can safely roll back to an older build.
+     */
+    static void migrateExperimentalNativeRefreshPrefsIfNeeded(Context context) {
+        SharedPreferences preferences = get(context);
+        if (preferences.getInt(EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA, 0)
+                >= EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION) {
+            return;
+        }
+        boolean legacyEnabled = debugExperimentalNativeRefreshPhysics(context);
+        int legacySpeedTenths = debugExperimentalNativeRefreshPhysicsSpeedTenths(context);
+        SharedPreferences.Editor editor = preferences.edit();
+        for (int effect = 0; effect < EFFECT_COUNT; effect++) {
+            if (!supportsExperimentalNativeRefreshPhysics(effect)) {
+                continue;
+            }
+            editor.putBoolean(experimentalNativeRefreshPhysicsKey(effect), legacyEnabled);
+            if (supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+                editor.putInt(experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                        legacySpeedTenths);
+            }
+        }
+        // Write this last in the same synchronous transaction: a partial migration will run
+        // again, while a completed marker means all effect values became visible atomically.
+        boolean committed = editor.putInt(EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA,
+                EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION).commit();
+        if (committed) {
+            Log.i(TAG, "migrated native refresh preferences to per-effect schema"
+                    + " enabled=" + legacyEnabled + " speedTenths=" + legacySpeedTenths);
+        } else {
+            Log.w(TAG, "native refresh per-effect preference migration failed; will retry");
+        }
     }
 
     static boolean debugLegacyQuickPanelDetection(Context context) {
@@ -519,6 +601,15 @@ final class OverlayPrefs {
 
     static boolean abstractTilesLineEnabled(Context context) {
         return get(context).getBoolean(ABSTRACT_TILES_LINE_ENABLED, true);
+    }
+
+    static boolean colourDropletGyroEnabled(Context context) {
+        SharedPreferences preferences = get(context);
+        if (preferences.contains(N5_COLOUR_DROPLET_GYRO_ENABLED)) {
+            return preferences.getBoolean(N5_COLOUR_DROPLET_GYRO_ENABLED, false);
+        }
+        return isColourDropletGyroEffect(preferences.getInt(
+                UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE));
     }
 
     static int unlockEffect(Context context) {
@@ -666,6 +757,115 @@ final class OverlayPrefs {
                 || effect == EFFECT_N5_COLOUR_DROPLET_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO;
+    }
+
+    static boolean isColourDropletGyroEffect(int effect) {
+        return effect == EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP;
+    }
+
+    /** Effects with an ARM64 renderer that can opt into display-refresh timing. */
+    static boolean supportsExperimentalNativeRefreshPhysics(int effect) {
+        return effect == EFFECT_S6_WATER_DROPLET_APP_OWNED
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_S4_ABSTRACT_TILES
+                || effect == EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == EFFECT_S3_RIPPLE_NATIVE
+                || effect == EFFECT_WATERCOLOUR
+                || effect == EFFECT_BRILLIANT_RING
+                || effect == EFFECT_BRILLIANT_CUT;
+    }
+
+    /** Only these renderers consume the native-refresh motion-speed preference. */
+    static boolean supportsExperimentalNativeRefreshPhysicsSpeed(int effect) {
+        return effect == EFFECT_S6_WATER_DROPLET_APP_OWNED
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                || effect == EFFECT_S5_POPPING_COLOURS;
+    }
+
+    /** Dynamic boolean key for one ARM64 renderer's native-refresh toggle. */
+    static String experimentalNativeRefreshPhysicsKey(int effect) {
+        requireExperimentalNativeRefreshPhysicsEffect(effect);
+        return EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX + effect;
+    }
+
+    /** Dynamic speed key for a renderer whose native-refresh simulation has speed control. */
+    static String experimentalNativeRefreshPhysicsSpeedTenthsKey(int effect) {
+        if (!supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+            throw new IllegalArgumentException("Native-refresh speed unsupported effect=" + effect);
+        }
+        return EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX + effect;
+    }
+
+    static boolean experimentalNativeRefreshPhysicsEnabled(Context context, int effect) {
+        return supportsExperimentalNativeRefreshPhysics(effect)
+                && get(context).getBoolean(experimentalNativeRefreshPhysicsKey(effect), false);
+    }
+
+    static int experimentalNativeRefreshPhysicsSpeedTenths(Context context, int effect) {
+        if (!supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+            return NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT;
+        }
+        int tenths = get(context).getInt(experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT);
+        return Math.max(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN,
+                Math.min(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX, tenths));
+    }
+
+    static float experimentalNativeRefreshPhysicsSpeedMultiplier(Context context, int effect) {
+        return experimentalNativeRefreshPhysicsEnabled(context, effect)
+                && supportsExperimentalNativeRefreshPhysicsSpeed(effect)
+                ? experimentalNativeRefreshPhysicsSpeedTenths(context, effect) / 10.0f
+                : 1.0f;
+    }
+
+    /** Returns the supported effect encoded by an exact dynamic preference key, or -1. */
+    static int experimentalNativeRefreshPhysicsEffectFromPreferenceKey(String key) {
+        int effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX);
+        if (effect >= 0 && supportsExperimentalNativeRefreshPhysics(effect)) {
+            return effect;
+        }
+        effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX);
+        return effect >= 0 && supportsExperimentalNativeRefreshPhysicsSpeed(effect) ? effect : -1;
+    }
+
+    static boolean isExperimentalNativeRefreshPhysicsPreferenceKey(String key) {
+        return experimentalNativeRefreshPhysicsEffectFromPreferenceKey(key) >= 0;
+    }
+
+    static boolean isExperimentalNativeRefreshPhysicsSpeedTenthsPreferenceKey(String key) {
+        int effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX);
+        return effect >= 0 && supportsExperimentalNativeRefreshPhysicsSpeed(effect);
+    }
+
+    private static void requireExperimentalNativeRefreshPhysicsEffect(int effect) {
+        if (!supportsExperimentalNativeRefreshPhysics(effect)) {
+            throw new IllegalArgumentException("Native-refresh unsupported effect=" + effect);
+        }
+    }
+
+    private static int effectFromExactPreferenceKey(String key, String prefix) {
+        if (key == null || !key.startsWith(prefix)) {
+            return -1;
+        }
+        String encodedEffect = key.substring(prefix.length());
+        if (encodedEffect.length() == 0) {
+            return -1;
+        }
+        try {
+            int effect = Integer.parseInt(encodedEffect);
+            return Integer.toString(effect).equals(encodedEffect) ? effect : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
     }
 
     static boolean isImplementedEffect(int effect) {

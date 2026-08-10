@@ -8,7 +8,7 @@ final class S6WaterDropletAppOwnedNative {
     static final int TEXTURE_LANDSCAPE_BACKGROUND = 1;
     static final int TEXTURE_NORMAL = 2;
     static final int TEXTURE_EDGE_DENSITY = 3;
-    static final int BRIDGE_VERSION = 2;
+    static final int BRIDGE_VERSION = 3;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -81,6 +81,13 @@ final class S6WaterDropletAppOwnedNative {
 
     /** Advances exactly one stock 60 Hz simulation tick. */
     static native boolean nativeStep(long handle);
+
+    /**
+     * Experimental display-clock step. {@code frameScale} is elapsed time in
+     * 60 Hz ticks and is deliberately supplied by the GL host per presented
+     * frame, not inferred from a nominal refresh-rate setting.
+     */
+    static native boolean nativeStepNativeRefresh(long handle, float frameScale);
 
     static native boolean nativeDraw(
             long handle, int width, int height, float presentationFraction);

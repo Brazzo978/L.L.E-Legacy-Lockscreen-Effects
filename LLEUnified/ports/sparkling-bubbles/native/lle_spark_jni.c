@@ -10,19 +10,22 @@
 #include <string.h>
 
 #define LLE_SPARK_LOG_TAG "LLESparklingBubbles"
-#define LLE_SPARK_BRIDGE_VERSION 1
+#define LLE_SPARK_BRIDGE_VERSION 2
 #define LLE_SPARK_HANDLE_MAGIC UINT64_C(0x4c4c45535041524b)
 #define LLE_SPARK_DEFAULT_WIDTH 1440
 #define LLE_SPARK_DEFAULT_HEIGHT 2560
 #define LLE_SPARK_TARGET_SECONDS_PER_TICK (1.0 / 60.0)
 #define LLE_SPARK_MAX_TICKS_PER_STEP 8
 #define LLE_SPARK_MAX_ELAPSED_SECONDS 0.25
+/* 30 Hz plus ordinary compositor jitter; the host discards longer stalls. */
+#define LLE_SPARK_MAX_ADAPTIVE_ELAPSED_SECONDS (1.0 / 28.0)
 
 typedef struct LleSparkHandle {
     uint64_t magic;
     LleSparkSim *sim;
     LleSparkGles gles;
     double accumulator_seconds;
+    bool adaptive_physics;
     int width;
     int height;
     char error[LLE_SPARK_ERROR_SIZE];
@@ -202,7 +205,11 @@ Java_com_codex_lle_SparklingBubblesNative_nativeTouch(
     if (action == 0) {
         (void) lle_spark_sim_touch_begin(handle->sim, x, render_y);
     } else if (action == 2) {
-        (void) lle_spark_sim_touch_move(handle->sim, x, render_y);
+        if (handle->adaptive_physics) {
+            (void) lle_spark_sim_touch_move_adaptive(handle->sim, x, render_y);
+        } else {
+            (void) lle_spark_sim_touch_move(handle->sim, x, render_y);
+        }
     } else if (action == 1 || action == 3) {
         lle_spark_sim_touch_end(handle->sim);
     }
@@ -237,6 +244,21 @@ Java_com_codex_lle_SparklingBubblesNative_nativeUnlock(
     lle_spark_sim_unlock(handle->sim);
 }
 
+JNIEXPORT void JNICALL
+Java_com_codex_lle_SparklingBubblesNative_nativeSetAdaptivePhysics(
+        JNIEnv *env, jclass clazz, jlong native_handle, jboolean enabled) {
+    (void) env;
+    (void) clazz;
+    LleSparkHandle *handle = spark_handle(native_handle);
+    if (!spark_require_handle(handle)) return;
+    const bool requested = enabled == JNI_TRUE;
+    if (handle->adaptive_physics != requested) {
+        handle->adaptive_physics = requested;
+        handle->accumulator_seconds = 0.0;
+    }
+    spark_clear_handle_error(handle);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_codex_lle_SparklingBubblesNative_nativeStep(
         JNIEnv *env, jclass clazz, jlong native_handle, jfloat elapsed_seconds) {
@@ -250,6 +272,7 @@ Java_com_codex_lle_SparklingBubblesNative_nativeStep(
     }
     const double bounded = fmin(
             (double) elapsed_seconds, LLE_SPARK_MAX_ELAPSED_SECONDS);
+    handle->adaptive_physics = false;
     handle->accumulator_seconds += bounded;
     int tick_count = 0;
     /*
@@ -267,6 +290,45 @@ Java_com_codex_lle_SparklingBubblesNative_nativeStep(
                 fmod(handle->accumulator_seconds,
                      LLE_SPARK_TARGET_SECONDS_PER_TICK);
     }
+    spark_clear_handle_error(handle);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_codex_lle_SparklingBubblesNative_nativeStepAdaptive(
+        JNIEnv *env,
+        jclass clazz,
+        jlong native_handle,
+        jfloat elapsed_seconds,
+        jfloat speed_multiplier) {
+    (void) env;
+    (void) clazz;
+    LleSparkHandle *handle = spark_handle(native_handle);
+    if (!spark_require_handle(handle)) return JNI_FALSE;
+    if (!isfinite(elapsed_seconds) || elapsed_seconds < 0.0f) {
+        spark_log_error(handle, "nativeStepAdaptive received invalid elapsedSeconds");
+        return JNI_FALSE;
+    }
+    if (!isfinite(speed_multiplier)
+            || speed_multiplier < 1.0f || speed_multiplier > 2.0f) {
+        spark_log_error(handle, "nativeStepAdaptive received invalid speedMultiplier");
+        return JNI_FALSE;
+    }
+
+    /*
+     * The Java host discards a stalled frame entirely.  Keep the same bound
+     * here because JNI callers must not be able to create a catch-up jump.
+     */
+    const double bounded = fmin(
+            (double) elapsed_seconds, LLE_SPARK_MAX_ADAPTIVE_ELAPSED_SECONDS);
+    handle->adaptive_physics = true;
+    handle->accumulator_seconds = 0.0;
+    lle_spark_sim_advance_adaptive(
+            handle->sim,
+            /* Bound wall time before speed scaling; a 30 Hz frame at 2x is
+             * intentionally four logical frames, never compositor catch-up. */
+            fminf(4.0f, (float) (bounded / LLE_SPARK_TARGET_SECONDS_PER_TICK)
+                    * speed_multiplier));
     spark_clear_handle_error(handle);
     return JNI_TRUE;
 }
@@ -291,11 +353,13 @@ Java_com_codex_lle_SparklingBubblesNative_nativeDraw(
         lle_spark_sim_set_surface(handle->sim, (float) width, (float) height);
     }
     spark_clear_handle_error(handle);
-    const float presentation_fraction = (float) fmax(
-            0.0,
-            fmin(1.0,
-                 handle->accumulator_seconds /
-                          LLE_SPARK_TARGET_SECONDS_PER_TICK));
+    const float presentation_fraction = handle->adaptive_physics
+            ? 0.0f
+            : (float) fmax(
+                    0.0,
+                    fmin(1.0,
+                         handle->accumulator_seconds /
+                                  LLE_SPARK_TARGET_SECONDS_PER_TICK));
     if (!lle_spark_gles_draw(
             &handle->gles,
             handle->sim,

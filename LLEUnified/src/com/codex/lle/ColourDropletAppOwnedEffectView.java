@@ -99,6 +99,25 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
     }
 
     public ColourDropletAppOwnedEffectView(Context context, boolean gyroEnabled) {
+        this(context, gyroEnabled, false);
+    }
+
+    /**
+     * The experimental mode is latched for this renderer lifetime. Callers
+     * recreate the effect on a preference change; display-rate changes inside
+     * that lifetime remain live and do not reset the simulation.
+     */
+    public ColourDropletAppOwnedEffectView(
+            Context context, boolean gyroEnabled, boolean nativeRefreshPhysics) {
+        this(context, gyroEnabled, nativeRefreshPhysics, 1.0f);
+    }
+
+    /** Experimental speed multiplier is latched with the renderer mode. */
+    public ColourDropletAppOwnedEffectView(
+            Context context,
+            boolean gyroEnabled,
+            boolean nativeRefreshPhysics,
+            float nativeRefreshSpeedMultiplier) {
         super(context);
         appContext = context.getApplicationContext();
         this.gyroEnabled = gyroEnabled;
@@ -143,7 +162,9 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
                 projectKind,
                 renderWidth(),
                 renderHeight(),
-                this);
+                this,
+                nativeRefreshPhysics,
+                nativeRefreshSpeedMultiplier);
         addView(glView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
@@ -155,7 +176,9 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
                     : "app-owned native bridge unavailable");
         }
         Log.i(TAG, "app-owned shell constructed native=" + constructed
-                + " gyro=" + gyroEnabled);
+                + " gyro=" + gyroEnabled
+                + " nativeRefreshPhysics=" + nativeRefreshPhysics
+                + " nativeRefreshSpeedMultiplier=" + nativeRefreshSpeedMultiplier);
     }
 
     @Override

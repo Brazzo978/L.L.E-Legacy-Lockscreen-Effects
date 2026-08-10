@@ -20,7 +20,9 @@ import javax.microedition.khronos.opengles.GL10;
  *
  * <p>Every stateful JNI operation is serialized through the GLSurfaceView GL
  * thread. Drawing follows the display refresh while the recovered simulation
- * remains on its stock 60 Hz clock; intermediate frames are extrapolated.</p>
+ * remains on its stock 60 Hz clock; intermediate frames are extrapolated.
+ * An explicitly opt-in experimental path can instead feed measured display
+ * cadence to the native integrator.</p>
  */
 final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         implements GLSurfaceView.Renderer {
@@ -38,6 +40,10 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private static final long DESTROY_TIMEOUT_MS = 500L;
     private static final long SIMULATION_STEP_NS = 16_666_667L;
     private static final int MAX_SIMULATION_STEPS_PER_DRAW = 3;
+    private static final long NATIVE_REFRESH_MAX_FRAME_NS = 33_333_334L;
+    private static final long NATIVE_REFRESH_STALL_NS = 66_666_668L;
+    private static final float NATIVE_REFRESH_MIN_SPEED_MULTIPLIER = 1.0f;
+    private static final float NATIVE_REFRESH_MAX_SPEED_MULTIPLIER = 2.0f;
 
     private final Listener listener;
     private final Object bitmapLock = new Object();
@@ -56,16 +62,19 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private volatile boolean resourcesReady;
     private volatile boolean destroyed;
     private volatile long minimumRenderUntilMs;
-    private volatile int keepAliveSteps;
+    private volatile float keepAliveTicks;
     private volatile int drawCount;
     private volatile Thread glOwnerThread;
     private long commandGeneration;
     private int surfaceWidth;
     private int surfaceHeight;
-    private int idleTicks;
+    private float idleTicks;
     private long lastSimulationTimeNs;
     private long simulationAccumulatorNs;
     private volatile boolean simulationClockResetPending = true;
+    /* Latched for this renderer instance; the production constructor is 60 Hz. */
+    private final boolean nativeRefreshSimulationEnabled;
+    private final float nativeRefreshSpeedMultiplier;
 
     S6WaterDropletAppOwnedGlView(
             Context context,
@@ -75,6 +84,49 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
             int logicalShortSide,
             int logicalLongSide,
             Listener listener) {
+        this(
+                context,
+                normalMap,
+                edgeDensityMap,
+                projectKind,
+                logicalShortSide,
+                logicalLongSide,
+                listener,
+                false,
+                1.0f);
+    }
+
+    S6WaterDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalShortSide,
+            int logicalLongSide,
+            Listener listener,
+            boolean nativeRefreshSimulationEnabled) {
+        this(
+                context,
+                normalMap,
+                edgeDensityMap,
+                projectKind,
+                logicalShortSide,
+                logicalLongSide,
+                listener,
+                nativeRefreshSimulationEnabled,
+                1.0f);
+    }
+
+    S6WaterDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalShortSide,
+            int logicalLongSide,
+            Listener listener,
+            boolean nativeRefreshSimulationEnabled,
+            float nativeRefreshSpeedMultiplier) {
         super(context);
         this.normalMap = normalMap;
         this.edgeDensityMap = edgeDensityMap;
@@ -83,6 +135,12 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         this.logicalLongSide = Math.max(this.logicalShortSide, logicalLongSide);
         this.simulationStepNs = SIMULATION_STEP_NS;
         this.listener = listener;
+        this.nativeRefreshSimulationEnabled = nativeRefreshSimulationEnabled;
+        this.nativeRefreshSpeedMultiplier =
+                nativeRefreshSimulationEnabled
+                        ? clampNativeRefreshSpeedMultiplier(
+                                nativeRefreshSpeedMultiplier)
+                        : 1.0f;
 
         setZOrderOnTop(true);
         getHolder().setFormat(PixelFormat.TRANSLUCENT);
@@ -206,19 +264,36 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 resetSimulationClockFromGlThread();
                 return;
             }
-            int simulationSteps = simulationStepsForDraw(
-                    SystemClock.elapsedRealtimeNanos());
-            for (int step = 0; step < simulationSteps; step++) {
-                if (!S6WaterDropletAppOwnedNative.nativeStep(nativeHandle)) {
-                    throw new IllegalStateException(
-                            "native step failed: " + nativeError());
+            long nowNs = SystemClock.elapsedRealtimeNanos();
+            float simulatedTicks;
+            float presentationFraction;
+            if (nativeRefreshSimulationEnabled) {
+                float frameScale = nativeRefreshFrameScaleForDraw(nowNs);
+                if (frameScale > 0.0f) {
+                    if (!S6WaterDropletAppOwnedNative.nativeStepNativeRefresh(
+                            nativeHandle, frameScale)) {
+                        throw new IllegalStateException(
+                                "native refresh step failed: " + nativeError());
+                    }
                 }
+                simulatedTicks = frameScale;
+                presentationFraction = 0.0f;
+            } else {
+                int simulationSteps = simulationStepsForDraw(nowNs);
+                for (int step = 0; step < simulationSteps; step++) {
+                    if (!S6WaterDropletAppOwnedNative.nativeStep(nativeHandle)) {
+                        throw new IllegalStateException(
+                                "native step failed: " + nativeError());
+                    }
+                }
+                simulatedTicks = simulationSteps;
+                presentationFraction = simulationPresentationFraction();
             }
             if (!S6WaterDropletAppOwnedNative.nativeDraw(
                     nativeHandle,
                     surfaceWidth,
                     surfaceHeight,
-                    simulationPresentationFraction())) {
+                    presentationFraction)) {
                 throw new IllegalStateException(
                         "native draw failed: " + nativeError());
             }
@@ -227,13 +302,13 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 notifySecondDrawReady();
             }
 
-            keepAliveSteps = Math.max(0, keepAliveSteps - simulationSteps);
-            if (simulationSteps > 0) {
+            keepAliveTicks = Math.max(0.0f, keepAliveTicks - simulatedTicks);
+            if (simulatedTicks > 0.0f) {
                 if (S6WaterDropletAppOwnedNative.nativeIsIdle(nativeHandle)
-                        && keepAliveSteps <= 0
+                        && keepAliveTicks <= 0.0f
                         && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
-                    idleTicks++;
-                    if (idleTicks >= 2) {
+                    idleTicks += simulatedTicks;
+                    if (idleTicks >= 2.0f) {
                         stopAnimationFromGlThread();
                     }
                 } else {
@@ -636,8 +711,8 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs,
                 SystemClock.uptimeMillis() + Math.max(0L, minimumDurationMs));
-        keepAliveSteps = Math.max(
-                keepAliveSteps, Math.max(1, minimumSteps));
+        keepAliveTicks = Math.max(
+                keepAliveTicks, (float) Math.max(1, minimumSteps));
         boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
         if (wasStopped) {
             requestSimulationClockReset();
@@ -701,6 +776,35 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         steps = Math.min(steps, MAX_SIMULATION_STEPS_PER_DRAW);
         simulationAccumulatorNs -= steps * simulationStepNs;
         return steps;
+    }
+
+    private float nativeRefreshFrameScaleForDraw(long nowNs) {
+        if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
+            resetSimulationClockFromGlThread();
+            lastSimulationTimeNs = nowNs;
+            return 0.0f;
+        }
+        long elapsedNs = nowNs - lastSimulationTimeNs;
+        lastSimulationTimeNs = nowNs;
+        if (elapsedNs <= 0L || elapsedNs > NATIVE_REFRESH_STALL_NS) {
+            /* Screen-on/EGL stalls restart cleanly rather than jumping ahead. */
+            return 0.0f;
+        }
+        /* Preserve positive measured cadence exactly: adaptive panels can
+         * legitimately jitter below 1/144 s, and rounding those frames up
+         * would accumulate artificial simulation time. */
+        long boundedNs = Math.min(NATIVE_REFRESH_MAX_FRAME_NS, elapsedNs);
+        return (float) boundedNs / (float) simulationStepNs
+                * nativeRefreshSpeedMultiplier;
+    }
+
+    private static float clampNativeRefreshSpeedMultiplier(float multiplier) {
+        if (Float.isNaN(multiplier) || Float.isInfinite(multiplier)) {
+            return 1.0f;
+        }
+        return Math.max(
+                NATIVE_REFRESH_MIN_SPEED_MULTIPLIER,
+                Math.min(NATIVE_REFRESH_MAX_SPEED_MULTIPLIER, multiplier));
     }
 
     private float simulationPresentationFraction() {

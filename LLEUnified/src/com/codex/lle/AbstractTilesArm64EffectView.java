@@ -63,6 +63,8 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsNativeSlot;
     private final boolean lineEnabled;
+    /* Presentation cadence for the display-refresh opt-in. */
+    private final boolean highRefreshPresentation;
     private final SoundPool soundPool;
     private final AudioManager audioManager;
     private final int tapSound;
@@ -98,7 +100,11 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 return;
             }
             requestRender();
-            postDelayed(this, FRAME_INTERVAL_MS);
+            if (highRefreshPresentation) {
+                postOnAnimation(this);
+            } else {
+                postDelayed(this, FRAME_INTERVAL_MS);
+            }
         }
     };
 
@@ -110,8 +116,18 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
     };
 
     public AbstractTilesArm64EffectView(Context context) {
+        this(context, false);
+    }
+
+    /**
+     * @param highRefreshPresentation when true, request frames on display vsync while an
+     *                                animation is active; the native simulation remains
+     *                                elapsed-time based.
+     */
+    public AbstractTilesArm64EffectView(Context context, boolean highRefreshPresentation) {
         super(context);
         lineEnabled = OverlayPrefs.abstractTilesLineEnabled(context);
+        this.highRefreshPresentation = highRefreshPresentation;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -1309,7 +1325,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
     }
 
-    private static final class ElapsedClock {
+    static final class ElapsedClock {
         private long previousFrameNs = Long.MIN_VALUE;
 
         float advance(long frameTimeNs) {

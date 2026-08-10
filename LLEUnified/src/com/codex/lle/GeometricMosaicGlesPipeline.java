@@ -32,9 +32,10 @@ public final class GeometricMosaicGlesPipeline {
     private static final float TOUCH_PEAK_RADIUS = 0.80f;
     private static final float TOUCH_SAMPLE_THRESHOLD = 0.0085f;
     private static final float UNLOCK_RADIUS = 5.0f;
-    private static final float UNLOCK_EXPAND_SECONDS = 0.45f;
+    private static final float UNLOCK_EXPAND_SECONDS = 0.40f;
     private static final float UNLOCK_FADE_SECONDS = 0.60f;
-    private static final float UNLOCK_RECORD_SECONDS = 2.0f;
+    private static final float UNLOCK_TOTAL_SECONDS =
+            UNLOCK_EXPAND_SECONDS + UNLOCK_FADE_SECONDS;
     private static final float AFFORDANCE_SECONDS = 2.0f;
     private static final float AFFORDANCE_RADIUS_FROM = -0.8f;
     private static final float AFFORDANCE_RADIUS_TO = 3.0f;
@@ -315,15 +316,40 @@ public final class GeometricMosaicGlesPipeline {
         return true;
     }
 
-    /** Expands the current mask record and fades the complete scene as in FUN_1dac8. */
+    /**
+     * Expands a terminal mask record at the final gesture coordinates, then fades the complete
+     * scene. The terminal record is deliberately rearmed even when the normal trail record has
+     * already aged out: a long hold or a sub-threshold final MOVE must not turn unlock into a
+     * no-op.
+     */
     public void unlock(long frameTimeNanos) {
+        float x = hasLastTouch ? lastTouchX
+                : (currentTouch != null && currentTouch.active
+                        ? (currentTouch.x + 1.0f) * 0.5f : 0.5f);
+        float y = hasLastTouch ? lastTouchY
+                : (currentTouch != null && currentTouch.active
+                        ? (1.0f - currentTouch.y) * 0.5f : 0.5f);
+        unlockAt(x, y, frameTimeNanos);
+    }
+
+    /** Package seam for callers/tests that have a final coordinate independent of trail sampling. */
+    boolean unlockAt(float x, float y, long frameTimeNanos) {
         double now = seconds(frameTimeNanos);
-        if (currentTouch == null || !currentTouch.active) {
-            return;
+        TouchRecord terminal = currentTouch;
+        if (terminal == null || !terminal.active) {
+            terminal = obtainTerminalTouch();
         }
-        currentTouch.unlock(now, currentTouch.radiusAt(now));
+        float radius = terminal.active ? terminal.radiusAt(now) : TOUCH_START_RADIUS;
+        terminal.begin(2.0f * clamp(x, 0.0f, 1.0f) - 1.0f,
+                1.0f - 2.0f * clamp(y, 0.0f, 1.0f), now);
+        terminal.unlock(now, radius);
+        currentTouch = terminal;
+        lastTouchX = clamp(x, 0.0f, 1.0f);
+        lastTouchY = clamp(y, 0.0f, 1.0f);
+        hasLastTouch = true;
         unlockAlphaFrom = sceneAlpha;
         unlockStartSeconds = now;
+        return true;
     }
 
     /**
@@ -412,10 +438,9 @@ public final class GeometricMosaicGlesPipeline {
     }
 
     private void updateAnimation(double now) {
-        if (now - unlockStartSeconds <= UNLOCK_FADE_SECONDS) {
-            float progress = clamp((float) ((now - unlockStartSeconds)
-                    / UNLOCK_FADE_SECONDS), 0.0f, 1.0f);
-            sceneAlpha = mix(unlockAlphaFrom, 0.0f, sineEaseOut(progress));
+        if (now - unlockStartSeconds <= UNLOCK_TOTAL_SECONDS) {
+            sceneAlpha = unlockFadeAlpha(unlockAlphaFrom,
+                    (float) (now - unlockStartSeconds));
         } else if (unlockStartSeconds > 0.0) {
             sceneAlpha = 0.0f;
         }
@@ -472,6 +497,20 @@ public final class GeometricMosaicGlesPipeline {
         if (freeTouchCount < freeTouchIndices.length) {
             freeTouchIndices[freeTouchCount++] = record.index;
         }
+    }
+
+    /** Obtains a record even under a full trail, preserving the unlock terminal guarantee. */
+    private TouchRecord obtainTerminalTouch() {
+        if (freeTouchCount > 0) {
+            return touches[freeTouchIndices[--freeTouchCount]];
+        }
+        TouchRecord oldest = touches[0];
+        for (TouchRecord record : touches) {
+            if (record.cleanupTime < oldest.cleanupTime) {
+                oldest = record;
+            }
+        }
+        return oldest;
     }
 
     private boolean isAnimating(double now) {
@@ -794,13 +833,12 @@ public final class GeometricMosaicGlesPipeline {
             decaying = false;
             unlockStart = now;
             unlockFrom = currentRadius;
-            cleanupTime = now + UNLOCK_RECORD_SECONDS;
+            cleanupTime = now + UNLOCK_TOTAL_SECONDS;
         }
 
         float radiusAt(double now) {
             if (unlocking) {
-                return mix(unlockFrom, UNLOCK_RADIUS, clamp((float) ((now - unlockStart)
-                        / UNLOCK_EXPAND_SECONDS), 0.0f, 1.0f));
+                return unlockRadius(unlockFrom, (float) (now - unlockStart));
             }
             if (decaying) {
                 float progress = clamp((float) ((now - decayStart)
@@ -1092,6 +1130,67 @@ public final class GeometricMosaicGlesPipeline {
 
     private static float sineEaseOut(float value) {
         return (float) Math.sin(Math.PI * 0.5 * value);
+    }
+
+    /** Package seam for deterministic unlock expansion verification without a GLES context. */
+    static float unlockRadius(float fromRadius, float elapsedSeconds) {
+        return mix(fromRadius, UNLOCK_RADIUS,
+                clamp(elapsedSeconds / UNLOCK_EXPAND_SECONDS, 0.0f, 1.0f));
+    }
+
+    /** Package seam for deterministic two-phase whole-scene unlock fade verification. */
+    static float unlockFadeAlpha(float fromAlpha, float elapsedSeconds) {
+        float fadeElapsed = Math.max(0.0f, elapsedSeconds - UNLOCK_EXPAND_SECONDS);
+        return mix(fromAlpha, 0.0f, sineEaseOut(
+                clamp(fadeElapsed / UNLOCK_FADE_SECONDS, 0.0f, 1.0f)));
+    }
+
+    /** The full-coverage boundary; wall-time based for both stock and HFR presentation. */
+    static long unlockCoverageDelayMs() {
+        return Math.round(UNLOCK_EXPAND_SECONDS * 1000.0f);
+    }
+
+    /** The handoff/neutralization boundary is deliberately tied to coverage, not fade completion. */
+    static long unlockHandoffDelayMs() {
+        return unlockCoverageDelayMs();
+    }
+
+    /** The fade duration after full coverage; it does not gate the unlock dispatch. */
+    static long unlockFadeDelayMs() {
+        return Math.round(UNLOCK_FADE_SECONDS * 1000.0f);
+    }
+
+    /** The visual completion boundary; wall-time based for both stock and HFR presentation. */
+    static long unlockCompleteDelayMs() {
+        return Math.round(UNLOCK_TOTAL_SECONDS * 1000.0f);
+    }
+
+    void advanceAnimationForTest(long frameTimeNanos) {
+        updateAnimation(seconds(frameTimeNanos));
+    }
+
+    boolean isTerminalUnlockArmedForTest() {
+        return currentTouch != null && currentTouch.active && currentTouch.unlocking;
+    }
+
+    float terminalTouchXForTest() {
+        return currentTouch == null ? Float.NaN : (currentTouch.x + 1.0f) * 0.5f;
+    }
+
+    float terminalTouchYForTest() {
+        return currentTouch == null ? Float.NaN : (1.0f - currentTouch.y) * 0.5f;
+    }
+
+    float terminalRadiusForTest(long frameTimeNanos) {
+        return currentTouch == null ? Float.NaN : currentTouch.radiusAt(seconds(frameTimeNanos));
+    }
+
+    float sceneAlphaForTest() {
+        return sceneAlpha;
+    }
+
+    boolean isAnimatingForTest(long frameTimeNanos) {
+        return isAnimating(seconds(frameTimeNanos));
     }
 
     private static final String MASK_VERTEX_SHADER =

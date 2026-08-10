@@ -15,7 +15,7 @@
 #include <string.h>
 
 #define LLE_S6_WATER_LOG_TAG "LLES6WaterDroplet"
-#define LLE_S6_WATER_BRIDGE_VERSION 2
+#define LLE_S6_WATER_BRIDGE_VERSION 3
 #define LLE_S6_WATER_STOCK_DT (1.0f / 60.0f)
 #define LLE_S6_WATER_HANDLE_MAGIC UINT64_C(0x4c4c455336574154)
 #define LLE_S6_WATER_DEFAULT_WIDTH 1440
@@ -804,6 +804,33 @@ Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStep(
      */
     (void) lle_s6_water_sim_consume_deferred_reset(handle->sim);
     lle_s6_water_sim_tick(handle->sim);
+    s6_water_clear_error_locked(handle);
+    s6_water_unlock(handle);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStepNativeRefresh(
+        JNIEnv *env,
+        jclass clazz,
+        jlong native_handle,
+        jfloat frame_scale) {
+    (void) env;
+    (void) clazz;
+    LleS6WaterHandle *handle = s6_water_handle(native_handle);
+    if (!isfinite(frame_scale) || frame_scale <= 0.0f) {
+        return JNI_FALSE;
+    }
+    if (!s6_water_lock(handle)) {
+        return JNI_FALSE;
+    }
+    if (!s6_water_require_owner_locked(handle, "nativeStepNativeRefresh")) {
+        s6_water_unlock(handle);
+        return JNI_FALSE;
+    }
+
+    (void) lle_s6_water_sim_consume_deferred_reset(handle->sim);
+    lle_s6_water_sim_tick_native_refresh(handle->sim, frame_scale);
     s6_water_clear_error_locked(handle);
     s6_water_unlock(handle);
     return JNI_TRUE;

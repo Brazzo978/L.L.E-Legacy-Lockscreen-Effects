@@ -82,6 +82,7 @@ public final class BrilliantCutGlesPipeline {
     private boolean unlockActive;
     private float unlockAge;
     private boolean unlockFinalFramePending;
+    private final AdaptiveFinalFrameHold adaptiveFinalFrameHold = new AdaptiveFinalFrameHold();
     private final ArrayList<LightState> touchLights = new ArrayList<LightState>(24);
     private float touchEmitClock = TOUCH_NEXT_TERM_SECONDS;
     private boolean releaseBounceActive;
@@ -189,6 +190,7 @@ public final class BrilliantCutGlesPipeline {
         unlockActive = true;
         unlockAge = 0.0f;
         unlockFinalFramePending = false;
+        adaptiveFinalFrameHold.reset();
     }
 
     public void affordance(float x, float y) {
@@ -200,6 +202,7 @@ public final class BrilliantCutGlesPipeline {
         releaseBounceActive = false;
         unlockActive = false;
         unlockFinalFramePending = false;
+        adaptiveFinalFrameHold.reset();
         affordanceActive = true;
         affordanceAge = 0.0f;
     }
@@ -211,6 +214,7 @@ public final class BrilliantCutGlesPipeline {
         unlockActive = false;
         unlockAge = 0.0f;
         unlockFinalFramePending = false;
+        adaptiveFinalFrameHold.reset();
         lightX = 0.0f;
         lightY = 0.0f;
         touchLights.clear();
@@ -231,6 +235,27 @@ public final class BrilliantCutGlesPipeline {
         if (advanceSimulation) {
             processInput();
             updateSimulation(STOCK_STEP_SECONDS);
+        }
+        renderComposite();
+        return !isIdle();
+    }
+
+    /**
+     * Native-refresh simulation entry point.  The caller maps display elapsed time into the
+     * recovered 16 ms-per-60 Hz stock timebase before invoking this method.
+     *
+     * <p>Input is intentionally drained even for a zero first/stalled frame so its first visible
+     * state is rendered without consuming simulation time.  All timed state below is already
+     * expressed in seconds, so using the fractional elapsed value preserves lifetimes, the
+     * 75 ms touch-emission gate, release bounce, affordance and unlock duration at any cadence.</p>
+     */
+    public boolean renderFrame(float elapsedSeconds) {
+        if (!initialized || abandoned) {
+            return false;
+        }
+        processInput();
+        if (elapsedSeconds > 0.0f) {
+            updateAdaptiveSimulation(elapsedSeconds);
         }
         renderComposite();
         return !isIdle();
@@ -386,6 +411,62 @@ public final class BrilliantCutGlesPipeline {
                 if (unlockAge >= UNLOCK_SECONDS) {
                     unlockAge = UNLOCK_SECONDS;
                     unlockFinalFramePending = true;
+                }
+            }
+        }
+    }
+
+    /**
+     * Adaptive-only copy of the recovered state advance.  Keeping this separate leaves the
+     * default 60 Hz updateSimulation() instruction-for-instruction identical to its baseline.
+     */
+    private void updateAdaptiveSimulation(float elapsed) {
+        touchEmitClock += elapsed;
+        for (int i = touchLights.size() - 1; i >= 0; --i) {
+            LightState light = touchLights.get(i);
+            light.age += elapsed;
+            if (light.age > TOUCH_LIFETIME_SECONDS) {
+                touchLights.remove(i);
+            }
+        }
+        if (releaseBounceActive) {
+            releaseBounceAge += elapsed;
+            if (releaseBounceAge < TOUCH_GROW_SECONDS) {
+                float amount = cosineInOut(releaseBounceAge / TOUCH_GROW_SECONDS);
+                lightX = mix(releaseBounceStartX, releaseBounceTargetX, amount);
+                lightY = mix(releaseBounceStartY, releaseBounceTargetY, amount);
+            } else if (releaseBounceAge < TOUCH_LIFETIME_SECONDS) {
+                float amount = cosineInOut((releaseBounceAge - TOUCH_GROW_SECONDS)
+                        / (TOUCH_LIFETIME_SECONDS - TOUCH_GROW_SECONDS));
+                lightX = mix(releaseBounceTargetX, releaseBounceStartX, amount);
+                lightY = mix(releaseBounceTargetY, releaseBounceStartY, amount);
+            } else {
+                lightX = releaseBounceStartX;
+                lightY = releaseBounceStartY;
+                releaseBounceActive = false;
+            }
+        }
+        if (affordanceActive) {
+            affordanceAge += elapsed;
+            if (affordanceAge >= AFFORDANCE_SECONDS) {
+                affordanceAge = AFFORDANCE_SECONDS;
+                affordanceActive = false;
+            }
+        }
+        if (unlockActive) {
+            if (unlockFinalFramePending) {
+                if (!adaptiveFinalFrameHold.advance(elapsed)) {
+                    unlockActive = false;
+                    unlockFinalFramePending = false;
+                    adaptiveFinalFrameHold.reset();
+                }
+            } else {
+                unlockAge += elapsed;
+                if (unlockAge >= UNLOCK_SECONDS) {
+                    unlockAge = UNLOCK_SECONDS;
+                    unlockFinalFramePending = true;
+                    // The crossing frame is the first terminal target presentation.
+                    adaptiveFinalFrameHold.begin();
                 }
             }
         }
@@ -760,6 +841,27 @@ public final class BrilliantCutGlesPipeline {
         LightState(float x, float y) {
             this.x = x;
             this.y = y;
+        }
+    }
+
+    /**
+     * Adaptive-only terminal phase.  Stock clears the pending flag on its next 16 ms tick;
+     * high-refresh rendering instead retains the target for the equivalent recovered time.
+     */
+    static final class AdaptiveFinalFrameHold {
+        private float elapsed;
+
+        void begin() {
+            elapsed = 0.0f;
+        }
+
+        boolean advance(float elapsedSeconds) {
+            elapsed += Math.max(0.0f, elapsedSeconds);
+            return elapsed < STOCK_STEP_SECONDS;
+        }
+
+        void reset() {
+            elapsed = 0.0f;
         }
     }
 

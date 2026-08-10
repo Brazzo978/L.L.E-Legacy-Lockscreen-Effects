@@ -8,6 +8,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "watercolor_refresh.h"
+
 #define LOG_TAG "LLE64-Watercolor"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -44,6 +46,9 @@ typedef struct Stamp {
     float baseline_size;
     float size;
     float alpha;
+    float adaptive_growth_multiplier;
+    float adaptive_growth_progress;
+    float adaptive_growth_alpha_step;
     float x;
     float y;
     int mask_index;
@@ -71,6 +76,8 @@ typedef struct AdvectProgramLocations {
     GLint u_original;
     GLint u_noise_scalar;
     GLint u_radial_scalar;
+    GLint u_frame_scale;
+    GLint u_relaxation;
 } AdvectProgramLocations;
 
 typedef struct MixProgramLocations {
@@ -127,6 +134,7 @@ typedef struct WatercolorState {
     int clear_requested;
     int unlock_special;
     int unlock_countdown;
+    float adaptive_unlock_countdown;
     float unlock_gate;
     int pending_affordance_reset;
     int current_mask_index;
@@ -216,8 +224,10 @@ static const char *kAdvectFragmentShader =
         "uniform sampler2D uVelocity;\n"
         "uniform sampler2D uRadial;\n"
         "uniform sampler2D uOriginal;\n"
-        "uniform float uNoiseVectorScalar;\n"
-        "uniform float uRadialVectorScalar;\n"
+         "uniform float uNoiseVectorScalar;\n"
+         "uniform float uRadialVectorScalar;\n"
+         "uniform float uFrameScale;\n"
+         "uniform float uRelaxation;\n"
         "varying highp vec2 vTexUV;\n"
         "varying vec2 vTexUVBG;\n"
         "void main() {\n"
@@ -226,10 +236,11 @@ static const char *kAdvectFragmentShader =
         "  if (alphaColor.a != 0.0) {\n"
         "    highp vec4 noiseVelocity = texture2D(uVelocity, vTexUVBG);\n"
         "    vec2 densityUV = vTexUV + ((alphaColor.xy - 0.5) * 10.0\n"
-        "        * uRadialVectorScalar + (noiseVelocity.xy - 0.5)\n"
-        "        * uNoiseVectorScalar) * alphaColor.b * 0.0175 * 0.006;\n"
-        "    texColor = mix(texture2D(uDensity, densityUV),\n"
-        "        texture2D(uOriginal, vTexUVBG), 0.03);\n"
+         "        * uRadialVectorScalar + (noiseVelocity.xy - 0.5)\n"
+         "        * uNoiseVectorScalar) * alphaColor.b * 0.0175 * 0.006\n"
+         "        * uFrameScale;\n"
+         "    texColor = mix(texture2D(uDensity, densityUV),\n"
+         "        texture2D(uOriginal, vTexUVBG), uRelaxation);\n"
         "  } else {\n"
         "    texColor = texture2D(uOriginal, vTexUVBG);\n"
         "  }\n"
@@ -386,6 +397,10 @@ static void cache_program_locations(WatercolorState *state) {
             state->advect_program, "uNoiseVectorScalar");
     advect->u_radial_scalar = glGetUniformLocation(
             state->advect_program, "uRadialVectorScalar");
+    advect->u_frame_scale = glGetUniformLocation(
+            state->advect_program, "uFrameScale");
+    advect->u_relaxation = glGetUniformLocation(
+            state->advect_program, "uRelaxation");
 
     MixProgramLocations *mix = &state->mix_locations;
     mix->a_position = glGetAttribLocation(state->mix_program, "aPosition");
@@ -583,6 +598,9 @@ static void add_stamp(WatercolorState *state, float x, float y,
     stamp->baseline_size = size;
     stamp->size = size;
     stamp->alpha = 0.0f;
+    stamp->adaptive_growth_multiplier = 0.0f;
+    stamp->adaptive_growth_progress = 0.0f;
+    stamp->adaptive_growth_alpha_step = 0.0f;
     stamp->x = x;
     stamp->y = y;
     stamp->mask_index = tube_path ? 0 : random_mask();
@@ -595,6 +613,7 @@ static void reset_brush_state(WatercolorState *state) {
     state->gesture_active = 0;
     state->unlock_special = 0;
     state->unlock_countdown = 30;
+    state->adaptive_unlock_countdown = 30.0f;
     state->unlock_gate = 1.0f;
     state->pending_affordance_reset = 0;
     state->current_mask_index = 0;
@@ -651,6 +670,9 @@ static void update_stamps(WatercolorState *state) {
     size_t output = 0;
     for (size_t i = 0; i < state->stamp_count; ++i) {
         Stamp stamp = state->stamps[i];
+        stamp.adaptive_growth_multiplier = 0.0f;
+        stamp.adaptive_growth_progress = 0.0f;
+        stamp.adaptive_growth_alpha_step = 0.0f;
         if (stamp.size < stamp.initial_size * 2.3f) {
             stamp.size *= 1.075f;
         } else if (stamp.size >= stamp.initial_size * 2.6f) {
@@ -666,6 +688,58 @@ static void update_stamps(WatercolorState *state) {
         if (state->stamp_count > 20U && i < state->stamp_count - 20U) {
             stamp.alpha += kStampAlphaStep;
         }
+        if (stamp.alpha < kStampAlphaLimit) {
+            state->stamps[output++] = stamp;
+        }
+    }
+    state->stamp_count = output;
+}
+
+static void update_stamps_adaptive(WatercolorState *state, float stock_ticks) {
+    if (state == NULL || !isfinite(stock_ticks) || stock_ticks <= 0.0f) {
+        return;
+    }
+    if (fabsf(stock_ticks - 1.0f) <= 0.000001f) {
+        update_stamps(state);
+        state->adaptive_unlock_countdown = (float)state->unlock_countdown;
+        return;
+    }
+    if (state->pending_affordance_reset) {
+        reset_brush_state(state);
+    }
+    if (state->move_scale < 1.0f) {
+        state->move_scale = lle_watercolor_refresh_move_scale(
+                state->move_scale, stock_ticks);
+    }
+    if (state->unlock_special) {
+        lle_watercolor_refresh_unlock_gate(
+                &state->adaptive_unlock_countdown,
+                &state->unlock_gate,
+                stock_ticks);
+        create_unlock_snapshot(state);
+    }
+    for (int i = 0; i < state->secondary_count; ++i) {
+        Stamp *stamp = &state->secondary_stamps[i];
+        LleWatercolorRefreshStamp refresh_stamp = {
+                stamp->initial_size, stamp->size, stamp->alpha};
+        lle_watercolor_refresh_advance_secondary(&refresh_stamp, stock_ticks);
+        stamp->size = refresh_stamp.size;
+        stamp->alpha = refresh_stamp.alpha;
+    }
+    size_t output = 0;
+    for (size_t i = 0; i < state->stamp_count; ++i) {
+        Stamp stamp = state->stamps[i];
+        LleWatercolorRefreshStamp refresh_stamp = {
+                stamp.initial_size, stamp.size, stamp.alpha};
+        int receives_extra_age = state->stamp_count > 20U
+                && i < state->stamp_count - 20U;
+        lle_watercolor_refresh_advance_primary_phased(&refresh_stamp,
+                receives_extra_age, stock_ticks,
+                &stamp.adaptive_growth_multiplier,
+                &stamp.adaptive_growth_progress,
+                &stamp.adaptive_growth_alpha_step);
+        stamp.size = refresh_stamp.size;
+        stamp.alpha = refresh_stamp.alpha;
         if (stamp.alpha < kStampAlphaLimit) {
             state->stamps[output++] = stamp;
         }
@@ -766,7 +840,7 @@ static void render_radial(WatercolorState *state) {
 }
 
 static void render_advection_pass(WatercolorState *state,
-        int read_index, int write_index) {
+        int read_index, int write_index, float stock_ticks) {
     glBindFramebuffer(GL_FRAMEBUFFER, state->density_fbos[write_index]);
     glViewport(0, 0, state->density_width, state->density_height);
     glDisable(GL_BLEND);
@@ -780,6 +854,9 @@ static void render_advection_pass(WatercolorState *state,
     bind_texture_location(locations->u_original, state->background_texture, 3);
     glUniform1f(locations->u_noise_scalar, kNoiseVectorScalar);
     glUniform1f(locations->u_radial_scalar, kRadialVectorScalar);
+    glUniform1f(locations->u_frame_scale, stock_ticks);
+    glUniform1f(locations->u_relaxation,
+            lle_watercolor_refresh_fraction(0.03f, stock_ticks));
     draw_full_quad(locations->a_position, locations->a_uv);
     state->density_read_index = write_index;
 }
@@ -798,23 +875,23 @@ static void seed_density(WatercolorState *state) {
      * builds preserve the intended recurrence with defined ping-pong. The
      * opt-in stock topology exists only for controlled A/B captures. */
 #if LLE_WATERCOLOR_STOCK_FEEDBACK
-    render_advection_pass(state, 0, 0);
-    render_advection_pass(state, 0, 0);
+    render_advection_pass(state, 0, 0, 1.0f);
+    render_advection_pass(state, 0, 0, 1.0f);
 #else
-    render_advection_pass(state, 0, 1);
-    render_advection_pass(state, 1, 0);
+    render_advection_pass(state, 0, 1, 1.0f);
+    render_advection_pass(state, 1, 0, 1.0f);
 #endif
     state->density_read_index = 0;
     state->density_seeded = 1;
 }
 
-static void render_advection(WatercolorState *state) {
+static void render_advection(WatercolorState *state, float stock_ticks) {
 #if LLE_WATERCOLOR_STOCK_FEEDBACK
     render_advection_pass(state,
-            state->density_read_index, state->density_read_index);
+            state->density_read_index, state->density_read_index, stock_ticks);
 #else
     int write_index = 1 - state->density_read_index;
-    render_advection_pass(state, state->density_read_index, write_index);
+    render_advection_pass(state, state->density_read_index, write_index, stock_ticks);
 #endif
 }
 
@@ -1108,10 +1185,55 @@ Java_com_samsung_android_visualeffect_lock_common_Native_draw(
     int has_stamps = state->stamp_count > 0 || state->secondary_count > 0;
     if (has_stamps) {
         render_radial(state);
-        render_advection(state);
+        render_advection(state, 1.0f);
     }
     render_mix(state);
     state->frame_number++;
+    return has_stamps || state->gesture_active || state->unlock_special
+            ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_codex_lle_WatercolorArm64Native_drawAdaptive(
+        JNIEnv *env, jobject object, jfloat elapsed_seconds) {
+    WatercolorState *state = get_state(env, object);
+    if (state == NULL || !state->initialized) return JNI_FALSE;
+    if (g_paused || state->paused) {
+        clear_default_framebuffer(state);
+        return JNI_FALSE;
+    }
+    if (state->clear_requested) {
+        state->clear_requested = 0;
+        clear_default_framebuffer(state);
+    }
+    if (!state->background_ready || !state->texture_assets_ready) {
+        clear_default_framebuffer(state);
+        return JNI_FALSE;
+    }
+    if (!state->density_seeded) {
+        seed_density(state);
+    }
+
+    /* Java discards first/duplicate/stalled frames. Keep the native boundary
+     * defensive as well, and never replay a compositor backlog. */
+    float stock_ticks = 0.0f;
+    if (isfinite(elapsed_seconds) && elapsed_seconds > 0.0f
+            && elapsed_seconds <= (1.0f / 28.0f)) {
+        stock_ticks = elapsed_seconds * 60.0f;
+    }
+    float remaining = stock_ticks;
+    while (remaining > 0.000001f) {
+        float step = remaining > 1.0f ? 1.0f : remaining;
+        update_stamps_adaptive(state, step);
+        if (state->stamp_count > 0 || state->secondary_count > 0) {
+            render_radial(state);
+            render_advection(state, step);
+        }
+        remaining -= step;
+    }
+    render_mix(state);
+    state->frame_number++;
+    int has_stamps = state->stamp_count > 0 || state->secondary_count > 0;
     return has_stamps || state->gesture_active || state->unlock_special
             ? JNI_TRUE : JNI_FALSE;
 }

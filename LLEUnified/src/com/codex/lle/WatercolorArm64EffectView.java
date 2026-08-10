@@ -13,6 +13,7 @@ import android.media.SoundPool;
 import android.opengl.GLSurfaceView;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.Choreographer;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,6 +31,11 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "LLE64Watercolor";
     private static final long FRAME_INTERVAL_MS = 16L;
+    /* A 30 Hz display presents every 33.333 ms. Keep the 1/28 s tolerance in
+     * lockstep with the native bridge, then discard a larger compositor gap
+     * rather than replaying an old watercolor feedback step after a stall. */
+    private static final long MAX_ADAPTIVE_FRAME_DELTA_NS = 35_714_286L;
+    private static final float NANOS_TO_SECONDS = 1.0f / 1_000_000_000.0f;
     private static final long MIN_AFFORDANCE_DELAY_MS = 1_000L;
     private static final long LONG_PRESS_SOUND_MS = 411L;
 
@@ -37,6 +43,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
             new AtomicReference<WatercolorArm64EffectView>();
 
     private final FrameLayout windowHost;
+    private final boolean adaptiveRefresh;
     private final WatercolorRenderer renderer = new WatercolorRenderer();
     private final Object bitmapLock = new Object();
     private final Object readinessLock = new Object();
@@ -63,6 +70,8 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
     private int readinessState = UnlockEffectReadiness.STATE_CONSTRUCTED;
     private String readinessDetail = "constructed";
     private UnlockEffectReadiness.ReadinessListener readinessListener;
+    /* Written at display vsync on the UI thread and consumed by the GL thread. */
+    private volatile long adaptiveFrameTimeNs = Long.MIN_VALUE;
 
     private final Runnable animationRunnable = new Runnable() {
         @Override
@@ -75,8 +84,30 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
         }
     };
 
+    private final Choreographer.FrameCallback adaptiveFrameCallback =
+            new Choreographer.FrameCallback() {
+                @Override
+                public void doFrame(long frameTimeNanos) {
+                    if (destroyed || paused || !animationScheduled) {
+                        return;
+                    }
+                    adaptiveFrameTimeNs = frameTimeNanos;
+                    requestRender();
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            };
+
     public WatercolorArm64EffectView(Context context) {
+        this(context, false);
+    }
+
+    /**
+     * Opt-in display-refresh path. The default remains the recovered 16 ms
+     * scheduler and native {@link WatercolorArm64Native#draw()} entry point.
+     */
+    WatercolorArm64EffectView(Context context, boolean adaptiveRefresh) {
         super(context);
+        this.adaptiveRefresh = adaptiveRefresh;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -393,8 +424,14 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
         animationGeneration++;
         if (!animationScheduled) {
             animationScheduled = true;
-            removeCallbacks(animationRunnable);
-            post(animationRunnable);
+            resetAdaptiveFrameClock();
+            if (adaptiveRefresh) {
+                Choreographer.getInstance().removeFrameCallback(adaptiveFrameCallback);
+                Choreographer.getInstance().postFrameCallback(adaptiveFrameCallback);
+            } else {
+                removeCallbacks(animationRunnable);
+                post(animationRunnable);
+            }
         }
     }
 
@@ -402,6 +439,22 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
         animationGeneration++;
         animationScheduled = false;
         removeCallbacks(animationRunnable);
+        if (adaptiveRefresh) {
+            Choreographer.getInstance().removeFrameCallback(adaptiveFrameCallback);
+        }
+        resetAdaptiveFrameClock();
+    }
+
+    private void resetAdaptiveFrameClock() {
+        adaptiveFrameTimeNs = Long.MIN_VALUE;
+        if (adaptiveRefresh) {
+            queueEvent(new Runnable() {
+                @Override
+                public void run() {
+                    renderer.resetAdaptiveFrameClock();
+                }
+            });
+        }
     }
 
     private void cancelPendingAffordance() {
@@ -509,6 +562,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
 
     private final class WatercolorRenderer implements GLSurfaceView.Renderer {
         private WatercolorArm64Native nativeBridge;
+        private final AdaptiveFrameClock adaptiveFrameClock = new AdaptiveFrameClock();
         private boolean initialized;
         private boolean assetsUploaded;
         private boolean firstFrameReported;
@@ -527,6 +581,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
                 assetsUploaded = false;
                 firstFrameReported = false;
                 uploadedBackgroundSerial = -1L;
+                adaptiveFrameClock.reset();
                 markReadiness(UnlockEffectReadiness.STATE_ATTACHED, "surface created");
             } catch (Throwable error) {
                 constructionFailed = true;
@@ -543,6 +598,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
             }
             try {
                 nativeBridge.init(Math.max(1, width), Math.max(1, height), true);
+                adaptiveFrameClock.reset();
                 initialized = true;
                 uploadAssets();
                 uploadBackgroundIfNeeded();
@@ -564,13 +620,16 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
             }
             try {
                 uploadBackgroundIfNeeded();
-                boolean active = nativeBridge.draw();
+                boolean active = adaptiveRefresh
+                        ? nativeBridge.drawAdaptive(adaptiveElapsedSeconds())
+                        : nativeBridge.draw();
                 if (!firstFrameReported) {
                     firstFrameReported = true;
                     markReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                             "first native frame drawn");
                 }
                 if (!active && !gestureActive) {
+                    adaptiveFrameClock.reset();
                     post(new Runnable() {
                         @Override
                         public void run() {
@@ -643,6 +702,45 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
             assetsUploaded = false;
             firstFrameReported = false;
             uploadedBackgroundSerial = -1L;
+            adaptiveFrameClock.reset();
+        }
+
+        private float adaptiveElapsedSeconds() {
+            long elapsedNs = adaptiveFrameClock.advance(adaptiveFrameTimeNs);
+            return elapsedNs <= 0L ? 0.0f : elapsedNs * NANOS_TO_SECONDS;
+        }
+
+        private void resetAdaptiveFrameClock() {
+            adaptiveFrameClock.reset();
+        }
+    }
+
+    /**
+     * Monotonic display-frame clock with no accumulator. A first frame,
+     * duplicate timestamp or stalled compositor frame deliberately reaches the
+     * native feedback renderer as zero elapsed time, never as recovered debt.
+     */
+    private static final class AdaptiveFrameClock {
+        private long previousFrameNs = Long.MIN_VALUE;
+
+        long advance(long frameTimeNs) {
+            if (frameTimeNs == Long.MIN_VALUE) {
+                return 0L;
+            }
+            if (previousFrameNs == Long.MIN_VALUE) {
+                previousFrameNs = frameTimeNs;
+                return 0L;
+            }
+            long elapsedNs = frameTimeNs - previousFrameNs;
+            previousFrameNs = frameTimeNs;
+            if (elapsedNs <= 0L || elapsedNs > MAX_ADAPTIVE_FRAME_DELTA_NS) {
+                return 0L;
+            }
+            return elapsedNs;
+        }
+
+        void reset() {
+            previousFrameNs = Long.MIN_VALUE;
         }
     }
 

@@ -42,8 +42,12 @@ No ARM32 object, STL layout or function pointer crosses the ABI boundary.
 - Normal radial timestep is
   `clamp((size - baselineSize) * 0.01, 0.1, 1.0)`. The baseline is immutable,
   not the size from the previous frame.
-- The Samsung DEX renderer is paced at 60 Hz, keeping the frame-stepped state
-  consistent on 60/80/120 Hz panels.
+- Stock mode keeps Samsung's recovered 60 Hz renderer cadence. The 1.0.5.5
+  experimental high-refresh path receives elapsed display-frame time and
+  advances only the recovered simulation operators in `watercolor_refresh.c`
+  by equivalent 60 Hz tick units. This preserves the 60 Hz wall-clock pace
+  while allowing 60-144 Hz presentation; it is not enabled as a production
+  fidelity claim until the physical gates below are accepted.
 
 `showUnlock` activates the persistent stock special state. It snapshots the
 primary queue into exactly four secondary events, updates them first with
@@ -120,7 +124,9 @@ evidence and controlled density-topology A/B protocol are recorded in
 - Watercolor instances are destroyed and reconstructed after detach; a stale
   Samsung `GLTextureViewRenderer` is never reattached.
 - EGL config is patched from RGB888/alpha 0 to RGBA8888/alpha 8.
-- `WaterColorRenderer.onDrawFrame` calls the app's 60 Hz pacer.
+- `WaterColorRenderer.onDrawFrame` retains the recovered 60 Hz stock path;
+  the experimental adaptive branch uses the app's measured display-frame
+  interval and drops first, duplicate and stalled-frame backlog.
 - Special textures resolve from package `com.codex.lle` and retain original
   unscaled dimensions.
 - Audio matches stock ordering: tap on DOWN, optional second tap on release
@@ -165,3 +171,20 @@ accepted for the project's early-alpha fidelity target. Further comparison can
 still use paired frame captures for exact legacy RNG sequences and optional
 parameter/action paths. The transparent boundary can only match stock exactly
 while the cached screenshot remains aligned with live SystemUI.
+
+## Experimental high-refresh handoff (1.0.5.5)
+
+`watercolor_refresh.c` is linked into `libsecveSrkCommon.so`; the ARM64 build
+also verifies the `WatercolorArm64Native.drawAdaptive(float)` JNI export. The
+portable regression gate compiles this core independently and checks stock-tick
+identity, 60/90/120/144 Hz wall-clock equivalence, a defensive 30 Hz stress
+path, fractional composition, unlock-gate timing and shader relaxation
+composition.
+
+This only establishes deterministic math and build integration. Physical
+acceptance remains open: compare stock versus HFR at 60/96/120 Hz on the S23,
+capture long stroke/tail/unlock behavior, check GPU/jank at 120/144 Hz, and
+run tablet rotation plus Fold cover/main-display transitions. Stable ping-pong
+and the optional literal-feedback A/B must each be assessed separately: GLES2
+feedback topology can make a visually smooth high-rate result diverge from the
+ARM32 oracle.

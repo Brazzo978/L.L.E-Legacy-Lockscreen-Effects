@@ -94,6 +94,10 @@ struct LleColourSim {
   float particle_size_control;
   float breath_phase;
   float breath_accumulator;
+  float adaptive_unlock_delay_ticks;
+  float adaptive_unlock_tail_ticks;
+  float adaptive_live_emit_credit;
+  float adaptive_affordance_emit_credit;
   bool touching;
   bool unlocking;
   bool unlock_finished;
@@ -105,7 +109,10 @@ struct LleColourSim {
  * Its satellite-emission phase therefore survives app destruction/recreation
  * for the lifetime of the loaded native library.
  */
+/* Recovered stock cadence: preserve its integer global phase exactly. */
 static uint32_t g_subparticle_counter;
+/* Adaptive cadence is independently global across renderer recreation. */
+static float g_adaptive_subparticle_phase;
 
 static float clampf(float value, float minimum, float maximum) {
   if (value < minimum) {
@@ -118,6 +125,22 @@ static float clampf(float value, float minimum, float maximum) {
 }
 
 static float minf(float a, float b) { return a < b ? a : b; }
+
+/* Applies a stock per-frame blend/multiplier over a fractional stock frame. */
+static float scaled_blend(float full_frame_blend, float frame_scale) {
+  if (frame_scale == 1.0f) {
+    return full_frame_blend;
+  }
+  return 1.0f - powf(1.0f - full_frame_blend, frame_scale);
+}
+
+static float scaled_multiplier(float full_frame_multiplier,
+                               float frame_scale) {
+  if (frame_scale == 1.0f) {
+    return full_frame_multiplier;
+  }
+  return powf(full_frame_multiplier, frame_scale);
+}
 
 static float colour_world_width(const LleColourSim *sim) {
   const float aspect = sim->width > 0.0f ? sim->height / sim->width : 1.0f;
@@ -618,15 +641,18 @@ static void apply_sph_forces(LleColourSim *sim, bool primary,
 
 static void update_particle_growth(const LleColourSim *sim,
                                    LleColourParticle *particle,
-                                   float increment) {
+                                   float increment,
+                                   float frame_scale) {
   const float target_radius = stock_cell_width_px(sim) * 3.7f;
   const float target_density = sim->project_kind == 1 ? 6.0f : 4.0f;
   float interpolation;
   if (particle->scale >= 1.0f) {
     return;
   }
-  particle->scale = minf(particle->scale + increment, 1.0f);
+  particle->scale = minf(particle->scale + increment * frame_scale, 1.0f);
   interpolation = sine_in_out33(particle->scale);
+  /* Fractional display frames need the equivalent temporal relaxation. */
+  interpolation = scaled_blend(interpolation, frame_scale);
   particle->smoothing_radius +=
       (target_radius - particle->smoothing_radius) * interpolation;
   particle->rest_density +=
@@ -671,7 +697,8 @@ static void constrain_particle(const LleColourSim *sim,
  * its inertial/collision path.
  */
 static void update_released_edge_offset(const LleColourSim *sim,
-                                        LleColourParticle *particle) {
+                                        LleColourParticle *particle,
+                                        float frame_scale) {
   const float margin = sim->width * 0.15f;
   const float edge_kick =
       0.35f * pixels_per_world_unit(sim) * (1.0f / 240.0f);
@@ -680,32 +707,36 @@ static void update_released_edge_offset(const LleColourSim *sim,
     const float direction =
         particle->x < sim->width * 0.5f ? -1.0f : 1.0f;
     particle->render_offset_x =
-        particle->render_offset_x * 1.05f + direction * edge_kick;
+        particle->render_offset_x * scaled_multiplier(1.05f, frame_scale) +
+        direction * edge_kick * frame_scale;
   }
   if (particle->y < margin || particle->y > sim->height - margin) {
     const float direction =
         particle->y < sim->height * 0.5f ? -1.0f : 1.0f;
     particle->render_offset_y =
-        particle->render_offset_y * 1.05f + direction * edge_kick;
+        particle->render_offset_y * scaled_multiplier(1.05f, frame_scale) +
+        direction * edge_kick * frame_scale;
   }
 }
 
-static void advance_subparticle(LleColourSim *sim, LleColourGroup *group) {
+static void advance_subparticle(LleColourSim *sim, LleColourGroup *group,
+                                float frame_scale) {
   LleColourParticle *particle = &group->particles[0];
-  const float time_step = 1.0f / 60.0f;
+  const float time_step = (1.0f / 60.0f) * frame_scale;
   const float pixels_per_world = pixels_per_world_unit(sim);
   if (!particle->active) {
     return;
   }
-  particle->x += particle->velocity_x +
+  particle->x += particle->velocity_x * frame_scale +
                  sim->sensor_acceleration_x * pixels_per_world * time_step;
-  particle->y += particle->velocity_y +
+  particle->y += particle->velocity_y * frame_scale +
                  sim->sensor_acceleration_y * pixels_per_world * time_step;
-  particle->age += 1.0f;
+  particle->age += frame_scale;
   if (particle->age < 20.0f) {
-    particle->scale += 0.19f * (particle->target_scale - particle->scale);
+    particle->scale += scaled_blend(0.19f, frame_scale) *
+                       (particle->target_scale - particle->scale);
   } else {
-    particle->scale -= 0.016f * particle->fade_rate;
+    particle->scale -= 0.016f * particle->fade_rate * frame_scale;
   }
   if (particle->scale < 0.0f) {
     particle->active = false;
@@ -767,9 +798,10 @@ static void integrate_sph_domain(LleColourSim *sim, bool primary,
   }
 }
 
-static void advance_sph_domain(LleColourSim *sim, bool primary) {
+static void advance_sph_domain(LleColourSim *sim, bool primary,
+                               float frame_scale) {
   size_t substep;
-  const float stock_time_step = 1.0f / 60.0f;
+  const float stock_time_step = (1.0f / 60.0f) * frame_scale;
   size_t group_index;
 
   if (primary) {
@@ -831,7 +863,8 @@ static void stage_sph_domain_acceleration(LleColourSim *sim) {
  *   4. delete once 2-progress reaches 0.15.
  */
 static void advance_affordance_state(LleColourSim *sim,
-                                     LleColourGroup *group) {
+                                     LleColourGroup *group,
+                                     float frame_scale) {
   const bool fading = group->age >= 1.0f;
   bool all_mature =
       group->count >= LLE_COLOUR_LIVE_GROUP_PARTICLES;
@@ -878,17 +911,17 @@ static void advance_affordance_state(LleColourSim *sim,
       }
     } else if (particle->scale < 0.5f) {
       all_mature = false;
-      update_particle_growth(sim, particle, 0.0216666659f);
+      update_particle_growth(sim, particle, 0.0216666659f, frame_scale);
     }
 
     dx = group->center_x - particle->x;
     dy = group->center_y - particle->y;
     distance = sqrtf(dx * dx + dy * dy);
     if (distance > sim->width * 0.16f) {
-      particle->transient_force_x += 0.75f * dx;
-      particle->transient_force_y += 0.75f * dy;
-      particle->velocity_x *= 0.9f;
-      particle->velocity_y *= 0.9f;
+      particle->transient_force_x += 0.75f * dx * frame_scale;
+      particle->transient_force_y += 0.75f * dy * frame_scale;
+      particle->velocity_x *= scaled_multiplier(0.9f, frame_scale);
+      particle->velocity_y *= scaled_multiplier(0.9f, frame_scale);
     }
   }
 
@@ -905,7 +938,7 @@ static void advance_affordance_state(LleColourSim *sim,
       particle->smoothing_radius = 0.0f;
     }
   } else if (fading) {
-    group->age += 0.02f;
+    group->age += 0.02f * frame_scale;
   }
 
   if (finished) {
@@ -948,7 +981,8 @@ static void advance_affordance_state(LleColourSim *sim,
  * delta.  The engine clears its per-particle force during integration; stock
  * updateSPH then adds this same retained delta again on the next display tick.
  */
-static void advance_group_state(LleColourSim *sim, LleColourGroup *group) {
+static void advance_group_state(LleColourSim *sim, LleColourGroup *group,
+                                float frame_scale) {
   const bool held = group->phase == LLE_COLOUR_GROUP_TOUCH;
   const bool released = group->phase == LLE_COLOUR_GROUP_RELEASED;
   const bool affordance = group->phase == LLE_COLOUR_GROUP_AFFORDANCE;
@@ -959,11 +993,11 @@ static void advance_group_state(LleColourSim *sim, LleColourGroup *group) {
   size_t index;
 
   if (affordance) {
-    advance_affordance_state(sim, group);
+    advance_affordance_state(sim, group, frame_scale);
     return;
   }
   if (released) {
-    group->age = minf(group->age + 0.015f, 1.0f);
+    group->age = minf(group->age + 0.015f * frame_scale, 1.0f);
   }
   for (index = 0; index < group->count; ++index) {
     LleColourParticle *particle = &group->particles[index];
@@ -974,9 +1008,9 @@ static void advance_group_state(LleColourSim *sim, LleColourGroup *group) {
       continue;
     }
     if (held) {
-      update_particle_growth(sim, particle, 0.0241666675f);
-      particle->transient_force_x += sim->touch_velocity_x;
-      particle->transient_force_y += sim->touch_velocity_y;
+      update_particle_growth(sim, particle, 0.0241666675f, frame_scale);
+      particle->transient_force_x += sim->touch_velocity_x * frame_scale;
+      particle->transient_force_y += sim->touch_velocity_y * frame_scale;
     } else if (released) {
       if (group->age >= 0.3f) {
         const float fade_source =
@@ -998,22 +1032,22 @@ static void advance_group_state(LleColourSim *sim, LleColourGroup *group) {
           released_growth_max = current_scale;
         }
         if (below_running_max || current_scale < 0.35f) {
-          update_particle_growth(sim, particle, 1.0f / 60.0f);
+          update_particle_growth(sim, particle, 1.0f / 60.0f, frame_scale);
           particle->released_scale = particle->scale;
           particle->released_radius = particle->smoothing_radius;
         }
       }
-      update_released_edge_offset(sim, particle);
+      update_released_edge_offset(sim, particle, frame_scale);
     }
 
     dx = target_x - particle->x;
     dy = target_y - particle->y;
     distance = sqrtf(dx * dx + dy * dy);
     if (held && distance > sim->width * 0.16f) {
-      particle->transient_force_x += 1.5f * dx;
-      particle->transient_force_y += 1.5f * dy;
-      particle->velocity_x *= 0.6f;
-      particle->velocity_y *= 0.6f;
+      particle->transient_force_x += 1.5f * dx * frame_scale;
+      particle->transient_force_y += 1.5f * dy * frame_scale;
+      particle->velocity_x *= scaled_multiplier(0.6f, frame_scale);
+      particle->velocity_y *= scaled_multiplier(0.6f, frame_scale);
     }
 
   }
@@ -1275,6 +1309,10 @@ void lle_colour_sim_reset(LleColourSim *sim) {
   sim->touch_time_ms = 0u;
   sim->unlock_delay_frames = 10;
   sim->unlock_tail_frames = 60;
+  sim->adaptive_unlock_delay_ticks = 10.0f;
+  sim->adaptive_unlock_tail_ticks = 60.0f;
+  sim->adaptive_live_emit_credit = 0.0f;
+  sim->adaptive_affordance_emit_credit = 0.0f;
   sim->unlock_progress = 0.0f;
   sim->particle_size_control = 140.0f;
   sim->breath_phase = 0.0f;
@@ -1391,8 +1429,8 @@ void lle_colour_sim_tick(LleColourSim *sim) {
    * Native updateSPH ordering: update both SPH engines twice, emit, rebuild
    * the live vector, then apply growth and touch/restorative impulses.
    */
-  advance_sph_domain(sim, true);
-  advance_sph_domain(sim, false);
+  advance_sph_domain(sim, true, 1.0f);
+  advance_sph_domain(sim, false, 1.0f);
 
   if (sim->touching && sim->current_group != LLE_COLOUR_INVALID_GROUP) {
     LleColourGroup *group = &sim->groups[sim->current_group];
@@ -1434,7 +1472,7 @@ void lle_colour_sim_tick(LleColourSim *sim) {
     LleColourGroup *group = &sim->groups[group_index];
     if (group->phase != LLE_COLOUR_GROUP_FREE &&
         group->phase != LLE_COLOUR_GROUP_SUBPARTICLE) {
-      advance_group_state(sim, group);
+      advance_group_state(sim, group, 1.0f);
     }
   }
 
@@ -1445,7 +1483,7 @@ void lle_colour_sim_tick(LleColourSim *sim) {
        ++group_index) {
     LleColourGroup *group = &sim->groups[group_index];
     if (group->phase == LLE_COLOUR_GROUP_SUBPARTICLE) {
-      advance_subparticle(sim, group);
+      advance_subparticle(sim, group, 1.0f);
     }
   }
 
@@ -1490,11 +1528,231 @@ void lle_colour_sim_tick(LleColourSim *sim) {
   }
 }
 
+void lle_colour_sim_tick_scaled(LleColourSim *sim, float frame_scale) {
+  size_t group_index;
+  if (sim == NULL || !isfinite(frame_scale) || frame_scale <= 0.0f) {
+    return;
+  }
+  /* Host discards stalls; retain every valid scaled delta without a floor/cap. */
+  /*
+   * The recovered SPH step is stable at one stock frame. Recursively split
+   * larger valid deltas (including 30 Hz × 2.0 = 4.0) without discarding time.
+   */
+  if (frame_scale > 1.0f) {
+    const bool direction_pulse = sim->direction_target_pending;
+    const float direction_x = sim->direction_move_delta_x *
+        sim->draw_params.restore_ratio;
+    const float direction_y = sim->direction_move_delta_y *
+        sim->draw_params.restore_ratio;
+    lle_colour_sim_tick_scaled(sim, frame_scale * 0.5f);
+    lle_colour_sim_tick_scaled(sim, frame_scale * 0.5f);
+    /* The second stability substep must not erase this display-frame pulse. */
+    if (direction_pulse) {
+      sim->draw_params.direction_velocity_x = direction_x;
+      sim->draw_params.direction_velocity_y = direction_y;
+    }
+    return;
+  }
+
+  if (sim->direction_target_pending) {
+    sim->draw_params.direction_velocity_x =
+        sim->direction_move_delta_x * sim->draw_params.restore_ratio;
+    sim->draw_params.direction_velocity_y =
+        sim->direction_move_delta_y * sim->draw_params.restore_ratio;
+  } else {
+    sim->draw_params.direction_velocity_x = 0.0f;
+    sim->draw_params.direction_velocity_y = 0.0f;
+  }
+  sim->direction_target_pending = false;
+
+  if (!sim->unlocking) {
+    const float half_width = sim->width * 0.5f;
+    const float half_height = sim->height * 0.5f;
+    const float follow = scaled_blend(0.05f, frame_scale);
+    sim->breath_phase += 0.02f * frame_scale;
+    sim->breath_accumulator += sinf(sim->breath_phase) * frame_scale;
+    if (sim->breath_phase >= 2.0f * LLE_COLOUR_PI) {
+      sim->breath_phase = 0.0f;
+      sim->breath_accumulator = 0.0f;
+    }
+    sim->background_center_x += follow *
+        (sim->touch_x - sim->background_center_x);
+    sim->background_center_y += follow *
+        (sim->touch_y - sim->background_center_y);
+    sim->draw_params.tab_scale =
+        0.98f + 0.00025f * (sim->breath_accumulator - 50.0f);
+    sim->draw_params.tab_offset_x = half_width > 0.0f
+        ? ((sim->background_center_x - half_width) / half_width) *
+              (1.0f - sim->draw_params.tab_scale) : 0.0f;
+    sim->draw_params.tab_offset_y = half_height > 0.0f
+        ? ((sim->background_center_y - half_height) / half_height) *
+              (1.0f - sim->draw_params.tab_scale) : 0.0f;
+  }
+
+  if (sim->unlocking) {
+    if (sim->particle_size_control < 2000.0f) {
+      sim->particle_size_control *= scaled_multiplier(1.08f, frame_scale);
+    }
+    sim->breath_accumulator *= scaled_multiplier(0.99f, frame_scale);
+    sim->adaptive_unlock_delay_ticks -= frame_scale;
+    if (sim->adaptive_unlock_delay_ticks <= 0.0f) {
+      float edge_source;
+      const float progress = sim->unlock_progress;
+      sim->draw_params.refraction_ratio = quint_out(1.0f - progress);
+      edge_source = powf(progress, 0.125f);
+      sim->draw_params.edge_offset_ratio = quint_out(1.0f - edge_source);
+      if (progress < 1.0f) {
+        sim->unlock_progress = minf(progress + 0.05f * frame_scale, 1.0f);
+      } else {
+        sim->adaptive_unlock_tail_ticks -= frame_scale;
+      }
+    }
+    sim->draw_params.edge_ratio =
+        1.0f - sine_in_out90(sim->unlock_progress);
+  }
+
+  advance_sph_domain(sim, true, frame_scale);
+  advance_sph_domain(sim, false, frame_scale);
+
+  if (sim->touching && sim->current_group != LLE_COLOUR_INVALID_GROUP) {
+    LleColourGroup *group = &sim->groups[sim->current_group];
+    if (group->count < LLE_COLOUR_LIVE_GROUP_PARTICLES) {
+      if (group->count > 0u) {
+        const LleColourParticle *first = &group->particles[0];
+        const float dx = sim->touch_x - first->x;
+        const float dy = sim->touch_y - first->y;
+        if (sqrtf(dx * dx + dy * dy) > sim->width * 0.1f) {
+          group->center_x = first->x;
+          group->center_y = first->y;
+        } else {
+          group->center_x = sim->touch_x;
+          group->center_y = sim->touch_y;
+        }
+      }
+      sim->adaptive_live_emit_credit += 2.0f * frame_scale;
+      const size_t count = (size_t)sim->adaptive_live_emit_credit;
+      if (count > 0u) {
+        emit_particles(sim, group, count, false, true);
+        sim->adaptive_live_emit_credit -= (float)count;
+      }
+      group->center_x = sim->touch_x;
+      group->center_y = sim->touch_y;
+    }
+  } else {
+    sim->adaptive_live_emit_credit = 0.0f;
+  }
+
+  bool has_affordance = false;
+  for (group_index = 0; group_index < LLE_COLOUR_GROUP_CAPACITY;
+       ++group_index) {
+    LleColourGroup *group = &sim->groups[group_index];
+    if (group->phase == LLE_COLOUR_GROUP_AFFORDANCE &&
+        group->count < LLE_COLOUR_LIVE_GROUP_PARTICLES) {
+      has_affordance = true;
+      sim->adaptive_affordance_emit_credit += 2.0f * frame_scale;
+      const size_t count = (size_t)sim->adaptive_affordance_emit_credit;
+      if (count > 0u) {
+        emit_particles(sim, group, count, true, false);
+        sim->adaptive_affordance_emit_credit -= (float)count;
+      }
+    }
+  }
+  if (!has_affordance) {
+    sim->adaptive_affordance_emit_credit = 0.0f;
+  }
+
+  for (group_index = 0; group_index < LLE_COLOUR_GROUP_CAPACITY;
+       ++group_index) {
+    LleColourGroup *group = &sim->groups[group_index];
+    if (group->phase != LLE_COLOUR_GROUP_FREE &&
+        group->phase != LLE_COLOUR_GROUP_SUBPARTICLE) {
+      advance_group_state(sim, group, frame_scale);
+    }
+  }
+  stage_sph_domain_acceleration(sim);
+
+  for (group_index = 0; group_index < LLE_COLOUR_GROUP_CAPACITY;
+       ++group_index) {
+    LleColourGroup *group = &sim->groups[group_index];
+    if (group->phase == LLE_COLOUR_GROUP_SUBPARTICLE) {
+      advance_subparticle(sim, group, frame_scale);
+    }
+  }
+  if (sim->touching && !sim->unlocking) {
+    g_adaptive_subparticle_phase += frame_scale;
+    while (g_adaptive_subparticle_phase >= 13.0f) {
+      emit_subparticle(sim);
+      g_adaptive_subparticle_phase -= 13.0f;
+    }
+  }
+
+  for (group_index = 0; group_index < LLE_COLOUR_GROUP_CAPACITY;
+       ++group_index) {
+    LleColourGroup *group = &sim->groups[group_index];
+    size_t particle_index;
+    bool any_active = false;
+    if (group->phase == LLE_COLOUR_GROUP_FREE) {
+      continue;
+    }
+    for (particle_index = 0; particle_index < group->count; ++particle_index) {
+      if (group->particles[particle_index].active) {
+        any_active = true;
+        break;
+      }
+    }
+    if (!any_active) {
+      /*
+       * At native refresh rates above 60 Hz, the first presentation can carry
+       * less than one whole particle of emission credit.  The stock cleanup
+       * rule must not clear a newly allocated zero-particle group while it is
+       * still waiting for that fractional credit: doing so drops the active
+       * DOWN before the following MOVE/UP and can permanently make the visual
+       * path appear unresponsive.  Affordance groups need the same protection
+       * until their first particle is emitted.
+       */
+      const bool awaiting_fractional_touch_emission =
+          group->phase == LLE_COLOUR_GROUP_TOUCH && group->count == 0u &&
+          sim->touching && sim->current_group == group_index;
+      const bool awaiting_fractional_affordance_emission =
+          group->phase == LLE_COLOUR_GROUP_AFFORDANCE && group->count == 0u &&
+          sim->adaptive_affordance_emit_credit > 0.0f;
+      if (awaiting_fractional_touch_emission ||
+          awaiting_fractional_affordance_emission) {
+        continue;
+      }
+      if (sim->current_group == group_index) {
+        sim->current_group = LLE_COLOUR_INVALID_GROUP;
+        sim->touching = false;
+      }
+      clear_group(group);
+    }
+  }
+  if (sim->unlocking && sim->unlock_progress >= 1.0f &&
+      sim->adaptive_unlock_tail_ticks <= 0.0f) {
+    sim->unlocking = false;
+    sim->unlock_finished = true;
+  }
+}
+
 bool lle_colour_sim_is_idle(const LleColourSim *sim) {
   return sim == NULL || sim->unlock_finished ||
          (!sim->touching && !sim->unlocking &&
                          lle_colour_sim_particle_count(sim) == 0u);
 }
+
+#ifdef LLE_COLOUR_TEST_API
+void lle_colour_sim_test_set_subparticle_phase(float phase) {
+  g_adaptive_subparticle_phase = clampf(phase, 0.0f, 12.999f);
+}
+
+float lle_colour_sim_test_subparticle_phase(void) {
+  return g_adaptive_subparticle_phase;
+}
+
+void lle_colour_sim_test_set_stock_subparticle_phase(uint32_t phase) {
+  g_subparticle_counter = phase % 13u;
+}
+#endif
 
 size_t lle_colour_sim_particle_count(const LleColourSim *sim) {
   size_t group_index;

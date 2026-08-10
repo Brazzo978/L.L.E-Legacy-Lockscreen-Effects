@@ -104,6 +104,28 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
     };
 
     public S6WaterDropletAppOwnedEffectView(Context context) {
+        this(context, false, 1.0f);
+    }
+
+    /**
+     * Creates a renderer whose simulation clock is fixed for its lifetime.
+     * The normal production entry point delegates with {@code false}; callers
+     * that expose the experimental native-refresh preference must recreate the
+     * effect when its value changes.
+     */
+    public S6WaterDropletAppOwnedEffectView(
+            Context context, boolean nativeRefreshPhysics) {
+        this(context, nativeRefreshPhysics, 1.0f);
+    }
+
+    /**
+     * Experimental speed multiplier for the native-refresh branch. It is
+     * intentionally ignored by the fixed recovered 60 Hz renderer.
+     */
+    public S6WaterDropletAppOwnedEffectView(
+            Context context,
+            boolean nativeRefreshPhysics,
+            float nativeRefreshSpeedMultiplier) {
         super(context);
         appContext = context.getApplicationContext();
         setClipChildren(false);
@@ -164,7 +186,9 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
                 projectKind,
                 Math.min(width, height),
                 Math.max(width, height),
-                this);
+                this,
+                nativeRefreshPhysics,
+                nativeRefreshSpeedMultiplier);
         addView(
                 glView,
                 new LayoutParams(

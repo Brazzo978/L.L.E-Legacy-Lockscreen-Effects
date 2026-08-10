@@ -131,6 +131,16 @@ bool lle_s6_water_sim_consume_deferred_reset(LleS6WaterSim *sim);
  */
 void lle_s6_water_sim_tick(LleS6WaterSim *sim);
 
+/*
+ * Experimental display-clock variant. frame_scale is elapsed display time in
+ * recovered 60 Hz ticks (for example 0.5 at 120 Hz, 1.0 at 60 Hz and 2.0 at
+ * 30 Hz). Unlike repeating the stock tick at each vsync, this scales the
+ * integrator, temporal envelopes and finite lifetimes together. Callers must
+ * clamp stalls instead of replaying accumulated time.
+ */
+void lle_s6_water_sim_tick_native_refresh(LleS6WaterSim *sim,
+                                          float frame_scale);
+
 bool lle_s6_water_sim_is_idle(const LleS6WaterSim *sim);
 size_t lle_s6_water_sim_particle_count(const LleS6WaterSim *sim);
 
@@ -158,7 +168,12 @@ typedef struct LleS6WaterTestParticleState {
   float transient_force_x;
   float transient_force_y;
   float phase;
+  float smoothing_radius;
   float rest_density;
+  float pressure;
+  float near_pressure;
+  float unlock_progress;
+  float unlock_delay_ticks;
   uint32_t flags;
 } LleS6WaterTestParticleState;
 

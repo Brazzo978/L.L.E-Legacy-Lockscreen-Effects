@@ -23,6 +23,10 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     private static final int SOUND_UNLOCK = 1;
     private static final int SOUND_DRAG = 2;
     private static final long STOCK_MOVE_STEP_MS = 16L;
+    private static final float STOCK_REFERENCE_SHORT_SIDE_DP = 360f;
+    private static final float DISPLAY_SCALE_BOOST = 1.5f;
+    private static final float DISPLAY_SCALE_MIN = 1f;
+    private static final float DISPLAY_SCALE_MAX = 2.5f;
     private static final float PARTICLE_MOVE_MIN_DP = 1f;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG
@@ -127,7 +131,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             }
             float dx = screenX - lastParticleX;
             float dy = screenY - lastParticleY;
-            float minimumTravel = PARTICLE_MOVE_MIN_DP * density();
+            float minimumTravel = PARTICLE_MOVE_MIN_DP * density() * displaySizeScale();
             if (dx * dx + dy * dy >= minimumTravel * minimumTravel) {
                 spawnParticle(screenX, screenY);
                 lastParticleX = screenX;
@@ -143,7 +147,9 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             playSound(SOUND_UNLOCK);
         }
         gestureActive = false;
-        particles.clear();
+        // Let already-emitted seasonal particles finish their recovered fade/rotation
+        // timeline after UP. Immediate clearing made a normal tap look like the entire
+        // effect was abruptly cut off; cancel/reset still remain hard cleanup paths.
         clearTouchSprites();
         invalidate();
     }
@@ -228,12 +234,16 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
 
     private void positionTouchSprites(float x, float y, boolean advanceDrift) {
         float d = density();
+        float displayScale = displaySizeScale();
         int season = activeSeason;
         for (int i = 0; i < touchSprites.length; i++) {
             TouchSprite touch = touchSprites[i];
             if (touch == null) {
                 continue;
             }
+            // These offsets are the decoded sprite half-width/half-height in dp, used to
+            // center the bitmap on the finger. Keep them unscaled because drawBitmap()
+            // scales around that existing center; only the intentional outward drift grows.
             touch.x = x - touch.offsetXdp * d;
             touch.y = y - touch.offsetYdp * d;
             // Samsung advances this drift on MOVE. Modern 120 Hz input can also deliver
@@ -244,27 +254,28 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                     if (advanceDrift) {
                         touch.driftDp = Math.min(63f, touch.driftDp + 2f);
                     }
-                    touch.x -= touch.driftDp * d;
-                    touch.y -= touch.driftDp * d;
+                    touch.x -= touch.driftDp * d * displayScale;
+                    touch.y -= touch.driftDp * d * displayScale;
                 } else if (i == 2) {
                     if (advanceDrift) {
                         touch.driftDp = Math.min(81f, touch.driftDp + 2f);
                     }
-                    touch.x -= touch.driftDp * d;
-                    touch.y -= touch.driftDp * d;
+                    touch.x -= touch.driftDp * d * displayScale;
+                    touch.y -= touch.driftDp * d * displayScale;
                 }
             } else if (season == SeasonalDoodleView.SEASON_WINTER && i == 1) {
                 if (advanceDrift) {
                     touch.driftDp = Math.min(10f, touch.driftDp + 2f);
                 }
-                touch.x -= touch.driftDp * d;
-                touch.y -= touch.driftDp * d;
+                touch.x -= touch.driftDp * d * displayScale;
+                touch.y -= touch.driftDp * d * displayScale;
             }
         }
     }
 
     private void spawnParticle(float x, float y) {
         int season = activeSeason;
+        float displayScale = displaySizeScale();
         int randomSlot;
         int spriteIndex;
         float dx;
@@ -274,7 +285,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f;
+            dx = random.nextFloat() * 200f * displayScale;
             addParticle(season, spriteIndex, x - dx, y + dx, springScale(spriteIndex),
                     0.55f, 125L, 375L, 500L, 250L, 750L,
                     random.nextInt(360), 1000L);
@@ -284,7 +295,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f;
+            dx = random.nextFloat() * 200f * displayScale;
             Sprite particle = addParticle(season, spriteIndex, x - dx, y + dx, summerScale(spriteIndex),
                     0.55f, 125L, 375L, 500L, 250L, 500L,
                     359f, 1000L);
@@ -297,7 +308,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f;
+            dx = random.nextFloat() * 200f * displayScale;
             addParticle(season, spriteIndex, x - dx, y + dx, 1f,
                     0.5f, 125L, 375L, 500L, 250L, 750L,
                     random.nextInt(360), 1000L);
@@ -307,7 +318,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 100f;
+            dx = random.nextFloat() * 100f * displayScale;
             if (spriteIndex == 0) {
                 addParticle(season, spriteIndex, x - dx, y + dx,
                         0.6f + 0.1f * random.nextInt(9), 0f,
@@ -452,13 +463,31 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         paint.setAlpha(Math.max(0, Math.min(255, alpha)));
         matrix.reset();
         matrix.postTranslate(-bitmap.getWidth() * 0.5f, -bitmap.getHeight() * 0.5f);
-        matrix.postScale(scale, scale);
+        float renderScale = scale * displaySizeScale();
+        matrix.postScale(renderScale, renderScale);
         if (rotation != 0f) {
             matrix.postRotate(rotation);
         }
         matrix.postTranslate(x + bitmap.getWidth() * 0.5f, y + bitmap.getHeight() * 0.5f);
         canvas.drawBitmap(bitmap, matrix, paint);
         paint.setAlpha(255);
+    }
+
+    private float displaySizeScale() {
+        float density = density();
+        int width = getWidth();
+        int height = getHeight();
+        if (width <= 0 || height <= 0) {
+            width = getResources().getDisplayMetrics().widthPixels;
+            height = getResources().getDisplayMetrics().heightPixels;
+        }
+        if (width <= 0 || height <= 0 || density <= 0f) {
+            return 1f;
+        }
+        float shortSideDp = Math.min(width, height) / density;
+        return Math.max(DISPLAY_SCALE_MIN,
+                Math.min(DISPLAY_SCALE_MAX,
+                        shortSideDp / STOCK_REFERENCE_SHORT_SIDE_DP * DISPLAY_SCALE_BOOST));
     }
 
     private float springScale(int index) {

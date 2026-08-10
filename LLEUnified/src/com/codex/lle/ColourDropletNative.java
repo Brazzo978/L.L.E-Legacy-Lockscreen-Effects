@@ -7,7 +7,7 @@ final class ColourDropletNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_NORMAL = 1;
     static final int TEXTURE_EDGE_DENSITY = 2;
-    static final int BRIDGE_VERSION = 1;
+    static final int BRIDGE_VERSION = 2;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -84,6 +84,14 @@ final class ColourDropletNative {
     static native void nativeResetBackgroundScale(long handle);
 
     static native boolean nativeStep(long handle, float elapsedSeconds);
+
+    /**
+     * Experimental native-refresh physics. The native bridge accepts only
+     * 30–144 Hz and scales recovered 60 Hz coefficients by elapsed time;
+     * multiplier is experimental and valid only from 1.0 through 2.0.
+     */
+    static native boolean nativeStepAtRefresh(
+            long handle, float elapsedSeconds, int physicsHz, float speedMultiplier);
 
     static native boolean nativeDraw(long handle, int width, int height);
 

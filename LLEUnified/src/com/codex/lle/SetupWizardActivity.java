@@ -796,18 +796,7 @@ public class SetupWizardActivity extends Activity {
         automatic.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!automaticSupported) {
-                    Toast.makeText(SetupWizardActivity.this,
-                            "Automatic capture requires Android 11 or newer",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-                for (String profile : FoldDisplayTarget.backgroundProfiles(
-                        SetupWizardActivity.this)) {
-                    OverlayPrefs.useAutomaticEffectBackgroundForAll(
-                            SetupWizardActivity.this, profile);
-                }
-                completeWallpaperChoice(MODE_AUTOMATIC_SCREENSHOT);
+                selectAutomaticScreenshotMode();
             }
         });
         body.addView(automatic, optionParams());
@@ -845,7 +834,12 @@ public class SetupWizardActivity extends Activity {
                             Toast.LENGTH_LONG).show();
                     return;
                 }
-                startWallpaperPicker(MODE_SET_LOCK_AND_CACHE);
+                confirmBetaWallpaperMode(MODE_SET_LOCK_AND_CACHE, new Runnable() {
+                    @Override
+                    public void run() {
+                        startWallpaperPicker(MODE_SET_LOCK_AND_CACHE);
+                    }
+                });
             }
         });
         body.addView(setAndCache, optionParams());
@@ -857,11 +851,75 @@ public class SetupWizardActivity extends Activity {
         exactCache.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startCurrentLockscreenWallpaperImport();
+                confirmBetaWallpaperMode(MODE_CACHE_ONLY, new Runnable() {
+                    @Override
+                    public void run() {
+                        startCurrentLockscreenWallpaperImport();
+                    }
+                });
             }
         });
         body.addView(exactCache, optionParams());
         return scroll(body);
+    }
+
+    private void selectAutomaticScreenshotMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Toast.makeText(this,
+                    "Automatic capture requires Android 11 or newer",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        for (String profile : FoldDisplayTarget.backgroundProfiles(this)) {
+            OverlayPrefs.useAutomaticEffectBackgroundForAll(this, profile);
+        }
+        completeWallpaperChoice(MODE_AUTOMATIC_SCREENSHOT);
+    }
+
+    private void confirmBetaWallpaperMode(final String mode, final Runnable proceed) {
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure?")
+                .setMessage("This wallpaper mode is still beta. Automatic screenshot is the "
+                        + "recommended and safest option.")
+                .setNegativeButton("Use automatic screenshot",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                selectAutomaticScreenshotMode();
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        showFinalBetaWallpaperConfirmation(mode, proceed);
+                    }
+                })
+                .show();
+    }
+
+    private void showFinalBetaWallpaperConfirmation(String mode, final Runnable proceed) {
+        String description = MODE_SET_LOCK_AND_CACHE.equals(mode)
+                ? "L.L.E will set and cache a manually aligned lockscreen wallpaper."
+                : "L.L.E will use a manually supplied or imported fixed colormap.";
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure sure?")
+                .setMessage(description + " Continue only if you understand how this differs "
+                        + "from Automatic screenshot.")
+                .setNegativeButton("Please use automatic screenshot if you don't know what "
+                                + "you're doing",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                selectAutomaticScreenshotMode();
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        proceed.run();
+                    }
+                })
+                .show();
     }
 
     private Switch tabletModeToggle() {

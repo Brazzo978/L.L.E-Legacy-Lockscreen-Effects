@@ -96,6 +96,26 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
     };
 
     public SparklingBubblesAppOwnedEffectView(Context context) {
+        this(context, false, 1.0f);
+    }
+
+    /**
+     * Experimental constructor used only when a fresh renderer is requested.
+     * The default constructor keeps the recovered 60 Hz state machine.
+     */
+    SparklingBubblesAppOwnedEffectView(
+            Context context, boolean nativeRefreshPhysicsEnabled) {
+        this(context, nativeRefreshPhysicsEnabled, 1.0f);
+    }
+
+    /**
+     * The multiplier belongs only to the experimental display-refresh path.
+     * Keeping it at 1 preserves the recovered stock physics variant exactly.
+     */
+    SparklingBubblesAppOwnedEffectView(
+            Context context,
+            boolean nativeRefreshPhysicsEnabled,
+            float speedMultiplier) {
         super(context);
         appContext = context.getApplicationContext();
         setClipChildren(false);
@@ -112,7 +132,8 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
         unlockSound = soundPool.load(context, R.raw.ve_sparklingbubbles_unlock, 1);
 
         Bitmap blurMask = decodeMask();
-        glView = new SparklingBubblesAppOwnedGlView(context, blurMask, this);
+        glView = new SparklingBubblesAppOwnedGlView(
+                context, blurMask, nativeRefreshPhysicsEnabled, speedMultiplier, this);
         addView(glView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 

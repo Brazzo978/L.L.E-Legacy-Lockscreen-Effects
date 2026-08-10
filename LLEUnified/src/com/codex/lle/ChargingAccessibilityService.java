@@ -40,6 +40,7 @@ import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -79,10 +80,23 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_MS = 300L;
     private static final long PIN_ENTRY_DELAY_WATERCOLOUR_MS = 250L;
     private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_MS = 250L;
+    // Empirical release-to-handoff timings. The real window alpha is changed only
+    // after these selected effect tails have had time to present.
+    private static final long PIN_ENTRY_DELAY_POPPING_COLOURS_TAIL_MS = 325L;
+    private static final long PIN_ENTRY_DELAY_BRILLIANT_CUT_TAIL_MS = 415L;
+    private static final long PIN_ENTRY_DELAY_MASS_TENSION_TAIL_MS = 510L;
+    // Geometric Mosaic must dispatch when its 400 ms expansion reaches full coverage. Its fade is
+    // deliberately not part of the handoff delay: the window is neutralized at full coverage.
+    private static final long PIN_ENTRY_DELAY_GEOMETRIC_MOSAIC_TAIL_MS =
+            GeometricMosaicGlesPipeline.unlockHandoffDelayMs();
+    private static final long PIN_ENTRY_DELAY_WATERCOLOUR_TAIL_MS = 800L;
+    private static final long PIN_ENTRY_DELAY_ABSTRACT_TILES_TAIL_MS = 925L;
+    private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS = 930L;
+    private static final long PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS = 600L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
     private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 340L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
-    private static final long PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS = 340L;
+    private static final long PIN_ENTRY_DELAY_SPARKLING_BUBBLES_MS = 875L;
     private static final long PIN_ENTRY_DELAY_S6_WATER_DROPLET_MS = 340L;
     // Samsung exposes 500 ms; LLE's shared dispatch stage below adds 60 ms.
     private static final long PIN_ENTRY_DELAY_MASS_TENSION_MS = 440L;
@@ -91,6 +105,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final float WARM_PARK_ALPHA = 0.01f;
     private static final float CANVAS_WARM_PARK_ALPHA = 1f;
     private static final long PIN_ENTRY_SWIPE_START_DELAY_MS = 60L;
+    private static final long PIN_ENTRY_SWIPE_START_DELAY_CONSERVATIVE_MS = 140L;
     private static final long PIN_ENTRY_HANDOFF_VERIFY_DELAY_MS = 360L;
     private static final long PIN_ENTRY_HANDOFF_CANCEL_VERIFY_DELAY_MS = 180L;
     private static final long PIN_ENTRY_HANDOFF_SCAN_RECHECK_MS = 120L;
@@ -621,11 +636,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean resolvedTouchBoxesDirty = true;
     private UnlockEffectRenderer unlockEffectRenderer;
     private View unlockEffectView;
+    private WindowManager.LayoutParams unlockEffectWindowParams;
     private SeasonalUnlockEffectView seasonalUnlockPartnerRenderer;
     private View seasonalUnlockPartnerView;
     private int unlockEffectRendererType = -1;
     private boolean unlockEffectOverlayAttached;
     private boolean unlockEffectOverlayParked;
+    private boolean unlockEffectWindowNeutralizedForHandoff;
     private boolean seasonalUnlockPartnerOverlayAttached;
     private boolean seasonalUnlockPartnerOverlayParked;
     private boolean doodleOverlayAttached;
@@ -658,6 +675,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean interactiveSessionWasUnlocked;
     private boolean unlockFxVisible;
     private boolean unlockEffectGestureActive;
+    private boolean lockCycleSafetyBypassActive;
     private boolean bufferedReadinessGestureActive;
     private boolean readinessFallbackGestureActive;
     private boolean bufferedReadinessHasMove;
@@ -873,6 +891,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 // stale state as a new lockscreen wake and reopen shade probing mid-transition.
                 return;
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+                clearLockCycleSafetyBypass("user_present");
                 screenOffTransitionPending = false;
                 cancelUnlockAffordanceDispatch(false, "user_present");
                 clearGlobalActionsSuppression("user_present", false);
@@ -903,6 +922,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 boolean duplicateScreenOn = lastInteractive && lastScreenOnAt > 0L;
                 lastInteractive = true;
                 if (!duplicateScreenOn) {
+                    clearLockCycleSafetyBypass("new_screen_on");
                     lastScreenOnAt = SystemClock.uptimeMillis();
                     forcedEffectBackgroundOverlayClearStartedAt = 0L;
                 } else {
@@ -1100,6 +1120,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         lockSoundPlayer = new LockSoundPlayer(this);
         prefs = OverlayPrefs.get(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeTouchBoxProfile());
+        OverlayPrefs.migrateExperimentalNativeRefreshPrefsIfNeeded(this);
         applyPerfDefaultsOnce();
         ensureInternalTouchAreaEnabled();
         prefs.registerOnSharedPreferenceChangeListener(this);
@@ -1408,6 +1429,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 .append(service.unlockEffectRendererType).append('\n');
         snapshot.append("effect_gesture_active=")
                 .append(service.unlockEffectGestureActive).append('\n');
+        snapshot.append("lock_cycle_safety_bypass_active=")
+                .append(service.lockCycleSafetyBypassActive).append('\n');
+        snapshot.append("three_finger_safety_bypass_enabled=")
+                .append(OverlayPrefs.threeFingerSafetyBypassEnabled(service)).append('\n');
         snapshot.append("pin_entry_pending=")
                 .append(service.pinEntryPending).append('\n');
         snapshot.append("pin_entry_surface_visible=")
@@ -1513,6 +1538,33 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (holdRuntimeForBootSafety("prefs:" + key)) {
+            return;
+        }
+        if (OverlayPrefs.isExperimentalNativeRefreshPhysicsPreferenceKey(key)) {
+            int changedEffect =
+                    OverlayPrefs.experimentalNativeRefreshPhysicsEffectFromPreferenceKey(key);
+            int selectedEffect = OverlayPrefs.unlockEffect(this);
+            boolean speedChanged =
+                    OverlayPrefs.isExperimentalNativeRefreshPhysicsSpeedTenthsPreferenceKey(key);
+            boolean nativeRefreshEnabled = OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                    this, changedEffect);
+            float multiplier = OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                    this, changedEffect);
+            Log.i(TAG, "native refresh physics preference changed effect=" + changedEffect
+                    + " selectedEffect=" + selectedEffect
+                    + " keyType=" + (speedChanged ? "speed" : "enabled")
+                    + " enabled=" + nativeRefreshEnabled
+                    + " speedMultiplier=" + multiplier);
+            if (changedEffect != selectedEffect) {
+                return;
+            }
+            cancelUnlockAffordanceDispatch(false, "prefs:native_refresh_physics_per_effect");
+            if (unlockEffectRenderer != null) {
+                destroyUnlockEffectOverlay();
+            }
+            preloadAndAttachSelectedUnlockEffectParked(
+                    "prefs:native_refresh_physics_per_effect");
+            evaluateVisibility("prefs:native_refresh_physics_per_effect", false);
             return;
         }
         if (OverlayPrefs.MASTER_ENABLED.equals(key) && !OverlayPrefs.masterEnabled(this)) {
@@ -1632,6 +1684,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || OverlayPrefs.DEBUG_TOUCH_STANDBY.equals(key))
                 && touchDebugView != null) {
             touchDebugView.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
+            syncTouchDebugOverlay();
+        }
+        if (OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED.equals(key)
+                && touchDebugView != null) {
             syncTouchDebugOverlay();
         }
         if (OverlayPrefs.DEBUG_LENS_LOOP.equals(key)) {
@@ -2975,7 +3031,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 hideOverlaysForBackgroundCapture,
                 blockedSurfaceActive);
         boolean showDoodle = runtimeSurfaceAllowed && isChargingDoodleModeEnabled();
-        boolean showFx = runtimeSurfaceAllowed
+        boolean showFx = !lockCycleSafetyBypassActive
+                && runtimeSurfaceAllowed
                 && unlockEffectAllowedForActivePanel;
 
         if (showDoodle) {
@@ -3330,6 +3387,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         params.setTitle("LLEUnlockEffect");
+        unlockEffectWindowParams = params;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
@@ -3351,6 +3409,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             Log.e(TAG, "unlock effect overlay addView failed type=" + unlockEffectRendererType, e);
             unlockEffectOverlayAttached = false;
+            unlockEffectWindowParams = null;
+            unlockEffectWindowNeutralizedForHandoff = false;
             // Accessibility's overlay token can be transiently unavailable while the
             // service is rebinding after an APK update or during a display transition.
             // Keep the expensive native renderer and its decoded/GL state in RAM; the
@@ -3578,7 +3638,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
                 if (EffectAvailability.is64BitProcess()) {
                     S3Arm64RippleEffectView renderer =
-                            new S3Arm64RippleEffectView(rendererContext());
+                            new S3Arm64RippleEffectView(rendererContext(), false,
+                                    OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                            this, effect));
                     if (!renderer.isReady()) {
                         renderer.destroy();
                         throw new IllegalStateException("Water Ripple ARM64 renderer unavailable");
@@ -3590,7 +3652,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER) {
                 if (EffectAvailability.is64BitProcess()) {
                     S3Arm64RippleEffectView renderer =
-                            new S3Arm64RippleEffectView(rendererContext(), true);
+                            new S3Arm64RippleEffectView(rendererContext(), true, false);
                     if (!renderer.isReady()) {
                         renderer.destroy();
                         throw new IllegalStateException("Ink in Water ARM64 renderer unavailable");
@@ -3603,7 +3665,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
                 if (EffectAvailability.is64BitProcess()) {
                     AbstractTilesArm64EffectView renderer =
-                            new AbstractTilesArm64EffectView(rendererContext());
+                            new AbstractTilesArm64EffectView(rendererContext(),
+                                    OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                            this, effect));
                     if (!renderer.isReady()) {
                         renderer.destroy();
                         throw new IllegalStateException(
@@ -3617,7 +3681,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
                 if (EffectAvailability.is64BitProcess()) {
                     GeometricMosaicArm64EffectView renderer =
-                            new GeometricMosaicArm64EffectView(rendererContext());
+                            new GeometricMosaicArm64EffectView(rendererContext(),
+                                    OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                            this, effect));
                     if (!renderer.isReady()) {
                         renderer.destroy();
                         throw new IllegalStateException(
@@ -3629,9 +3695,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                             SamsungLockBgEffectView.geometricMosaic(rendererContext());
                 }
             } else if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
-                unlockEffectRenderer = EffectAvailability.is64BitProcess()
-                        ? new PoppingColoursArm64EffectView(rendererContext())
-                        : new PoppingColoursEffectView(rendererContext());
+                if (EffectAvailability.is64BitProcess()) {
+                    unlockEffectRenderer = new PoppingColoursArm64EffectView(rendererContext(),
+                            OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                            OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                    this, effect));
+                } else {
+                    unlockEffectRenderer = new PoppingColoursEffectView(rendererContext());
+                }
             } else if (effect == OverlayPrefs.EFFECT_TABS_BLIND) {
                 if (EffectAvailability.is64BitProcess()) {
                     BlindArm64EffectView renderer =
@@ -3658,14 +3729,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new MassTensionEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_BRILLIANT_RING) {
                 if (EffectAvailability.is64BitProcess()) {
-                    unlockEffectRenderer = new BrilliantRingEffectView(rendererContext());
+                    unlockEffectRenderer = new BrilliantRingEffectView(rendererContext(),
+                            OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect));
                 } else {
                     unlockEffectRenderer =
                             SamsungLockBgEffectView.brilliantRing(rendererContext());
                 }
             } else if (effect == OverlayPrefs.EFFECT_BRILLIANT_CUT) {
                 if (EffectAvailability.is64BitProcess()) {
-                    unlockEffectRenderer = new BrilliantCutEffectView(rendererContext());
+                    unlockEffectRenderer = new BrilliantCutEffectView(rendererContext(),
+                            OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect));
                 } else {
                     unlockEffectRenderer =
                             SamsungLockBgEffectView.brilliantCut(rendererContext());
@@ -3677,7 +3750,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                         false);
             } else if (effect == OverlayPrefs.EFFECT_WATERCOLOUR) {
                 WatercolorArm64EffectView renderer =
-                        new WatercolorArm64EffectView(rendererContext());
+                        new WatercolorArm64EffectView(rendererContext(),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                        this, effect));
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException("Watercolor native renderer unavailable");
@@ -3702,7 +3777,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                             "App-owned S6 Water Droplet requires ARM64");
                 }
                 S6WaterDropletAppOwnedEffectView renderer =
-                        new S6WaterDropletAppOwnedEffectView(rendererContext());
+                        new S6WaterDropletAppOwnedEffectView(rendererContext(),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                        this, effect));
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException(
@@ -3755,7 +3833,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                             "App-owned Colored Droplet requires ARM64");
                 }
                 ColourDropletAppOwnedEffectView renderer =
-                        new ColourDropletAppOwnedEffectView(rendererContext(), false);
+                        new ColourDropletAppOwnedEffectView(rendererContext(), false,
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                        this, effect));
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException(
@@ -3768,7 +3849,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                             "App-owned Colored Droplet (Gyro) requires ARM64");
                 }
                 ColourDropletAppOwnedEffectView renderer =
-                        new ColourDropletAppOwnedEffectView(rendererContext(), true);
+                        new ColourDropletAppOwnedEffectView(rendererContext(), true,
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                        this, effect));
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException(
@@ -3801,7 +3885,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                             "App-owned Sparkling Bubbles requires ARM64");
                 }
                 SparklingBubblesAppOwnedEffectView renderer =
-                        new SparklingBubblesAppOwnedEffectView(rendererContext());
+                        new SparklingBubblesAppOwnedEffectView(rendererContext(),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                        this, effect));
                 if (!renderer.isReady()) {
                     renderer.destroy();
                     throw new IllegalStateException(
@@ -3902,6 +3989,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         long cacheStartedAt = SystemClock.uptimeMillis();
         loadCachedUnlockEffectBackgroundSourceIfNeeded(effect);
         long cacheMs = SystemClock.uptimeMillis() - cacheStartedAt;
+        if (OverlayPrefs.supportsExperimentalNativeRefreshPhysics(effect)) {
+            Log.i(TAG, "native refresh physics selected mode="
+                    + (OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect)
+                    ? "display_refresh_experimental" : "legacy_60hz")
+                    + " speedMultiplier="
+                    + OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect)
+                    + " effect=" + effect);
+        }
         Log.i(TAG, "unlock effect renderer preloaded type=" + effect
                 + " name=" + unlockEffectRenderer.effectName()
                 + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt)
@@ -5918,6 +6013,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void syncTouchDebugOverlay(boolean mounted, boolean touchable) {
         long startedAt = SystemClock.uptimeMillis();
+        if (lockCycleSafetyBypassActive) {
+            removeTouchDebugOverlay();
+            return;
+        }
         if (holdRuntimeForBootSafety("touch_overlay")) {
             removeTouchDebugOverlay();
             return;
@@ -5938,6 +6037,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                     TouchDebugView view = touchDebugViewAt(i);
                     view.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
                     view.setListeningEnabled(listening);
+                    view.setSafetyBypassEnabled(
+                            OverlayPrefs.threeFingerSafetyBypassEnabled(this));
                 }
                 updateTouchDebugLayouts(boxes, standbyTouchable);
                 return;
@@ -6014,6 +6115,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 }
                 cancelUnlockEffectGesture();
             }
+
+            @Override
+            public void onSafetyBypassRequested() {
+                activateLockCycleSafetyBypass();
+            }
         };
 
         touchDebugTouchable = standbyTouchable;
@@ -6022,6 +6128,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             TouchDebugView view = new TouchDebugView(rendererContext());
             view.setTransparentMode(OverlayPrefs.debugTouchTransparent(this));
             view.setListeningEnabled(listening);
+            view.setSafetyBypassEnabled(
+                    OverlayPrefs.threeFingerSafetyBypassEnabled(this));
             view.setTouchTriggerListener(triggerListener);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     area.width(), area.height(),
@@ -6252,6 +6360,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             unlockEffectOverlayAttached = false;
             unlockEffectOverlayParked = false;
+            unlockEffectWindowParams = null;
+            unlockEffectWindowNeutralizedForHandoff = false;
             refreshUnlockEffectReadiness("detached");
         }
         if (removed && !destroyingRenderer && isSamsungLockBgEffect(removedType)) {
@@ -6291,9 +6401,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }
         unlockEffectView = null;
+        unlockEffectWindowParams = null;
         unlockEffectRendererType = -1;
         unlockEffectOverlayAddRetryAt = 0L;
         unlockEffectOverlayParked = false;
+        unlockEffectWindowNeutralizedForHandoff = false;
         unlockEffectGestureActive = false;
         unlockEffectRendererNeedsRecreate = false;
         unlockEffectRendererRecreateReason = "";
@@ -6489,9 +6601,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (view == null) {
             return;
         }
+        boolean windowWasNeutralized = unlockEffectWindowNeutralizedForHandoff;
+        restoreUnlockEffectWindowAfterHandoff("show");
         boolean wasParked = unlockEffectOverlayParked
                 || view.getVisibility() != View.VISIBLE
-                || view.getAlpha() < 1f;
+                || view.getAlpha() < 1f
+                || windowWasNeutralized;
         if (!wasParked) {
             return;
         }
@@ -6510,6 +6625,48 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             Log.i(TAG, "unlock effect surface resumed warm type="
                     + unlockEffectRendererType);
+        }
+    }
+
+    private void neutralizeUnlockEffectWindowForHandoff(String reason) {
+        // Android started blocking untrusted pass-through touches in Android 12.
+        // Older releases do not benefit from the extra WindowManager transaction,
+        // so preserve their established handoff path byte-for-byte at runtime.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return;
+        }
+        setUnlockEffectWindowAlpha(0f, true, reason);
+    }
+
+    private void restoreUnlockEffectWindowAfterHandoff(String reason) {
+        if (!unlockEffectWindowNeutralizedForHandoff) {
+            return;
+        }
+        setUnlockEffectWindowAlpha(1f, false, reason);
+    }
+
+    private void setUnlockEffectWindowAlpha(
+            float alpha, boolean neutralized, String reason) {
+        if (!unlockEffectOverlayAttached
+                || unlockEffectView == null
+                || unlockEffectWindowParams == null) {
+            return;
+        }
+        float targetAlpha = Math.max(0f, Math.min(1f, alpha));
+        float previousAlpha = unlockEffectWindowParams.alpha;
+        if (Math.abs(previousAlpha - targetAlpha) < 0.001f) {
+            unlockEffectWindowNeutralizedForHandoff = neutralized;
+            return;
+        }
+        unlockEffectWindowParams.alpha = targetAlpha;
+        try {
+            windowManager.updateViewLayout(unlockEffectView, unlockEffectWindowParams);
+            unlockEffectWindowNeutralizedForHandoff = neutralized;
+            Log.i(TAG, "unlock effect window alpha=" + targetAlpha
+                    + " reason=" + reason);
+        } catch (RuntimeException e) {
+            unlockEffectWindowParams.alpha = previousAlpha;
+            Log.w(TAG, "unlock effect window alpha update failed reason=" + reason, e);
         }
     }
 
@@ -6847,7 +7004,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean isFxSurfaceActive(boolean contentAware) {
-        if (!OverlayPrefs.masterEnabled(this)) {
+        if (!OverlayPrefs.masterEnabled(this) || lockCycleSafetyBypassActive) {
             return false;
         }
         boolean interactive = powerManager == null || powerManager.isInteractive();
@@ -7100,6 +7257,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean beginUnlockEffectGesture(float screenX, float screenY) {
         long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
+        if (lockCycleSafetyBypassActive) {
+            Log.i(TAG, "unlock effect gesture ignored lock-cycle safety bypass=true");
+            return false;
+        }
         if (!OverlayPrefs.masterEnabled(this)) {
             Log.i(TAG, "unlock effect gesture ignored master=false");
             return false;
@@ -7308,6 +7469,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean beginSeasonalUnlockPartnerGesture(float screenX, float screenY) {
+        if (lockCycleSafetyBypassActive) {
+            Log.i(TAG, "seasonal unlock partner ignored lock-cycle safety bypass=true");
+            return false;
+        }
         if (!isSeasonalUnlockPartnerModeEnabled() || !isUnlockEffectGestureReady()) {
             Log.i(TAG, "seasonal unlock partner gesture ignored ready=false"
                     + " mode=" + isSeasonalUnlockPartnerModeEnabled()
@@ -7475,6 +7640,39 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "unlock effect gesture cancelled");
     }
 
+    private void activateLockCycleSafetyBypass() {
+        if (lockCycleSafetyBypassActive
+                || !OverlayPrefs.threeFingerSafetyBypassEnabled(this)) {
+            return;
+        }
+        lockCycleSafetyBypassActive = true;
+        cancelUnlockAffordanceDispatch(false, "three_finger_safety_bypass");
+        unlockAffordancePending = false;
+        unlockAffordanceShownThisWake = true;
+        cancelBufferedReadinessGesture("three_finger_safety_bypass", false);
+        if (seasonalUnlockPartnerGestureActive) {
+            cancelSeasonalUnlockPartnerGesture();
+        }
+        cancelUnlockEffectGesture();
+        clearActiveUnlockEffectProfile();
+        unlockFxVisible = false;
+        removeTouchDebugOverlay();
+        removeUnlockEffectOverlay();
+        destroySeasonalUnlockPartnerOverlay();
+        Toast.makeText(this,
+                "L.L.E disabled until the next lock cycle",
+                Toast.LENGTH_LONG).show();
+        Log.w(TAG, "lock-cycle safety bypass activated gesture=three_finger_swipe");
+    }
+
+    private void clearLockCycleSafetyBypass(String reason) {
+        if (!lockCycleSafetyBypassActive) {
+            return;
+        }
+        lockCycleSafetyBypassActive = false;
+        Log.i(TAG, "lock-cycle safety bypass cleared reason=" + reason);
+    }
+
     private void schedulePinEntry() {
         schedulePinEntry(pinEntryDelayMs(), OverlayPrefs.effectLabel(OverlayPrefs.unlockEffect(this)));
     }
@@ -7505,6 +7703,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private long pinEntryDelayMs() {
         int effect = OverlayPrefs.unlockEffect(this);
+        long tailDelayMs = tailCompletePinEntryDelayMs(effect);
+        if (tailDelayMs >= 0L) {
+            return tailDelayMs;
+        }
         if (effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS) {
             return PIN_ENTRY_DELAY_POPPING_COLOURS_MS;
         }
@@ -7530,6 +7732,30 @@ public class ChargingAccessibilityService extends AccessibilityService
             return PIN_ENTRY_DELAY_MASS_TENSION_MS;
         }
         return PIN_ENTRY_DELAY_LENS_FLARE_MS;
+    }
+
+    /** Returns -1 for effects which retain their established recovered wrapper delay. */
+    private static long tailCompletePinEntryDelayMs(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
+                return PIN_ENTRY_DELAY_POPPING_COLOURS_TAIL_MS;
+            case OverlayPrefs.EFFECT_BRILLIANT_CUT:
+                return PIN_ENTRY_DELAY_BRILLIANT_CUT_TAIL_MS;
+            case OverlayPrefs.EFFECT_MASS_TENSION:
+                return PIN_ENTRY_DELAY_MASS_TENSION_TAIL_MS;
+            case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
+                return PIN_ENTRY_DELAY_GEOMETRIC_MOSAIC_TAIL_MS;
+            case OverlayPrefs.EFFECT_WATERCOLOUR:
+                return PIN_ENTRY_DELAY_WATERCOLOUR_TAIL_MS;
+            case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
+                return PIN_ENTRY_DELAY_ABSTRACT_TILES_TAIL_MS;
+            case OverlayPrefs.EFFECT_BRILLIANT_RING:
+                return PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS;
+            case OverlayPrefs.EFFECT_S4_LENS_FLARE:
+                return PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS;
+            default:
+                return -1L;
+        }
     }
 
     private void openPinEntry() {
@@ -7564,13 +7790,29 @@ public class ChargingAccessibilityService extends AccessibilityService
 
         pinEntryRequested = true;
         removeTouchDebugOverlay();
+        // Full coverage is the Mosaic handoff boundary too. Use the normal Android 12+ window
+        // neutralization so its internal fade is never presented over the PIN transition.
+        // Some OEM builds lose the trusted-overlay classification for a renderer-backed
+        // accessibility window during the synthetic unlock handoff. View.setAlpha(0) is
+        // not sufficient for InputDispatcher: the pass-through exemption is based on the
+        // WindowManager alpha.
+        neutralizeUnlockEffectWindowForHandoff("pin_entry_requested");
         scheduleUnlockEffectCleanup();
         handler.removeCallbacks(pinEntrySwipeRunnable);
         queuedPinSwipeSafetyGeneration = inputSafetyGeneration;
-        handler.postDelayed(pinEntrySwipeRunnable, PIN_ENTRY_SWIPE_START_DELAY_MS);
-        Log.i(TAG, "pin entry swipe queued delayMs=" + PIN_ENTRY_SWIPE_START_DELAY_MS
+        long swipeStartDelayMs = pinEntrySwipeStartDelayMs();
+        handler.postDelayed(pinEntrySwipeRunnable, swipeStartDelayMs);
+        Log.i(TAG, "pin entry swipe queued delayMs=" + swipeStartDelayMs
                 + " sinceReleaseMs=" + sincePinEntryRelease(SystemClock.uptimeMillis()));
         evaluateVisibility("pin_entry_requested");
+    }
+
+    private long pinEntrySwipeStartDelayMs() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && OverlayPrefs.debugConservativeUnlockHandoff(this)) {
+            return PIN_ENTRY_SWIPE_START_DELAY_CONSERVATIVE_MS;
+        }
+        return PIN_ENTRY_SWIPE_START_DELAY_MS;
     }
 
     private void runPinEntrySwipe() {

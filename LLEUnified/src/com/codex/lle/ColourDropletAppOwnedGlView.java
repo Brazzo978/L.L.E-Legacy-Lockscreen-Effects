@@ -9,11 +9,13 @@ import android.opengl.GLSurfaceView;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.Display;
 
 import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -64,6 +66,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     private final Listener listener;
     private final Object bitmapLock = new Object();
     private final Object commandLock = new Object();
+    private final AtomicInteger animationGeneration = new AtomicInteger();
     private final ArrayDeque<PendingCommand> pendingCommands =
             new ArrayDeque<>(MAX_PENDING_COMMANDS);
     private final Bitmap normalMap;
@@ -84,8 +87,13 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     private int drawCount;
     private volatile int keepAliveFrames;
     private int emptyFrames;
+    /* Experimental mode uses stock-frame time credits across panel rates. */
+    private volatile float adaptiveKeepAliveFrameCredits;
+    private float adaptiveEmptyFrameCredits;
     private long lastSimulationTimeNs;
     private volatile boolean simulationClockResetPending = true;
+    private final boolean nativeRefreshPhysicsEnabled;
+    private final float nativeRefreshSpeedMultiplier;
 
     ColourDropletAppOwnedGlView(
             Context context,
@@ -95,6 +103,33 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             int logicalWidth,
             int logicalHeight,
             Listener listener) {
+        this(context, normalMap, edgeDensityMap, projectKind, logicalWidth,
+                logicalHeight, listener, false);
+    }
+
+    ColourDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalWidth,
+            int logicalHeight,
+            Listener listener,
+            boolean nativeRefreshPhysicsEnabled) {
+        this(context, normalMap, edgeDensityMap, projectKind, logicalWidth,
+                logicalHeight, listener, nativeRefreshPhysicsEnabled, 1.0f);
+    }
+
+    ColourDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalWidth,
+            int logicalHeight,
+            Listener listener,
+            boolean nativeRefreshPhysicsEnabled,
+            float nativeRefreshSpeedMultiplier) {
         super(context);
         this.normalMap = normalMap;
         this.edgeDensityMap = edgeDensityMap;
@@ -102,6 +137,10 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
         this.logicalWidth = Math.max(1, logicalWidth);
         this.logicalHeight = Math.max(1, logicalHeight);
         this.listener = listener;
+        this.nativeRefreshPhysicsEnabled = nativeRefreshPhysicsEnabled;
+        this.nativeRefreshSpeedMultiplier = nativeRefreshPhysicsEnabled
+                ? normalizeNativeRefreshSpeedMultiplier(nativeRefreshSpeedMultiplier)
+                : 1.0f;
 
         setZOrderOnTop(true);
         getHolder().setFormat(PixelFormat.TRANSLUCENT);
@@ -132,6 +171,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             resourcesReady = false;
             drawCount = 0;
             emptyFrames = 0;
+            adaptiveEmptyFrameCredits = 0.0f;
             resetSimulationClockFromGlThread();
             if (listener != null) {
                 post(new Runnable() {
@@ -195,10 +235,16 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
              * tick.
              */
             flushPendingCommandsIfReady();
-            if (!ColourDropletNative.nativeStep(
-                    nativeHandle,
-                    simulationElapsedSecondsForDraw(
-                            SystemClock.elapsedRealtimeNanos()))) {
+            final float elapsedSeconds = simulationElapsedSecondsForDraw(
+                    SystemClock.elapsedRealtimeNanos());
+            final boolean stepped = nativeRefreshPhysicsEnabled
+                    ? ColourDropletNative.nativeStepAtRefresh(
+                            nativeHandle,
+                            elapsedSeconds,
+                            displayRefreshHz(),
+                            nativeRefreshSpeedMultiplier)
+                    : ColourDropletNative.nativeStep(nativeHandle, elapsedSeconds);
+            if (!stepped) {
                 throw new IllegalStateException(nativeError());
             }
             if (!ColourDropletNative.nativeDraw(
@@ -214,17 +260,36 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
                     }
                 });
             }
-            if (keepAliveFrames > 0) {
-                keepAliveFrames--;
-            }
-            if (ColourDropletNative.nativeIsIdle(nativeHandle)
-                    && keepAliveFrames <= 0
-                    && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
-                if (++emptyFrames >= 2) {
-                    stopAnimationFromGlThread();
+            if (nativeRefreshPhysicsEnabled) {
+                final float stockFrameCredits = elapsedSeconds / TARGET_TICK_SECONDS;
+                if (adaptiveKeepAliveFrameCredits > 0.0f) {
+                    adaptiveKeepAliveFrameCredits = Math.max(
+                            0.0f,
+                            adaptiveKeepAliveFrameCredits - stockFrameCredits);
+                }
+                if (ColourDropletNative.nativeIsIdle(nativeHandle)
+                        && adaptiveKeepAliveFrameCredits <= 0.0f
+                        && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
+                    adaptiveEmptyFrameCredits += stockFrameCredits;
+                    if (adaptiveEmptyFrameCredits >= 2.0f) {
+                        stopAnimationFromGlThread();
+                    }
+                } else {
+                    adaptiveEmptyFrameCredits = 0.0f;
                 }
             } else {
-                emptyFrames = 0;
+                if (keepAliveFrames > 0) {
+                    keepAliveFrames--;
+                }
+                if (ColourDropletNative.nativeIsIdle(nativeHandle)
+                        && keepAliveFrames <= 0
+                        && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
+                    if (++emptyFrames >= 2) {
+                        stopAnimationFromGlThread();
+                    }
+                } else {
+                    emptyFrames = 0;
+                }
             }
         } catch (Throwable error) {
             fail(error);
@@ -510,9 +575,17 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     }
 
     private void activateAnimation(long minimumDurationMs, int minimumFrames) {
+        animationGeneration.incrementAndGet();
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
-        keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
+        emptyFrames = 0;
+        adaptiveEmptyFrameCredits = 0.0f;
+        if (nativeRefreshPhysicsEnabled) {
+            adaptiveKeepAliveFrameCredits = Math.max(
+                    adaptiveKeepAliveFrameCredits, (float) Math.max(1, minimumFrames));
+        } else {
+            keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
+        }
         boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
         if (wasStopped) {
             requestSimulationClockReset();
@@ -522,15 +595,19 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     }
 
     private void stopAnimationFromGlThread() {
+        final int generation = animationGeneration.get();
         post(new Runnable() {
             @Override
             public void run() {
-                stopAnimation();
+                if (generation == animationGeneration.get()) {
+                    stopAnimation();
+                }
             }
         });
     }
 
     private void stopAnimation() {
+        animationGeneration.incrementAndGet();
         requestSimulationClockReset();
         if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
             setRenderMode(RENDERMODE_WHEN_DIRTY);
@@ -541,7 +618,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
         if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
             resetSimulationClockFromGlThread();
             lastSimulationTimeNs = nowNs;
-            return TARGET_TICK_SECONDS;
+            return nativeRefreshPhysicsEnabled ? 0.0f : TARGET_TICK_SECONDS;
         }
         long elapsedNs = nowNs - lastSimulationTimeNs;
         lastSimulationTimeNs = nowNs;
@@ -549,9 +626,25 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             return 0.0f;
         }
         if (elapsedNs > STALLED_FRAME_NS) {
-            return TARGET_TICK_SECONDS;
+            return nativeRefreshPhysicsEnabled ? 0.0f : TARGET_TICK_SECONDS;
         }
         return (float) elapsedNs / 1_000_000_000.0f;
+    }
+
+    private int displayRefreshHz() {
+        Display display = getDisplay();
+        float refreshRate = display == null ? 60.0f : display.getRefreshRate();
+        if (Float.isNaN(refreshRate) || Float.isInfinite(refreshRate)) {
+            return 60;
+        }
+        return Math.max(30, Math.min(144, Math.round(refreshRate)));
+    }
+
+    private static float normalizeNativeRefreshSpeedMultiplier(float multiplier) {
+        if (Float.isNaN(multiplier) || Float.isInfinite(multiplier)) {
+            return 1.0f;
+        }
+        return Math.max(1.0f, Math.min(2.0f, multiplier));
     }
 
     private void requestSimulationClockReset() {

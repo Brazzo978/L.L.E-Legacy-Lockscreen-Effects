@@ -76,10 +76,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Set;
 
 public class ControlActivity extends Activity {
+    private static final float COMPACT_EFFECT_SWITCH_SCALE = 0.765f;
     // Hidden framework constant intentionally used by value: getDisplays(String) is public
     // and this category is the only API that also returns the inactive Fold panel.
     private static final String DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED =
@@ -171,6 +173,9 @@ public class ControlActivity extends Activity {
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
+    private final HashMap<Integer, ArrayList<Switch>> highFrameRateSwitches =
+            new HashMap<Integer, ArrayList<Switch>>();
+    private boolean syncingHighFrameRateSwitches;
     private Typeface appFontRegular;
     private Typeface appFontBold;
     private PopupWindow effectPreviewPopup;
@@ -185,6 +190,7 @@ public class ControlActivity extends Activity {
         Log.i("LLE64", "native baseline abi=" + Lle64Abi.verify());
         configureGraceWindow();
         prefs = OverlayPrefs.get(this);
+        OverlayPrefs.migrateExperimentalNativeRefreshPrefsIfNeeded(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         ensureTouchAreaEnabled();
         if (savedInstanceState != null) {
@@ -852,7 +858,12 @@ public class ControlActivity extends Activity {
                     getWindow().getDecorView(),
                     tabSwipeDownX,
                     tabSwipeDownY,
-                    SeekBar.class);
+                    SeekBar.class)
+                    || isPointInsideViewType(
+                            getWindow().getDecorView(),
+                            tabSwipeDownX,
+                            tabSwipeDownY,
+                            Switch.class);
             return false;
         }
         if (action == MotionEvent.ACTION_MOVE) {
@@ -1887,6 +1898,7 @@ public class ControlActivity extends Activity {
         row.addView(slider, sliderParams);
         return row;
     }
+
     private View doodleDebugMenu() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -1931,6 +1943,7 @@ public class ControlActivity extends Activity {
     }
 
     private View effectSelector() {
+        highFrameRateSwitches.clear();
         LinearLayout root = verticalGroup();
         LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2054,15 +2067,8 @@ public class ControlActivity extends Activity {
                         ? pendingAbstractTilesLineMode == 1
                         : OverlayPrefs.abstractTilesLineEnabled(this);
                 effects.addView(abstractTilesEffectOption(
-                        "N4 Abstract Tiles · Lines",
-                        "Geometric tiles with bright line trails.",
-                        true,
-                        current,
-                        currentLineMode));
-                effects.addView(abstractTilesEffectOption(
-                        "N4 Abstract Tiles · No lines",
-                        "Clean tiles scattering across the wallpaper.",
-                        false,
+                        "N4 Abstract Tiles",
+                        "Geometric tiles scattering across the wallpaper.",
                         current,
                         currentLineMode));
             } else {
@@ -2097,34 +2103,23 @@ public class ControlActivity extends Activity {
                 "Refracted water droplets flowing across the wallpaper.",
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet (Samsung legacy)"
-                        : "N5 Colored Droplet",
-                "Colorful liquid droplets rolling across screen.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet + Gyro (Samsung legacy)"
-                        : "N5 Colored Droplet + Gyro",
-                "Liquid droplets flowing with phone movement.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet (LLE renderer)"
-                        : "N5 Colored Droplet",
-                "Colorful liquid droplets rolling across screen.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet + Gyro (LLE renderer)"
-                        : "N5 Colored Droplet + Gyro",
-                "Liquid droplets flowing with phone movement.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
-                current);
+        if (EffectAvailability.hasLegacyVendorEffects()) {
+            addEffectOptionIfAvailable(effects,
+                    "N5 Colored Droplet (Samsung legacy)",
+                    "Colorful liquid droplets rolling across screen.",
+                    OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "N5 Colored Droplet + Gyro (Samsung legacy)",
+                    "Liquid droplets flowing with phone movement.",
+                    OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
+                    current);
+        }
+        if (EffectAvailability.isAvailable(OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP)
+                && EffectAvailability.isAvailable(
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP)) {
+            effects.addView(colourDropletEffectOption(current));
+        }
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (Samsung legacy)"
@@ -2490,7 +2485,64 @@ public class ControlActivity extends Activity {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        final String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        final int selectedEffect = effect;
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure?")
+                .setMessage("Direct wallpaper colormaps are still beta. Automatic screenshot "
+                        + "is the recommended and safest option.")
+                .setNegativeButton("Use automatic screenshot",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                useAutomaticScreenshotForProfile(profile);
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        showFinalDirectWallpaperConfirmation(selectedEffect, profile);
+                    }
+                })
+                .show();
+    }
+
+    private void showFinalDirectWallpaperConfirmation(final int effect,
+            final String profile) {
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure sure?")
+                .setMessage("L.L.E will use a manually supplied fixed colormap for this "
+                        + "display profile. Continue only if you understand how it differs "
+                        + "from Automatic screenshot.")
+                .setNegativeButton("Please use automatic screenshot if you don't know what "
+                                + "you're doing",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                useAutomaticScreenshotForProfile(profile);
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        openImportedEffectBackgroundPicker(effect, profile);
+                    }
+                })
+                .show();
+    }
+
+    private void useAutomaticScreenshotForProfile(String profile) {
+        OverlayPrefs.useAutomaticEffectBackgroundForAll(this, profile);
+        SetupWizardActivity.rememberWallpaperMode(
+                this, SetupWizardActivity.MODE_AUTOMATIC_SCREENSHOT);
+        OverlayPrefs.requestEffectBackgroundRefresh(this);
+        Toast.makeText(this,
+                "Automatic screenshot active for " + profile,
+                Toast.LENGTH_LONG).show();
+        showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+    }
+
+    private void openImportedEffectBackgroundPicker(int effect, String profile) {
         int[] targetSize = effectBackgroundTargetSize(profile);
         pendingImportedBackgroundEffect = effect;
         pendingImportedBackgroundProfile = profile;
@@ -4280,23 +4332,30 @@ public class ControlActivity extends Activity {
     }
 
     private View abstractTilesEffectOption(String title, String subtitle,
-            boolean lineEnabled, int current, boolean currentLineEnabled) {
+            int current, boolean lineEnabled) {
         return effectOption(
                 title,
                 subtitle,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                current == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                        && lineEnabled == currentLineEnabled,
-                lineEnabled ? 1 : 0);
+                current == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                lineEnabled ? 1 : 0,
+                abstractTilesVariantControls(lineEnabled));
     }
 
     private View effectOption(String title, String subtitle, final int value,
             final boolean selected, final int abstractTilesLineMode) {
-        final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(11), dp(12), dp(11));
-        row.setMinimumHeight(dp(82));
+        return effectOption(title, subtitle, value, selected, abstractTilesLineMode, null);
+    }
+
+    private View effectOption(String title, String subtitle, final int value,
+            final boolean selected, final int abstractTilesLineMode,
+            View variantControls) {
+        final LinearLayout card = verticalGroup();
+        final LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(11), dp(12), dp(11));
+        header.setMinimumHeight(dp(82));
         final boolean[] previewOpened = new boolean[] {false};
         final float[] previewDown = new float[] {0f, 0f};
         final Runnable previewRunnable = new Runnable() {
@@ -4306,11 +4365,11 @@ public class ControlActivity extends Activity {
                     return;
                 }
                 previewOpened[0] = true;
-                row.setPressed(false);
-                showEffectPreviewBubble(row, value, title, previewDown[0], previewDown[1]);
+                header.setPressed(false);
+                showEffectPreviewBubble(header, value, title, previewDown[0], previewDown[1]);
             }
         };
-        row.setOnTouchListener(new View.OnTouchListener() {
+        header.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 int action = event.getActionMasked();
@@ -4337,7 +4396,7 @@ public class ControlActivity extends Activity {
                 return false;
             }
         });
-        row.setOnClickListener(new View.OnClickListener() {
+        header.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (previewOpened[0]) {
@@ -4353,19 +4412,19 @@ public class ControlActivity extends Activity {
             }
         });
 
-        row.setBackground(optionBackground(selected));
+        card.setBackground(optionBackground(selected));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            row.setElevation(selected ? dp(4) : dp(1));
+            card.setElevation(selected ? dp(4) : dp(1));
         }
 
         View marker = new GraceEffectIconView(value, selected);
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
         markerParams.setMargins(0, 0, dp(14), 0);
-        row.addView(marker, markerParams);
+        header.addView(marker, markerParams);
 
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
-        row.addView(copy, new LinearLayout.LayoutParams(
+        header.addView(copy, new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f));
@@ -4390,12 +4449,315 @@ public class ControlActivity extends Activity {
         subtitleParams.setMargins(0, dp(2), 0, 0);
         copy.addView(subtitleView, subtitleParams);
 
+        card.addView(header, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (variantControls != null) {
+            card.addView(variantControls);
+        }
+        if (supportsPerEffectHighFrameRate(value) && hasInternalHighRefreshDisplay()) {
+            card.addView(perEffectHighFrameRateControls(value));
+        }
+
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         rowParams.setMargins(0, dp(4), 0, dp(4));
-        row.setLayoutParams(rowParams);
-        return row;
+        card.setLayoutParams(rowParams);
+        return card;
+    }
+
+    private View abstractTilesVariantControls(boolean lineEnabled) {
+        final Switch lines = compactEffectVariantSwitch("Lines", lineEnabled);
+        lines.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(
+                        OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED, isChecked).apply();
+                if (pendingUnlockEffect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
+                    pendingAbstractTilesLineMode = isChecked ? 1 : 0;
+                }
+                showTab(selectedTab);
+            }
+        });
+        return effectVariantControls(lines);
+    }
+
+    private View colourDropletEffectOption(int current) {
+        boolean gyroEnabled;
+        if (pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
+                || pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP) {
+            gyroEnabled = OverlayPrefs.isColourDropletGyroEffect(pendingUnlockEffect);
+        } else {
+            gyroEnabled = OverlayPrefs.colourDropletGyroEnabled(this);
+        }
+        final int effect = gyroEnabled
+                ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
+        return effectOption(
+                "N5 Colored Droplet",
+                "Colorful liquid droplets rolling across screen.",
+                effect,
+                OverlayPrefs.isColourDropletEffect(current),
+                -1,
+                colourDropletVariantControls(gyroEnabled, effect));
+    }
+
+    private View colourDropletVariantControls(boolean gyroEnabled, final int sourceEffect) {
+        final Switch gyro = compactEffectVariantSwitch("Gyro", gyroEnabled);
+        gyro.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                int targetEffect = isChecked
+                        ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                        : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
+                SharedPreferences.Editor editor = prefs.edit()
+                        .putBoolean(OverlayPrefs.N5_COLOUR_DROPLET_GYRO_ENABLED, isChecked)
+                        .putBoolean(
+                                OverlayPrefs.experimentalNativeRefreshPhysicsKey(targetEffect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                        ControlActivity.this, sourceEffect))
+                        .putInt(
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenthsKey(
+                                        targetEffect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenths(
+                                        ControlActivity.this, sourceEffect));
+                int currentEffect = OverlayPrefs.unlockEffect(ControlActivity.this);
+                if (pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
+                        || pendingUnlockEffect
+                        == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP) {
+                    pendingUnlockEffect = targetEffect;
+                } else if (OverlayPrefs.isColourDropletEffect(currentEffect)
+                        && pendingUnlockEffect < 0) {
+                    editor.putInt(OverlayPrefs.UNLOCK_EFFECT, targetEffect);
+                }
+                editor.apply();
+                showTab(selectedTab);
+            }
+        });
+        return effectVariantControls(gyro);
+    }
+
+    private Switch compactEffectVariantSwitch(String label, boolean checked) {
+        Switch value = new Switch(this);
+        value.setText(label);
+        value.setTextColor(COLOR_ACCENT_DEEP);
+        value.setTextSize(11f);
+        value.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        value.setIncludeFontPadding(false);
+        value.setGravity(Gravity.CENTER_VERTICAL);
+        value.setChecked(checked);
+        tintSwitch(value);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            value.setShowText(false);
+            value.setSplitTrack(false);
+            value.setSwitchMinWidth(dp(34));
+        }
+        value.setScaleX(COMPACT_EFFECT_SWITCH_SCALE);
+        value.setScaleY(COMPACT_EFFECT_SWITCH_SCALE);
+        return value;
+    }
+
+    private View effectVariantControls(Switch value) {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        controls.setPadding(dp(12), 0, dp(8), dp(3));
+        controls.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)));
+        return controls;
+    }
+
+    private boolean supportsPerEffectHighFrameRate(int effect) {
+        return OverlayPrefs.supportsExperimentalNativeRefreshPhysics(effect);
+    }
+
+    /**
+     * Use the panel capabilities rather than its currently selected refresh rate: power saver
+     * may temporarily run a 120/144 Hz phone at 60 Hz, and a Fold's inactive panel may be the
+     * one the user unlocks on next.
+     */
+    private boolean hasInternalHighRefreshDisplay() {
+        DisplayManager displayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+        if (displayManager == null) {
+            return false;
+        }
+        HashSet<Integer> inspectedDisplayIds = new HashSet<Integer>();
+        Display[] displays = displayManager.getDisplays(DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+        if (displays == null || displays.length == 0) {
+            displays = displayManager.getDisplays();
+        }
+        Display defaultDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
+        String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
+        for (Display display : displays) {
+            boolean builtInPanel = display != null
+                    && (display.getDisplayId() == Display.DEFAULT_DISPLAY
+                    || (builtInName != null && builtInName.equals(display.getName())));
+            if (!builtInPanel
+                    || !inspectedDisplayIds.add(Integer.valueOf(display.getDisplayId()))) {
+                continue;
+            }
+            for (Display.Mode mode : display.getSupportedModes()) {
+                if (mode != null && mode.getRefreshRate() > 60.5f) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private View perEffectHighFrameRateControls(final int effect) {
+        final boolean supportsSpeed =
+                OverlayPrefs.supportsExperimentalNativeRefreshPhysicsSpeed(effect);
+        final LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL);
+        controls.setPadding(dp(12), 0, dp(8), dp(4));
+
+        final Switch highFrameRate = new Switch(this);
+        highFrameRate.setText("HFR");
+        highFrameRate.setContentDescription("High frame rate");
+        highFrameRate.setTextColor(COLOR_ACCENT_DEEP);
+        highFrameRate.setTextSize(11f);
+        highFrameRate.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        highFrameRate.setIncludeFontPadding(false);
+        highFrameRate.setGravity(Gravity.CENTER_VERTICAL);
+        highFrameRate.setPadding(0, 0, 0, 0);
+        highFrameRate.setChecked(OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this,
+                effect));
+        tintSwitch(highFrameRate);
+        registerHighFrameRateSwitch(effect, highFrameRate);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            highFrameRate.setShowText(false);
+            highFrameRate.setSplitTrack(false);
+            highFrameRate.setSwitchMinWidth(dp(34));
+        }
+        highFrameRate.setScaleX(COMPACT_EFFECT_SWITCH_SCALE);
+        highFrameRate.setScaleY(COMPACT_EFFECT_SWITCH_SCALE);
+
+        if (supportsSpeed) {
+            LinearLayout speed = verticalGroup();
+            speed.setPadding(0, 0, dp(10), 0);
+
+            final TextView speedValue = new TextView(this);
+            speedValue.setTextColor(COLOR_MUTED);
+            speedValue.setTextSize(11f);
+            speedValue.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            speedValue.setIncludeFontPadding(false);
+            int initialTenths = OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenths(this,
+                    effect);
+            speedValue.setText("Speed " + (initialTenths / 10.0f) + "x");
+            speed.addView(speedValue);
+
+            final SeekBar slider = new SeekBar(this);
+            final boolean[] trackingTouch = new boolean[] {false};
+            slider.setMax(10);
+            slider.setProgress(initialTenths - 10);
+            slider.setContentDescription("High frame rate speed, 1.0x to 2.0x");
+            tintSeekBar(slider);
+            slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress,
+                        boolean fromUser) {
+                    int tenths = Math.max(10, Math.min(20, 10 + progress));
+                    speedValue.setText("Speed " + (tenths / 10.0f) + "x");
+                    if (fromUser && !trackingTouch[0]) {
+                        persistExperimentalNativeRefreshSpeed(effect, tenths);
+                    }
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+                    trackingTouch[0] = true;
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                    trackingTouch[0] = false;
+                    int tenths = Math.max(10, Math.min(20, 10 + seekBar.getProgress()));
+                    // Commit only when the user releases the thumb, so an active renderer is
+                    // never recreated repeatedly while the speed is being scrubbed.
+                    persistExperimentalNativeRefreshSpeed(effect, tenths);
+                }
+            });
+            LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(26));
+            speed.addView(slider, sliderParams);
+            controls.addView(speed, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            highFrameRate.setOnCheckedChangeListener(
+                    new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (syncingHighFrameRateSwitches) {
+                        return;
+                    }
+                    syncHighFrameRateSwitches(effect, highFrameRate, isChecked);
+                    prefs.edit().putBoolean(
+                            OverlayPrefs.experimentalNativeRefreshPhysicsKey(effect),
+                            isChecked).apply();
+                    slider.setEnabled(isChecked);
+                    slider.setAlpha(isChecked ? 1f : 0.42f);
+                    speedValue.setAlpha(isChecked ? 1f : 0.42f);
+                }
+            });
+            boolean enabled = highFrameRate.isChecked();
+            slider.setEnabled(enabled);
+            slider.setAlpha(enabled ? 1f : 0.42f);
+            speedValue.setAlpha(enabled ? 1f : 0.42f);
+        } else {
+            highFrameRate.setOnCheckedChangeListener(
+                    new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (syncingHighFrameRateSwitches) {
+                        return;
+                    }
+                    syncHighFrameRateSwitches(effect, highFrameRate, isChecked);
+                    prefs.edit().putBoolean(OverlayPrefs.experimentalNativeRefreshPhysicsKey(effect),
+                            isChecked).apply();
+                }
+            });
+        }
+
+        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
+        controls.addView(highFrameRate, switchParams);
+        return controls;
+    }
+
+    private void persistExperimentalNativeRefreshSpeed(int effect, int tenths) {
+        prefs.edit().putInt(
+                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                Math.max(10, Math.min(20, tenths))).apply();
+    }
+
+    private void registerHighFrameRateSwitch(int effect, Switch value) {
+        Integer key = Integer.valueOf(effect);
+        ArrayList<Switch> switches = highFrameRateSwitches.get(key);
+        if (switches == null) {
+            switches = new ArrayList<Switch>();
+            highFrameRateSwitches.put(key, switches);
+        }
+        switches.add(value);
+    }
+
+    private void syncHighFrameRateSwitches(int effect, Switch source, boolean checked) {
+        ArrayList<Switch> switches = highFrameRateSwitches.get(Integer.valueOf(effect));
+        if (switches == null || switches.size() < 2) {
+            return;
+        }
+        syncingHighFrameRateSwitches = true;
+        try {
+            for (Switch candidate : switches) {
+                if (candidate != source && candidate.isChecked() != checked) {
+                    candidate.setChecked(checked);
+                }
+            }
+        } finally {
+            syncingHighFrameRateSwitches = false;
+        }
     }
 
     private View seasonalEffectOption(final String title, String subtitle,
@@ -4596,6 +4958,11 @@ public class ControlActivity extends Activity {
         }
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
+        section.addView(toggle("Three-finger emergency bypass",
+                OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED, true));
+        section.addView(infoText("When enabled, swipe three fingers together inside the touch "
+                + "box to remove L.L.E for the current lock cycle and expose the stock "
+                + "lockscreen. It rearms after the next screen-off/on cycle."));
         section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
                 ? "Dual touch box wizard"
                 : "Touch box screenshot wizard", new View.OnClickListener() {
@@ -4689,6 +5056,12 @@ public class ControlActivity extends Activity {
             section.addView(infoText("Routes every L.L.E. effect and lock sound through "
                     + "media volume instead of System sounds. This also bypasses the phone's "
                     + "Screen lock/unlock sound switch."));
+            section.addView(toggle("Conservative unlock handoff (slow devices)",
+                    OverlayPrefs.DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false));
+            section.addView(infoText("Adds extra settling time before opening the PIN screen. "
+                    + "Try this only if Android reports delayed or unrecognized touches, or "
+                    + "unlocking sometimes needs a second swipe. The PIN screen may appear "
+                    + "slightly later."));
             section.addView(toggle("Legacy quick-panel detection (1.0.5.3)",
                     OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION, false));
             TextView legacyQuickPanelWarning = infoText("Compatibility fallback only. "

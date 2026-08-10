@@ -67,6 +67,8 @@ final class DebugReport {
                     "affordance_pending", "affordance_shown_this_wake",
                     "affordance_dispatch_queued", "affordance_dispatch_generation",
                     "effect_renderer_type", "effect_gesture_active", "pin_entry_pending",
+                    "lock_cycle_safety_bypass_active",
+                    "three_finger_safety_bypass_enabled",
                     "pin_entry_surface_visible", "pin_entry_handoff_active",
                     "pin_entry_handoff_attempt", "pin_entry_handoff_callback",
                     "pin_entry_handoff_terminal", "pin_entry_handoff_outcome",

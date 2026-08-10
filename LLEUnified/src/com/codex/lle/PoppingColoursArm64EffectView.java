@@ -35,6 +35,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private static final int PARTICLE_UNLOCK_SPEED = 5;
     private static final int DRAWING_MARGIN_PX = 11;
     private static final long DRAWING_DELAY_MS = 16L;
+    private static final float SIMULATION_FRAMES_PER_SECOND = 60f;
+    private static final float ADAPTIVE_SPEED_MIN = 1f;
+    private static final float ADAPTIVE_SPEED_MAX = 2f;
+    private static final long ADAPTIVE_STALL_NANOS = 66_666_667L;
 
     private static final int DRAG_SOUND_COUNT_START_POINT = 40;
     private static final int DRAG_SOUND_COUNT_INTERVAL = 60;
@@ -55,6 +59,8 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private final int tapSound;
     private final int dragSound;
     private final int unlockSound;
+    private final boolean adaptiveRefresh;
+    private final float adaptiveSpeedMultiplier;
 
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
@@ -65,6 +71,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private boolean gestureActive;
     private boolean drawing;
     private boolean canvasReady;
+    private long lastAdaptiveFrameNanos;
     private int nextParticleIndex = -1;
     private int drawingLeft;
     private int drawingTop;
@@ -90,17 +97,26 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             if (destroyed || !drawing) {
                 return;
             }
-            if (isAvailableDrawingRect()) {
-                invalidate(
-                        drawingLeft - DRAWING_MARGIN_PX,
-                        drawingTop - DRAWING_MARGIN_PX,
-                        drawingRight + DRAWING_MARGIN_PX,
-                        drawingBottom + DRAWING_MARGIN_PX);
+            if (adaptiveRefresh) {
+                advanceAdaptiveParticles(System.nanoTime());
+                invalidateAdaptiveDrawingBounds();
             } else {
-                invalidate(0, 0, 1, 1);
+                if (isAvailableDrawingRect()) {
+                    invalidate(
+                            drawingLeft - DRAWING_MARGIN_PX,
+                            drawingTop - DRAWING_MARGIN_PX,
+                            drawingRight + DRAWING_MARGIN_PX,
+                            drawingBottom + DRAWING_MARGIN_PX);
+                } else {
+                    invalidate(0, 0, 1, 1);
+                }
             }
             if (drawing && !destroyed) {
-                postDelayed(this, DRAWING_DELAY_MS);
+                if (adaptiveRefresh) {
+                    postOnAnimation(this);
+                } else {
+                    postDelayed(this, DRAWING_DELAY_MS);
+                }
             }
         }
     };
@@ -118,7 +134,21 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     };
 
     PoppingColoursArm64EffectView(Context context) {
+        this(context, false, 1f);
+    }
+
+    /**
+     * Creates the renderer with an optional display-vsync simulation path.
+     *
+     * <p>The legacy constructor deliberately keeps the original 16 ms scheduler and
+     * integer particle simulation. The adaptive path is opt-in so the master switch
+     * can leave stock rendering untouched.</p>
+     */
+    PoppingColoursArm64EffectView(Context context, boolean adaptiveRefresh,
+            float speedMultiplier) {
         super(context);
+        this.adaptiveRefresh = adaptiveRefresh;
+        this.adaptiveSpeedMultiplier = normalizeAdaptiveSpeed(speedMultiplier);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -377,8 +407,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 continue;
             }
 
-            particle.move();
-            particle.draw(canvas);
+            if (adaptiveRefresh) {
+                particle.drawAdaptive(canvas);
+            } else {
+                particle.move();
+                particle.draw(canvas);
+            }
             int left = particle.left();
             int top = particle.top();
             int right = particle.right();
@@ -437,12 +471,108 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             return;
         }
         drawing = true;
-        postDelayed(drawingRunnable, DRAWING_DELAY_MS);
+        if (adaptiveRefresh) {
+            // Establish a real monotonic origin. There is no synthetic first 16 ms step.
+            lastAdaptiveFrameNanos = System.nanoTime();
+            postOnAnimation(drawingRunnable);
+        } else {
+            postDelayed(drawingRunnable, DRAWING_DELAY_MS);
+        }
     }
 
     private void stopDrawing() {
         drawing = false;
+        lastAdaptiveFrameNanos = 0L;
         removeCallbacks(drawingRunnable);
+    }
+
+    /**
+     * Advances once per display-vsync from a single monotonic elapsed sample. This is
+     * intentionally not an accumulator: a stall is discarded after its timestamp is
+     * sampled, so it cannot leave a fixed-step backlog for later frames.
+     */
+    private void advanceAdaptiveParticles(long nowNanos) {
+        long previousNanos = lastAdaptiveFrameNanos;
+        lastAdaptiveFrameNanos = nowNanos;
+        if (previousNanos == 0L || nowNanos <= previousNanos) {
+            return;
+        }
+        float simulationFrames = adaptiveSimulationFramesForElapsedNanos(
+                nowNanos - previousNanos, adaptiveSpeedMultiplier);
+        if (simulationFrames <= 0f) {
+            return;
+        }
+        for (Particle particle : aliveParticles) {
+            if (particle.alive) {
+                particle.advanceAdaptive(simulationFrames);
+            }
+        }
+    }
+
+    static float normalizeAdaptiveSpeed(float requestedSpeed) {
+        if (Float.isNaN(requestedSpeed) || Float.isInfinite(requestedSpeed)) {
+            return ADAPTIVE_SPEED_MIN;
+        }
+        return Math.max(ADAPTIVE_SPEED_MIN,
+                Math.min(ADAPTIVE_SPEED_MAX, requestedSpeed));
+    }
+
+    /** Package-visible pure timing seam for deterministic host checks. */
+    static float adaptiveSimulationFramesForElapsedNanos(long elapsedNanos,
+            float speedMultiplier) {
+        // Compare the unscaled display delta so a faster requested simulation never
+        // turns an otherwise valid vsync interval into a synthetic stall.
+        if (elapsedNanos <= 0L || elapsedNanos > ADAPTIVE_STALL_NANOS) {
+            return 0f;
+        }
+        return (float) (elapsedNanos * (double) SIMULATION_FRAMES_PER_SECOND
+                * normalizeAdaptiveSpeed(speedMultiplier) / 1_000_000_000d);
+    }
+
+    /** Invalidates both the previous draw and the current adaptive particle extents. */
+    private void invalidateAdaptiveDrawingBounds() {
+        boolean hasPreviousBounds = isAvailableDrawingRect();
+        int left = drawingLeft;
+        int top = drawingTop;
+        int right = drawingRight;
+        int bottom = drawingBottom;
+        boolean hasCurrentBounds = false;
+
+        for (Particle particle : aliveParticles) {
+            if (!particle.alive) {
+                continue;
+            }
+            int particleLeft = particle.left();
+            int particleTop = particle.top();
+            int particleRight = particle.right();
+            int particleBottom = particle.bottom();
+            if (!hasCurrentBounds) {
+                if (hasPreviousBounds) {
+                    left = Math.min(left, particleLeft);
+                    top = Math.min(top, particleTop);
+                    right = Math.max(right, particleRight);
+                    bottom = Math.max(bottom, particleBottom);
+                } else {
+                    left = particleLeft;
+                    top = particleTop;
+                    right = particleRight;
+                    bottom = particleBottom;
+                }
+                hasCurrentBounds = true;
+            } else {
+                left = Math.min(left, particleLeft);
+                top = Math.min(top, particleTop);
+                right = Math.max(right, particleRight);
+                bottom = Math.max(bottom, particleBottom);
+            }
+        }
+
+        if (hasPreviousBounds || hasCurrentBounds) {
+            invalidate(left - DRAWING_MARGIN_PX, top - DRAWING_MARGIN_PX,
+                    right + DRAWING_MARGIN_PX, bottom + DRAWING_MARGIN_PX);
+        } else {
+            invalidate(0, 0, 1, 1);
+        }
     }
 
     private boolean isAvailableDrawingRect() {
@@ -594,6 +724,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         boolean alive;
         boolean unlocked;
         int life;
+        float adaptiveLife;
         int radius;
         float x;
         float y;
@@ -610,6 +741,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         void initialize(float initialX, float initialY, int color) {
             Random random = new Random();
             life = random.nextInt(100) + 50;
+            /* Stock draws the current integer life before decrementing it. Keep the
+             * same visible value at an exact 60 Hz elapsed frame while retaining a
+             * fractional value between high-refresh display frames. */
+            adaptiveLife = life + 1f;
             float randomTotal = random.nextInt(RANDOM_TOTAL) / (float) RANDOM_TOTAL;
             radius = (int) ((random.nextInt(10) == 0 ? bigRadius : smallRadius)
                     * randomTotal);
@@ -627,6 +762,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             y += dy;
         }
 
+        void advanceAdaptive(float simulationFrames) {
+            x += dx * simulationFrames;
+            y += dy * simulationFrames;
+            adaptiveLife -= simulationFrames;
+        }
+
         void draw(Canvas canvas) {
             int alphaStartFrame = unlocked ? 20 : 30;
             int alpha = life < alphaStartFrame
@@ -641,11 +782,24 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             }
         }
 
+        void drawAdaptive(Canvas canvas) {
+            float alphaStartFrame = unlocked ? 20f : 30f;
+            int alpha = adaptiveLife < alphaStartFrame
+                    ? Math.max(0, (int) (DOT_ALPHA * adaptiveLife / alphaStartFrame))
+                    : DOT_ALPHA;
+            paint.setAlpha(alpha);
+            canvas.drawCircle(x, y, radius, paint);
+            if (adaptiveLife <= 0f) {
+                alive = false;
+            }
+        }
+
         void unlock(float speed) {
             unlocked = true;
             dx *= speed;
             dy *= speed;
             life = 19;
+            adaptiveLife = life + 1f;
         }
 
         int left() {

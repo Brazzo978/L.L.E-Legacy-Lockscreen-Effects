@@ -63,8 +63,10 @@ const char lle_ripple_overlay_ink_fragment_shader[] =
         "  float NdotL = max(dot(vNormal, vec3(5.0, -5.0, 1.0)), 0.0);\n"
         "  float t = clamp(abs(vHeights), 0.0, 1.13);\n"
         "  vec3 rippleRGB = t * specular * waterColor.rgb * (alphaRatio1 + fresnelRatio * clamp((NdotL - 0.99), 0.0, 0.3)) + bgColor.rgb;\n"
-        "  vec4 density = texture2D(Density, gl_FragCoord.xy * Scale);\n"
-        "  float w = intensity * (255.0 * density.x + density.y);\n"
+        "  vec2 densityCoord = gl_FragCoord.xy * Scale;\n"
+        "  vec4 density = texture2D(Density, densityCoord);\n"
+        "  float d = 255.0 * density.x + density.y;\n"
+        "  float w = intensity * d;\n"
         "  float slopeMask = smoothstep(uOverlayMaskLow, uOverlayMaskHigh, length(vNormal.xy));\n"
         "  vec3 samsungResult = clamp(rippleRGB / (1.0 + w * ink_color), 0.0, 1.0);\n"
         /* Use the minimum source-over alpha capable of reproducing Samsung's

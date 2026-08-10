@@ -54,11 +54,15 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final int SIMULATION_HZ = 60;
     private static final int MAX_SIMULATION_STEPS_PER_FRAME = 4;
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
+    /* A compositor/pause gap is discarded rather than replaying several old
+     * wave frames after unlock.  66.667 ms is four recovered 60 Hz ticks. */
+    private static final long MAX_ADAPTIVE_FRAME_DELTA_NS = 66_666_667L;
 
     private static final AtomicReference<S3Arm64RippleEffectView> NATIVE_OWNER =
             new AtomicReference<>();
 
     private final boolean inkMode;
+    private final boolean adaptiveRefresh;
     private final RippleRenderer rippleRenderer = new RippleRenderer();
     private final Object bitmapLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
@@ -87,12 +91,17 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     public S3Arm64RippleEffectView(Context context) {
-        this(context, false);
+        this(context, false, false);
     }
 
     S3Arm64RippleEffectView(Context context, boolean inkMode) {
+        this(context, inkMode, false);
+    }
+
+    S3Arm64RippleEffectView(Context context, boolean inkMode, boolean adaptiveRefresh) {
         super(context);
         this.inkMode = inkMode;
+        this.adaptiveRefresh = adaptiveRefresh;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -660,6 +669,52 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
     }
 
+    /** The opt-in path advances Water Ripple from elapsed display time. */
+    private boolean usesAdaptivePhysics() {
+        return !inkMode && adaptiveRefresh;
+    }
+
+    /**
+     * Display-refresh clock for the opt-in physics path.  It intentionally has
+     * no accumulator: a stalled compositor frame is forgotten, so the next
+     * fresh vsync cannot replay an unlock/ink backlog.
+     */
+    static final class AdaptiveFrameClock {
+        private long previousFrameNs = Long.MIN_VALUE;
+
+        /** Returns a usable elapsed duration, or zero for first/duplicate/stalled frames. */
+        long advance(long frameTimeNs) {
+            if (previousFrameNs == Long.MIN_VALUE) {
+                previousFrameNs = frameTimeNs;
+                return 0L;
+            }
+            long elapsedNs = frameTimeNs - previousFrameNs;
+            previousFrameNs = frameTimeNs;
+            if (elapsedNs <= 0L || elapsedNs > MAX_ADAPTIVE_FRAME_DELTA_NS) {
+                return 0L;
+            }
+            return elapsedNs;
+        }
+
+        void reset() {
+            previousFrameNs = Long.MIN_VALUE;
+        }
+    }
+
+    private static float adaptivePhysicsTicks(long elapsedNs) {
+        if (elapsedNs <= 0L) {
+            return 0.0f;
+        }
+        double stockTicks = elapsedNs * (double) SIMULATION_HZ / NANOS_PER_SECOND;
+        /* Nanoseconds cannot exactly express 1/60.  Snap only the sub-microsecond
+         * rational rounding band so an intended 60 Hz frame remains the exact
+         * recovered oracle; real frame jitter continues to use measured time. */
+        if (Math.abs(stockTicks - 1.0d) <= 0.0001d) {
+            return 1.0f;
+        }
+        return (float) Math.min((double) MAX_SIMULATION_STEPS_PER_FRAME, stockTicks);
+    }
+
     private void activateContinuousRendering() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             if (canAcceptCommands()) {
@@ -855,6 +910,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         private final float[] worldViewMatrix = new float[16];
         private final float[] mvpMatrix = new float[16];
         private final SimulationClock simulationClock = new SimulationClock();
+        private final AdaptiveFrameClock adaptiveFrameClock = new AdaptiveFrameClock();
 
         private Thread glThread;
         private Bitmap activeBackground;
@@ -1001,6 +1057,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 publishResourcesReadyIfComplete();
                 drawCount = 0;
                 simulationClock.reset();
+                adaptiveFrameClock.reset();
                 Log.i(TAG, "surface initialized generation=" + contextGeneration
                         + " size=" + width + "x" + height
                         + " dragThreshold=" + dragRippleThresholdPx());
@@ -1063,14 +1120,24 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent frame");
 
-                // Preserve the original 60 Hz solver cadence while presentation follows the panel.
-                int simulationSteps = simulationClock.advance(System.nanoTime());
-                if (drawCount > 0 && !simulationIdle) {
-                    for (int step = 0; step < simulationSteps; ++step) {
-                        stepSimulation();
+                if (usesAdaptivePhysics()) {
+                    long elapsedNs = adaptiveFrameClock.advance(System.nanoTime());
+                    if (drawCount > 0 && !simulationIdle && elapsedNs > 0L) {
+                        stepAdaptiveSimulation(elapsedNs);
                         if (simulationIdle) {
-                            simulationClock.reset();
-                            break;
+                            adaptiveFrameClock.reset();
+                        }
+                    }
+                } else {
+                    // Preserve the original recovered 60 Hz solver cadence verbatim.
+                    int simulationSteps = simulationClock.advance(System.nanoTime());
+                    if (drawCount > 0 && !simulationIdle) {
+                        for (int step = 0; step < simulationSteps; ++step) {
+                            stepSimulation();
+                            if (simulationIdle) {
+                                simulationClock.reset();
+                                break;
+                            }
                         }
                     }
                 }
@@ -1168,7 +1235,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             lastTouchEventTimeMs = eventTimeMs;
             if (simulationIdle) {
-                simulationClock.reset();
+                if (usesAdaptivePhysics()) {
+                    adaptiveFrameClock.reset();
+                } else {
+                    simulationClock.reset();
+                }
             }
             simulationIdle = false;
 
@@ -1251,7 +1322,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             lastTouchEventTimeMs = eventTimeMs;
             if (simulationIdle) {
-                simulationClock.reset();
+                if (usesAdaptivePhysics()) {
+                    adaptiveFrameClock.reset();
+                } else {
+                    simulationClock.reset();
+                }
             }
             simulationIdle = false;
             injectInk(localX, localY, localX, localY, 0);
@@ -1366,6 +1441,37 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             simulationIdle = empty != 0 && !glTouched
                     && (!inkMode || inkFramesRemaining <= 0);
+            if (simulationIdle && drawCount >= 2) {
+                requestIdleRenderMode(contextGeneration);
+            }
+        }
+
+        /** Advances the Water Ripple opt-in path once per presented display frame. */
+        private void stepAdaptiveSimulation(long elapsedNs) {
+            final float stockTicks = adaptivePhysicsTicks(elapsedNs);
+            if (stockTicks <= 0.0f) {
+                return;
+            }
+            boolean landscape = surfaceWidth > surfaceHeight;
+            int xBegin = landscape ? S3_LANDSCAPE_X_BEGIN : S3_PORTRAIT_X_BEGIN;
+            int yBegin = landscape ? S3_LANDSCAPE_Y_BEGIN : S3_PORTRAIT_Y_BEGIN;
+            int xEnd = landscape ? S3_LANDSCAPE_X_END : S3_PORTRAIT_X_END;
+            int yEnd = landscape ? S3_LANDSCAPE_Y_END : S3_PORTRAIT_Y_END;
+            int empty = JniWaterRippleRender.moveAdaptive(
+                    velocity,
+                    heights,
+                    xBegin,
+                    yBegin,
+                    xEnd,
+                    yEnd,
+                    DETAIL_WIDTH,
+                    DETAIL_HEIGHT,
+                    true,
+                    REDUCTION_RATE,
+                    WAVE_COEFFICIENT,
+                    stockTicks);
+            fillGpuHeights();
+            simulationIdle = empty != 0 && !glTouched;
             if (simulationIdle && drawCount >= 2) {
                 requestIdleRenderMode(contextGeneration);
             }

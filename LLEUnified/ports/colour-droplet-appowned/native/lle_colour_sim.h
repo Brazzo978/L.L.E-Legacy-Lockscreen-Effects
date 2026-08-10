@@ -51,6 +51,14 @@ void lle_colour_sim_reset(LleColourSim *sim);
 /* Advances one recovered 60 Hz frame, internally using two physics substeps. */
 void lle_colour_sim_tick(LleColourSim *sim);
 
+/*
+ * Experimental display-refresh variant. frame_scale is the duration of this
+ * frame relative to the recovered 60 Hz stock frame (60 / displayHz).
+ * The stock entry point above intentionally remains separate so its cadence
+ * and floating-point operation order stay unchanged.
+ */
+void lle_colour_sim_tick_scaled(LleColourSim *sim, float frame_scale);
+
 bool lle_colour_sim_is_idle(const LleColourSim *sim);
 size_t lle_colour_sim_particle_count(const LleColourSim *sim);
 
@@ -66,6 +74,13 @@ lle_colour_sim_export_draw_particles(const LleColourSim *sim,
 
 void lle_colour_sim_get_draw_params(const LleColourSim *sim,
                                     LleColourDrawParams *out_params);
+
+#ifdef LLE_COLOUR_TEST_API
+/* Host-test controls for the recovered library-global satellite phase. */
+void lle_colour_sim_test_set_subparticle_phase(float phase);
+float lle_colour_sim_test_subparticle_phase(void);
+void lle_colour_sim_test_set_stock_subparticle_phase(uint32_t phase);
+#endif
 
 #ifdef __cplusplus
 }
