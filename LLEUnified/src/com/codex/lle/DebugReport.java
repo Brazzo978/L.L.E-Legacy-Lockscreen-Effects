@@ -40,6 +40,7 @@ final class DebugReport {
     private static final String DIRECTORY = "debug-reports";
     private static final String PREFIX = "LLE-debug-";
     private static final int MAX_LOGCAT_CHARS = 512 * 1024;
+    private static final int MAX_UID_FORMAT_LOGCAT_CHARS = 4 * 1024 * 1024;
     private static final int MAX_REPORT_FILES = 4;
     private static final int MAX_RUNTIME_SIGNATURE_CHARS = 4096;
     private static final Pattern SAFE_RUNTIME_VALUE = Pattern.compile(
@@ -52,6 +53,9 @@ final class DebugReport {
     private static final Pattern SAFE_RUNTIME_NODE_ENTRY = Pattern.compile(
             "^d\\d+:id=(?:-|[A-Za-z0-9_.-]+:id/[A-Za-z0-9_.-]+),"
                     + "class=(?:-|[A-Za-z_$][A-Za-z0-9_.$-]*)$");
+    private static final Pattern UID_FORMAT_LOGCAT_LINE = Pattern.compile(
+            "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+"
+                    + "(\\S+)\\s+\\d+\\s+\\d+\\s+[VDIWEAFS]\\s+");
     private static final Set<String> SAFE_RUNTIME_SNAPSHOT_FIELDS = new HashSet<String>(
             Arrays.asList(
                     "service_connected", "service_generation", "boot_safety_holding",
@@ -547,8 +551,12 @@ final class DebugReport {
         body.append("[app_uid_logcat]\n");
         String output = captureLogcat("--uid=" + android.os.Process.myUid());
         if (selectorUnsupported(output, "--uid")) {
-            body.append("filter_fallback=pid (uid selector unsupported)\n");
-            output = captureLogcat("--pid=" + android.os.Process.myPid());
+            body.append("filter_fallback=uid_format (uid selector unsupported)\n");
+            output = captureUidFormattedLogcat(android.os.Process.myUid());
+            if (uidFormatUnsupported(output)) {
+                body.append("filter_fallback_secondary=pid (uid format unsupported)\n");
+                output = captureLogcat("--pid=" + android.os.Process.myPid());
+            }
         } else {
             body.append("filter=uid\n");
         }
@@ -557,16 +565,62 @@ final class DebugReport {
     }
 
     private static String captureLogcat(String selector) {
+        return captureLogcat(
+                MAX_LOGCAT_CHARS,
+                "-d", "-v", "threadtime", "-t", "2000", selector);
+    }
+
+    private static String captureUidFormattedLogcat(int uid) {
+        String raw = captureLogcat(
+                MAX_UID_FORMAT_LOGCAT_CHARS,
+                "-d", "-v", "uid", "-v", "threadtime", "-t", "4000");
+        if (uidFormatUnsupported(raw)) {
+            return raw;
+        }
+        return filterUidFormattedLogcat(raw, uid);
+    }
+
+    static String filterUidFormattedLogcat(String raw, int uid) {
+        String numericUid = Integer.toString(uid);
+        int userId = uid / 100000;
+        int appId = uid % 100000;
+        String appAlias = appId >= 10000 && appId <= 19999
+                ? "u" + userId + "_a" + (appId - 10000) : "";
+        String compactAppAlias = appAlias.length() == 0 ? "" : appAlias.replace("_", "");
+        StringBuilder filtered = new StringBuilder(64 * 1024);
+        int matchedLines = 0;
+        String[] lines = raw.split("\\n");
+        for (String line : lines) {
+            java.util.regex.Matcher matcher = UID_FORMAT_LOGCAT_LINE.matcher(line);
+            if (!matcher.find()) {
+                continue;
+            }
+            String lineUid = matcher.group(1);
+            if (!numericUid.equals(lineUid)
+                    && !appAlias.equals(lineUid)
+                    && !compactAppAlias.equals(lineUid)) {
+                continue;
+            }
+            if (filtered.length() + line.length() + 1 > MAX_LOGCAT_CHARS) {
+                filtered.append("<logcat truncated>\n");
+                break;
+            }
+            filtered.append(line).append('\n');
+            matchedLines++;
+        }
+        filtered.insert(0, "uid_format_matching_lines=" + matchedLines + "\n");
+        return filtered.toString();
+    }
+
+    private static String captureLogcat(int maxChars, String... arguments) {
         Process process = null;
         BufferedReader reader = null;
         StringBuilder output = new StringBuilder(64 * 1024);
         try {
-            process = new ProcessBuilder(
-                    "/system/bin/logcat",
-                    "-d",
-                    "-v", "threadtime",
-                    "-t", "2000",
-                    selector)
+            String[] command = new String[arguments.length + 1];
+            command[0] = "/system/bin/logcat";
+            System.arraycopy(arguments, 0, command, 1, arguments.length);
+            process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .start();
             reader = new BufferedReader(new InputStreamReader(
@@ -575,12 +629,12 @@ final class DebugReport {
             int total = 0;
             int count;
             while ((count = reader.read(buffer)) >= 0) {
-                int allowed = Math.min(count, MAX_LOGCAT_CHARS - total);
+                int allowed = Math.min(count, maxChars - total);
                 if (allowed > 0) {
                     output.append(buffer, 0, allowed);
                     total += allowed;
                 }
-                if (total >= MAX_LOGCAT_CHARS) {
+                if (total >= maxChars) {
                     output.append("\n<logcat truncated>\n");
                     break;
                 }
@@ -610,6 +664,18 @@ final class DebugReport {
         String lower = output.toLowerCase(Locale.ROOT);
         return lower.contains("unknown option")
                 && lower.contains(selectorName.toLowerCase(Locale.US));
+    }
+
+    private static boolean uidFormatUnsupported(String output) {
+        if (output == null) {
+            return true;
+        }
+        String lower = output.toLowerCase(Locale.US);
+        return lower.contains("unknown format: uid")
+                || lower.contains("unknown format 'uid'")
+                || lower.contains("invalid format: uid")
+                || lower.contains("invalid format 'uid'")
+                || (lower.contains("unknown option") && lower.contains("-v uid"));
     }
 
     private static boolean containsPrivateReference(String value) {
