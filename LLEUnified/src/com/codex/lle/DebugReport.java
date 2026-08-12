@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.TreeMap;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Creates a user-shareable, non-root diagnostic report without collecting images. */
@@ -43,9 +42,6 @@ final class DebugReport {
     private static final int MAX_LOGCAT_CHARS = 512 * 1024;
     private static final int MAX_REPORT_FILES = 4;
     private static final int MAX_RUNTIME_SIGNATURE_CHARS = 4096;
-    private static final Pattern LOGCAT_THREADTIME_PRIORITY = Pattern.compile(
-            "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+"
-                    + "\\d+\\s+\\d+\\s+([VDIWEAFS])\\s+");
     private static final Pattern SAFE_RUNTIME_VALUE = Pattern.compile(
             "^[a-zA-Z0-9_.:<>=,| -]{0,512}$");
     private static final Pattern SAFE_RUNTIME_WINDOW_ENTRY = Pattern.compile(
@@ -139,8 +135,8 @@ final class DebugReport {
 
     private static void appendHeader(StringBuilder body, Context context) {
         body.append("L.L.E debug report\n");
-        body.append("privacy_notice=notification and accessibility UI contents are not "
-                + "intentionally collected; app log messages are redacted\n");
+        body.append("privacy_notice=diagnostic beta: app UID/PID log messages are included "
+                + "and may contain notification or accessibility text; review before sharing\n");
         body.append("created_utc=").append(utcTimestamp("yyyy-MM-dd'T'HH:mm:ss'Z'"))
                 .append('\n');
         body.append("package=").append(context.getPackageName()).append('\n');
@@ -556,61 +552,8 @@ final class DebugReport {
         } else {
             body.append("filter=uid\n");
         }
-        appendSanitizedLogcatSummary(body, output);
-    }
-
-    /**
-     * Logcat is a shared append-only buffer. Even after telemetry is corrected, its UID
-     * history can contain old accessibility text. Report only line-count/severity metadata;
-     * no tag or message survives, including for lines the parser does not recognise.
-     */
-    private static void appendSanitizedLogcatSummary(StringBuilder body, String output) {
-        int total = 0;
-        int unparsed = 0;
-        int verbose = 0;
-        int debug = 0;
-        int info = 0;
-        int warning = 0;
-        int error = 0;
-        int assertCount = 0;
-        int fatal = 0;
-        int silent = 0;
-        if (output != null) {
-            String[] lines = output.split("\\n");
-            for (String line : lines) {
-                if (line.length() == 0 || "<logcat truncated>".equals(line)) {
-                    continue;
-                }
-                total++;
-                Matcher matcher = LOGCAT_THREADTIME_PRIORITY.matcher(line);
-                if (!matcher.find()) {
-                    unparsed++;
-                    continue;
-                }
-                switch (matcher.group(1).charAt(0)) {
-                    case 'V': verbose++; break;
-                    case 'D': debug++; break;
-                    case 'I': info++; break;
-                    case 'W': warning++; break;
-                    case 'E': error++; break;
-                    case 'A': assertCount++; break;
-                    case 'F': fatal++; break;
-                    case 'S': silent++; break;
-                    default: unparsed++; break;
-                }
-            }
-        }
-        body.append("message_content=redacted\n");
-        body.append("captured_lines=").append(total).append('\n');
-        body.append("unparsed_lines=").append(unparsed).append('\n');
-        body.append("severity_v=").append(verbose).append('\n');
-        body.append("severity_d=").append(debug).append('\n');
-        body.append("severity_i=").append(info).append('\n');
-        body.append("severity_w=").append(warning).append('\n');
-        body.append("severity_e=").append(error).append('\n');
-        body.append("severity_a=").append(assertCount).append('\n');
-        body.append("severity_f=").append(fatal).append('\n');
-        body.append("severity_s=").append(silent).append('\n');
+        body.append("message_content=full_app_logcat\n");
+        body.append(output == null ? "unavailable=null\n" : output);
     }
 
     private static String captureLogcat(String selector) {
