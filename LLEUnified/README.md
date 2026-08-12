@@ -30,8 +30,8 @@ only; new effects and features target ARM64.
 | APK | ABI | Recommended use |
 |---|---|---|
 | `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
-| `LLE64-1.0.5-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
-| `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Final diagnostic build with frozen Samsung engines |
+| `LLE64-1.0.5.6-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
+| `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Historical final diagnostic build with frozen Samsung engines |
 
 Check the supported ABIs:
 
@@ -54,6 +54,7 @@ device.
 | S5 Brilliant Ring | Available | Available |
 | N3 Watercolor | Available | Available |
 | N2 Ink in Water / Indigo | Available | Available |
+| N3 Ripple Ink | Not in frozen build | Available |
 | N4 Abstract Tiles | Available | **Beta** |
 | N4 Geometric Mosaic | Available | **Beta** |
 | N5 Colored Droplet | Available | Available |
@@ -63,6 +64,7 @@ device.
 | Tab S Blind | Available | Available |
 | Tab S Brilliant Cut | Available | Available |
 | Seasonal / Spring / Summer / Autumn / Winter | Available | Available |
+| Good Lock-inspired Popping / Rectangle / Bouncing | Not in frozen build | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -104,7 +106,7 @@ every screen in order.
 Quick ARM64 ADB update:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.5-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.5.6-64-bit.apk"
 ```
 
 Open ARM64:
@@ -122,7 +124,7 @@ adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
 Both can remain installed, but their preferences and screenshot caches are
 separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 
-The two ARM64 1.0.5 variants use the same package and signing lineage and are
+The ARM64 releases use the same package and signing lineage and are
 alternatives, not co-installable editions. Use the Samsung-free APK normally.
 The legacy-vendor APK is provided only for oracle comparison and diagnostics.
 **L.L.E 1.0.5 Legacy is the final release that contains Samsung code or
@@ -250,6 +252,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.5.6 stable release notes](docs/RELEASE_NOTES_1.0.5.6.md)
 - [1.0.5 stable release notes](docs/RELEASE_NOTES_1.0.5.md)
 - [1.0.4.4 stable release notes](docs/RELEASE_NOTES_1.0.4.4.md)
 - [1.0.4.3 stable release notes](docs/RELEASE_NOTES_1.0.4.3.md)

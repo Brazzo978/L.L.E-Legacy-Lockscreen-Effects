@@ -19,9 +19,9 @@ param(
 $ErrorActionPreference = "Stop"
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
+$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 32 } else { 0 }
+$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.5.6" } else { "" }
 if ($LegacyVendorEffects) {
-$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 31 } else { 0 }
-$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.5.5" } else { "" }
     $launcherLabel += " Legacy"
 }
 if ($ValidationVersionCode -gt 0) {
@@ -61,10 +61,14 @@ $sdk = if ($env:ANDROID_HOME) {
 } else {
     Join-Path $env:LOCALAPPDATA "Android\Sdk"
 }
+$cachedNdk = Join-Path (Split-Path -Parent $root) "tools-cache\android-ndk-r27d"
+$legacyNdk = Join-Path $root "..\unlock-effects-test\tools\android-ndk-r27d"
 $ndk = if ($env:ANDROID_NDK_HOME) {
     $env:ANDROID_NDK_HOME
+} elseif (Test-Path -LiteralPath $cachedNdk) {
+    $cachedNdk
 } else {
-    Join-Path $root "..\unlock-effects-test\tools\android-ndk-r27d"
+    $legacyNdk
 }
 $buildTools = Join-Path $sdk "build-tools\35.0.1"
 $platform = Join-Path $sdk "platforms\android-35\android.jar"
@@ -144,9 +148,19 @@ function Run($exe, $arguments) {
     if (-not (Test-Path -LiteralPath $exe) -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) {
         throw "Missing build tool: $exe"
     }
-    & $exe @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$exe failed with exit code $LASTEXITCODE"
+    # Native tool warnings (notably JDK 21's source-8 notice) are written to stderr with a
+    # successful exit code. Preserve the explicit exit-code contract below rather than letting
+    # the caller's ErrorActionPreference turn those warnings into terminating PowerShell errors.
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $exe @arguments
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$exe failed with exit code $exitCode"
     }
 }
 
@@ -703,6 +717,76 @@ $s6WaterDropletAppOwnedStageHash = (Get-FileHash `
 if ($s6WaterDropletAppOwnedStageHash -ne $s6WaterDropletAppOwnedBuiltHash) {
     throw "App-owned S6 Water Droplet staged library hash mismatch"
 }
+
+# ENB4 Note 3 Ripple Ink's app-owned, velocity-only worker. It is staged into
+# the APK and loaded lazily by the production Android Ripple Ink pipeline.
+$n3RippleInkNative = Join-Path $root "ports\ripple-ink\n3-native"
+$n3RippleInkBuiltLibrary = Join-Path $out "liblleN3RippleInk-built.so"
+$n3RippleInkLibrary = Join-Path $arm64Stage "liblleN3RippleInk.so"
+$n3RippleInkSources = @(
+    "lle_n3_ink_worker.c",
+    "lle_n3_ink_jni.c"
+) | ForEach-Object {
+    Join-Path $n3RippleInkNative $_
+}
+foreach ($n3RippleInkSource in $n3RippleInkSources) {
+    if (-not (Test-Path -LiteralPath $n3RippleInkSource -PathType Leaf)) {
+        throw "Missing N3 Ripple Ink native source: $n3RippleInkSource"
+    }
+}
+$n3RippleInkClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-fPIC", "-pthread", "-Wall", "-Wextra", "-Werror",
+    "-shared", "-Wl,--no-undefined",
+    "-Wl,-soname,liblleN3RippleInk.so",
+    "-I", $n3RippleInkNative
+) + $n3RippleInkSources + @(
+    "-Wl,--no-as-needed", "-lm",
+    "-o", $n3RippleInkBuiltLibrary
+)
+Run $clang $n3RippleInkClangArgs
+$n3RippleInkHeader = (& $readelf -h $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $n3RippleInkHeader -notmatch "Class:\s+ELF64" `
+        -or $n3RippleInkHeader -notmatch "Machine:\s+AArch64") {
+    throw "N3 Ripple Ink worker is not an ELF64 AArch64 binary"
+}
+$n3RippleInkDynamic = (& $readelf -d $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $n3RippleInkDynamic -notmatch "SONAME.*\[liblleN3RippleInk\.so\]") {
+    throw "N3 Ripple Ink worker has an unexpected SONAME"
+}
+if ($n3RippleInkDynamic -match
+        "NEEDED.*\[(libstlport|libstdc\+\+|libc\+\+|libColourDropletEffect|" +
+        "libSparklingBubblesEffect|libWaterDropletEffect|libsecve[^]]*)\.so\]") {
+    throw "N3 Ripple Ink worker unexpectedly depends on a legacy Samsung runtime"
+}
+$n3RippleInkSymbols = (& $readelf -Ws $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "N3 Ripple Ink worker dynamic symbol inspection failed"
+}
+$expectedN3RippleInkExports = @(
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeBridgeVersion",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeCreate",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeReset",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeStep",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeDestroy"
+)
+foreach ($export in $expectedN3RippleInkExports) {
+    $definedExportPattern = "(?m)^\s*\d+:\s+\S+\s+\d+\s+FUNC\s+GLOBAL\s+DEFAULT\s+\d+\s+" `
+            + [regex]::Escape($export) + "\s*$"
+    if ($n3RippleInkSymbols -notmatch $definedExportPattern) {
+        throw "Missing N3 Ripple Ink JNI export: $export"
+    }
+}
+$n3RippleInkBuiltHash = (Get-FileHash -LiteralPath $n3RippleInkBuiltLibrary `
+        -Algorithm SHA256).Hash
+Copy-Item -LiteralPath $n3RippleInkBuiltLibrary -Destination $n3RippleInkLibrary -Force
+$n3RippleInkStageHash = (Get-FileHash -LiteralPath $n3RippleInkLibrary `
+        -Algorithm SHA256).Hash
+if ($n3RippleInkStageHash -ne $n3RippleInkBuiltHash) {
+    throw "N3 Ripple Ink worker staged library hash mismatch"
+}
 if ($LegacyVendorEffects) {
 $s6WaterDropletSource = Join-Path $root `
         "ports\s6-water-droplet\integration\native\patched\libWaterDropletEffect.so"
@@ -1058,6 +1142,7 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/liblleSparklingBubbles.so",
     "lib/arm64-v8a/liblleColourDroplet.so",
     "lib/arm64-v8a/liblleS6WaterDroplet.so",
+    "lib/arm64-v8a/liblleN3RippleInk.so",
     "lib/arm64-v8a/libWaterRipple.so",
     "lib/arm64-v8a/libsecveAbstractTile.so",
     "lib/arm64-v8a/libsecveSrkCommon.so",
@@ -1225,6 +1310,27 @@ if ($s6WaterDropletAppOwnedApkHash -ne $s6WaterDropletAppOwnedStageHash) {
 }
 Remove-Item -Recurse -Force $s6WaterDropletAppOwnedApkVerify
 
+$n3RippleInkApkVerify = Join-Path $out "verify-n3-ripple-ink-entry"
+New-Item -ItemType Directory -Force -Path $n3RippleInkApkVerify | Out-Null
+Push-Location $n3RippleInkApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/liblleN3RippleInk.so")
+} finally {
+    Pop-Location
+}
+$n3RippleInkApkLibrary = Join-Path $n3RippleInkApkVerify `
+        "lib\arm64-v8a\liblleN3RippleInk.so"
+if (-not (Test-Path -LiteralPath $n3RippleInkApkLibrary)) {
+    throw "N3 Ripple Ink worker APK entry is missing"
+}
+$n3RippleInkApkHash = (Get-FileHash -LiteralPath $n3RippleInkApkLibrary `
+        -Algorithm SHA256).Hash
+if ($n3RippleInkApkHash -ne $n3RippleInkStageHash) {
+    throw "N3 Ripple Ink worker APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $n3RippleInkApkVerify
+
 $canonicalManifestHashAfter = (Get-FileHash -LiteralPath $canonicalManifest `
         -Algorithm SHA256).Hash
 if ($canonicalManifestHashAfter -ne $canonicalManifestHashBefore) {
@@ -1253,6 +1359,7 @@ Write-Host "Native entries: $($nativeEntries -join ', ')"
 Write-Host "App-owned Sparkling Bubbles SHA-256: $sparklingAppOwnedStageHash"
 Write-Host "App-owned Coloured Droplet SHA-256: $colourDropletAppOwnedStageHash"
 Write-Host "App-owned S6 Water Droplet SHA-256: $s6WaterDropletAppOwnedStageHash"
+Write-Host "N3 Ripple Ink worker SHA-256: $n3RippleInkStageHash"
 if ($LegacyVendorEffects) {
     Write-Host "S6 Water Droplet SHA-256: $s6WaterDropletStageHash"
 }

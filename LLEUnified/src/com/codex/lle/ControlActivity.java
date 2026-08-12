@@ -57,6 +57,7 @@ import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -123,12 +124,32 @@ public class ControlActivity extends Activity {
     private static final int COLOR_GRACE_BLUE = Color.rgb(61, 111, 169);
     private static final int COLOR_GRACE_AQUA = Color.rgb(91, 199, 194);
     private static final int COLOR_GRACE_LILAC = Color.rgb(106, 79, 176);
+    private static final String[] RIPPLE_INK_PALETTE_NAMES = {
+            "pink", "amber", "green", "electric blue", "navy", "violet", "brown", "cyan"
+    };
     private static final int TAB_SWIPE_MIN_DISTANCE_DP = 72;
     private static final int TAB_DRAG_START_DISTANCE_DP = 12;
     private static final long TAB_ANIMATION_DURATION_MS = 270L;
     private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
     private static final float TAB_DRAG_AXIS_RATIO = 1.18f;
     private static final long EFFECT_SELECTION_APPLY_DELAY_MS = 2000L;
+
+    /**
+     * Preview one fully developed stock Samsung ink layer over white.  At w=1,
+     * the palette target is c / (c + (1.5 - c)), so each raw component is c/1.5.
+     */
+    private static int rippleInkPreviewColor(int selector) {
+        return Color.rgb(
+                rippleInkPreviewComponent(selector, 0),
+                rippleInkPreviewComponent(selector, 1),
+                rippleInkPreviewComponent(selector, 2));
+    }
+
+    private static int rippleInkPreviewComponent(int selector, int channel) {
+        float component = RippleInkPortEngine.paletteComponent(selector, channel);
+        float rendered = component / (component + (1.5f - component));
+        return Math.max(0, Math.min(255, Math.round(rendered * 255f)));
+    }
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final Runnable applyPendingUnlockEffectRunnable = new Runnable() {
@@ -2029,6 +2050,9 @@ public class ControlActivity extends Activity {
                 "Bright flares following your finger.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_RIPPLE_INK)) {
+            effects.addView(rippleInkEffectOption(current));
+        }
         addEffectOptionIfAvailable(effects,
                 "N3 Watercolor",
                 "Watery paint spreading under your touch.",
@@ -2133,6 +2157,22 @@ public class ControlActivity extends Activity {
                         : "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
+                current);
+        effects.addView(sectionLabel("Good Lock"));
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Popping Color",
+                "Color particles drift from touch over the sampled wallpaper.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Rectangle Traveller",
+                "Bright rectangles travel from touch over the sampled wallpaper.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Bouncing Color",
+                "Color particles bounce from touch over the sampled wallpaper.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
                 current);
         effects.addView(sectionLabel("Seasonal"));
         addEffectOptionIfAvailable(effects,
@@ -2318,7 +2358,7 @@ public class ControlActivity extends Activity {
 
     private void addEffectOptionIfAvailable(LinearLayout effects, String title,
             String description, int effect, int current) {
-        if (!EffectAvailability.isAvailable(effect)) {
+        if (!EffectAvailability.isAvailable(this, effect)) {
             return;
         }
         effects.addView(effectOption(title, description, effect, current));
@@ -2719,7 +2759,11 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                || effect == OverlayPrefs.EFFECT_RIPPLE_INK
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING;
     }
 
     private String ageLabel(long ageMs) {
@@ -3633,6 +3677,11 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 drawPreviewPoppingColours(canvas, paint, width, height);
                 break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                drawPreviewGoodLockParticles(canvas, paint, effect, width, height);
+                break;
             case OverlayPrefs.EFFECT_TABS_BLIND:
                 drawPreviewBlind(canvas, paint, width, height);
                 break;
@@ -3746,6 +3795,12 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_n3_watercolor_lle;
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return R.drawable.icon_effect_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return R.drawable.icon_effect_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return R.drawable.icon_effect_n4_abstract_tiles_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return R.drawable.icon_effect_n5_colored_droplet_lle;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 return R.drawable.icon_effect_n4_abstract_tiles_lle;
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -3928,6 +3983,20 @@ public class ControlActivity extends Activity {
             canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
                     width * rs[i] * 0.28f, paint);
         }
+    }
+
+    /** App-owned static picker preview; production motion remains in the renderer. */
+    private void drawPreviewGoodLockParticles(Canvas canvas, Paint paint, int effect,
+            int width, int height) {
+        if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING) {
+            drawPreviewPoppingColours(canvas, paint, width, height);
+            return;
+        }
+        if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE) {
+            drawPreviewTiles(canvas, paint, width, height, false);
+            return;
+        }
+        drawPreviewBubbles(canvas, paint, width, height);
     }
 
     private void drawPreviewBlind(Canvas canvas, Paint paint, int width, int height) {
@@ -4228,7 +4297,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
-                OverlayPrefs.EFFECT_BRILLIANT_CUT
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -4536,6 +4609,66 @@ public class ControlActivity extends Activity {
             }
         });
         return effectVariantControls(gyro);
+    }
+
+    /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
+    private View rippleInkEffectOption(int current) {
+        return effectOption(
+                "N3 Ripple Ink",
+                "Ink ripples with a selectable colour palette.",
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                current == OverlayPrefs.EFFECT_RIPPLE_INK,
+                -1,
+                rippleInkPaletteControls());
+    }
+
+    private View rippleInkPaletteControls() {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(10));
+
+        TextView label = new TextView(this);
+        label.setText("Ink palette");
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        final int selectedSlot = OverlayPrefs.rippleInkPalette(this);
+        for (int index = 0; index < RippleInkPortEngine.paletteCount(); index++) {
+            final int slot = index + 1;
+            RippleInkPaletteSwatchView swatch = new RippleInkPaletteSwatchView(
+                    slot, rippleInkPreviewColor(slot), RIPPLE_INK_PALETTE_NAMES[index],
+                    slot == selectedSlot);
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putInt(OverlayPrefs.RIPPLE_INK_PALETTE, slot).apply();
+                    showTab(selectedTab);
+                }
+            });
+            // Share the available row between all eight slots.  The previous fixed 44dp
+            // swatches plus 8dp gaps made the last two colours look missing on 360dp layouts.
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+            if (index > 0) {
+                params.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, params);
+        }
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return controls;
     }
 
     private Switch compactEffectVariantSwitch(String label, boolean checked) {
@@ -5570,6 +5703,12 @@ public class ControlActivity extends Activity {
                 return Color.rgb(53, 53, 133);
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return Color.rgb(123, 206, 92);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return Color.rgb(255, 119, 99);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return Color.rgb(243, 184, 73);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return Color.rgb(80, 189, 226);
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return Color.rgb(244, 190, 77);
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
@@ -6031,6 +6170,47 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private final class RippleInkPaletteSwatchView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int color;
+
+        RippleInkPaletteSwatchView(int slot, int color, String name, boolean selected) {
+            super(ControlActivity.this);
+            this.color = color;
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("N3 Ripple Ink palette " + slot + ", " + name
+                    + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(color);
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(isSelected() ? 3f : 1f));
+            paint.setColor(isSelected() ? Color.WHITE : Color.argb(115, 22, 42, 66));
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (isSelected()) {
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeWidth(dp(2.4f));
+                paint.setColor(Color.WHITE);
+                canvas.drawLine(cx - radius * 0.34f, cy, cx - radius * 0.08f,
+                        cy + radius * 0.28f, paint);
+                canvas.drawLine(cx - radius * 0.08f, cy + radius * 0.28f,
+                        cx + radius * 0.40f, cy - radius * 0.27f, paint);
+                paint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
     private void drawEffectMotif(Canvas canvas, Paint paint, int effect, RectF rect,
             int color, float alpha) {
         int resolvedAlpha = Math.max(0, Math.min(255, Math.round(255f * alpha)));
@@ -6067,6 +6247,28 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx - unit * 0.18f, cy + unit * 0.12f, unit * 0.19f, paint);
                 canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.15f, unit * 0.16f, paint);
                 canvas.drawCircle(cx + unit * 0.19f, cy + unit * 0.23f, unit * 0.10f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx - unit * 0.20f, cy + unit * 0.13f, unit * 0.14f, paint);
+                canvas.drawCircle(cx + unit * 0.14f, cy - unit * 0.16f, unit * 0.10f, paint);
+                canvas.drawCircle(cx + unit * 0.22f, cy + unit * 0.22f, unit * 0.07f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                canvas.drawRect(cx - unit * 0.33f, cy - unit * 0.20f,
+                        cx - unit * 0.04f, cy + unit * 0.13f, paint);
+                canvas.drawRect(cx + unit * 0.05f, cy - unit * 0.12f,
+                        cx + unit * 0.31f, cy + unit * 0.19f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.05f));
+                canvas.drawCircle(cx - unit * 0.20f, cy + unit * 0.14f, unit * 0.13f, paint);
+                canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.13f, unit * 0.11f, paint);
+                canvas.drawLine(cx - unit * 0.35f, cy + unit * 0.34f,
+                        cx + unit * 0.35f, cy + unit * 0.34f, paint);
                 break;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 paint.setStyle(Paint.Style.STROKE);

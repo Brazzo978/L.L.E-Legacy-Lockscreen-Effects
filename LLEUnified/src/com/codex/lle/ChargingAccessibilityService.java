@@ -1540,6 +1540,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (holdRuntimeForBootSafety("prefs:" + key)) {
             return;
         }
+        if (OverlayPrefs.RIPPLE_INK_PALETTE.equals(key)) {
+            applyRippleInkPalettePreference();
+            return;
+        }
         if (OverlayPrefs.isExperimentalNativeRefreshPhysicsPreferenceKey(key)) {
             int changedEffect =
                     OverlayPrefs.experimentalNativeRefreshPhysicsEffectFromPreferenceKey(key);
@@ -1556,6 +1560,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " enabled=" + nativeRefreshEnabled
                     + " speedMultiplier=" + multiplier);
             if (changedEffect != selectedEffect) {
+                return;
+            }
+            if (changedEffect == OverlayPrefs.EFFECT_RIPPLE_INK
+                    && unlockEffectRenderer instanceof RippleInkPortEffectView) {
+                // Hybrid HFR changes only the mesh presentation clock.  Keep the retained Ink
+                // density/FBO and apply it live instead of rebuilding the production overlay.
+                ((RippleInkPortEffectView) unlockEffectRenderer).setHighFrameRateEnabled(
+                        nativeRefreshEnabled);
+                evaluateVisibility("prefs:ripple_ink_hybrid_hfr", false);
                 return;
             }
             cancelUnlockAffordanceDispatch(false, "prefs:native_refresh_physics_per_effect");
@@ -1733,6 +1746,26 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         scheduleTimeWindowRefresh();
         evaluateVisibility("prefs:" + key);
+    }
+
+    /**
+     * Apply palette changes without tearing down the production GL context.
+     */
+    private void applyRippleInkPalettePreference() {
+        if (!EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_RIPPLE_INK)
+                || OverlayPrefs.unlockEffect(this) != OverlayPrefs.EFFECT_RIPPLE_INK) {
+            return;
+        }
+        if (unlockEffectRenderer instanceof RippleInkPortEffectView) {
+            ((RippleInkPortEffectView) unlockEffectRenderer).setInkPaletteSlot(
+                    OverlayPrefs.rippleInkPalette(this));
+        } else if (unlockEffectRenderer != null) {
+            // A future production implementation that is recreated rather than live-updated
+            // still receives the stored slot through its constructor/factory path.
+            destroyUnlockEffectOverlay();
+            preloadAndAttachSelectedUnlockEffectParked("prefs:ripple_ink_palette");
+        }
+        evaluateVisibility("prefs:ripple_ink_palette", false);
     }
 
     private void scheduleTimeWindowRefresh() {
@@ -3546,6 +3579,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectReadinessDetail == null) {
             unlockEffectReadinessDetail = "";
         }
+        if (unlockEffectRendererType == OverlayPrefs.EFFECT_RIPPLE_INK
+                && unlockEffectRenderer instanceof RippleInkPortEffectView
+                && unlockEffectReadinessState >= UnlockEffectReadiness.STATE_FIRST_FRAME_READY
+                && !((RippleInkPortEffectView) unlockEffectRenderer).isProductionReady()) {
+            unlockEffectReadinessState = UnlockEffectReadiness.STATE_FAILED;
+            unlockEffectReadinessDetail = "ripple_ink_production_gate_not_ready";
+        }
         if (previous != unlockEffectReadinessState
                 || !unlockEffectReadinessDetail.equals(previousDetail)) {
             Log.i(TAG, "unlock effect readiness reason=" + reason
@@ -3604,7 +3644,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
-        if (!EffectAvailability.isAvailable(effect)) {
+        if (!EffectAvailability.isAvailable(this, effect)) {
             Log.e(TAG, "selected effect is unavailable in build flavor "
                     + EffectAvailability.buildFlavorLabel()
                     + "; forcing Lens Flare type=" + effect);
@@ -3727,6 +3767,29 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new StoneSkippingEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
                 unlockEffectRenderer = new MassTensionEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
+                unlockEffectRenderer = new RippleInkPortEffectView(
+                        rendererContext(),
+                        OverlayPrefs.rippleInkPalette(this),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect));
+            } else if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING) {
+                unlockEffectRenderer = new GoodLockParticleEffectView(rendererContext(),
+                        GoodLockParticleEffectView.Variant.POPPING,
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                this, effect));
+            } else if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE) {
+                unlockEffectRenderer = new GoodLockParticleEffectView(rendererContext(),
+                        GoodLockParticleEffectView.Variant.RECTANGLE,
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                this, effect));
+            } else if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING) {
+                unlockEffectRenderer = new GoodLockParticleEffectView(rendererContext(),
+                        GoodLockParticleEffectView.Variant.BOUNCING,
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(
+                                this, effect));
             } else if (effect == OverlayPrefs.EFFECT_BRILLIANT_RING) {
                 if (EffectAvailability.is64BitProcess()) {
                     unlockEffectRenderer = new BrilliantRingEffectView(rendererContext(),
@@ -5236,7 +5299,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
-                OverlayPrefs.EFFECT_BRILLIANT_CUT
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
         };
         for (int candidate : effects) {
             if (candidate == effect
@@ -5277,7 +5344,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
-                OverlayPrefs.EFFECT_BRILLIANT_CUT
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -5932,7 +6003,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
-                OverlayPrefs.EFFECT_BRILLIANT_CUT
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
         };
         SharedPreferences.Editor editor = OverlayPrefs.get(this).edit();
         for (int effect : effects) {
@@ -6000,7 +6075,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                || effect == OverlayPrefs.EFFECT_RIPPLE_INK
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING;
     }
 
     private void syncTouchDebugOverlay() {
@@ -7109,7 +7188,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean isUnlockEffectAllowedNowForActivePanel() {
         return isUnlockEffectEnabledForActivePanel()
-                && OverlayPrefs.isImplementedEffect(OverlayPrefs.unlockEffect(this))
+                && OverlayPrefs.isImplementedEffect(this, OverlayPrefs.unlockEffect(this))
                 && OverlayPrefs.timeWindowAllows(this,
                 OverlayPrefs.UNLOCK_EFFECT_TIME_ENABLED,
                 OverlayPrefs.UNLOCK_EFFECT_TIME_START,
@@ -7140,7 +7219,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }
         if (isUnlockEffectEnabledForActivePanel()
-                && OverlayPrefs.isImplementedEffect(OverlayPrefs.unlockEffect(this))
+                && OverlayPrefs.isImplementedEffect(this, OverlayPrefs.unlockEffect(this))
                 && OverlayPrefs.lockscreenLockSoundAllowedNow(this)) {
             lastLockSoundPlayedAt = now;
             lockSoundPlayer.playEffectLock(OverlayPrefs.unlockEffect(this));

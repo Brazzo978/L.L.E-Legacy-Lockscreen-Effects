@@ -11,4 +11,6 @@
 /ports/abstract-tiles/tests/lse_reference_unlocked_*/
 /ports/abstract-tiles/tests/lse_reference_video_frames/
 /captures/effect-demos/
+/outputs/
+/reverse/ripple-ink/GHIDRA-*.txt
 *.log

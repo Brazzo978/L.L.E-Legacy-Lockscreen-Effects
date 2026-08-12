@@ -115,6 +115,11 @@ final class OverlayPrefs {
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    /** Reserved until the Ripple Ink reverse path has a production-ready ABI. */
+    static final String RIPPLE_INK_PALETTE = "ripple_ink_palette";
+    static final int RIPPLE_INK_PALETTE_DEFAULT = 4;
+    static final int RIPPLE_INK_PALETTE_MIN = 1;
+    static final int RIPPLE_INK_PALETTE_MAX = 8;
     static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
     static final String N5_COLOUR_DROPLET_GYRO_ENABLED =
             "n5_colour_droplet_gyro_enabled";
@@ -211,7 +216,15 @@ final class OverlayPrefs {
     static final int EFFECT_MASS_TENSION = 25;
     /** App-owned Galaxy S6 Water Droplet reconstruction, kept separate while it is WIP. */
     static final int EFFECT_S6_WATER_DROPLET_APP_OWNED = 26;
-    static final int EFFECT_COUNT = 27;
+    /** Reserved: hidden until Ripple Ink has a verified app-owned ABI path. */
+    static final int EFFECT_RIPPLE_INK = 27;
+    /** App-owned Good Lock particle renderer: popping-color variant. */
+    static final int EFFECT_GOOD_LOCK_POPPING = 28;
+    /** App-owned Good Lock particle renderer: rectangle-traveller variant. */
+    static final int EFFECT_GOOD_LOCK_RECTANGLE = 29;
+    /** App-owned Good Lock particle renderer: bouncing-color variant. */
+    static final int EFFECT_GOOD_LOCK_BOUNCING = 30;
+    static final int EFFECT_COUNT = 31;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -313,7 +326,7 @@ final class OverlayPrefs {
 
     static boolean unlockEffectAllowedNow(Context context) {
         return unlockEffectEnabled(context)
-                && isImplementedEffect(unlockEffect(context))
+                && isImplementedEffect(context, unlockEffect(context))
                 && timeWindowAllows(context,
                 UNLOCK_EFFECT_TIME_ENABLED,
                 UNLOCK_EFFECT_TIME_START,
@@ -599,6 +612,11 @@ final class OverlayPrefs {
         return get(context).getBoolean(LOCK_SOUND_ENABLED, true);
     }
 
+    static int rippleInkPalette(Context context) {
+        int palette = get(context).getInt(RIPPLE_INK_PALETTE, RIPPLE_INK_PALETTE_DEFAULT);
+        return Math.max(RIPPLE_INK_PALETTE_MIN, Math.min(RIPPLE_INK_PALETTE_MAX, palette));
+    }
+
     static boolean abstractTilesLineEnabled(Context context) {
         return get(context).getBoolean(ABSTRACT_TILES_LINE_ENABLED, true);
     }
@@ -624,14 +642,14 @@ final class OverlayPrefs {
                 && EffectAvailability.isLegacyVendorEffect(effect)) {
             int previousEffect = effect;
             effect = samsungFreeReplacement(effect);
-            if (!isImplementedEffect(effect)) {
+            if (!isImplementedEffect(context, effect)) {
                 effect = EFFECT_S4_LENS_FLARE;
             }
             preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
             Log.i(TAG, "migrated unavailable legacy vendor effect "
                     + previousEffect + " -> " + effect);
         }
-        if (!isImplementedEffect(effect)) {
+        if (!isImplementedEffect(context, effect)) {
             preferences.edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
             return EFFECT_S4_LENS_FLARE;
         }
@@ -711,6 +729,14 @@ final class OverlayPrefs {
                 return "S5 Stone Skipping";
             case EFFECT_MASS_TENSION:
                 return "Mass Tension";
+            case EFFECT_RIPPLE_INK:
+                return "N3 Ripple Ink";
+            case EFFECT_GOOD_LOCK_POPPING:
+                return "Good Lock Popping Color";
+            case EFFECT_GOOD_LOCK_RECTANGLE:
+                return "Good Lock Rectangle Traveller";
+            case EFFECT_GOOD_LOCK_BOUNCING:
+                return "Good Lock Bouncing Color";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -774,9 +800,13 @@ final class OverlayPrefs {
                 || effect == EFFECT_S4_ABSTRACT_TILES
                 || effect == EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == EFFECT_S3_RIPPLE_NATIVE
+                || effect == EFFECT_RIPPLE_INK
                 || effect == EFFECT_WATERCOLOUR
                 || effect == EFFECT_BRILLIANT_RING
-                || effect == EFFECT_BRILLIANT_CUT;
+                || effect == EFFECT_BRILLIANT_CUT
+                || effect == EFFECT_GOOD_LOCK_POPPING
+                || effect == EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == EFFECT_GOOD_LOCK_BOUNCING;
     }
 
     /** Only these renderers consume the native-refresh motion-speed preference. */
@@ -785,7 +815,10 @@ final class OverlayPrefs {
                 || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
-                || effect == EFFECT_S5_POPPING_COLOURS;
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_GOOD_LOCK_POPPING
+                || effect == EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == EFFECT_GOOD_LOCK_BOUNCING;
     }
 
     /** Dynamic boolean key for one ARM64 renderer's native-refresh toggle. */
@@ -870,6 +903,10 @@ final class OverlayPrefs {
 
     static boolean isImplementedEffect(int effect) {
         return EffectAvailability.isAvailable(effect);
+    }
+
+    static boolean isImplementedEffect(Context context, int effect) {
+        return EffectAvailability.isAvailable(context, effect);
     }
 
     static boolean effectBackgroundAutoRefreshEnabled(Context context) {

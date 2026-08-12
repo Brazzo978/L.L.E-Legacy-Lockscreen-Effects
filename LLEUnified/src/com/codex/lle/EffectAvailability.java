@@ -1,5 +1,6 @@
 package com.codex.lle;
 
+import android.content.Context;
 import android.os.Process;
 
 /** Central ABI policy for the shared ARM32/ARM64 application source. */
@@ -32,6 +33,10 @@ final class EffectAvailability {
                 || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET;
     }
 
+    static boolean isAvailable(Context context, int effect) {
+        return isAvailable(effect);
+    }
+
     static boolean isAvailable(int effect) {
         if (!BuildFlavor.LEGACY_VENDOR_EFFECTS && isLegacyVendorEffect(effect)) {
             return false;
@@ -57,7 +62,12 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
             case OverlayPrefs.EFFECT_SEASONAL_WINTER:
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
                 return true;
+            case OverlayPrefs.EFFECT_RIPPLE_INK:
+                return ARM64_PROCESS;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
             case OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP:
