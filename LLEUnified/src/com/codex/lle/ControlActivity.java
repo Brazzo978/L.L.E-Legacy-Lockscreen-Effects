@@ -2045,11 +2045,9 @@ public class ControlActivity extends Activity {
                 "Fluffy ink clouds blooming in water.",
                 OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 current);
-        addEffectOptionIfAvailable(effects,
-                "S4 Lens Flare",
-                "Bright flares following your finger.",
-                OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_S4_LENS_FLARE)) {
+            effects.addView(lensFlareEffectOption(current));
+        }
         if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_RIPPLE_INK)) {
             effects.addView(rippleInkEffectOption(current));
         }
@@ -4876,6 +4874,77 @@ public class ControlActivity extends Activity {
         switches.add(value);
     }
 
+    private View lensFlareEffectOption(int current) {
+        return effectOption(
+                "S4 Lens Flare",
+                "Bright flares following your finger.",
+                OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                -1,
+                lensFlareModeControls());
+    }
+
+    private View lensFlareModeControls() {
+        final String mode = OverlayPrefs.lensFlareMode(this);
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(10));
+
+        TextView label = new TextView(this);
+        label.setText("Lens flare mode");
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+
+        final String[] modes = {"flare", "bluering", "blood"};
+        final String[] names = {"Lens Flare", "Blue Ring", "Blood"};
+
+        for (int i = 0; i < modes.length; i++) {
+            final String value = modes[i];
+            LensFlareModeSwatchView swatch = new LensFlareModeSwatchView(
+                    value, lensFlareModePreviewDrawable(value), names[i], value.equals(mode));
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putString(OverlayPrefs.LENS_FLARE_MODE, value).apply();
+                    showTab(selectedTab);
+                }
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+            if (i > 0) {
+                params.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, params);
+        }
+
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return controls;
+    }
+
+    private int lensFlareModePreviewDrawable(String mode) {
+        if ("bluering".equals(mode)) {
+            return R.drawable.keyguard_bluering_light_00040;
+        }
+        if ("blood".equals(mode)) {
+            return R.drawable.keyguard_blood_light_00040;
+        }
+        return R.drawable.keyguard_flare_light_00040;
+    }
+
     private void syncHighFrameRateSwitches(int effect, Switch source, boolean checked) {
         ArrayList<Switch> switches = highFrameRateSwitches.get(Integer.valueOf(effect));
         if (switches == null || switches.size() < 2) {
@@ -5686,8 +5755,8 @@ public class ControlActivity extends Activity {
         states.addState(new int[] {},
                 selected
                         ? gradient(GradientDrawable.Orientation.TL_BR,
-                                new int[] {Color.WHITE, Color.rgb(224, 247, 246)},
-                                dp(18), Color.argb(150, 33, 158, 166), dp(1))
+                                new int[] {Color.rgb(238, 252, 252), Color.rgb(207, 241, 240)},
+                                dp(18), COLOR_ACCENT_DEEP, dp(2))
                         : solidDrawable(Color.WHITE, dp(18),
                                 Color.argb(65, 167, 190, 201), dp(1)));
         return states;
@@ -6196,6 +6265,63 @@ public class ControlActivity extends Activity {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(dp(isSelected() ? 3f : 1f));
             paint.setColor(isSelected() ? Color.WHITE : Color.argb(115, 22, 42, 66));
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (isSelected()) {
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeWidth(dp(2.4f));
+                paint.setColor(Color.WHITE);
+                canvas.drawLine(cx - radius * 0.34f, cy, cx - radius * 0.08f,
+                        cy + radius * 0.28f, paint);
+                canvas.drawLine(cx - radius * 0.08f, cy + radius * 0.28f,
+                        cx + radius * 0.40f, cy - radius * 0.27f, paint);
+                paint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class LensFlareModeSwatchView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Drawable preview;
+
+        LensFlareModeSwatchView(String mode, int drawableResId, String name, boolean selected) {
+            super(ControlActivity.this);
+            // Let Android resolve and draw the packaged resource directly.  This keeps
+            // the selector faithful to the actual Samsung texture rather than a
+            // generated colour approximation.
+            preview = getResources().getDrawable(drawableResId);
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("S4 Lens Flare mode " + name + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            // Samsung's light textures have extensive transparent edges.  A dark
+            // circular backing keeps every mode visible, including on white cards.
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(isSelected()
+                    ? Color.rgb(19, 91, 108)
+                    : Color.TRANSPARENT);
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (preview != null) {
+                canvas.save();
+                Path clip = new Path();
+                clip.addCircle(cx, cy, radius, Path.Direction.CW);
+                canvas.clipPath(clip);
+                preview.setBounds(Math.round(cx - radius), Math.round(cy - radius),
+                        Math.round(cx + radius), Math.round(cy + radius));
+                preview.draw(canvas);
+                canvas.restore();
+            }
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(isSelected() ? 3f : 1.5f));
+            paint.setColor(isSelected() ? Color.WHITE : Color.argb(180, 22, 42, 66));
             canvas.drawCircle(cx, cy, radius, paint);
             if (isSelected()) {
                 paint.setStrokeCap(Paint.Cap.ROUND);

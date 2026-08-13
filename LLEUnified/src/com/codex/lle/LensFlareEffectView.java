@@ -148,16 +148,20 @@ public class LensFlareEffectView extends FrameLayout
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
         additivePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
 
-        flareLight = loadDrawable("keyguard_flare_light_00040");
-        flareRing = loadDrawable("keyguard_flare_ring");
-        flareParticle = loadDrawable("keyguard_flare_particle");
-        flareLong = loadDrawable("keyguard_flare_long");
-        flareRainbow = loadDrawable("keyguard_flare_rainbow");
-        flareHoverLight = loadDrawable("keyguard_flare_hoverlight");
-        flareVignetting = loadDrawable("keyguard_flare_vignetting");
-        Bitmap hexagonBlue = loadDrawable("keyguard_flare_hexagon_blue");
-        Bitmap hexagonOrange = loadDrawable("keyguard_flare_hexagon_orange");
-        Bitmap hexagonGreen = loadDrawable("keyguard_flare_hexagon_green");
+        String assetPrefix = lensFlareAssetPrefix(context);
+        flareLight = loadDrawable(assetPrefix + "light_00040");
+        flareRing = loadDrawable(assetPrefix + "ring");
+        flareParticle = loadDrawable(assetPrefix + "particle");
+        flareLong = loadDrawable(assetPrefix + "long");
+        flareRainbow = loadDrawable(assetPrefix + "rainbow");
+        flareHoverLight = loadDrawable(assetPrefix + "hoverlight");
+        Bitmap vignetting = loadDrawable(assetPrefix + "vignetting");
+        flareVignetting = vignetting != null
+                ? vignetting
+                : loadDrawable("keyguard_flare_vignetting");
+        Bitmap hexagonBlue = loadDrawable(assetPrefix + "hexagon_blue");
+        Bitmap hexagonOrange = loadDrawable(assetPrefix + "hexagon_orange");
+        Bitmap hexagonGreen = loadDrawable(assetPrefix + "hexagon_green");
         tapHexagons = new Bitmap[] {
                 hexagonBlue,
                 hexagonOrange,
@@ -745,6 +749,10 @@ public class LensFlareEffectView extends FrameLayout
         return Math.max(bitmap.getWidth(), bitmap.getHeight())
                 * DEFAULT_IN_SAMPLE_SIZE
                 * Math.max(0f, scale);
+    }
+
+    private static String lensFlareAssetPrefix(Context context) {
+        return "keyguard_" + OverlayPrefs.lensFlareMode(context) + "_";
     }
 
     private Bitmap loadDrawable(String name) {

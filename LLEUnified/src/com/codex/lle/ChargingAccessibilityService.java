@@ -1544,6 +1544,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             applyRippleInkPalettePreference();
             return;
         }
+        if (OverlayPrefs.LENS_FLARE_MODE.equals(key)) {
+            applyLensFlareModePreference();
+            return;
+        }
         if (OverlayPrefs.isExperimentalNativeRefreshPhysicsPreferenceKey(key)) {
             int changedEffect =
                     OverlayPrefs.experimentalNativeRefreshPhysicsEffectFromPreferenceKey(key);
@@ -1766,6 +1770,18 @@ public class ChargingAccessibilityService extends AccessibilityService
             preloadAndAttachSelectedUnlockEffectParked("prefs:ripple_ink_palette");
         }
         evaluateVisibility("prefs:ripple_ink_palette", false);
+    }
+
+    private void applyLensFlareModePreference() {
+        if (!EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_S4_LENS_FLARE)
+                || OverlayPrefs.unlockEffect(this) != OverlayPrefs.EFFECT_S4_LENS_FLARE) {
+            return;
+        }
+        if (unlockEffectRenderer != null) {
+            destroyUnlockEffectOverlay();
+            preloadAndAttachSelectedUnlockEffectParked("prefs:lens_flare_mode");
+        }
+        evaluateVisibility("prefs:lens_flare_mode", false);
     }
 
     private void scheduleTimeWindowRefresh() {

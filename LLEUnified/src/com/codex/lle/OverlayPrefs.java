@@ -120,6 +120,8 @@ final class OverlayPrefs {
     static final int RIPPLE_INK_PALETTE_DEFAULT = 4;
     static final int RIPPLE_INK_PALETTE_MIN = 1;
     static final int RIPPLE_INK_PALETTE_MAX = 8;
+    static final String LENS_FLARE_MODE = "lens_flare_mode";
+    static final String LENS_FLARE_MODE_DEFAULT = "flare";
     static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
     static final String N5_COLOUR_DROPLET_GYRO_ENABLED =
             "n5_colour_droplet_gyro_enabled";
@@ -615,6 +617,17 @@ final class OverlayPrefs {
     static int rippleInkPalette(Context context) {
         int palette = get(context).getInt(RIPPLE_INK_PALETTE, RIPPLE_INK_PALETTE_DEFAULT);
         return Math.max(RIPPLE_INK_PALETTE_MIN, Math.min(RIPPLE_INK_PALETTE_MAX, palette));
+    }
+
+    static String lensFlareMode(Context context) {
+        String mode = get(context).getString(LENS_FLARE_MODE, LENS_FLARE_MODE_DEFAULT);
+        if ("bluering".equals(mode) || "blue_ring".equals(mode)) {
+            return "bluering";
+        }
+        if ("blood".equals(mode)) {
+            return "blood";
+        }
+        return LENS_FLARE_MODE_DEFAULT;
     }
 
     static boolean abstractTilesLineEnabled(Context context) {
