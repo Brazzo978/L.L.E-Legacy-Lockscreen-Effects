@@ -2110,7 +2110,9 @@ public class ControlActivity extends Activity {
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Popping Colours",
-                "Colorful particles bursting from touch.",
+                BuildFlavor.TESTER
+                        ? "Colorful ParticleSpace bursts (XLocker name: S5 Particle)."
+                        : "Colorful particles bursting from touch.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current);
         addEffectOptionIfAvailable(effects,
@@ -2203,6 +2205,39 @@ public class ControlActivity extends Activity {
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 current);
+        if (BuildFlavor.TESTER) {
+            effects.addView(sectionLabel("1.0.6 clean-room beta"));
+            addEffectOptionIfAvailable(effects,
+                    "S5 Circle (None)",
+                    "Samsung's lightweight circle unlock, reconstructed from OEM material.",
+                    OverlayPrefs.EFFECT_S5_NONE,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "LG G2 Pixelate",
+                    "A clean-room pixel grid bends and opens around touch.",
+                    OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "LG G2 Particle",
+                    "A clean-room particle ring opens a window through the wallpaper.",
+                    OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "LG G2 Crystal",
+                    "Inspired beta: crystal light refracts the wallpaper.",
+                    OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "Xperia Z1 Blinds",
+                    "Clean-room Sony-style strips open across the wallpaper.",
+                    OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "Revolving Glass",
+                    "Inspired beta: rotates the cached lockscreen image, not live UI.",
+                    OverlayPrefs.EFFECT_REVOLVING_GLASS,
+                    current);
+        }
         effects.addView(sectionLabel("Good Lock"));
         addEffectOptionIfAvailable(effects,
                 "Good Lock Popping Color",
@@ -2786,7 +2821,12 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_RIPPLE_INK
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
-                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING;
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                || effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE
+                || effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE
+                || effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL
+                || effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS
+                || effect == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
     private String ageLabel(long ageMs) {
@@ -4327,7 +4367,12 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
                 OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
-                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);

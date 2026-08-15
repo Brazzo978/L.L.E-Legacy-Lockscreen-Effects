@@ -66,6 +66,13 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
             case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
                 return true;
+            case OverlayPrefs.EFFECT_S5_NONE:
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+            case OverlayPrefs.EFFECT_REVOLVING_GLASS:
+                return BuildFlavor.TESTER && ARM64_PROCESS;
             case OverlayPrefs.EFFECT_RIPPLE_INK:
                 return ARM64_PROCESS;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:

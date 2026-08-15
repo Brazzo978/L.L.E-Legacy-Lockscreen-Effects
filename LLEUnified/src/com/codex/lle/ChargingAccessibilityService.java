@@ -96,6 +96,12 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_ABSTRACT_TILES_TAIL_MS = 925L;
     private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS = 930L;
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS = 600L;
+    private static final long PIN_ENTRY_DELAY_S5_NONE_TAIL_MS = 375L;
+    private static final long PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS = 440L;
+    private static final long PIN_ENTRY_DELAY_LG_G2_PARTICLE_TAIL_MS = 440L;
+    private static final long PIN_ENTRY_DELAY_LG_G2_CRYSTAL_TAIL_MS = 500L;
+    private static final long PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS = 340L;
+    private static final long PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS = 660L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
     private static final long PIN_ENTRY_DELAY_COLOUR_DROPLET_MS = 340L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
@@ -4092,6 +4098,26 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new StoneSkippingEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
                 unlockEffectRenderer = new MassTensionEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_S5_NONE) {
+                unlockEffectRenderer = new NoneCircleUnlockEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS) {
+                unlockEffectRenderer = new XperiaBlindsEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE) {
+                LgPixelateEffectView renderer = new LgPixelateEffectView(rendererContext());
+                renderer.setHighFrameRateEnabled(
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect));
+                renderer.setSpeedMultiplier(
+                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect));
+                unlockEffectRenderer = renderer;
+            } else if (effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE) {
+                unlockEffectRenderer = new G2ParticleEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL) {
+                unlockEffectRenderer = new CrystalPrismBetaEffectView(
+                        rendererContext(),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
+                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect));
+            } else if (effect == OverlayPrefs.EFFECT_REVOLVING_GLASS) {
+                unlockEffectRenderer = new RevolvingGlassEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
                 unlockEffectRenderer = new RippleInkPortEffectView(
                         rendererContext(),
@@ -5695,7 +5721,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
                 OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
-                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
         for (int candidate : effects) {
             if (candidate == effect
@@ -5740,7 +5771,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
                 OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
-                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -6378,7 +6414,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
                 OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
-                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
         SharedPreferences.Editor editor = OverlayPrefs.get(this).edit();
         for (int effect : effects) {
@@ -6427,7 +6468,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || effect == OverlayPrefs.EFFECT_RIPPLE_INK
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
-                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING;
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                || effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE
+                || effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE
+                || effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL
+                || effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS
+                || effect == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
     /**
@@ -8302,6 +8348,18 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS;
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
                 return PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS;
+            case OverlayPrefs.EFFECT_S5_NONE:
+                return PIN_ENTRY_DELAY_S5_NONE_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                return PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                return PIN_ENTRY_DELAY_LG_G2_PARTICLE_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return PIN_ENTRY_DELAY_LG_G2_CRYSTAL_TAIL_MS;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                return PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS;
+            case OverlayPrefs.EFFECT_REVOLVING_GLASS:
+                return PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS;
             default:
                 return -1L;
         }

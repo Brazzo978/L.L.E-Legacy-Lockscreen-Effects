@@ -233,7 +233,19 @@ final class OverlayPrefs {
     static final int EFFECT_GOOD_LOCK_RECTANGLE = 29;
     /** App-owned Good Lock particle renderer: bouncing-color variant. */
     static final int EFFECT_GOOD_LOCK_BOUNCING = 30;
-    static final int EFFECT_COUNT = 31;
+    /** Tester-only app-owned reconstruction of Samsung's None / Circle Unlock. */
+    static final int EFFECT_S5_NONE = 31;
+    /** Tester-only app-owned LG G2 Pixelate-inspired renderer. */
+    static final int EFFECT_LG_G2_PIXELATE = 32;
+    /** Tester-only app-owned LG G2 Particle-inspired renderer. */
+    static final int EFFECT_LG_G2_PARTICLE = 33;
+    /** Tester-only app-owned LG G2 Crystal-inspired renderer. */
+    static final int EFFECT_LG_G2_CRYSTAL = 34;
+    /** Tester-only app-owned Xperia Z1 Blinds-inspired renderer. */
+    static final int EFFECT_XPERIA_Z1_BLINDS = 35;
+    /** Tester-only clean-room revolving glass-inspired renderer. */
+    static final int EFFECT_REVOLVING_GLASS = 36;
+    static final int EFFECT_COUNT = 37;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -627,6 +639,7 @@ final class OverlayPrefs {
                 || effect == EFFECT_S5_POPPING_COLOURS
                 || effect == EFFECT_STONE_SKIPPING
                 || effect == EFFECT_MASS_TENSION
+                || effect == EFFECT_S5_NONE
                 || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || isSeasonalUnlockEffect(effect);
     }
@@ -772,6 +785,18 @@ final class OverlayPrefs {
                 return "Good Lock Rectangle Traveller";
             case EFFECT_GOOD_LOCK_BOUNCING:
                 return "Good Lock Bouncing Color";
+            case EFFECT_S5_NONE:
+                return "S5 Circle (None)";
+            case EFFECT_LG_G2_PIXELATE:
+                return "LG G2 Pixelate";
+            case EFFECT_LG_G2_PARTICLE:
+                return "LG G2 Particle";
+            case EFFECT_LG_G2_CRYSTAL:
+                return "LG G2 Crystal";
+            case EFFECT_XPERIA_Z1_BLINDS:
+                return "Xperia Z1 Blinds";
+            case EFFECT_REVOLVING_GLASS:
+                return "Revolving Glass";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -839,6 +864,8 @@ final class OverlayPrefs {
                 || effect == EFFECT_WATERCOLOUR
                 || effect == EFFECT_BRILLIANT_RING
                 || effect == EFFECT_BRILLIANT_CUT
+                || effect == EFFECT_LG_G2_PIXELATE
+                || effect == EFFECT_LG_G2_CRYSTAL
                 || effect == EFFECT_GOOD_LOCK_POPPING
                 || effect == EFFECT_GOOD_LOCK_RECTANGLE
                 || effect == EFFECT_GOOD_LOCK_BOUNCING;
@@ -851,6 +878,8 @@ final class OverlayPrefs {
                 || effect == EFFECT_N5_COLOUR_DROPLET_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_LG_G2_PIXELATE
+                || effect == EFFECT_LG_G2_CRYSTAL
                 || effect == EFFECT_GOOD_LOCK_POPPING
                 || effect == EFFECT_GOOD_LOCK_RECTANGLE
                 || effect == EFFECT_GOOD_LOCK_BOUNCING;
