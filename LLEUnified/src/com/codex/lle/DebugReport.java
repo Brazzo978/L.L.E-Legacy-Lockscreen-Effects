@@ -8,7 +8,6 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -39,6 +38,7 @@ import java.util.regex.Pattern;
 final class DebugReport {
     private static final String DIRECTORY = "debug-reports";
     private static final String PREFIX = "LLE-debug-";
+    private static final String ADVANCED_PREFIX = "LLE-debug-advanced-";
     private static final int MAX_LOGCAT_CHARS = 512 * 1024;
     private static final int MAX_UID_FORMAT_LOGCAT_CHARS = 4 * 1024 * 1024;
     private static final int MAX_REPORT_FILES = 4;
@@ -56,17 +56,59 @@ final class DebugReport {
     private static final Pattern UID_FORMAT_LOGCAT_LINE = Pattern.compile(
             "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+"
                     + "(\\S+)\\s+\\d+\\s+\\d+\\s+[VDIWEAFS]\\s+");
+    private static final Pattern LOGCAT_COORDINATE_PAIR = Pattern.compile(
+            "(?i)\\b(touch|point|anchor|local|raw|screen|window|center|from|to)="
+                    + "-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?");
+    private static final Pattern LOGCAT_COORDINATE_BOX = Pattern.compile(
+            "(?i)\\bbox=-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?,"
+                    + "-?\\d+(?:\\.\\d+)?,-?\\d+(?:\\.\\d+)?");
+    private static final Pattern LOGCAT_XY_COORDINATES = Pattern.compile(
+            "(?i)\\bx=-?\\d+(?:\\.\\d+)?\\s+y=-?\\d+(?:\\.\\d+)?");
     private static final Set<String> SAFE_RUNTIME_SNAPSHOT_FIELDS = new HashSet<String>(
             Arrays.asList(
                     "service_connected", "service_generation", "boot_safety_holding",
                     "boot_safety_remaining_ms", "boot_safety_debug_bypass",
                     "active_runtime_block_window_id", "charging", "service_battery_percent",
                     "display_profile", "display_profile_mode", "display_dimensions",
-                    "background_source_type", "background_bitmap_dimensions", "doodle_attached",
+                    "active_display_id", "active_display_rotation", "active_display_state",
+                    "active_display_current_refresh_millihz",
+                    "active_display_max_refresh_millihz",
+                    "active_display_supported_mode_count",
+                    "background_source_type", "background_bitmap_dimensions",
+                    "background_cache_bitmap_config",
+                    "background_cache_bitmap_allocation_bytes",
+                    "background_renderer_borrows_cache", "background_delivery_path",
+                    "background_raw_renderer_capable", "background_raw_source_accepted",
+                    "background_capture_generation", "background_capture_attempts",
+                    "background_capture_attempted_this_session",
+                    "background_capture_succeeded_this_session",
+                    "background_captured_age_ms", "background_effect",
+                    "background_cached_effect", "background_cached_profile",
+                    "effect_uses_colormap_current", "effect_supports_no_colormap",
+                    "s3_background_mode", "s3_background_source_dimensions",
+                    "s3_background_initial_target_dimensions",
+                    "s3_background_surface_dimensions", "s3_background_active_dimensions",
+                    "s3_background_map_passes", "s3_background_deferred_until_surface",
+                    "s3_background_mapping_status", "doodle_attached",
                     "doodle_parked", "effect_attached", "effect_parked", "effect_visible",
                     "affordance_pending", "affordance_shown_this_wake",
                     "affordance_dispatch_queued", "affordance_dispatch_generation",
-                    "effect_renderer_type", "effect_gesture_active", "pin_entry_pending",
+                    "effect_renderer_type", "effect_renderer_class",
+                    "effect_renderer_display_dimensions", "effect_renderer_recreate_pending",
+                    "effect_renderer_recreate_reason", "effect_readiness_state",
+                    "effect_readiness_detail", "effect_hfr_enabled",
+                    "effect_hfr_speed_tenths", "effect_lens_flare_mode",
+                    "effect_lens_flare_renderer", "effect_gesture_active",
+                    "effect_window_not_touchable", "effect_window_alpha_milli",
+                    "effect_window_neutralized_for_handoff", "touch_window_count",
+                    "touch_primary_attached", "touch_requested_touchable",
+                    "touch_params_not_touchable", "touch_additional_window_count",
+                    "touch_resolved_region_count", "touch_resolved_profile",
+                    "touch_resolved_dimensions", "touch_cached_while_screen_off",
+                    "touch_box_capture_scheduled", "touch_box_capture_in_flight",
+                    "touch_box_capture_callback_pending",
+                    "buffered_readiness_gesture_active", "lockscreen_session_polling",
+                    "blocked_surface_scan_in_flight", "pin_entry_pending",
                     "lock_cycle_safety_bypass_active",
                     "three_finger_safety_bypass_enabled",
                     "pin_entry_surface_visible", "pin_entry_handoff_active",
@@ -74,6 +116,16 @@ final class DebugReport {
                     "pin_entry_handoff_terminal", "pin_entry_handoff_outcome",
                     "pin_entry_handoff_observed_age_ms", "pin_entry_handoff_interactive",
                     "pin_entry_handoff_keyguard_locked", "pin_entry_handoff_device_locked",
+                    "pin_entry_handoff_touch_windows_before",
+                    "pin_entry_handoff_touch_windows_after",
+                    "pin_entry_handoff_touch_removal_mode",
+                    "pin_entry_handoff_touch_removal_result",
+                    "pin_entry_handoff_touch_removal_elapsed_ms",
+                    "pin_entry_handoff_window_alpha_result",
+                    "pin_entry_handoff_window_alpha_elapsed_ms",
+                    "pin_entry_handoff_prepare_age_ms",
+                    "pin_entry_handoff_swipe_queue_age_ms",
+                    "pin_entry_handoff_dispatch_age_ms", "pin_entry_handoff_fail_open",
                     "notification_shade_visible",
                     "notification_shade_diagnostic_age_ms",
                     "notification_shade_diagnostic_reason",
@@ -83,7 +135,22 @@ final class DebugReport {
                     "notification_shade_diagnostic_roots",
                     "notification_shade_diagnostic_nodes",
                     "notification_shade_diagnostic_exhausted", "global_actions_visible",
-                    "global_actions_age_ms", "background_capture_active"));
+                    "global_actions_age_ms", "background_capture_active",
+                    "colour_view_background_dimensions",
+                    "colour_view_background_ownership",
+                    "colour_view_background_allocation_bytes",
+                    "colour_gl_background_dimensions",
+                    "colour_gl_background_allocation_bytes", "colour_gl_gpu_ready",
+                    "colour_gl_resources_ready", "colour_gl_draw_count",
+                    "spark_view_background_dimensions", "spark_view_background_ownership",
+                    "spark_view_background_allocation_bytes",
+                    "spark_gl_background_dimensions",
+                    "spark_gl_background_allocation_bytes", "spark_gl_gpu_ready",
+                    "spark_gl_resources_ready", "spark_gl_draw_count",
+                    "s6_view_portrait_dimensions", "s6_view_portrait_ownership",
+                    "s6_view_portrait_allocation_bytes", "s6_gl_portrait_dimensions",
+                    "s6_gl_landscape_dimensions", "s6_gl_background_allocation_bytes",
+                    "s6_gl_gpu_ready", "s6_gl_resources_ready", "s6_gl_draw_count"));
     private static final Set<String> RUNTIME_SIGNATURE_FIELDS = new HashSet<String>(
             Arrays.asList(
                     "notification_shade_window_signature",
@@ -95,6 +162,14 @@ final class DebugReport {
     }
 
     static File create(Context context) throws IOException {
+        return create(context, false);
+    }
+
+    static File createAdvanced(Context context) throws IOException {
+        return create(context, true);
+    }
+
+    private static File create(Context context, boolean advanced) throws IOException {
         Context appContext = context.getApplicationContext();
         File directory = reportDirectory(appContext);
         if (!directory.exists() && !directory.mkdirs()) {
@@ -103,14 +178,15 @@ final class DebugReport {
         pruneOldReports(directory);
 
         File report = new File(directory,
-                PREFIX + utcTimestamp("yyyyMMdd-HHmmss") + ".txt");
+                (advanced ? ADVANCED_PREFIX : PREFIX)
+                        + utcTimestamp("yyyyMMdd-HHmmss") + ".txt");
         StringBuilder body = new StringBuilder(64 * 1024);
-        appendHeader(body, appContext);
-        appendRuntimeState(body, appContext);
+        appendHeader(body, appContext, advanced);
+        appendRuntimeState(body, appContext, advanced);
         appendAudioState(body, appContext);
-        appendPreferences(body, appContext);
-        appendInternalFiles(body, appContext);
-        appendLogcat(body);
+        appendPreferences(body, appContext, advanced);
+        appendInternalFiles(body, appContext, advanced);
+        appendLogcat(body, advanced);
 
         Writer writer = null;
         try {
@@ -137,10 +213,26 @@ final class DebugReport {
                 && name.indexOf('\\') < 0;
     }
 
-    private static void appendHeader(StringBuilder body, Context context) {
+    static boolean isAdvancedReportName(String name) {
+        return name != null && name.startsWith(ADVANCED_PREFIX) && name.endsWith(".txt");
+    }
+
+    private static void appendHeader(StringBuilder body, Context context, boolean advanced) {
         body.append("L.L.E debug report\n");
-        body.append("privacy_notice=diagnostic beta: app UID/PID log messages are included "
-                + "and may contain notification or accessibility text; review before sharing\n");
+        body.append("debug_report_schema_version=3\n");
+        body.append("debug_report_mode=")
+                .append(advanced ? "advanced_unredacted" : "standard_redacted")
+                .append('\n');
+        if (advanced) {
+            body.append("privacy_warning=UNREDACTED: this report may contain notification "
+                    + "or accessibility text, app/package names, filenames, paths, imported "
+                    + "source references and exact touch coordinates; share only with a "
+                    + "trusted recipient\n");
+        } else {
+            body.append("privacy_notice=diagnostic beta: app UID/PID log messages are included "
+                    + "and may contain notification or accessibility text; review before "
+                    + "sharing\n");
+        }
         body.append("created_utc=").append(utcTimestamp("yyyy-MM-dd'T'HH:mm:ss'Z'"))
                 .append('\n');
         body.append("package=").append(context.getPackageName()).append('\n');
@@ -199,7 +291,8 @@ final class DebugReport {
         }
     }
 
-    private static void appendRuntimeState(StringBuilder body, Context context) {
+    private static void appendRuntimeState(
+            StringBuilder body, Context context, boolean advanced) {
         body.append("[runtime]\n");
         int rawUnlockEffect = OverlayPrefs.rawUnlockEffect(context);
         int resolvedUnlockEffect = OverlayPrefs.unlockEffect(context);
@@ -230,22 +323,66 @@ final class DebugReport {
                 .append(OverlayPrefs.tabletModeEnabled(context)).append('\n');
         boolean importedColormap = OverlayPrefs.importedEffectBackgroundEnabled(
                 context, resolvedUnlockEffect, colormapProfile);
+        boolean colormapDisabled = OverlayPrefs.testerNoColormapModeEnabled(context);
         body.append("active_colormap_source=")
-                .append(importedColormap ? "imported" : "automatic").append('\n');
-        int colormapWidth = importedColormap
+                .append(colormapDisabled ? "disabled"
+                        : importedColormap ? "imported" : "automatic").append('\n');
+        int importedOriginalWidth = importedColormap
                 ? OverlayPrefs.importedEffectBackgroundWidth(
                         context, resolvedUnlockEffect, colormapProfile) : 0;
-        int colormapHeight = importedColormap
+        int importedOriginalHeight = importedColormap
                 ? OverlayPrefs.importedEffectBackgroundHeight(
                         context, resolvedUnlockEffect, colormapProfile) : 0;
-        if (!importedColormap) {
-            File colormapFile = OverlayPrefs.effectBackgroundFile(
-                    context, resolvedUnlockEffect, colormapProfile);
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(colormapFile.getAbsolutePath(), bounds);
-            colormapWidth = Math.max(0, bounds.outWidth);
-            colormapHeight = Math.max(0, bounds.outHeight);
+        File activeColormapFile = importedColormap
+                ? OverlayPrefs.importedEffectBackgroundFile(
+                        context, resolvedUnlockEffect, colormapProfile)
+                : OverlayPrefs.effectBackgroundFile(
+                        context, resolvedUnlockEffect, colormapProfile);
+        if (!importedColormap && !Argb8888BitmapStore.isUsable(activeColormapFile)) {
+            activeColormapFile = OverlayPrefs.legacyPngEffectBackgroundFile(
+                    context, colormapProfile);
+        }
+        Argb8888BitmapStore.Info bounds = colormapDisabled
+                ? null : Argb8888BitmapStore.inspect(activeColormapFile);
+        int colormapWidth = bounds == null ? 0 : bounds.width;
+        int colormapHeight = bounds == null ? 0 : bounds.height;
+        body.append("active_colormap_storage=")
+                .append(colormapDisabled ? "none"
+                        : Argb8888BitmapStore.isRaw(activeColormapFile)
+                                ? "argb8888" : "legacy_or_missing")
+                .append('\n');
+        long activeColormapFileBytes = activeColormapFile != null
+                && activeColormapFile.isFile() ? activeColormapFile.length() : 0L;
+        long expectedPayloadBytes = colormapWidth > 0 && colormapHeight > 0
+                ? (long) colormapWidth * colormapHeight * 4L : 0L;
+        long payloadBytes = bounds == null ? 0L : bounds.payloadBytes;
+        body.append("active_colormap_profile=").append(colormapProfile).append('\n');
+        body.append("active_colormap_file_bytes=")
+                .append(activeColormapFileBytes).append('\n');
+        body.append("active_colormap_payload_bytes=").append(payloadBytes).append('\n');
+        body.append("active_colormap_expected_payload_bytes=")
+                .append(expectedPayloadBytes).append('\n');
+        body.append("active_colormap_payload_matches_dimensions=")
+                .append(payloadBytes == expectedPayloadBytes && expectedPayloadBytes > 0L)
+                .append('\n');
+        body.append("active_colormap_file_overhead_bytes=")
+                .append(Math.max(0L, activeColormapFileBytes - payloadBytes)).append('\n');
+        body.append("active_colormap_file_modified_age_ms=")
+                .append(activeColormapFile != null && activeColormapFile.lastModified() > 0L
+                        ? Math.max(0L,
+                                System.currentTimeMillis() - activeColormapFile.lastModified())
+                        : -1L)
+                .append('\n');
+        long lastCapturedAt = OverlayPrefs.effectBackgroundLastCapturedAt(
+                context, resolvedUnlockEffect, colormapProfile);
+        body.append("active_colormap_last_capture_age_ms=")
+                .append(lastCapturedAt > 0L
+                        ? Math.max(0L, System.currentTimeMillis() - lastCapturedAt) : -1L)
+                .append('\n');
+        if (importedColormap) {
+            body.append("original_import_dimensions=")
+                    .append(importedOriginalWidth).append('x')
+                    .append(importedOriginalHeight).append('\n');
         }
         body.append("active_colormap_dimensions=")
                 .append(colormapWidth).append('x').append(colormapHeight).append('\n');
@@ -289,8 +426,54 @@ final class DebugReport {
         Debug.MemoryInfo memoryInfo = new Debug.MemoryInfo();
         Debug.getMemoryInfo(memoryInfo);
         body.append("process_total_pss_kb=").append(memoryInfo.getTotalPss()).append('\n');
-        appendSanitizedRuntimeSnapshot(body, ChargingAccessibilityService.debugRuntimeSnapshot());
+        body.append("process_total_private_dirty_kb=")
+                .append(memoryInfo.getTotalPrivateDirty()).append('\n');
+        body.append("process_total_shared_dirty_kb=")
+                .append(memoryInfo.getTotalSharedDirty()).append('\n');
+        body.append("process_total_swappable_pss_kb=")
+                .append(memoryInfo.getTotalSwappablePss()).append('\n');
+        appendMemoryStat(body, memoryInfo, "process_java_heap_pss_kb", "summary.java-heap");
+        appendMemoryStat(body, memoryInfo, "process_native_heap_pss_kb", "summary.native-heap");
+        appendMemoryStat(body, memoryInfo, "process_graphics_pss_kb", "summary.graphics");
+        appendMemoryStat(body, memoryInfo, "process_code_pss_kb", "summary.code");
+        appendMemoryStat(body, memoryInfo, "process_stack_pss_kb", "summary.stack");
+        appendMemoryStat(body, memoryInfo, "process_private_other_pss_kb",
+                "summary.private-other");
+        appendMemoryStat(body, memoryInfo, "process_system_pss_kb", "summary.system");
+        body.append("native_heap_size_bytes=").append(Debug.getNativeHeapSize()).append('\n');
+        body.append("native_heap_allocated_bytes=")
+                .append(Debug.getNativeHeapAllocatedSize()).append('\n');
+        body.append("native_heap_free_bytes=")
+                .append(Debug.getNativeHeapFreeSize()).append('\n');
+        appendRuntimeSnapshot(body, ChargingAccessibilityService.debugRuntimeSnapshot(), advanced);
         body.append('\n');
+    }
+
+    static void appendRuntimeSnapshot(
+            StringBuilder body, String snapshot, boolean advanced) {
+        if (!advanced) {
+            appendSanitizedRuntimeSnapshot(body, snapshot);
+            return;
+        }
+        body.append("runtime_snapshot_schema_version=2\n");
+        body.append("runtime_snapshot_filter=none\n");
+        if (snapshot == null || snapshot.length() == 0) {
+            body.append("service_snapshot=unavailable\n");
+        } else {
+            body.append(snapshot);
+            if (snapshot.charAt(snapshot.length() - 1) != '\n') {
+                body.append('\n');
+            }
+        }
+        body.append("runtime_snapshot_omitted_fields=0\n");
+    }
+
+    private static void appendMemoryStat(StringBuilder body, Debug.MemoryInfo memoryInfo,
+            String reportKey, String memoryKey) {
+        String value = memoryInfo.getMemoryStat(memoryKey);
+        body.append(reportKey).append('=')
+                .append(value == null || !value.matches("\\d+") ? "-1" : value)
+                .append('\n');
     }
 
     private static String colormapValidationLabel(
@@ -318,9 +501,11 @@ final class DebugReport {
      * Keep only its known diagnostic fields and categorise package/blacklist values so a
      * future free-form field cannot accidentally turn a shareable report into UI telemetry.
      */
-    private static void appendSanitizedRuntimeSnapshot(StringBuilder body, String snapshot) {
+    static void appendSanitizedRuntimeSnapshot(StringBuilder body, String snapshot) {
+        body.append("runtime_snapshot_schema_version=2\n");
         if (snapshot == null || snapshot.length() == 0) {
             body.append("service_snapshot=unavailable\n");
+            body.append("runtime_snapshot_omitted_fields=0\n");
             return;
         }
         int omitted = 0;
@@ -339,6 +524,13 @@ final class DebugReport {
             } else if ("custom_blacklist_packages".equals(key)) {
                 body.append("custom_blacklist_configured=")
                         .append(value.length() > 2).append('\n');
+            } else if ("notification_shade_diagnostic_reason".equals(key)) {
+                String reason = sanitizeInternalReason(value);
+                if (reason == null) {
+                    omitted++;
+                } else {
+                    body.append(key).append('=').append(reason).append('\n');
+                }
             } else if (RUNTIME_SIGNATURE_FIELDS.contains(key)) {
                 String signature = sanitizeRuntimeSignature(key, value);
                 if (signature == null) {
@@ -354,9 +546,27 @@ final class DebugReport {
                 omitted++;
             }
         }
-        if (omitted > 0) {
-            body.append("runtime_snapshot_omitted_fields=").append(omitted).append('\n');
+        body.append("runtime_snapshot_omitted_fields=").append(omitted).append('\n');
+    }
+
+    static String sanitizeInternalReason(String value) {
+        if (value == null || value.length() == 0 || value.length() > 256
+                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
+                || value.contains("://")) {
+            return null;
         }
+        StringBuilder safe = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (Character.isLetterOrDigit(character)
+                    || character == '_' || character == '-' || character == '.'
+                    || character == ':' || character == '<' || character == '>') {
+                safe.append(character);
+            } else {
+                safe.append('_');
+            }
+        }
+        return safe.toString();
     }
 
     private static String packageCategory(String packageName) {
@@ -486,19 +696,45 @@ final class DebugReport {
         }
     }
 
-    private static void appendPreferences(StringBuilder body, Context context) {
+    private static void appendPreferences(
+            StringBuilder body, Context context, boolean advanced) {
         body.append("[preferences]\n");
+        body.append("filter=").append(advanced ? "none_except_credentials" : "privacy_safe")
+                .append('\n');
         SharedPreferences preferences = OverlayPrefs.get(context);
         Map<String, ?> values = new TreeMap<String, Object>(preferences.getAll());
         for (Map.Entry<String, ?> entry : values.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
             body.append(key).append('=');
-            body.append(isSensitivePreference(key, value)
+            body.append((advanced ? isCredentialPreference(key, value)
+                    : isSensitivePreference(key, value))
                     ? "<redacted>" : String.valueOf(value));
             body.append('\n');
         }
         body.append('\n');
+    }
+
+    private static boolean isCredentialPreference(String key, Object value) {
+        String lowerKey = key == null ? "" : key.toLowerCase(Locale.ROOT);
+        if (lowerKey.contains("password") || lowerKey.contains("token")
+                || lowerKey.contains("secret") || lowerKey.contains("keystore")
+                || lowerKey.contains("p12")) {
+            return true;
+        }
+        if (!(value instanceof String)) {
+            if (value instanceof Set) {
+                for (Object item : (Set<?>) value) {
+                    String lowerItem = String.valueOf(item).toLowerCase(Locale.ROOT);
+                    if (lowerItem.contains(".p12") || lowerItem.contains(".keys")) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        String lowerValue = String.valueOf(value).toLowerCase(Locale.ROOT);
+        return lowerValue.contains(".p12") || lowerValue.contains(".keys");
     }
 
     private static boolean isSensitivePreference(String key, Object value) {
@@ -523,7 +759,8 @@ final class DebugReport {
         return false;
     }
 
-    private static void appendInternalFiles(StringBuilder body, Context context) {
+    private static void appendInternalFiles(
+            StringBuilder body, Context context, boolean advanced) {
         body.append("[internal_files]\n");
         File[] files = context.getFilesDir().listFiles();
         if (files == null || files.length == 0) {
@@ -544,10 +781,24 @@ final class DebugReport {
         body.append("file_count=").append(fileCount).append('\n');
         body.append("directory_count=").append(directoryCount).append('\n');
         body.append("file_bytes_total=").append(fileBytes).append('\n');
+        if (advanced) {
+            body.append("file_listing=unredacted_names_no_contents\n");
+            Arrays.sort(files);
+            for (File file : files) {
+                body.append(file.isDirectory() ? "directory" : "file")
+                        .append('=')
+                        .append(file.getAbsolutePath())
+                        .append(",bytes=")
+                        .append(file.isFile() ? Math.max(0L, file.length()) : 0L)
+                        .append(",modified_ms=")
+                        .append(Math.max(0L, file.lastModified()))
+                        .append('\n');
+            }
+        }
         body.append('\n');
     }
 
-    private static void appendLogcat(StringBuilder body) {
+    private static void appendLogcat(StringBuilder body, boolean advanced) {
         body.append("[app_uid_logcat]\n");
         String output = captureLogcat("--uid=" + android.os.Process.myUid());
         if (selectorUnsupported(output, "--uid")) {
@@ -560,8 +811,44 @@ final class DebugReport {
         } else {
             body.append("filter=uid\n");
         }
-        body.append("message_content=full_app_logcat\n");
-        body.append(output == null ? "unavailable=null\n" : output);
+        String reportOutput = output == null || advanced
+                ? output : redactLogcatCoordinates(output);
+        body.append("message_content=")
+                .append(advanced ? "app_logcat_unredacted" : "app_logcat_coordinates_redacted")
+                .append('\n');
+        body.append("captured_chars=")
+                .append(reportOutput == null ? 0 : reportOutput.length())
+                .append('\n');
+        body.append("captured_lines=").append(lineCount(reportOutput)).append('\n');
+        body.append("truncated=")
+                .append(reportOutput != null && reportOutput.contains("<logcat truncated>"))
+                .append('\n');
+        body.append(reportOutput == null ? "unavailable=null\n" : reportOutput);
+    }
+
+    private static int lineCount(String value) {
+        if (value == null || value.length() == 0) {
+            return 0;
+        }
+        int lines = 1;
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) == '\n' && index + 1 < value.length()) {
+                lines++;
+            }
+        }
+        return lines;
+    }
+
+    static String redactLogcatCoordinates(String output) {
+        if (output == null || output.length() == 0) {
+            return output;
+        }
+        String redacted = LOGCAT_COORDINATE_PAIR.matcher(output)
+                .replaceAll("$1=<redacted>");
+        redacted = LOGCAT_COORDINATE_BOX.matcher(redacted)
+                .replaceAll("box=<redacted>");
+        return LOGCAT_XY_COORDINATES.matcher(redacted)
+                .replaceAll("x=<redacted> y=<redacted>");
     }
 
     private static String captureLogcat(String selector) {

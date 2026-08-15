@@ -68,6 +68,7 @@ public class SetupWizardActivity extends Activity {
     public static final String MODE_AUTOMATIC_SCREENSHOT = "automatic_screenshot";
     public static final String MODE_SET_LOCK_AND_CACHE = "set_lock_and_cache";
     public static final String MODE_CACHE_ONLY = "cache_only";
+    public static final String MODE_NO_COLORMAP = "no_colormap";
 
     private static final String STATE_STEP = "wizard_step";
     private static final String STATE_PENDING_MODE = "pending_wallpaper_mode";
@@ -167,6 +168,13 @@ public class SetupWizardActivity extends Activity {
     static void rememberWallpaperMode(Context context, String mode) {
         String normalized = mode == null || mode.length() == 0
                 ? MODE_AUTOMATIC_SCREENSHOT : mode;
+        boolean noColormap = BuildFlavor.TESTER && MODE_NO_COLORMAP.equals(normalized);
+        OverlayPrefs.get(context).edit()
+                .putBoolean(OverlayPrefs.TESTER_NO_COLORMAP_MODE, noColormap)
+                .apply();
+        if (noColormap) {
+            OverlayPrefs.unlockEffect(context);
+        }
         wizardPrefs(context).edit().putString(PREF_WALLPAPER_MODE, normalized).apply();
     }
 
@@ -860,6 +868,21 @@ public class SetupWizardActivity extends Activity {
             }
         });
         body.addView(exactCache, optionParams());
+
+        if (BuildFlavor.TESTER) {
+            View noColormap = optionCard("04", "Lightweight — no lockscreen capture",
+                    "Never captures or loads a lockscreen colormap. Compatible lightweight "
+                            + "effects remain selectable; the touch-box editor uses an exact "
+                            + "display-sized black canvas.",
+                    "LOW MEMORY", false);
+            noColormap.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    selectNoColormapMode();
+                }
+            });
+            body.addView(noColormap, optionParams());
+        }
         return scroll(body);
     }
 
@@ -874,6 +897,25 @@ public class SetupWizardActivity extends Activity {
             OverlayPrefs.useAutomaticEffectBackgroundForAll(this, profile);
         }
         completeWallpaperChoice(MODE_AUTOMATIC_SCREENSHOT);
+    }
+
+    private void selectNoColormapMode() {
+        if (!BuildFlavor.TESTER) {
+            return;
+        }
+        if (!TouchBoxSetupActivity.prepareBlackEditorScreens(this)) {
+            Toast.makeText(this,
+                    "L.L.E could not create the display-sized touch-box canvas",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        OverlayPrefs.get(this).edit()
+                .putBoolean(OverlayPrefs.TESTER_NO_COLORMAP_MODE, true)
+                .apply();
+        // Normalize any previously selected screenshot-backed effect before the service can
+        // preload it. Mass Tension is the tester mode's deterministic safety fallback.
+        OverlayPrefs.unlockEffect(this);
+        completeWallpaperChoice(MODE_NO_COLORMAP);
     }
 
     private void confirmBetaWallpaperMode(final String mode, final Runnable proceed) {
@@ -993,15 +1035,30 @@ public class SetupWizardActivity extends Activity {
     private View prepareSourceStep() {
         final String mode = selectedWallpaperMode(this);
         final boolean automatic = MODE_AUTOMATIC_SCREENSHOT.equals(mode);
+        final boolean noColormap = MODE_NO_COLORMAP.equals(mode);
         final boolean unlockEnabled = OverlayPrefs.get(this).getBoolean(
                 OverlayPrefs.UNLOCK_EFFECT_ENABLED, true);
-        final boolean captureReady = !automatic || !unlockEnabled
+        final boolean captureReady = noColormap || !automatic || !unlockEnabled
                 || isAutomaticBackgroundReady();
 
         LinearLayout body = stepBody();
         body.addView(kicker("STEP 6", captureReady ? "READY" : "CAPTURE REQUIRED",
                 captureReady ? COLOR_OK : COLOR_WARN));
-        if (automatic && unlockEnabled) {
+        if (noColormap) {
+            boolean multipleProfiles = FoldDisplayTarget.backgroundProfiles(this).length > 1;
+            body.addView(title("No lockscreen colormap required"));
+            body.addView(paragraph(multipleProfiles
+                    ? "L.L.E created black touch-box canvases at the exact dimensions of both "
+                            + "display profiles. Effect wallpaper capture and cache loading are "
+                            + "disabled in this tester mode."
+                    : "L.L.E created a black touch-box canvas at the exact dimensions of the "
+                            + "current display. Effect wallpaper capture and cache loading are "
+                            + "disabled in this tester mode."));
+            body.addView(statusCard("Lightweight source mode ready",
+                    "Only compatible effects can be selected. If an incompatible saved choice "
+                            + "is encountered, L.L.E falls back to Mass Tension.",
+                    true));
+        } else if (automatic && unlockEnabled) {
             boolean tabletProfiles = FoldDisplayTarget.usesTabletProfiles(this);
             body.addView(title("Capture the lockscreen once"));
             body.addView(paragraph(tabletProfiles
@@ -1074,7 +1131,15 @@ public class SetupWizardActivity extends Activity {
                             .setPositiveButton("Continue", new DialogInterface.OnClickListener() {
                                 @Override
                                 public void onClick(DialogInterface dialog, int which) {
-                                    showStep(STEP_TOUCH_BOX, true, 1);
+                                    if (TouchBoxSetupActivity.prepareBlackEditorScreens(
+                                            SetupWizardActivity.this)) {
+                                        showStep(STEP_TOUCH_BOX, true, 1);
+                                    } else {
+                                        Toast.makeText(SetupWizardActivity.this,
+                                                "Could not create the display-sized black "
+                                                        + "touch-box canvas",
+                                                Toast.LENGTH_LONG).show();
+                                    }
                                 }
                             })
                             .show();
@@ -1385,7 +1450,7 @@ public class SetupWizardActivity extends Activity {
     private void completeWallpaperChoice(String mode) {
         String normalized = mode == null || mode.length() == 0
                 ? MODE_AUTOMATIC_SCREENSHOT : mode;
-        wizardPrefs(this).edit().putString(PREF_WALLPAPER_MODE, normalized).apply();
+        rememberWallpaperMode(this, normalized);
         if (sourceOnlyLaunch) {
             showStep(STEP_DONE, true, 1);
             return;
@@ -1411,6 +1476,13 @@ public class SetupWizardActivity extends Activity {
     }
 
     private void launchTouchBoxSetup() {
+        if (OverlayPrefs.testerNoColormapModeEnabled(this)
+                && !TouchBoxSetupActivity.prepareBlackEditorScreens(this)) {
+            Toast.makeText(this,
+                    "Could not create the display-sized black touch-box canvas",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         Intent intent = new Intent(this, TouchBoxSetupActivity.class);
         intent.putExtra(TouchBoxSetupActivity.EXTRA_START_CAPTURE,
                 !hasTouchBoxEditorSource());
@@ -1428,6 +1500,9 @@ public class SetupWizardActivity extends Activity {
         long requestedAt = wizardPrefs(this).getLong(PREF_CAPTURE_REQUESTED_AT, 0L);
         for (String profile : FoldDisplayTarget.backgroundProfiles(this)) {
             File source = OverlayPrefs.effectBackgroundFile(this, effect, profile);
+            if (!source.exists() || source.length() <= 0L) {
+                source = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+            }
             if (!source.exists() || source.length() <= 0L) {
                 return false;
             }
@@ -1455,6 +1530,9 @@ public class SetupWizardActivity extends Activity {
             }
         }
         File automatic = OverlayPrefs.effectBackgroundFile(this, effect, profile);
+        if (!automatic.exists() || automatic.length() <= 0L) {
+            automatic = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+        }
         return automatic.exists() && automatic.length() > 0L;
     }
 

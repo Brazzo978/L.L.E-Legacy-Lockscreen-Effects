@@ -301,6 +301,34 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
                 && drawCount > 0;
     }
 
+    String backgroundMemoryDebugSnapshot() {
+        Bitmap bitmap;
+        synchronized (bitmapLock) {
+            bitmap = backgroundBitmap;
+        }
+        return "colour_gl_background_dimensions=" + dimensions(bitmap) + '\n'
+                + "colour_gl_background_allocation_bytes=" + allocationBytes(bitmap) + '\n'
+                + "colour_gl_gpu_ready=" + gpuReady + '\n'
+                + "colour_gl_resources_ready=" + resourcesReady + '\n'
+                + "colour_gl_draw_count=" + drawCount + '\n';
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
+    }
+
     void setBackgroundBitmap(final Bitmap bitmap) {
         if (bitmap == null) {
             return;

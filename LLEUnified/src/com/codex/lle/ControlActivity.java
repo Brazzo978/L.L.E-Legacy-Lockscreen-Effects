@@ -72,8 +72,6 @@ import android.widget.Toast;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashSet;
@@ -189,7 +187,6 @@ public class ControlActivity extends Activity {
     private boolean doodleDebugExpanded;
     private boolean lockscreenDebugExpanded;
     private boolean rendererWallpaperExpanded;
-    private boolean screenshotServiceExpanded;
     private boolean touchBoxExpanded;
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
@@ -1581,25 +1578,62 @@ public class ControlActivity extends Activity {
             section.addView(outlineButton("Create debug report", new View.OnClickListener() {
                 @Override
                 public void onClick(final View view) {
-                    createAndShareDebugReport(view);
+                    createAndShareDebugReport(view, false);
                 }
             }));
             section.addView(infoText("Creates a text-only support report and opens the "
                     + "share sheet. Wallpapers and images are never included."));
+            section.addView(outlineButton("Create advanced log (unredacted)",
+                    new View.OnClickListener() {
+                @Override
+                public void onClick(final View view) {
+                    confirmAdvancedDebugReport(view);
+                }
+            }));
+            TextView advancedLogWarning = infoText("DANGER: the advanced log is not "
+                    + "privacy-filtered. It may expose notification/accessibility text, "
+                    + "app names, filenames, paths and exact touch coordinates. Share it "
+                    + "only with a trusted recipient.");
+            advancedLogWarning.setTextColor(COLOR_ERROR);
+            advancedLogWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            section.addView(advancedLogWarning);
         }
         return section;
     }
 
-    private void createAndShareDebugReport(final View source) {
+    private void confirmAdvancedDebugReport(final View source) {
+        new AlertDialog.Builder(this)
+                .setTitle("Advanced log may expose personal data")
+                .setMessage("This unredacted report can contain notification or "
+                        + "accessibility text, installed/foreground app identifiers, "
+                        + "filenames, paths, imported source references and exact touch "
+                        + "coordinates. Do not post it publicly. Share it only with someone "
+                        + "you trust.\n\nCreate the advanced log now?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("I understand - create", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        createAndShareDebugReport(source, true);
+                    }
+                })
+                .show();
+    }
+
+    private void createAndShareDebugReport(final View source, final boolean advanced) {
         source.setEnabled(false);
-        Toast.makeText(this, "Creating debug report\u2026", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, advanced
+                        ? "Creating unredacted advanced log\u2026"
+                        : "Creating debug report\u2026",
+                Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 File report = null;
                 Throwable failure = null;
                 try {
-                    report = DebugReport.create(ControlActivity.this);
+                    report = advanced
+                            ? DebugReport.createAdvanced(ControlActivity.this)
+                            : DebugReport.create(ControlActivity.this);
                 } catch (Throwable error) {
                     failure = error;
                     Log.e("LLEControl", "Debug report creation failed", error);
@@ -1618,24 +1652,28 @@ public class ControlActivity extends Activity {
                                     Toast.LENGTH_LONG).show();
                             return;
                         }
-                        shareDebugReport(completedReport);
+                        shareDebugReport(completedReport, advanced);
                     }
                 });
             }
         }, "LLE-debug-report").start();
     }
 
-    private void shareDebugReport(File report) {
+    private void shareDebugReport(File report, boolean advanced) {
         Uri uri = DebugReportProvider.uriFor(this, report);
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
         share.putExtra(Intent.EXTRA_SUBJECT,
-                "L.L.E " + appVersionName() + " debug report");
+                "L.L.E " + appVersionName()
+                        + (advanced ? " advanced unredacted log" : " debug report"));
         share.putExtra(Intent.EXTRA_STREAM, uri);
-        share.setClipData(ClipData.newRawUri("L.L.E debug report", uri));
+        share.setClipData(ClipData.newRawUri(
+                advanced ? "L.L.E advanced unredacted log" : "L.L.E debug report", uri));
         share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
-            startActivity(Intent.createChooser(share, "Share L.L.E debug report"));
+            startActivity(Intent.createChooser(share, advanced
+                    ? "Share only with a trusted recipient"
+                    : "Share L.L.E debug report"));
         } catch (RuntimeException error) {
             Log.e("LLEControl", "Debug report share failed", error);
             Toast.makeText(this, "No app is available to share the report",
@@ -2034,6 +2072,15 @@ public class ControlActivity extends Activity {
         effects.setLayoutParams(effectsParams);
         styleCard(effects);
         effects.addView(sectionTitle("Effects"));
+        if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
+            TextView lightweightMode = infoText(
+                    "LIGHTWEIGHT TESTER MODE — lockscreen capture and colormap loading are "
+                            + "disabled. Grey effects require a colormap; Mass Tension is the "
+                            + "automatic safety fallback.");
+            lightweightMode.setTextColor(COLOR_ACCENT_DEEP);
+            lightweightMode.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            effects.addView(lightweightMode);
+        }
         effects.addView(effectPreviewHint());
         addEffectOptionIfAvailable(effects,
                 "S3 Water Ripple",
@@ -2045,11 +2092,9 @@ public class ControlActivity extends Activity {
                 "Fluffy ink clouds blooming in water.",
                 OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 current);
-        addEffectOptionIfAvailable(effects,
-                "S4 Lens Flare",
-                "Bright flares following your finger.",
-                OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_S4_LENS_FLARE)) {
+            effects.addView(lensFlareEffectOption(current));
+        }
         if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_RIPPLE_INK)) {
             effects.addView(rippleInkEffectOption(current));
         }
@@ -2330,13 +2375,7 @@ public class ControlActivity extends Activity {
     }
 
     private boolean isReadableImageFile(File file) {
-        if (file == null || !file.exists() || file.length() <= 0L) {
-            return false;
-        }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        return bounds.outWidth > 0 && bounds.outHeight > 0;
+        return Argb8888BitmapStore.isUsable(file);
     }
 
     private String joinProfileLabels(ArrayList<String> profiles) {
@@ -2462,6 +2501,16 @@ public class ControlActivity extends Activity {
                     showEffectBackgroundScreenshot();
                 }
             }));
+            section.addView(sectionLabel("Automatic recapture"));
+            section.addView(toggle("Auto recapture expired cache",
+                    OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
+            section.addView(effectBackgroundIntervalSelector());
+            section.addView(toggle("Pause auto recapture 23-07",
+                    OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
+            section.addView(toggle("Wake lockscreen for hard recapture",
+                    OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
+            section.addView(infoText("These settings apply only to Automatic screenshot. "
+                    + "Direct wallpaper sources remain fixed until you replace them."));
         }
         return section;
     }
@@ -2615,35 +2664,6 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private View screenshotServiceDebugControls() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(8), 0, dp(8));
-        section.setLayoutParams(params);
-        styleInsetPanel(section);
-        section.addView(collapsibleHeader("Screenshot service", screenshotServiceExpanded,
-                new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                screenshotServiceExpanded = !screenshotServiceExpanded;
-                showTab(selectedTab, false, 0);
-            }
-        }));
-        if (screenshotServiceExpanded) {
-            section.addView(toggle("Auto recapture expired cache",
-                    OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
-            section.addView(effectBackgroundIntervalSelector());
-            section.addView(toggle("Pause auto recapture 23-07",
-                    OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
-            section.addView(toggle("Wake lockscreen for hard recapture",
-                    OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
-        }
-        return section;
-    }
-
     private void queueUnlockEffectSelection(int value) {
         queueUnlockEffectSelection(value, -1);
     }
@@ -2742,6 +2762,9 @@ public class ControlActivity extends Activity {
     }
 
     private boolean effectUsesColormapCache(int effect) {
+        if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
+            return false;
+        }
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
                 || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
@@ -3070,11 +3093,9 @@ public class ControlActivity extends Activity {
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
             return column;
         }
-        BitmapFactory.Options sourceBounds = new BitmapFactory.Options();
-        sourceBounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), sourceBounds);
+        Argb8888BitmapStore.Info sourceBounds = Argb8888BitmapStore.inspect(file);
         Bitmap bitmap = decodeFoldPreviewBitmap(file);
-        if (bitmap == null || bitmap.isRecycled()) {
+        if (sourceBounds == null || bitmap == null || bitmap.isRecycled()) {
             TextView missing = infoText("Screenshot unreadable");
             missing.setGravity(Gravity.CENTER);
             column.addView(missing, new LinearLayout.LayoutParams(
@@ -3082,8 +3103,8 @@ public class ControlActivity extends Activity {
             return column;
         }
         previews.add(bitmap);
-        column.addView(infoText("source " + sourceBounds.outWidth + " x "
-                + sourceBounds.outHeight + " \u2022 preview " + bitmap.getWidth() + " x "
+        column.addView(infoText("source " + sourceBounds.width + " x "
+                + sourceBounds.height + " \u2022 preview " + bitmap.getWidth() + " x "
                 + bitmap.getHeight() + " \u2022 "
                 + Math.max(1L, file.length() / 1024L) + " KB"));
         ImageView image = new ImageView(this);
@@ -4266,6 +4287,11 @@ public class ControlActivity extends Activity {
         if (shared.exists() && shared.length() > 0L) {
             return shared;
         }
+        File legacyProfile = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+        if (legacyProfile.exists() && legacyProfile.length() > 0L
+                && copyColormapScreenshotFile(legacyProfile, shared)) {
+            return shared;
+        }
         if (!FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
             // The service validates dimensions before migrating a legacy screenshot.
             // The settings preview must never copy a cover bitmap into the inner slot.
@@ -4319,75 +4345,33 @@ public class ControlActivity extends Activity {
         if (source == null || target == null || !source.exists() || source.length() <= 0L) {
             return false;
         }
-        File parent = target.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            return false;
-        }
-        File temp = new File(parent, target.getName() + ".tmp");
-        FileInputStream input = null;
-        FileOutputStream output = null;
         try {
-            input = new FileInputStream(source);
-            output = new FileOutputStream(temp);
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            output.flush();
-            return temp.renameTo(target);
+            return Argb8888BitmapStore.migrate(source, target);
         } catch (Throwable t) {
             Log.d("LLEControl", "colormap screenshot migration failed", t);
             return false;
-        } finally {
-            if (input != null) {
-                try {
-                    input.close();
-                } catch (Throwable ignored) {
-                }
-            }
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Throwable ignored) {
-                }
-            }
-            if (temp.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                temp.delete();
-            }
         }
     }
 
     private Bitmap decodePreviewBitmap(File file) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
-
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = previewSampleSize(bounds.outWidth, bounds.outHeight);
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(
+                file, previewSampleSize(bounds.width, bounds.height));
     }
 
     private Bitmap decodeFoldPreviewBitmap(File file) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
         int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > 960) {
+        while (Math.max(bounds.width, bounds.height) / sample > 960) {
             sample *= 2;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = sample;
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(file, sample);
     }
 
     private int previewSampleSize(int width, int height) {
@@ -4423,6 +4407,9 @@ public class ControlActivity extends Activity {
     private View effectOption(String title, String subtitle, final int value,
             final boolean selected, final int abstractTilesLineMode,
             View variantControls) {
+        final boolean blockedByNoColormap =
+                OverlayPrefs.testerNoColormapModeEnabled(this)
+                && !OverlayPrefs.supportsTesterNoColormapMode(value);
         final LinearLayout card = verticalGroup();
         final LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -4434,7 +4421,7 @@ public class ControlActivity extends Activity {
         final Runnable previewRunnable = new Runnable() {
             @Override
             public void run() {
-                if (tabSwipeDragging || tabAnimationRunning) {
+                if (blockedByNoColormap || tabSwipeDragging || tabAnimationRunning) {
                     return;
                 }
                 previewOpened[0] = true;
@@ -4445,6 +4432,9 @@ public class ControlActivity extends Activity {
         header.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
+                if (blockedByNoColormap) {
+                    return false;
+                }
                 int action = event.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN) {
                     previewOpened[0] = false;
@@ -4472,6 +4462,13 @@ public class ControlActivity extends Activity {
         header.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if (blockedByNoColormap) {
+                    Toast.makeText(ControlActivity.this,
+                            "This effect requires a lockscreen colormap. Choose another "
+                                    + "wallpaper mode in Setup to enable it.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if (previewOpened[0]) {
                     previewOpened[0] = false;
                     return;
@@ -4511,7 +4508,9 @@ public class ControlActivity extends Activity {
         copy.addView(titleView);
 
         TextView subtitleView = new TextView(this);
-        subtitleView.setText(subtitle);
+        subtitleView.setText(blockedByNoColormap
+                ? subtitle + "\nRequires a lockscreen colormap."
+                : subtitle);
         subtitleView.setTextColor(COLOR_MUTED);
         subtitleView.setTextSize(13f);
         subtitleView.setSingleLine(false);
@@ -4525,11 +4524,16 @@ public class ControlActivity extends Activity {
         card.addView(header, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        if (variantControls != null) {
+        if (variantControls != null && !blockedByNoColormap) {
             card.addView(variantControls);
         }
-        if (supportsPerEffectHighFrameRate(value) && hasInternalHighRefreshDisplay()) {
+        if (!blockedByNoColormap
+                && supportsPerEffectHighFrameRate(value)
+                && hasInternalHighRefreshDisplay()) {
             card.addView(perEffectHighFrameRateControls(value));
+        }
+        if (blockedByNoColormap) {
+            card.setAlpha(0.42f);
         }
 
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
@@ -4609,6 +4613,93 @@ public class ControlActivity extends Activity {
             }
         });
         return effectVariantControls(gyro);
+    }
+
+    private View lensFlareEffectOption(int current) {
+        return effectOption(
+                "S4 Lens Flare",
+                "Original, Blue Ring and Blood flare styles. Canvas remains available for A/B.",
+                OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                -1,
+                lensFlareVariantControls());
+    }
+
+    private View lensFlareVariantControls() {
+        final String selectedMode = OverlayPrefs.lensFlareMode(this);
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(8));
+
+        TextView label = new TextView(this);
+        label.setText("Flare style");
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        final String[] modes = {
+                OverlayPrefs.LENS_FLARE_MODE_FLARE,
+                OverlayPrefs.LENS_FLARE_MODE_BLUE_RING,
+                OverlayPrefs.LENS_FLARE_MODE_BLOOD
+        };
+        final String[] names = {"Original", "Blue Ring", "Blood"};
+        for (int index = 0; index < modes.length; index++) {
+            final String mode = modes[index];
+            LensFlareModeSwatchView swatch = new LensFlareModeSwatchView(
+                    lensFlareModePreviewDrawable(mode), names[index],
+                    mode.equals(selectedMode));
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putString(OverlayPrefs.LENS_FLARE_MODE, mode).apply();
+                    showTab(selectedTab);
+                }
+            });
+            LinearLayout.LayoutParams swatchParams = new LinearLayout.LayoutParams(
+                    0, dp(40), 1f);
+            if (index > 0) {
+                swatchParams.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, swatchParams);
+        }
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        final Switch canvasRenderer = compactEffectVariantSwitch("Canvas renderer (A/B)",
+                !OverlayPrefs.lensFlareGlesRendererEnabled(this));
+        canvasRenderer.setContentDescription("Use original Canvas Lens Flare renderer");
+        canvasRenderer.setOnCheckedChangeListener(
+                new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(
+                        OverlayPrefs.LENS_FLARE_GLES_RENDERER, !isChecked).apply();
+            }
+        });
+        controls.addView(canvasRenderer);
+        return controls;
+    }
+
+    private int lensFlareModePreviewDrawable(String mode) {
+        if (OverlayPrefs.LENS_FLARE_MODE_BLUE_RING.equals(mode)) {
+            return R.drawable.keyguard_bluering_light_00040;
+        }
+        if (OverlayPrefs.LENS_FLARE_MODE_BLOOD.equals(mode)) {
+            return R.drawable.keyguard_blood_light_00040;
+        }
+        return R.drawable.keyguard_flare_light_00040;
     }
 
     /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
@@ -5178,9 +5269,6 @@ public class ControlActivity extends Activity {
             }
             int current = pendingUnlockEffect >= 0
                     ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
-            if (effectUsesColormapCache(current)) {
-                section.addView(screenshotServiceDebugControls());
-            }
             section.addView(effectProfilerControls());
             section.addView(customAppBlacklistControls());
             section.addView(batteryDebugControls());
@@ -6208,6 +6296,58 @@ public class ControlActivity extends Activity {
                 paint.setStrokeCap(Paint.Cap.BUTT);
             }
             paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class LensFlareModeSwatchView extends View {
+        private final Paint swatchPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Drawable preview;
+
+        LensFlareModeSwatchView(int drawableResId, String name, boolean selected) {
+            super(ControlActivity.this);
+            preview = getResources().getDrawable(drawableResId);
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("Lens Flare style " + name
+                    + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float centerX = getWidth() * 0.5f;
+            float centerY = getHeight() * 0.5f;
+            swatchPaint.setStyle(Paint.Style.FILL);
+            swatchPaint.setColor(isSelected() ? Color.rgb(19, 91, 108) : Color.TRANSPARENT);
+            canvas.drawCircle(centerX, centerY, radius, swatchPaint);
+            if (preview != null) {
+                canvas.save();
+                Path clip = new Path();
+                clip.addCircle(centerX, centerY, radius, Path.Direction.CW);
+                canvas.clipPath(clip);
+                preview.setBounds(Math.round(centerX - radius), Math.round(centerY - radius),
+                        Math.round(centerX + radius), Math.round(centerY + radius));
+                preview.draw(canvas);
+                canvas.restore();
+            }
+            swatchPaint.setStyle(Paint.Style.STROKE);
+            swatchPaint.setStrokeWidth(dp(isSelected() ? 3f : 1.5f));
+            swatchPaint.setColor(isSelected()
+                    ? Color.WHITE : Color.argb(180, 22, 42, 66));
+            canvas.drawCircle(centerX, centerY, radius, swatchPaint);
+            if (isSelected()) {
+                swatchPaint.setStrokeCap(Paint.Cap.ROUND);
+                swatchPaint.setStrokeWidth(dp(2.4f));
+                swatchPaint.setColor(Color.WHITE);
+                canvas.drawLine(centerX - radius * 0.34f, centerY,
+                        centerX - radius * 0.08f, centerY + radius * 0.28f, swatchPaint);
+                canvas.drawLine(centerX - radius * 0.08f, centerY + radius * 0.28f,
+                        centerX + radius * 0.40f, centerY - radius * 0.27f, swatchPaint);
+                swatchPaint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            swatchPaint.setStyle(Paint.Style.FILL);
         }
     }
 

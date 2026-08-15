@@ -65,6 +65,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
     private boolean externalColorSource;
+    private boolean lightweightColorSource;
     private String backgroundSource = "none";
 
     private boolean destroyed;
@@ -316,8 +317,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         return externalColorSource
                 && backgroundBitmap != null
                 && !backgroundBitmap.isRecycled()
-                && backgroundBitmap.getWidth() == Math.max(1, getRenderWidth())
-                && backgroundBitmap.getHeight() == Math.max(1, getRenderHeight());
+                && (lightweightColorSource
+                || backgroundBitmap.getWidth() == Math.max(1, getRenderWidth())
+                && backgroundBitmap.getHeight() == Math.max(1, getRenderHeight()));
     }
 
     @Override
@@ -327,14 +329,21 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+        boolean lightweight = BackgroundSourceRenderer.isTesterSyntheticSource(sourceName);
+        boolean borrow = !lightweight && BackgroundSourceRenderer.canBorrowSharedCache(
                 source, sourceName, width, height);
-        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
+        Bitmap next = lightweight
+                ? source.copy(Bitmap.Config.ARGB_8888, false)
+                : borrow ? source : createCenterCropBitmap(source, width, height);
+        if (next == null) {
+            return;
+        }
         next.prepareToDraw();
         releaseBackgroundBitmap();
         backgroundBitmap = next;
         ownsBackgroundBitmap = !borrow;
         externalColorSource = true;
+        lightweightColorSource = lightweight;
         backgroundSource = sourceName == null ? "external" : sourceName;
         Log.i(TAG, "colour map replaced source=" + backgroundSource
                 + " size=" + next.getWidth() + "x" + next.getHeight());
@@ -343,6 +352,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     @Override
     public void clearBackgroundSourceBitmap() {
         externalColorSource = false;
+        lightweightColorSource = false;
         backgroundSource = "none";
         lastAddedColorAvailable = false;
         pendingAffordanceColorAvailable = false;
@@ -364,6 +374,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         destroyed = true;
         soundPool.release();
         externalColorSource = false;
+        lightweightColorSource = false;
         backgroundSource = "none";
         releaseBackgroundBitmap();
         readiness.destroyed();

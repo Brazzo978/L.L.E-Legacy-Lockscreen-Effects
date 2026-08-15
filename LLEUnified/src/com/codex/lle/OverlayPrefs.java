@@ -19,6 +19,8 @@ final class OverlayPrefs {
     private static volatile int cachedMinuteOfDay;
     static final String PREFS = "overlay_prefs";
     static final String MASTER_ENABLED = "master_enabled";
+    /** Tester-only low-memory mode: never capture, load or retain lockscreen colormaps. */
+    static final String TESTER_NO_COLORMAP_MODE = "tester_no_colormap_mode";
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
     static final String SHOW_DOODLE = "show_doodle";
@@ -102,6 +104,12 @@ final class OverlayPrefs {
     static final String DEBUG_LEGACY_QUICK_PANEL_DETECTION =
             "debug_legacy_quick_panel_detection";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    /** Lens Flare renderer selector. GLES is the default; false selects original Canvas. */
+    static final String LENS_FLARE_GLES_RENDERER = "lens_flare_gles_renderer";
+    static final String LENS_FLARE_MODE = "lens_flare_mode";
+    static final String LENS_FLARE_MODE_FLARE = "flare";
+    static final String LENS_FLARE_MODE_BLUE_RING = "bluering";
+    static final String LENS_FLARE_MODE_BLOOD = "blood";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
     static final String FOLD_MODE = "fold_mode";
@@ -608,6 +616,25 @@ final class OverlayPrefs {
         return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
     }
 
+    static boolean testerNoColormapModeEnabled(Context context) {
+        return BuildFlavor.TESTER
+                && get(context).getBoolean(TESTER_NO_COLORMAP_MODE, false);
+    }
+
+    static boolean supportsTesterNoColormapMode(int effect) {
+        return effect == EFFECT_S4_LENS_FLARE
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_STONE_SKIPPING
+                || effect == EFFECT_MASS_TENSION
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || isSeasonalUnlockEffect(effect);
+    }
+
+    static boolean usesTesterSyntheticColormap(int effect) {
+        return effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP;
+    }
+
     static boolean lockSoundEnabled(Context context) {
         return get(context).getBoolean(LOCK_SOUND_ENABLED, true);
     }
@@ -648,6 +675,13 @@ final class OverlayPrefs {
             preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
             Log.i(TAG, "migrated unavailable legacy vendor effect "
                     + previousEffect + " -> " + effect);
+        }
+        if (testerNoColormapModeEnabled(context)
+                && !supportsTesterNoColormapMode(effect)) {
+            int previousEffect = effect;
+            effect = EFFECT_MASS_TENSION;
+            preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
+            Log.w(TAG, "no-colormap mode fallback " + previousEffect + " -> " + effect);
         }
         if (!isImplementedEffect(context, effect)) {
             preferences.edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
@@ -903,6 +937,29 @@ final class OverlayPrefs {
 
     static boolean isImplementedEffect(int effect) {
         return EffectAvailability.isAvailable(effect);
+    }
+
+    static boolean lensFlareGlesRendererEnabled(Context context) {
+        return get(context).getBoolean(LENS_FLARE_GLES_RENDERER, true);
+    }
+
+    static String lensFlareMode(Context context) {
+        return normalizeLensFlareMode(
+                get(context).getString(LENS_FLARE_MODE, LENS_FLARE_MODE_FLARE));
+    }
+
+    static String normalizeLensFlareMode(String mode) {
+        if (LENS_FLARE_MODE_BLUE_RING.equals(mode) || "blue_ring".equals(mode)) {
+            return LENS_FLARE_MODE_BLUE_RING;
+        }
+        if (LENS_FLARE_MODE_BLOOD.equals(mode)) {
+            return LENS_FLARE_MODE_BLOOD;
+        }
+        return LENS_FLARE_MODE_FLARE;
+    }
+
+    static String lensFlareAssetPrefix(Context context) {
+        return "keyguard_" + lensFlareMode(context) + "_";
     }
 
     static boolean isImplementedEffect(Context context, int effect) {
@@ -1563,6 +1620,14 @@ final class OverlayPrefs {
     }
 
     static File effectBackgroundFile(Context context, int effect, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
+                ? "" : "_" + normalized;
+        return new File(context.getFilesDir(),
+                "unlock_effect_background" + suffix + ".argb8888");
+    }
+
+    static File legacyPngEffectBackgroundFile(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
         String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
                 ? "" : "_" + normalized;

@@ -104,22 +104,12 @@ final class ManualEffectBackground {
             throw new IOException("The selected image could not be prepared for this display");
         }
         File preparedFile = new File(directory,
-                baseName + "_" + preparedWidth + "x" + preparedHeight + ".png");
-        BufferedOutputStream preparedOutput = null;
+                baseName + "_" + preparedWidth + "x" + preparedHeight + ".argb8888");
         try {
-            preparedOutput = new BufferedOutputStream(
-                    new FileOutputStream(preparedFile), 64 * 1024);
-            if (!prepared.compress(Bitmap.CompressFormat.PNG, 100, preparedOutput)) {
+            if (!Argb8888BitmapStore.write(preparedFile, prepared)) {
                 throw new IOException("The prepared wallpaper could not be saved");
             }
-            preparedOutput.flush();
         } finally {
-            if (preparedOutput != null) {
-                try {
-                    preparedOutput.close();
-                } catch (Throwable ignored) {
-                }
-            }
             if (!prepared.isRecycled()) {
                 prepared.recycle();
             }
@@ -134,7 +124,8 @@ final class ManualEffectBackground {
     /**
      * Stores a user-positioned crop without applying another transformation.
      *
-     * <p>The original document and the prepared PNG are both written as new private files.
+     * <p>The original document and the prepared ARGB8888 map are both written as new private
+     * files.
      * Older imports are intentionally retained so changing source mode never destroys a user's
      * previous choice.</p>
      */
@@ -160,21 +151,9 @@ final class ManualEffectBackground {
         copyUri(context, sourceUri, sourceFile);
 
         File preparedFile = new File(directory, baseName + "_"
-                + prepared.getWidth() + "x" + prepared.getHeight() + ".png");
-        BufferedOutputStream output = null;
-        try {
-            output = new BufferedOutputStream(new FileOutputStream(preparedFile), 64 * 1024);
-            if (!prepared.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                throw new IOException("The prepared wallpaper could not be saved");
-            }
-            output.flush();
-        } finally {
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Throwable ignored) {
-                }
-            }
+                + prepared.getWidth() + "x" + prepared.getHeight() + ".argb8888");
+        if (!Argb8888BitmapStore.write(preparedFile, prepared)) {
+            throw new IOException("The prepared wallpaper could not be saved");
         }
         if (!isUsable(sourceFile) || !isUsable(preparedFile)) {
             throw new IOException("The private wallpaper copy is unreadable");
@@ -204,21 +183,9 @@ final class ManualEffectBackground {
         String baseName = "pulled_lock_wallpaper_effect" + effect + "_"
                 + normalizedProfile + "_" + version;
         File preparedFile = new File(directory, baseName + "_"
-                + prepared.getWidth() + "x" + prepared.getHeight() + ".png");
-        BufferedOutputStream output = null;
-        try {
-            output = new BufferedOutputStream(new FileOutputStream(preparedFile), 64 * 1024);
-            if (!prepared.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                throw new IOException("The pulled wallpaper could not be saved");
-            }
-            output.flush();
-        } finally {
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Throwable ignored) {
-                }
-            }
+                + prepared.getWidth() + "x" + prepared.getHeight() + ".argb8888");
+        if (!Argb8888BitmapStore.write(preparedFile, prepared)) {
+            throw new IOException("The pulled wallpaper could not be saved");
         }
         if (!isUsable(preparedFile)) {
             throw new IOException("The private wallpaper copy is unreadable");
@@ -274,6 +241,11 @@ final class ManualEffectBackground {
             if (!candidate.getPath().startsWith(prefix)) {
                 return null;
             }
+            File rawSibling = Argb8888BitmapStore.rawSibling(candidate);
+            if (!Argb8888BitmapStore.isRaw(candidate)
+                    && rawSibling != null && Argb8888BitmapStore.isRaw(rawSibling)) {
+                return rawSibling;
+            }
             return candidate;
         } catch (IOException e) {
             return null;
@@ -284,10 +256,7 @@ final class ManualEffectBackground {
         if (file == null || !file.isFile() || file.length() <= 0L) {
             return false;
         }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        return bounds.outWidth > 0 && bounds.outHeight > 0;
+        return Argb8888BitmapStore.isUsable(file);
     }
 
     /** Removes superseded private imports while preserving every file still in preferences. */
@@ -334,19 +303,17 @@ final class ManualEffectBackground {
         }
         int width = Math.max(1, targetWidth);
         int height = Math.max(1, targetHeight);
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
+            return null;
+        }
 
         int sample = 1;
-        while (bounds.outWidth / (sample * 2) >= width
-                && bounds.outHeight / (sample * 2) >= height) {
+        while (bounds.width / (sample * 2) >= width
+                && bounds.height / (sample * 2) >= height) {
             sample *= 2;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = Math.max(1, sample);
-        Bitmap decoded = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        Bitmap decoded = Argb8888BitmapStore.decode(file, Math.max(1, sample));
         if (decoded == null || decoded.isRecycled()) {
             return null;
         }
@@ -373,6 +340,13 @@ final class ManualEffectBackground {
                     | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
             canvas.drawBitmap(decoded, source, new Rect(0, 0, width, height), paint);
             output.prepareToDraw();
+            if (!Argb8888BitmapStore.isRaw(file)
+                    && decoded.getWidth() == width && decoded.getHeight() == height) {
+                File raw = Argb8888BitmapStore.rawSibling(file);
+                if (raw != null) {
+                    Argb8888BitmapStore.write(raw, output);
+                }
+            }
             return output;
         } catch (Throwable t) {
             if (output != null && !output.isRecycled()) {

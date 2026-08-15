@@ -9,6 +9,7 @@ package com.codex.lle;
  */
 final class BuildFlavor {
     static final boolean LEGACY_VENDOR_EFFECTS = true;
+    static final boolean TESTER = false;
     static final String NAME = "arm32-legacy";
 
     private BuildFlavor() {

@@ -84,7 +84,7 @@ public class LensFlareEffectView extends FrameLayout
             | Paint.FILTER_BITMAP_FLAG
             | Paint.DITHER_FLAG);
     private final Matrix matrix = new Matrix();
-    private final Random random = new Random();
+    private final Random random;
     private final Bitmap flareLight;
     private final Bitmap flareRing;
     private final Bitmap flareParticle;
@@ -120,6 +120,7 @@ public class LensFlareEffectView extends FrameLayout
     private boolean warmedUp;
     private boolean gestureActive;
     private boolean fading;
+    private boolean backgroundDimActive;
     private float startX;
     private float startY;
     private float currentX;
@@ -144,20 +145,25 @@ public class LensFlareEffectView extends FrameLayout
 
     public LensFlareEffectView(Context context) {
         super(context);
+        random = BuildFlavor.TESTER
+                ? new Random(LensFlareScene.AB_RANDOM_SEED) : new Random();
         setWillNotDraw(false);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
         additivePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
 
-        flareLight = loadDrawable("keyguard_flare_light_00040");
-        flareRing = loadDrawable("keyguard_flare_ring");
-        flareParticle = loadDrawable("keyguard_flare_particle");
-        flareLong = loadDrawable("keyguard_flare_long");
-        flareRainbow = loadDrawable("keyguard_flare_rainbow");
-        flareHoverLight = loadDrawable("keyguard_flare_hoverlight");
-        flareVignetting = loadDrawable("keyguard_flare_vignetting");
-        Bitmap hexagonBlue = loadDrawable("keyguard_flare_hexagon_blue");
-        Bitmap hexagonOrange = loadDrawable("keyguard_flare_hexagon_orange");
-        Bitmap hexagonGreen = loadDrawable("keyguard_flare_hexagon_green");
+        String mode = OverlayPrefs.lensFlareMode(context);
+        String assetPrefix = OverlayPrefs.lensFlareAssetPrefix(context);
+        flareLight = loadDrawable(assetPrefix + "light_00040");
+        flareRing = loadDrawable(assetPrefix + "ring");
+        flareParticle = loadDrawable(assetPrefix + "particle");
+        flareLong = loadDrawable(assetPrefix + "long");
+        flareRainbow = loadDrawable(assetPrefix + "rainbow");
+        flareHoverLight = loadDrawable(assetPrefix + "hoverlight");
+        flareVignetting = loadDrawable(OverlayPrefs.LENS_FLARE_MODE_FLARE.equals(mode)
+                ? assetPrefix + "vignetting" : "keyguard_flare_vignetting");
+        Bitmap hexagonBlue = loadDrawable(assetPrefix + "hexagon_blue");
+        Bitmap hexagonOrange = loadDrawable(assetPrefix + "hexagon_orange");
+        Bitmap hexagonGreen = loadDrawable(assetPrefix + "hexagon_green");
         tapHexagons = new Bitmap[] {
                 hexagonBlue,
                 hexagonOrange,
@@ -195,6 +201,7 @@ public class LensFlareEffectView extends FrameLayout
         tapSound = soundPool.load(context, R.raw.lens_flare_tap, 1);
         unlockSound = soundPool.load(context, R.raw.lens_flare_unlock, 1);
         Log.i(TAG, "S4 lens flare Canvas renderer loaded ratio=" + ratio
+                + " mode=" + mode
                 + " yOffset=" + Math.round(fingerYOffsetPx)
                 + " maxAlphaDistance=" + Math.round(maxAlphaDistancePx)
                 + " tapRadius=" + Math.round(tapAreaRadiusPx));
@@ -235,6 +242,7 @@ public class LensFlareEffectView extends FrameLayout
         long now = SystemClock.uptimeMillis();
         gestureActive = true;
         fading = false;
+        backgroundDimActive = true;
         startX = screenX;
         startY = visualY(screenY);
         currentX = startX;
@@ -311,6 +319,7 @@ public class LensFlareEffectView extends FrameLayout
         cancelUnlockAffordance();
         gestureActive = false;
         fading = false;
+        backgroundDimActive = false;
         tapAnimation = null;
         unlockAnimation = null;
         invalidateEffect();
@@ -444,16 +453,17 @@ public class LensFlareEffectView extends FrameLayout
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float vignettingAlpha = currentVignettingAlpha(SystemClock.uptimeMillis());
+        float activeBackgroundDimAlpha = backgroundDimActive ? backgroundDimAlpha : 0f;
         if (vignettingAlpha > 0f) {
             drawBitmapFitXY(canvas, flareVignetting, vignettingAlpha);
         }
-        if (backgroundDimAlpha > 0f) {
-            canvas.drawARGB(Math.round(backgroundDimAlpha * 255f), 0, 0, 0);
+        if (activeBackgroundDimAlpha > 0f) {
+            canvas.drawARGB(Math.round(activeBackgroundDimAlpha * 255f), 0, 0, 0);
         }
         if (additiveCompositeShader != null) {
             additiveCompositeShader.setFloatUniform("vignetteAlpha", vignettingAlpha);
             additiveCompositeShader.setFloatUniform(
-                    "backgroundDimAlpha", backgroundDimAlpha);
+                    "backgroundDimAlpha", activeBackgroundDimAlpha);
         }
     }
 
@@ -514,6 +524,11 @@ public class LensFlareEffectView extends FrameLayout
 
         if (keepAnimating) {
             flareContentView.postInvalidateOnAnimation();
+            LensFlareEffectView.this.postInvalidateOnAnimation();
+        } else if (backgroundDimActive) {
+            // The headroom dim belongs to the visible flare envelope, not to the retained
+            // lockscreen overlay. Draw one final parent frame with zero dim before going idle.
+            backgroundDimActive = false;
             LensFlareEffectView.this.postInvalidateOnAnimation();
         }
     }
@@ -647,6 +662,7 @@ public class LensFlareEffectView extends FrameLayout
             return;
         }
         warmedUp = true;
+        backgroundDimActive = true;
         randomRotation = random.nextInt(360);
         setHexagonRandomTarget();
         long now = SystemClock.uptimeMillis();

@@ -2,7 +2,6 @@ package com.codex.lle;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -118,8 +117,8 @@ public final class Note5NativeProbeActivity extends Activity {
                     + "x" + background.getHeight()
                     + " rawPixelSha256=" + bitmapPixelSha256(background));
         } else {
-            background = BitmapFactory.decodeFile(
-                    OverlayPrefs.effectBackgroundFile(this, effect).getAbsolutePath());
+            background = Argb8888BitmapStore.decode(
+                    OverlayPrefs.effectBackgroundFile(this, effect));
             Log.i(TAG, "AB_BACKGROUND scenario=" + scenario
                     + " mode=frozen size=" + (background == null ? "missing"
                     : background.getWidth() + "x" + background.getHeight())
@@ -561,9 +560,9 @@ public final class Note5NativeProbeActivity extends Activity {
         host.setBackgroundColor(Color.BLACK);
         setContentView(host);
 
-        Bitmap background = BitmapFactory.decodeFile(
+        Bitmap background = Argb8888BitmapStore.decode(
                 OverlayPrefs.effectBackgroundFile(
-                        this, OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES).getAbsolutePath());
+                        this, OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES));
         if (background != null) {
             ImageView backgroundView = new ImageView(this);
             backgroundView.setScaleType(ImageView.ScaleType.CENTER_CROP);

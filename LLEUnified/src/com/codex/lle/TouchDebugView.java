@@ -119,11 +119,9 @@ public class TouchDebugView extends View {
         updatePointerCoordinates(event, pointerIndex);
         if (shouldLogTouch(action)) {
             Log.i(TAG, "action=" + lastAction
-                    + " local=" + Math.round(lastX) + "," + Math.round(lastY)
-                    + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
-                    + " screen=" + Math.round(lastScreenX) + "," + Math.round(lastScreenY)
-                    + " window=" + windowLeft + "," + windowTop
-                    + " pointers=" + pointerCount);
+                    + " pointers=" + pointerCount
+                    + " gestureActive=" + gestureActive
+                    + " listening=" + listeningEnabled);
         }
 
         if (handleSafetyBypassGesture(event, action)) {

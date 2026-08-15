@@ -213,13 +213,30 @@ final class FoldDisplayTarget {
         int fallbackHeight = Math.max(1, active.heightPixels);
         int[] fallback = new int[] {Math.min(fallbackWidth, fallbackHeight),
                 Math.max(fallbackWidth, fallbackHeight)};
+        int tabletPhysicalWidth = fallbackWidth;
+        int tabletPhysicalHeight = fallbackHeight;
+        if (context != null && (PROFILE_TABLET_PORTRAIT.equals(profile)
+                || PROFILE_TABLET_LANDSCAPE.equals(profile))) {
+            try {
+                DisplayManager manager = (DisplayManager) context.getSystemService(
+                        Context.DISPLAY_SERVICE);
+                Display display = manager == null
+                        ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+                int[] physical = realSize(display);
+                if (physical[0] > 1 && physical[1] > 1) {
+                    tabletPhysicalWidth = physical[0];
+                    tabletPhysicalHeight = physical[1];
+                }
+            } catch (Throwable ignored) {
+            }
+        }
         if (PROFILE_TABLET_PORTRAIT.equals(profile)) {
-            return new int[] {Math.min(fallbackWidth, fallbackHeight),
-                    Math.max(fallbackWidth, fallbackHeight)};
+            return new int[] {Math.min(tabletPhysicalWidth, tabletPhysicalHeight),
+                    Math.max(tabletPhysicalWidth, tabletPhysicalHeight)};
         }
         if (PROFILE_TABLET_LANDSCAPE.equals(profile)) {
-            return new int[] {Math.max(fallbackWidth, fallbackHeight),
-                    Math.min(fallbackWidth, fallbackHeight)};
+            return new int[] {Math.max(tabletPhysicalWidth, tabletPhysicalHeight),
+                    Math.min(tabletPhysicalWidth, tabletPhysicalHeight)};
         }
         if (context == null || PROFILE_SINGLE.equals(profile)) {
             return fallback;

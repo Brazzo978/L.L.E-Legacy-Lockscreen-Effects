@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
@@ -32,6 +31,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 
 public class TouchBoxSetupActivity extends Activity {
@@ -60,6 +60,71 @@ public class TouchBoxSetupActivity extends Activity {
     private boolean showingFoldOverview;
     private boolean foldMode;
     private String selectedProfile = FoldDisplayTarget.PROFILE_SINGLE;
+
+    /**
+     * Creates exact display-sized black canvases for touch-area editing without taking a
+     * lockscreen screenshot. These files are dedicated to the editor; effect colormap caches
+     * are deliberately left untouched so normal mode can resume later without recapturing.
+     */
+    static boolean prepareBlackEditorScreens(Context context) {
+        if (context == null) {
+            return false;
+        }
+        for (String profile : FoldDisplayTarget.backgroundProfiles(context)) {
+            int[] size = FoldDisplayTarget.displaySizeForProfile(context, profile);
+            int width = size == null || size.length < 2 ? 0 : size[0];
+            int height = size == null || size.length < 2 ? 0 : size[1];
+            if (width <= 0 || height <= 0
+                    || !writeBlackEditorScreen(
+                    OverlayPrefs.touchBoxScreenshotFile(context, profile), width, height)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean writeBlackEditorScreen(File target, int width, int height) {
+        if (target == null) {
+            return false;
+        }
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            return false;
+        }
+        File temp = new File(parent, target.getName() + ".black.tmp");
+        Bitmap bitmap = null;
+        FileOutputStream output = null;
+        try {
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            bitmap.eraseColor(Color.BLACK);
+            output = new FileOutputStream(temp, false);
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                return false;
+            }
+            output.flush();
+            output.close();
+            output = null;
+            if (target.exists() && !target.delete()) {
+                return false;
+            }
+            return temp.renameTo(target);
+        } catch (Throwable error) {
+            return false;
+        } finally {
+            if (output != null) {
+                try {
+                    output.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+            if (temp.exists()) {
+                temp.delete();
+            }
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -167,9 +232,7 @@ public class TouchBoxSetupActivity extends Activity {
         if (!file.exists() || file.length() <= 0L) {
             return null;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(file);
     }
 
     private void requestScreenshotCapture() {
@@ -583,11 +646,9 @@ public class TouchBoxSetupActivity extends Activity {
         if (screenshot == null || !screenshot.exists() || screenshot.length() <= 0L) {
             return "No screenshot yet | " + areaStatus;
         }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(screenshot.getAbsolutePath(), bounds);
-        String dimensions = bounds.outWidth > 0 && bounds.outHeight > 0
-                ? bounds.outWidth + " x " + bounds.outHeight
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(screenshot);
+        String dimensions = bounds != null
+                ? bounds.width + " x " + bounds.height
                 : "unreadable image";
         return (dedicated ? "Wizard screenshot: " : "Effect screenshot reused: ")
                 + dimensions + " | " + areaStatus;
@@ -609,25 +670,24 @@ public class TouchBoxSetupActivity extends Activity {
         if (effectCache.exists() && effectCache.length() > 0L) {
             return effectCache;
         }
+        File legacyPng = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+        if (legacyPng.exists() && legacyPng.length() > 0L) {
+            return legacyPng;
+        }
         return dedicated;
     }
 
     private Bitmap decodeOverviewBitmap(File file) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
         int sample = 1;
-        int largest = Math.max(bounds.outWidth, bounds.outHeight);
+        int largest = Math.max(bounds.width, bounds.height);
         while (largest / sample > 720) {
             sample *= 2;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = sample;
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(file, sample);
     }
 
     private void openProfile(String profile, boolean freshCapture) {

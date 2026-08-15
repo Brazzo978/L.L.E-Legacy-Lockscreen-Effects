@@ -336,6 +336,38 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
         }
     }
 
+    String backgroundMemoryDebugSnapshot() {
+        Bitmap portrait;
+        Bitmap landscape;
+        synchronized (bitmapLock) {
+            portrait = portraitBackground;
+            landscape = landscapeBackground;
+        }
+        return "s6_gl_portrait_dimensions=" + dimensions(portrait) + '\n'
+                + "s6_gl_landscape_dimensions=" + dimensions(landscape) + '\n'
+                + "s6_gl_background_allocation_bytes="
+                + (allocationBytes(portrait) + allocationBytes(landscape)) + '\n'
+                + "s6_gl_gpu_ready=" + gpuReady + '\n'
+                + "s6_gl_resources_ready=" + resourcesReady + '\n'
+                + "s6_gl_draw_count=" + drawCount + '\n';
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
+    }
+
     void setBackgroundBitmaps(
             final Bitmap portrait, final Bitmap landscape) {
         if (!valid(portrait) || !valid(landscape)) {

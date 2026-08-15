@@ -57,6 +57,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
     private final Display sensorDisplay;
 
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap backgroundSourceIdentity;
     private String backgroundSourceName = "none";
     private boolean externalColorSource;
@@ -353,8 +354,11 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
         if (destroyed || source == null || source.isRecycled()) {
             return;
         }
+        boolean borrowed = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, renderWidth(), renderHeight());
         submitBackground(
-                centerCrop(source, renderWidth(), renderHeight()),
+                borrowed ? source : centerCrop(source, renderWidth(), renderHeight()),
+                !borrowed,
                 source,
                 sourceName);
     }
@@ -364,8 +368,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
         if (destroyed) {
             return;
         }
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         backgroundSourceIdentity = null;
         backgroundSourceName = "none";
         externalColorSource = false;
@@ -391,8 +394,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
         soundPool.release();
         glView.destroyRenderer();
         removeAllViews();
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         backgroundSourceIdentity = null;
         externalColorSource = false;
         transition(STATE_FAILED, "destroyed");
@@ -447,6 +449,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
                 ? backgroundSourceIdentity : backgroundBitmap;
         submitBackground(
                 centerCrop(source, width, height),
+                true,
                 backgroundSourceIdentity,
                 backgroundSourceName);
     }
@@ -508,12 +511,14 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
     }
 
     private void submitBackground(
-            Bitmap mapped, Bitmap sourceIdentity, String sourceName) {
+            Bitmap mapped, boolean ownsMapped,
+            Bitmap sourceIdentity, String sourceName) {
         if (mapped == null) {
             return;
         }
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = mapped;
+        ownsBackgroundBitmap = ownsMapped;
         backgroundSourceIdentity = sourceIdentity;
         backgroundSourceName = sourceName == null ? "external" : sourceName;
         externalColorSource = true;
@@ -522,8 +527,43 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
                 Math.max(0, mapped.getHeight() / 2));
         Log.i(TAG, "color map source=" + backgroundSourceName
                 + " size=" + mapped.getWidth() + "x" + mapped.getHeight()
+                + " ownership=" + (ownsMapped ? "private" : "shared_cache_borrow")
                 + " center=#" + String.format("%08X", centerColor));
         glView.setBackgroundBitmap(mapped.copy(Bitmap.Config.ARGB_8888, false));
+    }
+
+    String backgroundMemoryDebugSnapshot() {
+        return "colour_view_background_dimensions=" + dimensions(backgroundBitmap) + '\n'
+                + "colour_view_background_ownership="
+                + (backgroundBitmap == null ? "none"
+                        : ownsBackgroundBitmap ? "private" : "shared_cache_borrow") + '\n'
+                + "colour_view_background_allocation_bytes="
+                + allocationBytes(backgroundBitmap) + '\n'
+                + glView.backgroundMemoryDebugSnapshot();
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap) {
+            recycle(backgroundBitmap);
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 
     private Bitmap decodeTexture(int resourceId, String label) {
