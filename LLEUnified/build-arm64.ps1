@@ -17,6 +17,39 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Some stripped-down Windows PowerShell installations do not auto-load
+# Microsoft.PowerShell.Utility, so Get-FileHash may be unavailable. Keep the
+# release integrity checks self-contained instead of weakening or skipping them.
+if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
+    function Get-FileHash {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string] $LiteralPath,
+            [ValidateSet("SHA256")]
+            [string] $Algorithm = "SHA256"
+        )
+        $resolvedPath = [IO.Path]::GetFullPath($LiteralPath)
+        $stream = [IO.File]::Open($resolvedPath, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $sha256 = [Security.Cryptography.SHA256]::Create()
+            try {
+                $digest = $sha256.ComputeHash($stream)
+            } finally {
+                $sha256.Dispose()
+            }
+        } finally {
+            $stream.Dispose()
+        }
+        [pscustomobject]@{
+            Algorithm = $Algorithm
+            Hash = [BitConverter]::ToString($digest).Replace("-", "")
+            Path = $resolvedPath
+        }
+    }
+}
+
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
 $testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 39 } else { 0 }
