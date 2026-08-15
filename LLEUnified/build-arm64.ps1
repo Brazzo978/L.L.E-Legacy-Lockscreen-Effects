@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
 $testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 39 } else { 0 }
-$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.5.7.B7" } else { "" }
+$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.5.7.B8" } else { "" }
 if ($LegacyVendorEffects) {
     $launcherLabel += " Legacy"
 }

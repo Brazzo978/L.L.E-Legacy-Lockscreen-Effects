@@ -10,6 +10,7 @@ public final class LensFlareSceneTimingTest {
         checkGestureAndFadeTiming();
         checkUnlockTailTiming();
         checkAffordanceTiming();
+        checkProceduralLightningMode();
     }
 
     private static void checkWarmFrame() {
@@ -72,6 +73,26 @@ public final class LensFlareSceneTimingTest {
                 countAsset(scene.frame(start + 1299L), LensFlareScene.LIGHT) == 1);
         require("affordance light ends at 1300 ms",
                 countAsset(scene.frame(start + 1300L), LensFlareScene.LIGHT) == 0);
+    }
+
+    private static void checkProceduralLightningMode() {
+        long start = 50_000L;
+        LensFlareScene stock = new LensFlareScene(1500f, 600f, true, false);
+        stock.begin(400f, 600f, start);
+        require("stock Lens modes remain free of procedural bolt geometry",
+                stock.frame(start).lightningBolts.isEmpty());
+
+        LensFlareScene lightning = new LensFlareScene(1500f, 600f, true, true);
+        lightning.begin(400f, 600f, start);
+        LensFlareScene.Frame first = lightning.frame(start);
+        require("lightning mode starts with assetless generated bolts",
+                !first.lightningBolts.isEmpty());
+        require("generated bolt has a path and visible core", first.lightningBolts.get(0).points.length
+                >= 4 && first.lightningBolts.get(0).coreWidthPx > 0f);
+
+        lightning.finish(false, start + 1L);
+        require("lightning pulse clears after its independent 720 ms envelope",
+                lightning.frame(start + 722L).lightningBolts.isEmpty());
     }
 
     private static int countAsset(LensFlareScene.Frame frame, int asset) {

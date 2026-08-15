@@ -3992,9 +3992,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         long constructStartedAt = SystemClock.uptimeMillis();
         try {
             if (effect == OverlayPrefs.EFFECT_S4_LENS_FLARE) {
-                unlockEffectRenderer = OverlayPrefs.lensFlareGlesRendererEnabled(this)
-                        ? new LensFlareGlesEffectView(rendererContext())
-                        : new LensFlareEffectView(rendererContext());
+                String lensMode = OverlayPrefs.lensFlareMode(this);
+                boolean lightning = OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(lensMode);
+                unlockEffectRenderer = lightning
+                        ? new LensFlareGlesEffectView(
+                                rendererContext(), LensFlareGlesEffectView.MODE_LIGHTNING)
+                        : OverlayPrefs.lensFlareGlesRendererEnabled(this)
+                                ? new LensFlareGlesEffectView(rendererContext())
+                                : new LensFlareEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
                 if (EffectAvailability.is64BitProcess()) {
                     S3Arm64RippleEffectView renderer =

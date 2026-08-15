@@ -5,6 +5,8 @@ startup work, and adds safer diagnostics and lockscreen handoff handling.
 
 ## Effects and rendering
 
+- Added a procedural Lightning mode to the GLES Lens Flare renderer.
+
 - Added the production Note 3 Ripple Ink renderer with eight selectable ink
   palettes.
 - Added the app-owned Good Lock Popping Color, Rectangle Traveller, and

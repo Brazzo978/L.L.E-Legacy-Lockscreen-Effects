@@ -4618,7 +4618,7 @@ public class ControlActivity extends Activity {
     private View lensFlareEffectOption(int current) {
         return effectOption(
                 "S4 Lens Flare",
-                "Original, Blue Ring and Blood flare styles. Canvas remains available for A/B.",
+                "Original, Blue Ring, Blood and procedural Lightning styles.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 -1,
@@ -4649,9 +4649,10 @@ public class ControlActivity extends Activity {
         final String[] modes = {
                 OverlayPrefs.LENS_FLARE_MODE_FLARE,
                 OverlayPrefs.LENS_FLARE_MODE_BLUE_RING,
-                OverlayPrefs.LENS_FLARE_MODE_BLOOD
+                OverlayPrefs.LENS_FLARE_MODE_BLOOD,
+                OverlayPrefs.LENS_FLARE_MODE_LIGHTNING
         };
-        final String[] names = {"Original", "Blue Ring", "Blood"};
+        final String[] names = {"Original", "Blue Ring", "Blood", "Lightning"};
         for (int index = 0; index < modes.length; index++) {
             final String mode = modes[index];
             LensFlareModeSwatchView swatch = new LensFlareModeSwatchView(
@@ -4660,7 +4661,12 @@ public class ControlActivity extends Activity {
             swatch.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-                    prefs.edit().putString(OverlayPrefs.LENS_FLARE_MODE, mode).apply();
+                    SharedPreferences.Editor editor = prefs.edit()
+                            .putString(OverlayPrefs.LENS_FLARE_MODE, mode);
+                    if (OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
+                        editor.putBoolean(OverlayPrefs.LENS_FLARE_GLES_RENDERER, true);
+                    }
+                    editor.apply();
                     showTab(selectedTab);
                 }
             });
@@ -4677,18 +4683,26 @@ public class ControlActivity extends Activity {
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
-        final Switch canvasRenderer = compactEffectVariantSwitch("Canvas renderer (A/B)",
-                !OverlayPrefs.lensFlareGlesRendererEnabled(this));
-        canvasRenderer.setContentDescription("Use original Canvas Lens Flare renderer");
-        canvasRenderer.setOnCheckedChangeListener(
+        boolean lightning = OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(selectedMode);
+        boolean canvasSelected = !lightning
+                && !OverlayPrefs.lensFlareGlesRendererEnabled(this);
+        final Switch rendererMode = compactEffectVariantSwitch(
+                canvasSelected ? "Canvas" : "GL", canvasSelected);
+        rendererMode.setEnabled(!lightning);
+        rendererMode.setAlpha(lightning ? 0.45f : 1.0f);
+        rendererMode.setContentDescription(lightning
+                ? "Lens Flare renderer: GL required for Lightning"
+                : "Lens Flare renderer: toggle between GL and Canvas");
+        rendererMode.setOnCheckedChangeListener(
                 new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                buttonView.setText(isChecked ? "Canvas" : "GL");
                 prefs.edit().putBoolean(
                         OverlayPrefs.LENS_FLARE_GLES_RENDERER, !isChecked).apply();
             }
         });
-        controls.addView(canvasRenderer);
+        controls.addView(rendererMode);
         return controls;
     }
 

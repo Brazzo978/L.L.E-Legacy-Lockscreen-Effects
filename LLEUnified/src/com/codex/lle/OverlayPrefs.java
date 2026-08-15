@@ -110,6 +110,7 @@ final class OverlayPrefs {
     static final String LENS_FLARE_MODE_FLARE = "flare";
     static final String LENS_FLARE_MODE_BLUE_RING = "bluering";
     static final String LENS_FLARE_MODE_BLOOD = "blood";
+    static final String LENS_FLARE_MODE_LIGHTNING = "lightning";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
     static final String FOLD_MODE = "fold_mode";
@@ -954,6 +955,9 @@ final class OverlayPrefs {
         }
         if (LENS_FLARE_MODE_BLOOD.equals(mode)) {
             return LENS_FLARE_MODE_BLOOD;
+        }
+        if (LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
+            return LENS_FLARE_MODE_LIGHTNING;
         }
         return LENS_FLARE_MODE_FLARE;
     }
