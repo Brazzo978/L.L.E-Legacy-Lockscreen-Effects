@@ -2,12 +2,15 @@ package com.codex.lle;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.media.SoundPool;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
+import android.opengl.Matrix;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
@@ -15,6 +18,8 @@ import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -27,6 +32,11 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
     private final Object bitmapLock;
     private final Object readinessLock;
     private final CrystalRenderer renderer;
+    private final SoundPool soundPool;
+    private final int unlockSound;
+    private final Object soundLock = new Object();
+    private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
+    private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
     private volatile boolean destroyed;
     private volatile boolean paused;
     private volatile boolean externalBackground;
@@ -55,6 +65,17 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         this.bitmapLock = new Object();
         this.readinessLock = new Object();
         this.renderer = new CrystalRenderer();
+        this.soundPool = new SoundPool.Builder()
+                .setMaxStreams(1)
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
+                .build();
+        this.soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+            @Override public void onLoadComplete(
+                    SoundPool completedPool, int sampleId, int status) {
+                handleSoundLoadComplete(completedPool, sampleId, status);
+            }
+        });
+        this.unlockSound = this.soundPool.load(context, R.raw.lg_crystal_unlock, 1);
         this.readinessState = 1;
         this.readinessDetail = "Crystal prism constructed";
         this.frameRunnable = new Runnable() { // from class: com.codex.lle.CrystalPrismBetaEffectView.1
@@ -143,7 +164,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
 
     @Override // com.codex.lle.UnlockEffectRenderer
     public String effectName() {
-        return "G2 Crystal Prism (beta)";
+        return "G2 Crystal";
     }
 
     @Override // com.codex.lle.UnlockEffectRenderer
@@ -179,6 +200,9 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
     public void finishGesture(final boolean z) {
         if (!canAcceptCommands()) {
             return;
+        }
+        if (z) {
+            playSound(this.unlockSound);
         }
         queueCrystalCommand(new Runnable() { // from class: com.codex.lle.CrystalPrismBetaEffectView.5
             @Override // java.lang.Runnable
@@ -414,6 +438,12 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
         recycleIfOwned(bitmap, z);
         pauseRenderer(true);
+        synchronized (this.soundLock) {
+            this.pendingSoundIds.clear();
+            this.loadedSoundIds.clear();
+            this.soundPool.setOnLoadCompleteListener(null);
+            this.soundPool.release();
+        }
         this.externalBackground = false;
         setReadinessState(-1, "renderer destroyed");
         synchronized (this.readinessLock) {
@@ -551,6 +581,41 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
     }
 
+    private void playSound(int soundId) {
+        if (soundId == 0 || this.destroyed
+                || !OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+            return;
+        }
+        synchronized (this.soundLock) {
+            if (this.destroyed) {
+                return;
+            }
+            if (!this.loadedSoundIds.contains(soundId)) {
+                this.pendingSoundIds.add(soundId);
+                return;
+            }
+            this.soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
+        }
+    }
+
+    private void handleSoundLoadComplete(
+            SoundPool completedPool, int sampleId, int status) {
+        synchronized (this.soundLock) {
+            if (completedPool != this.soundPool || this.destroyed) {
+                return;
+            }
+            if (status != 0) {
+                this.pendingSoundIds.remove(sampleId);
+                return;
+            }
+            this.loadedSoundIds.add(sampleId);
+            if (this.pendingSoundIds.remove(sampleId)
+                    && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+                this.soundPool.play(sampleId, 1.0f, 1.0f, 1, 0, 1.0f);
+            }
+        }
+    }
+
     /* JADX INFO: Access modifiers changed from: private */
     public float[] toLocalCoordinates(float f, float f2) {
         int[] iArr = new int[2];
@@ -673,20 +738,132 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
     /* JADX INFO: loaded from: crystal-static-check.jar:com/codex/lle/CrystalPrismBetaEffectView$CrystalRenderer.class */
     private final class CrystalRenderer implements GLSurfaceView.Renderer {
         private static final int NO_TEXTURE = 0;
-        private static final String VERTEX_SHADER = "attribute vec2 aPosition;\nvarying vec2 vUv;\nvoid main() {\n  vUv = aPosition * 0.5 + 0.5;\n  gl_Position = vec4(aPosition, 0.0, 1.0);\n}\n";
-        private static final String FRAGMENT_SHADER = "precision mediump float;\nuniform sampler2D uWallpaper;\nuniform vec2 uSize;\nuniform vec2 uCenter;\nuniform float uRadius;\nuniform float uOpacity;\nuniform float uTime;\nvarying vec2 vUv;\nfloat saturate(float v) { return clamp(v, 0.0, 1.0); }\nvoid main() {\n  vec2 delta = (vUv - uCenter) * uSize;\n  float distancePx = length(delta);\n  float edge = max(2.0, uRadius * 0.085);\n  float body = 1.0 - smoothstep(uRadius - edge, uRadius + edge, distancePx);\n  if (body <= 0.001 || uOpacity <= 0.001) { discard; }\n  vec2 direction = delta / max(distancePx, 1.0);\n  float angle = atan(direction.y, direction.x);\n  float radial = saturate(distancePx / max(uRadius, 1.0));\n  float sectors = 0.5 + 0.5 * sin(angle * 7.0 + radial * 13.0);\n  float facets = 0.5 + 0.5 * sin(angle * 15.0 - radial * 23.0 + uTime * 0.0007);\n  float refractAmount = (1.0 - radial) * (0.010 + 0.010 * sectors);\n  vec2 offset = direction * refractAmount * (0.35 + 0.65 * facets);\n  vec3 refracted = texture2D(uWallpaper, clamp(vUv - offset, 0.001, 0.999)).rgb;\n  float rim = pow(radial, 2.1) * (0.42 + 0.28 * facets);\n  float innerLight = pow(1.0 - radial, 2.6) * (0.14 + 0.14 * sectors);\n  float lightA = pow(saturate(dot(direction, normalize(vec2(-0.62, 0.78)))), 6.0);\n  float lightB = pow(saturate(dot(direction, normalize(vec2(0.86, -0.50)))), 11.0);\n  vec3 coolLight = vec3(0.36, 0.78, 1.00) * (innerLight + lightA * (1.0 - radial) * 0.46);\n  vec3 warmLight = vec3(1.00, 0.74, 0.36) * (lightB * (1.0 - radial) * 0.26);\n  vec3 shadow = vec3(0.16, 0.22, 0.34) * rim;\n  vec3 colour = refracted * (1.0 - rim * 0.38) + coolLight + warmLight - shadow;\n  float alpha = body * uOpacity * (0.78 + 0.22 * (1.0 - radial));\n  gl_FragColor = vec4(clamp(colour, 0.0, 1.0), alpha);\n}\n";
-        private final FloatBuffer quad;
+        private static final String CRYSTAL_VERTEX_SHADER =
+                "varying vec2 vTexCoord;\n"
+                + "varying highp vec4 vLightColor;\n"
+                + "attribute vec4 aPosition;\n"
+                + "attribute vec2 aTexCoord;\n"
+                + "attribute vec3 aNormal;\n"
+                + "uniform highp mat4 uPMatrix;\n"
+                + "uniform highp mat4 uMMatrix;\n"
+                + "uniform highp mat4 uVMatrix;\n"
+                + "uniform highp mat4 uInverseRotateMatrix;\n"
+                + "uniform highp vec3 uLightPos;\n"
+                + "uniform highp vec3 uLightPos2;\n"
+                + "uniform highp vec2 uSpaceInfo;\n"
+                + "uniform highp vec2 uDownPos;\n"
+                + "uniform highp float uRadius;\n"
+                + "const vec4 ambientLight = vec4(0.2, 0.2, 0.2, 1.0);\n"
+                + "const vec4 diffuseMaterial = vec4(0.4, 0.4, 0.4, 1.0);\n"
+                + "const vec4 specularMaterial = vec4(1.0, 1.0, 1.0, 1.0);\n"
+                + "const float shiness = 80.0;\n"
+                + "void calcDirectionalLight(highp vec3 lightDir, highp vec3 normal,"
+                + " inout vec4 ambient, inout vec4 diffuse, inout vec4 specular) {\n"
+                + "  vec3 lightVec = normalize(lightDir);\n"
+                + "  float df = max(0.0, dot(normal, lightVec));\n"
+                + "  diffuse += df * diffuseMaterial;\n"
+                + "  float enableSpecular = step(0.00001, df);\n"
+                + "  vec3 eyeVec = vec3(0.0, 0.0, 1.0);\n"
+                + "  vec3 halfVec = normalize(lightVec + eyeVec);\n"
+                + "  float sf = pow(max(0.0, dot(normal, halfVec)), shiness);\n"
+                + "  specular += specularMaterial * sf * enableSpecular;\n"
+                + "  ambient += ambientLight;\n"
+                + "}\n"
+                + "void main() {\n"
+                + "  vec4 pos = aPosition;\n"
+                + "  pos.xyz = aPosition.xyz * uRadius;\n"
+                + "  gl_Position = uPMatrix * uVMatrix * uMMatrix * pos;\n"
+                + "  vec4 ambient = vec4(0.0);\n"
+                + "  vec4 diffuse = vec4(0.0);\n"
+                + "  vec4 specular = vec4(0.0);\n"
+                + "  calcDirectionalLight(uLightPos, aNormal, ambient, diffuse, specular);\n"
+                + "  calcDirectionalLight(uLightPos2, aNormal, ambient, diffuse, specular);\n"
+                + "  vLightColor = (ambient + diffuse + specular) * 1.2;\n"
+                + "  float theta = atan(aNormal.z,"
+                + " sqrt(aNormal.x * aNormal.x + aNormal.y * aNormal.y));\n"
+                + "  float xy = pos.z / tan(theta);\n"
+                + "  float angle = atan(pos.y, pos.x);\n"
+                + "  vec2 deltaTexCoord = vec2("
+                + "-xy * cos(angle) / uSpaceInfo.x, xy * sin(angle) / uSpaceInfo.y);\n"
+                + "  vec2 texCoord = aTexCoord - vec2(0.5);\n"
+                + "  texCoord.y *= (uSpaceInfo.y / uSpaceInfo.x);\n"
+                + "  texCoord = vec2(uInverseRotateMatrix * vec4(texCoord, 0.0, 1.0));\n"
+                + "  texCoord.y *= (uSpaceInfo.x / uSpaceInfo.y);\n"
+                + "  texCoord = vec2(0.5) + texCoord * uRadius + uDownPos;\n"
+                + "  vTexCoord = texCoord + deltaTexCoord;\n"
+                + "}\n";
+        private static final String CRYSTAL_FRAGMENT_SHADER =
+                "precision mediump float;\n"
+                + "varying vec2 vTexCoord;\n"
+                + "varying highp vec4 vLightColor;\n"
+                + "uniform sampler2D uTexture;\n"
+                + "uniform float uAlpha;\n"
+                + "void main() {\n"
+                + "  highp vec4 col = texture2D(uTexture, vTexCoord);\n"
+                + "  col *= vLightColor;\n"
+                + "  col.a *= uAlpha;\n"
+                + "  gl_FragColor = col;\n"
+                + "}\n";
+        private static final String MESH_OVERLAY_VERTEX_SHADER =
+                "varying vec2 vTexCoord;\n"
+                + "attribute vec4 aPosition;\n"
+                + "attribute vec2 aTexCoord;\n"
+                + "uniform highp mat4 uPMatrix;\n"
+                + "uniform highp mat4 uMMatrix;\n"
+                + "uniform highp mat4 uVMatrix;\n"
+                + "uniform highp float uRadius;\n"
+                + "void main() {\n"
+                + "  vec4 pos = aPosition;\n"
+                + "  pos.xyz = aPosition.xyz * uRadius;\n"
+                + "  gl_Position = uPMatrix * uVMatrix * uMMatrix * pos;\n"
+                + "  vTexCoord = aTexCoord;\n"
+                + "}\n";
+        private static final String TEXTURE_FRAGMENT_SHADER =
+                "precision mediump float;\n"
+                + "varying vec2 vTexCoord;\n"
+                + "uniform sampler2D uTexture;\n"
+                + "uniform float uAlpha;\n"
+                + "void main() {\n"
+                + "  highp vec4 col = texture2D(uTexture, vTexCoord);\n"
+                + "  col.a *= uAlpha;\n"
+                + "  gl_FragColor = col;\n"
+                + "}\n";
+        private static final String SPRITE_VERTEX_SHADER =
+                "attribute vec2 aPosition;\n"
+                + "attribute vec2 aTexCoord;\n"
+                + "uniform vec2 uViewport;\n"
+                + "uniform vec2 uCenterPx;\n"
+                + "uniform vec2 uSizePx;\n"
+                + "uniform float uScale;\n"
+                + "uniform float uAngle;\n"
+                + "varying vec2 vTexCoord;\n"
+                + "void main() {\n"
+                + "  float c = cos(uAngle);\n"
+                + "  float s = sin(uAngle);\n"
+                + "  vec2 p = aPosition * uSizePx * uScale;\n"
+                + "  p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);\n"
+                + "  vec2 screen = vec2(uCenterPx.x + p.x, uCenterPx.y - p.y);\n"
+                + "  vec2 clip = vec2(screen.x / uViewport.x * 2.0 - 1.0,"
+                + " 1.0 - screen.y / uViewport.y * 2.0);\n"
+                + "  gl_Position = vec4(clip, 0.0, 1.0);\n"
+                + "  vTexCoord = aTexCoord;\n"
+                + "}\n";
+        private final FloatBuffer spriteQuad;
         private final MotionPlan motion;
+        private final float[] projectionMatrix = new float[16];
+        private final float[] viewMatrix = new float[16];
+        private final float[] modelMatrix = new float[16];
+        private final float[] inverseRotationMatrix = new float[16];
         private Thread glThread;
-        private int program;
+        private int crystalProgram;
+        private int meshOverlayProgram;
+        private int spriteProgram;
         private int wallpaperTexture;
-        private int positionLocation;
-        private int wallpaperLocation;
-        private int sizeLocation;
-        private int centerLocation;
-        private int radiusLocation;
-        private int opacityLocation;
-        private int timeLocation;
+        private int mainLayerTexture;
+        private int lightingOneTexture;
+        private int lightingTwoTexture;
+        private int shadowTexture;
+        private CrystalMesh mesh;
         private int width;
         private int height;
         private boolean surfaceReady;
@@ -698,7 +875,12 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         private Bitmap activeOwnedBackground;
 
         private CrystalRenderer() {
-            this.quad = CrystalPrismBetaEffectView.directFloats(new float[]{-1.0f, -1.0f, CrystalPrismBetaEffectView.DEFAULT_SPEED, -1.0f, -1.0f, CrystalPrismBetaEffectView.DEFAULT_SPEED, CrystalPrismBetaEffectView.DEFAULT_SPEED, CrystalPrismBetaEffectView.DEFAULT_SPEED});
+            this.spriteQuad = CrystalPrismBetaEffectView.directFloats(new float[]{
+                    -0.5f, -0.5f, 0.0f, 1.0f,
+                    0.5f, -0.5f, 1.0f, 1.0f,
+                    -0.5f, 0.5f, 0.0f, 0.0f,
+                    0.5f, 0.5f, 1.0f, 0.0f
+            });
             this.motion = new MotionPlan();
             this.width = 1;
             this.height = 1;
@@ -710,22 +892,29 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.surfaceReady = true;
             this.backgroundReady = false;
             this.wallpaperTexture = 0;
-            this.program = 0;
+            this.crystalProgram = 0;
+            this.meshOverlayProgram = 0;
+            this.spriteProgram = 0;
             this.initializationFailed = false;
             try {
-                this.program = CrystalPrismBetaEffectView.linkProgram(VERTEX_SHADER, FRAGMENT_SHADER);
-                this.positionLocation = GLES20.glGetAttribLocation(this.program, "aPosition");
-                this.wallpaperLocation = GLES20.glGetUniformLocation(this.program, "uWallpaper");
-                this.sizeLocation = GLES20.glGetUniformLocation(this.program, "uSize");
-                this.centerLocation = GLES20.glGetUniformLocation(this.program, "uCenter");
-                this.radiusLocation = GLES20.glGetUniformLocation(this.program, "uRadius");
-                this.opacityLocation = GLES20.glGetUniformLocation(this.program, "uOpacity");
-                this.timeLocation = GLES20.glGetUniformLocation(this.program, "uTime");
-                if (this.positionLocation >= 0 && this.wallpaperLocation >= 0 && this.sizeLocation >= 0 && this.centerLocation >= 0 && this.radiusLocation >= 0 && this.opacityLocation >= 0 && this.timeLocation >= 0) {
-                    CrystalPrismBetaEffectView.this.advanceReadiness(3, "GLES program created");
-                    return;
+                this.crystalProgram = CrystalPrismBetaEffectView.linkProgram(
+                        CRYSTAL_VERTEX_SHADER, CRYSTAL_FRAGMENT_SHADER);
+                this.meshOverlayProgram = CrystalPrismBetaEffectView.linkProgram(
+                        MESH_OVERLAY_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER);
+                this.spriteProgram = CrystalPrismBetaEffectView.linkProgram(
+                        SPRITE_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER);
+                this.mainLayerTexture = loadResourceTexture(R.drawable.lg_crystal_main_layer);
+                this.lightingOneTexture = loadResourceTexture(R.drawable.lg_crystal_lighting_1);
+                this.lightingTwoTexture = loadResourceTexture(R.drawable.lg_crystal_lighting_2);
+                this.shadowTexture = loadResourceTexture(R.drawable.lg_crystal_shadow_layer);
+                if (this.crystalProgram == 0 || this.meshOverlayProgram == 0
+                        || this.spriteProgram == 0 || this.mainLayerTexture == 0
+                        || this.lightingOneTexture == 0 || this.lightingTwoTexture == 0
+                        || this.shadowTexture == 0) {
+                    throw new IllegalStateException("Crystal oracle resources missing");
                 }
-                throw new IllegalStateException("Crystal shader locations missing");
+                CrystalPrismBetaEffectView.this.advanceReadiness(
+                        3, "OEM Crystal mesh programs and textures created");
             } catch (RuntimeException e) {
                 this.initializationFailed = true;
                 releaseGlObjects();
@@ -740,6 +929,13 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.height = Math.max(1, i2);
             GLES20.glViewport(0, 0, this.width, this.height);
             this.motion.setViewport(this.width, this.height);
+            this.mesh = new CrystalMesh(this.width, this.height);
+            Matrix.frustumM(this.projectionMatrix, 0,
+                    -this.width / 512.0f, this.width / 512.0f,
+                    -this.height / 512.0f, this.height / 512.0f,
+                    4.0f, 512.0f);
+            Matrix.setIdentityM(this.viewMatrix, 0);
+            Matrix.translateM(this.viewMatrix, 0, 0.0f, 0.0f, -256.0f);
             Bitmap bitmapRemapActiveBackgroundIfNeeded = remapActiveBackgroundIfNeeded(this.width, this.height);
             if (!this.initializationFailed && bitmapRemapActiveBackgroundIfNeeded != null && !bitmapRemapActiveBackgroundIfNeeded.isRecycled()) {
                 this.backgroundReady = uploadBackgroundTexture(bitmapRemapActiveBackgroundIfNeeded);
@@ -779,28 +975,239 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             MotionPlan.Frame frameAdvance = this.motion.advance(SystemClock.uptimeMillis());
             this.animating = frameAdvance.active;
             if (!frameAdvance.active || frameAdvance.opacity <= 0.001f || frameAdvance.radiusPx <= 0.001f) {
-                CrystalPrismBetaEffectView.this.advanceReadiness(5, "transparent warm frame drawn");
+                CrystalPrismBetaEffectView.this.advanceReadiness(
+                        5, "transparent OEM Crystal warm frame drawn");
                 return;
             }
-            GLES20.glUseProgram(this.program);
-            GLES20.glDisable(2929);
-            GLES20.glDisable(2884);
-            GLES20.glDisable(3042);
-            GLES20.glActiveTexture(33984);
-            GLES20.glBindTexture(3553, this.wallpaperTexture);
-            GLES20.glUniform1i(this.wallpaperLocation, 0);
-            GLES20.glUniform2f(this.sizeLocation, this.width, this.height);
-            GLES20.glUniform2f(this.centerLocation, frameAdvance.centerX / this.width, CrystalPrismBetaEffectView.DEFAULT_SPEED - (frameAdvance.centerY / this.height));
-            GLES20.glUniform1f(this.radiusLocation, frameAdvance.radiusPx);
-            GLES20.glUniform1f(this.opacityLocation, frameAdvance.opacity);
-            GLES20.glUniform1f(this.timeLocation, frameAdvance.elapsedMs);
-            this.quad.position(0);
-            GLES20.glEnableVertexAttribArray(this.positionLocation);
-            GLES20.glVertexAttribPointer(this.positionLocation, 2, 5126, false, 0, (Buffer) this.quad);
-            GLES20.glDrawArrays(5, 0, 4);
-            GLES20.glDisableVertexAttribArray(this.positionLocation);
-            GLES20.glBindTexture(3553, 0);
-            CrystalPrismBetaEffectView.this.advanceReadiness(5, "first transparent Crystal frame");
+            drawCrystal(frameAdvance);
+            CrystalPrismBetaEffectView.this.advanceReadiness(
+                    5, "first OEM Crystal mesh frame");
+        }
+
+        private void drawCrystal(MotionPlan.Frame frame) {
+            if (this.mesh == null) {
+                return;
+            }
+            float radiusUnits = frame.radiusPx * 0.25f;
+            float angleDegrees = -90.0f * (frame.radiusPx / Math.max(1.0f, this.width));
+            Matrix.setIdentityM(this.modelMatrix, 0);
+            Matrix.translateM(this.modelMatrix, 0,
+                    (frame.centerX - (this.width * 0.5f)) * 0.25f,
+                    ((this.height * 0.5f) - frame.centerY) * 0.25f, 0.0f);
+            Matrix.rotateM(this.modelMatrix, 0, angleDegrees, 0.0f, 0.0f, 1.0f);
+            Matrix.setIdentityM(this.inverseRotationMatrix, 0);
+            Matrix.rotateM(this.inverseRotationMatrix, 0,
+                    -angleDegrees, 0.0f, 0.0f, 1.0f);
+
+            GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+            GLES20.glDepthFunc(GLES20.GL_LEQUAL);
+            GLES20.glEnable(GLES20.GL_CULL_FACE);
+            GLES20.glCullFace(GLES20.GL_BACK);
+            GLES20.glEnable(GLES20.GL_BLEND);
+            GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,
+                    GLES20.GL_ONE_MINUS_SRC_ALPHA, GLES20.GL_ONE,
+                    GLES20.GL_ONE_MINUS_SRC_ALPHA);
+
+            drawRefractedMesh(frame, radiusUnits);
+            drawMainLayerMesh(frame.opacity, radiusUnits);
+
+            GLES20.glDisable(GLES20.GL_DEPTH_TEST);
+            GLES20.glDisable(GLES20.GL_CULL_FACE);
+            GLES20.glBlendFuncSeparate(GLES20.GL_ONE,
+                    GLES20.GL_ONE_MINUS_SRC_ALPHA, GLES20.GL_ONE,
+                    GLES20.GL_ONE_MINUS_SRC_ALPHA);
+            float overlayScale = oracleOverlayScale(frame.radiusPx);
+            if (overlayScale > 0.0f) {
+                float overlaySize = 666.6667f
+                        * getResources().getDisplayMetrics().density;
+                float angleRadians = (float) Math.toRadians(angleDegrees);
+                drawSprite(this.shadowTexture, frame.centerX, frame.centerY,
+                        overlaySize, overlaySize, overlayScale, angleRadians, frame.opacity);
+                double lightOneAngle = Math.toRadians(angleDegrees - 54.0f);
+                drawSprite(this.lightingOneTexture,
+                        frame.centerX + ((float) Math.cos(lightOneAngle)
+                                * frame.radiusPx * 0.85f),
+                        frame.centerY - ((float) Math.sin(lightOneAngle)
+                                * frame.radiusPx * 0.85f),
+                        overlaySize, overlaySize, overlayScale, 0.0f, frame.opacity);
+                double lightTwoAngle = Math.toRadians(angleDegrees - 56.5f);
+                drawSprite(this.lightingTwoTexture,
+                        frame.centerX + ((float) Math.cos(lightTwoAngle)
+                                * frame.radiusPx * 0.73f),
+                        frame.centerY - ((float) Math.sin(lightTwoAngle)
+                                * frame.radiusPx * 0.73f),
+                        overlaySize, overlaySize, overlayScale, angleRadians, frame.opacity);
+            }
+            GLES20.glDisable(GLES20.GL_BLEND);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+            int drawError = GLES20.glGetError();
+            if (drawError != GLES20.GL_NO_ERROR) {
+                this.initializationFailed = true;
+                String detail = "OEM Crystal draw GL error=0x"
+                        + Integer.toHexString(drawError);
+                CrystalPrismBetaEffectView.this.failReadiness(detail);
+                Log.e(CrystalPrismBetaEffectView.TAG, detail);
+            }
+        }
+
+        private void drawRefractedMesh(MotionPlan.Frame frame, float radiusUnits) {
+            GLES20.glUseProgram(this.crystalProgram);
+            bindCommonMeshMatrices(this.crystalProgram, radiusUnits);
+            uniform1f(this.crystalProgram, "uAlpha", frame.opacity);
+            uniform2f(this.crystalProgram, "uSpaceInfo",
+                    this.width * 0.25f, this.height * 0.25f);
+            uniform2f(this.crystalProgram, "uDownPos",
+                    (frame.centerX - (this.width * 0.5f)) / this.width,
+                    -(((this.height * 0.5f) - frame.centerY) / this.height));
+            int inverseLocation = GLES20.glGetUniformLocation(
+                    this.crystalProgram, "uInverseRotateMatrix");
+            GLES20.glUniformMatrix4fv(inverseLocation, 1, false,
+                    this.inverseRotationMatrix, 0);
+            float ratio = frame.radiusPx / MotionPlan.ORACLE_UNLOCK_RADIUS_PX;
+            double orbit = 0.0d;
+            if (ratio <= 1.0f) {
+                orbit = ratio * Math.PI * 2.0d;
+            } else if (ratio <= 2.0f) {
+                orbit = (2.0f - ratio) * Math.PI * 2.0d;
+            }
+            float centerXUnits = (frame.centerX - (this.width * 0.5f)) * 0.25f;
+            float centerYUnits = ((this.height * 0.5f) - frame.centerY) * 0.25f;
+            uniform3f(this.crystalProgram, "uLightPos2",
+                    centerXUnits + ((float) Math.cos(orbit) * radiusUnits),
+                    centerYUnits + ((float) Math.sin(orbit) * radiusUnits),
+                    radiusUnits * 0.7f);
+            float fixedLightRatio = Math.min(ratio, 0.6f);
+            uniform3f(this.crystalProgram, "uLightPos",
+                    this.width * 0.125f * (1.0f - fixedLightRatio),
+                    this.height * 0.125f * (1.0f - fixedLightRatio),
+                    fixedLightRatio * 100.0f);
+            bindTexture(this.crystalProgram, this.wallpaperTexture);
+            drawMesh(this.crystalProgram, false);
+        }
+
+        private void drawMainLayerMesh(float alpha, float radiusUnits) {
+            GLES20.glUseProgram(this.meshOverlayProgram);
+            bindCommonMeshMatrices(this.meshOverlayProgram, radiusUnits);
+            uniform1f(this.meshOverlayProgram, "uAlpha", alpha);
+            bindTexture(this.meshOverlayProgram, this.mainLayerTexture);
+            drawMesh(this.meshOverlayProgram, true);
+        }
+
+        private void bindCommonMeshMatrices(int targetProgram, float radiusUnits) {
+            GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(
+                    targetProgram, "uPMatrix"), 1, false, this.projectionMatrix, 0);
+            GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(
+                    targetProgram, "uVMatrix"), 1, false, this.viewMatrix, 0);
+            GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(
+                    targetProgram, "uMMatrix"), 1, false, this.modelMatrix, 0);
+            uniform1f(targetProgram, "uRadius", radiusUnits);
+        }
+
+        private void drawMesh(int targetProgram, boolean overlayUv) {
+            int position = GLES20.glGetAttribLocation(targetProgram, "aPosition");
+            int normal = GLES20.glGetAttribLocation(targetProgram, "aNormal");
+            int texCoord = GLES20.glGetAttribLocation(targetProgram, "aTexCoord");
+            GLES20.glEnableVertexAttribArray(position);
+            if (normal >= 0) {
+                GLES20.glEnableVertexAttribArray(normal);
+            }
+            GLES20.glEnableVertexAttribArray(texCoord);
+            drawMeshBuffer(this.mesh.upperGirdle, GLES20.GL_TRIANGLES, 30,
+                    position, normal, texCoord, overlayUv);
+            drawMeshBuffer(this.mesh.upperBezel, GLES20.GL_TRIANGLES, 30,
+                    position, normal, texCoord, overlayUv);
+            for (int i = 0; i < 5; i++) {
+                drawMeshBuffer(this.mesh.lowerBezel, GLES20.GL_TRIANGLE_STRIP,
+                        i * 4, 4, position, normal, texCoord, overlayUv);
+            }
+            drawMeshBuffer(this.mesh.star, GLES20.GL_TRIANGLES, 15,
+                    position, normal, texCoord, overlayUv);
+            drawMeshBuffer(this.mesh.table, GLES20.GL_TRIANGLE_FAN, 5,
+                    position, normal, texCoord, overlayUv);
+            GLES20.glDisableVertexAttribArray(position);
+            if (normal >= 0) {
+                GLES20.glDisableVertexAttribArray(normal);
+            }
+            GLES20.glDisableVertexAttribArray(texCoord);
+        }
+
+        private void drawMeshBuffer(FloatBuffer buffer, int mode, int count,
+                int position, int normal, int texCoord, boolean overlayUv) {
+            drawMeshBuffer(buffer, mode, 0, count,
+                    position, normal, texCoord, overlayUv);
+        }
+
+        private void drawMeshBuffer(FloatBuffer buffer, int mode, int first, int count,
+                int position, int normal, int texCoord, boolean overlayUv) {
+            buffer.position(0);
+            GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT,
+                    false, 40, (Buffer) buffer);
+            if (normal >= 0) {
+                buffer.position(3);
+                GLES20.glVertexAttribPointer(normal, 3, GLES20.GL_FLOAT,
+                        false, 40, (Buffer) buffer);
+            }
+            buffer.position(overlayUv ? 8 : 6);
+            GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT,
+                    false, 40, (Buffer) buffer);
+            GLES20.glDrawArrays(mode, first, count);
+        }
+
+        private void drawSprite(int texture, float centerX, float centerY,
+                float sizeX, float sizeY, float scale, float angle, float alpha) {
+            GLES20.glUseProgram(this.spriteProgram);
+            uniform2f(this.spriteProgram, "uViewport", this.width, this.height);
+            uniform2f(this.spriteProgram, "uCenterPx", centerX, centerY);
+            uniform2f(this.spriteProgram, "uSizePx", sizeX, sizeY);
+            uniform1f(this.spriteProgram, "uScale", scale);
+            uniform1f(this.spriteProgram, "uAngle", angle);
+            uniform1f(this.spriteProgram, "uAlpha", alpha);
+            bindTexture(this.spriteProgram, texture);
+            int position = GLES20.glGetAttribLocation(this.spriteProgram, "aPosition");
+            int texCoord = GLES20.glGetAttribLocation(this.spriteProgram, "aTexCoord");
+            this.spriteQuad.position(0);
+            GLES20.glEnableVertexAttribArray(position);
+            GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT,
+                    false, 16, (Buffer) this.spriteQuad);
+            this.spriteQuad.position(2);
+            GLES20.glEnableVertexAttribArray(texCoord);
+            GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT,
+                    false, 16, (Buffer) this.spriteQuad);
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+            GLES20.glDisableVertexAttribArray(position);
+            GLES20.glDisableVertexAttribArray(texCoord);
+        }
+
+        private float oracleOverlayScale(float radiusPx) {
+            if (radiusPx <= MotionPlan.ORACLE_MIN_RADIUS_PX) {
+                return 0.0f;
+            }
+            float density = Math.max(0.01f,
+                    getResources().getDisplayMetrics().density);
+            return radiusPx / (229.27676f * density);
+        }
+
+        private void bindTexture(int targetProgram, int texture) {
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture);
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(
+                    targetProgram, "uTexture"), 0);
+        }
+
+        private void uniform1f(int targetProgram, String name, float value) {
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(
+                    targetProgram, name), value);
+        }
+
+        private void uniform2f(int targetProgram, String name, float x, float y) {
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(
+                    targetProgram, name), x, y);
+        }
+
+        private void uniform3f(int targetProgram, String name,
+                float x, float y, float z) {
+            GLES20.glUniform3f(GLES20.glGetUniformLocation(
+                    targetProgram, name), x, y, z);
         }
 
         void begin(float f, float f2, long j) {
@@ -928,7 +1335,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
 
         private boolean uploadBackgroundTexture(Bitmap bitmap) {
-            if (bitmap == null || bitmap.isRecycled() || this.program == 0) {
+            if (bitmap == null || bitmap.isRecycled() || this.crystalProgram == 0) {
                 return false;
             }
             deleteWallpaperTexture();
@@ -949,18 +1356,72 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             return false;
         }
 
+        private int loadResourceTexture(int resourceId) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inScaled = false;
+            Bitmap bitmap = BitmapFactory.decodeResource(
+                    getResources(), resourceId, options);
+            if (bitmap == null) {
+                return 0;
+            }
+            int[] textures = new int[1];
+            GLES20.glGenTextures(1, textures, 0);
+            int texture = textures[0];
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
+            bitmap.recycle();
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+            if (GLES20.glGetError() == GLES20.GL_NO_ERROR) {
+                return texture;
+            }
+            GLES20.glDeleteTextures(1, new int[]{texture}, 0);
+            return 0;
+        }
+
         private void clearTransparent() {
             GLES20.glBindFramebuffer(36160, 0);
             GLES20.glViewport(0, 0, Math.max(1, this.width), Math.max(1, this.height));
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            GLES20.glClear(16384);
+            GLES20.glClearDepthf(1.0f);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         }
 
         private void releaseGlObjects() {
             deleteWallpaperTexture();
-            if (this.program != 0) {
-                GLES20.glDeleteProgram(this.program);
-                this.program = 0;
+            deleteTexture(this.mainLayerTexture);
+            deleteTexture(this.lightingOneTexture);
+            deleteTexture(this.lightingTwoTexture);
+            deleteTexture(this.shadowTexture);
+            this.mainLayerTexture = 0;
+            this.lightingOneTexture = 0;
+            this.lightingTwoTexture = 0;
+            this.shadowTexture = 0;
+            deleteProgram(this.crystalProgram);
+            deleteProgram(this.meshOverlayProgram);
+            deleteProgram(this.spriteProgram);
+            this.crystalProgram = 0;
+            this.meshOverlayProgram = 0;
+            this.spriteProgram = 0;
+            this.mesh = null;
+        }
+
+        private void deleteProgram(int targetProgram) {
+            if (targetProgram != 0) {
+                GLES20.glDeleteProgram(targetProgram);
+            }
+        }
+
+        private void deleteTexture(int texture) {
+            if (texture != 0) {
+                GLES20.glDeleteTextures(1, new int[]{texture}, 0);
             }
         }
 
@@ -972,16 +1433,17 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
     }
 
-    /* JADX INFO: loaded from: crystal-static-check.jar:com/codex/lle/CrystalPrismBetaEffectView$MotionPlan.class */
     static final class MotionPlan {
         static final int IDLE = 0;
         static final int DRAG = 1;
         static final int RETRACT = 2;
         static final int UNLOCK = 3;
         static final int AFFORDANCE = 4;
-        private static final long RETRACT_MS = 280;
-        private static final long UNLOCK_MS = 460;
-        private static final long AFFORDANCE_MS = 920;
+        static final float ORACLE_MIN_RADIUS_PX = 50.0f;
+        static final float ORACLE_UNLOCK_RADIUS_PX = 201.0f;
+        private static final long RETRACT_MS = 300;
+        private static final long UNLOCK_MS = 400;
+        private static final long AFFORDANCE_MS = 900;
         private float centerX;
         private float centerY;
         private float downX;
@@ -1014,7 +1476,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.centerY = clamp(f2, 0.0f, this.height);
             this.downX = this.centerX;
             this.downY = this.centerY;
-            this.radiusPx = baseRadiusPx();
+            this.radiusPx = ORACLE_MIN_RADIUS_PX;
             this.startRadiusPx = this.radiusPx;
             this.phase = 1;
             this.phaseStartMs = j;
@@ -1027,7 +1489,12 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                 if (this.phase != 1) {
                     return;
                 }
-                this.radiusPx = Math.min(maximumRadiusPx(), baseRadiusPx() + (distance(this.downX, this.downY, clamp(f, 0.0f, this.width), clamp(f2, 0.0f, this.height)) * 0.74f));
+                float dragDistance = distance(this.downX, this.downY,
+                        clamp(f, 0.0f, this.width), clamp(f2, 0.0f, this.height));
+                this.radiusPx = ORACLE_MIN_RADIUS_PX
+                        + (dragDistance
+                        * ((ORACLE_UNLOCK_RADIUS_PX - ORACLE_MIN_RADIUS_PX)
+                        / ORACLE_UNLOCK_RADIUS_PX));
             }
         }
 
@@ -1039,7 +1506,8 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.phaseStartMs = j;
             if (z) {
                 this.phase = 3;
-                this.unlockTargetRadiusPx = farthestCornerDistance(this.centerX, this.centerY) * 1.15f;
+                this.unlockTargetRadiusPx = 1.3f
+                        * ((float) Math.hypot(this.width, this.height));
             } else {
                 this.phase = 2;
             }
@@ -1050,7 +1518,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.centerY = clamp(f2, 0.0f, this.height);
             this.downX = this.centerX;
             this.downY = this.centerY;
-            this.radiusPx = baseRadiusPx();
+            this.radiusPx = ORACLE_MIN_RADIUS_PX;
             this.startRadiusPx = this.radiusPx;
             this.phaseStartMs = j;
             this.phase = 4;
@@ -1073,44 +1541,36 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             float fMax = Math.max(0L, j - this.phaseStartMs) * this.speedMultiplier;
             float f = 1.0f;
             if (this.phase == 2) {
-                float fSaturate = saturate(fMax / 280.0f);
-                this.radiusPx = this.startRadiusPx * (CrystalPrismBetaEffectView.DEFAULT_SPEED - (fSaturate * fSaturate));
+                float fSaturate = saturate(fMax / RETRACT_MS);
+                float accelerated = fSaturate * fSaturate;
+                this.radiusPx = this.startRadiusPx * (1.0f - accelerated);
                 if (fSaturate >= CrystalPrismBetaEffectView.DEFAULT_SPEED) {
                     reset();
                     return new Frame(this.centerX, this.centerY, 0.0f, 0.0f, fMax, false);
                 }
             } else if (this.phase == 3) {
-                float fSaturate2 = saturate(fMax / 460.0f);
-                this.radiusPx = this.startRadiusPx + ((this.unlockTargetRadiusPx - this.startRadiusPx) * (CrystalPrismBetaEffectView.DEFAULT_SPEED - (((CrystalPrismBetaEffectView.DEFAULT_SPEED - fSaturate2) * (CrystalPrismBetaEffectView.DEFAULT_SPEED - fSaturate2)) * (CrystalPrismBetaEffectView.DEFAULT_SPEED - fSaturate2))));
-                if (fSaturate2 > 0.7f) {
-                    f = CrystalPrismBetaEffectView.DEFAULT_SPEED - ((fSaturate2 - 0.7f) / 0.3f);
-                }
+                float fSaturate2 = saturate(fMax / UNLOCK_MS);
+                float accelerated2 = fSaturate2 * fSaturate2;
+                this.radiusPx = this.startRadiusPx
+                        + ((this.unlockTargetRadiusPx - this.startRadiusPx)
+                        * accelerated2);
+                f = 1.0f - fSaturate2;
                 if (fSaturate2 >= CrystalPrismBetaEffectView.DEFAULT_SPEED) {
                     reset();
                     return new Frame(this.centerX, this.centerY, 0.0f, 0.0f, fMax, false);
                 }
             } else if (this.phase == 4) {
-                float fSaturate3 = saturate(fMax / 920.0f);
-                this.radiusPx = baseRadiusPx() * (CrystalPrismBetaEffectView.DEFAULT_SPEED + (0.15f * ((float) Math.sin(((double) fSaturate3) * 3.141592653589793d * 3.0d))));
-                f = 0.26f * (CrystalPrismBetaEffectView.DEFAULT_SPEED - fSaturate3);
+                float fSaturate3 = saturate(fMax / AFFORDANCE_MS);
+                this.radiusPx = ORACLE_MIN_RADIUS_PX
+                        + (12.0f * ((float) Math.sin(
+                        ((double) fSaturate3) * Math.PI * 3.0d)));
+                f = 0.26f * (1.0f - fSaturate3);
                 if (fSaturate3 >= CrystalPrismBetaEffectView.DEFAULT_SPEED) {
                     reset();
                     return new Frame(this.centerX, this.centerY, 0.0f, 0.0f, fMax, false);
                 }
             }
             return new Frame(this.centerX, this.centerY, Math.max(0.0f, this.radiusPx), saturate(f), fMax, true);
-        }
-
-        private float baseRadiusPx() {
-            return Math.max(46.0f, Math.min(132.0f, Math.min(this.width, this.height) * 0.105f));
-        }
-
-        private float maximumRadiusPx() {
-            return Math.max(baseRadiusPx(), farthestCornerDistance(this.centerX, this.centerY) * 1.15f);
-        }
-
-        private float farthestCornerDistance(float f, float f2) {
-            return Math.max(Math.max(distance(f, f2, 0.0f, 0.0f), distance(f, f2, this.width, 0.0f)), Math.max(distance(f, f2, 0.0f, this.height), distance(f, f2, this.width, this.height)));
         }
 
         static float distance(float f, float f2, float f3, float f4) {
@@ -1142,6 +1602,154 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                 this.elapsedMs = f5;
                 this.active = z;
             }
+        }
+    }
+
+    static final class CrystalMesh {
+        private static final float STEP = (float) Math.toRadians(36.0d);
+        private static final float HALF_STEP = STEP * 0.5f;
+        private static final float INNER_TAN = (float) Math.tan(Math.toRadians(26.0d));
+        private static final float MID_TAN = (float) Math.tan(Math.toRadians(28.0d));
+        final FloatBuffer lowerBezel;
+        final FloatBuffer star;
+        final FloatBuffer table;
+        final FloatBuffer upperBezel;
+        final FloatBuffer upperGirdle;
+
+        CrystalMesh(float width, float height) {
+            float[] source = buildSource(width, height);
+            this.upperGirdle = buildFaces(source, new int[][]{
+                    {9, 10, 0}, {0, 11, 1}, {1, 12, 2}, {2, 13, 3},
+                    {3, 14, 4}, {4, 15, 5}, {5, 16, 6}, {6, 17, 7},
+                    {7, 18, 8}, {8, 19, 9}
+            });
+            this.upperBezel = buildFaces(source, new int[][]{
+                    {9, 19, 10}, {0, 10, 11}, {1, 11, 12}, {2, 12, 13},
+                    {3, 13, 14}, {4, 14, 15}, {5, 15, 16}, {6, 16, 17},
+                    {7, 17, 18}, {8, 18, 19}
+            });
+            this.lowerBezel = buildFaces(source, new int[][]{
+                    {18, 24, 19, 10}, {10, 20, 11, 12},
+                    {12, 21, 13, 14}, {14, 22, 15, 16},
+                    {16, 23, 17, 18}
+            });
+            this.star = buildFaces(source, new int[][]{
+                    {24, 20, 10}, {20, 21, 12}, {21, 22, 14},
+                    {22, 23, 16}, {23, 24, 18}
+            });
+            this.table = buildFaces(source, new int[][]{
+                    {24}, {23}, {22}, {21}, {20}
+            });
+        }
+
+        private static float[] buildSource(float width, float height) {
+            float[] out = new float[250];
+            float widthUnits = width * 0.25f;
+            float heightUnits = height * 0.25f;
+            float halfWidthUnits = widthUnits * 0.5f;
+            float halfHeightUnits = heightUnits * 0.5f;
+            int cursor = 0;
+            for (int i = 0; i < 10; i++) {
+                float angle = (i * STEP) + HALF_STEP;
+                float x = (float) Math.sin(angle);
+                float y = (float) Math.cos(angle);
+                cursor = writeSourceVertex(out, cursor, x, y, 0.0f,
+                        (x + halfWidthUnits) / widthUnits,
+                        (halfHeightUnits - y) / heightUnits,
+                        secondaryUv(x, y, -0.008f));
+            }
+            for (int i = 0; i < 10; i++) {
+                boolean even = (i & 1) == 0;
+                float radius = even ? 0.82f : 0.87f;
+                float x = ((float) Math.sin(i * STEP)) * radius;
+                float y = ((float) Math.cos(i * STEP)) * radius;
+                float z = (even ? 0.18f : 0.13f) * MID_TAN;
+                cursor = writeSourceVertex(out, cursor, x, y, z,
+                        (x + halfWidthUnits) / widthUnits,
+                        (halfHeightUnits - y) / heightUnits,
+                        secondaryUv(x, y, even ? 0.007f : 0.005f));
+            }
+            float z = 0.537f * INNER_TAN;
+            for (int i = 0; i < 5; i++) {
+                float angle = (i * STEP * 2.0f) + STEP;
+                float x = ((float) Math.sin(angle)) * 0.463f;
+                float y = ((float) Math.cos(angle)) * 0.463f;
+                cursor = writeSourceVertex(out, cursor, x, y, z,
+                        (x + halfWidthUnits) / widthUnits,
+                        (halfHeightUnits - y) / heightUnits,
+                        secondaryUv(x, y, 0.043f));
+            }
+            return out;
+        }
+
+        private static float[] secondaryUv(float x, float y, float delta) {
+            return new float[]{
+                    ((0.348f + delta) * x) + 0.5f,
+                    0.5f - ((0.348f + delta) * y)
+            };
+        }
+
+        private static int writeSourceVertex(float[] out, int cursor,
+                float x, float y, float z, float u, float v, float[] overlayUv) {
+            out[cursor++] = x;
+            out[cursor++] = y;
+            out[cursor++] = z;
+            out[cursor++] = 0.0f;
+            out[cursor++] = 0.0f;
+            out[cursor++] = 1.0f;
+            out[cursor++] = u;
+            out[cursor++] = v;
+            out[cursor++] = overlayUv[0];
+            out[cursor++] = overlayUv[1];
+            return cursor;
+        }
+
+        private static FloatBuffer buildFaces(float[] source, int[][] faces) {
+            int vertexCount = 0;
+            for (int[] face : faces) {
+                vertexCount += face.length;
+            }
+            float[] result = new float[vertexCount * 10];
+            int cursor = 0;
+            for (int[] face : faces) {
+                float[] normal = face.length >= 3
+                        ? faceNormal(source, face[0], face[1], face[2])
+                        : new float[]{0.0f, 0.0f, 1.0f};
+                for (int index : face) {
+                    int sourceOffset = index * 10;
+                    result[cursor++] = source[sourceOffset];
+                    result[cursor++] = source[sourceOffset + 1];
+                    result[cursor++] = source[sourceOffset + 2];
+                    result[cursor++] = normal[0];
+                    result[cursor++] = normal[1];
+                    result[cursor++] = normal[2];
+                    result[cursor++] = source[sourceOffset + 6];
+                    result[cursor++] = source[sourceOffset + 7];
+                    result[cursor++] = source[sourceOffset + 8];
+                    result[cursor++] = source[sourceOffset + 9];
+                }
+            }
+            return directFloats(result);
+        }
+
+        private static float[] faceNormal(float[] source, int a, int b, int c) {
+            int ia = a * 10;
+            int ib = b * 10;
+            int ic = c * 10;
+            float ux = source[ib] - source[ia];
+            float uy = source[ib + 1] - source[ia + 1];
+            float uz = source[ib + 2] - source[ia + 2];
+            float vx = source[ic] - source[ia];
+            float vy = source[ic + 1] - source[ia + 1];
+            float vz = source[ic + 2] - source[ia + 2];
+            float x = (uy * vz) - (uz * vy);
+            float y = (uz * vx) - (ux * vz);
+            float z = (ux * vy) - (uy * vx);
+            float length = (float) Math.sqrt((x * x) + (y * y) + (z * z));
+            if (length <= 0.000001f) {
+                return new float[]{0.0f, 0.0f, 1.0f};
+            }
+            return new float[]{x / length, y / length, z / length};
         }
     }
 

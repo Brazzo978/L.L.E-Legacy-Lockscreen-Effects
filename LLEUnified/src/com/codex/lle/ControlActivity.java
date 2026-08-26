@@ -1574,6 +1574,18 @@ public class ControlActivity extends Activity {
                 requestLockscreenWallpaperPreview();
             }
         }));
+        section.addView(outlineButton("Show lockscreen cache", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showEffectBackgroundScreenshot();
+            }
+        }));
+        section.addView(outlineButton("Show Last screen cache", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLgLastScreenCache();
+            }
+        }));
         if (EffectAvailability.is64BitProcess()) {
             section.addView(outlineButton("Create debug report", new View.OnClickListener() {
                 @Override
@@ -2083,6 +2095,11 @@ public class ControlActivity extends Activity {
         }
         effects.addView(effectPreviewHint());
         addEffectOptionIfAvailable(effects,
+                "S3 None",
+                "Samsung's ultralight circle unlock, reconstructed from S3 firmware.",
+                OverlayPrefs.EFFECT_S3_NONE,
+                current);
+        addEffectOptionIfAvailable(effects,
                 "S3 Water Ripple",
                 "Soft ripples flowing from your touch.",
                 OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE,
@@ -2170,7 +2187,7 @@ public class ControlActivity extends Activity {
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (LLE renderer)"
-                        : "S6 Water Droplet",
+                        : "S6 Water Droplet (WIP)",
                 "Refracted water droplets flowing across the wallpaper.",
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 current);
@@ -2201,41 +2218,57 @@ public class ControlActivity extends Activity {
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (LLE renderer)"
-                        : "N5 Sparkling Bubbles",
+                        : "N5 Sparkling Bubbles (WIP)",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 current);
         if (BuildFlavor.TESTER) {
-            effects.addView(sectionLabel("1.0.6 clean-room beta"));
+            effects.addView(sectionLabel("LG effects"));
             addEffectOptionIfAvailable(effects,
-                    "S5 Circle (None)",
-                    "Samsung's lightweight circle unlock, reconstructed from OEM material.",
-                    OverlayPrefs.EFFECT_S5_NONE,
+                    "G1 White Hole",
+                    "Restored XLocker/LG effect using the captured pre-lock screen.",
+                    OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE,
                     current);
             addEffectOptionIfAvailable(effects,
-                    "LG G2 Pixelate",
-                    "A clean-room pixel grid bends and opens around touch.",
-                    OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                    "G2 Soda",
+                    "Restored XLocker/LG bubbles using the captured pre-lock screen.",
+                    OverlayPrefs.EFFECT_LG_SODA,
                     current);
             addEffectOptionIfAvailable(effects,
-                    "LG G2 Particle",
-                    "A clean-room particle ring opens a window through the wallpaper.",
+                    "G1 Dewdrop",
+                    "Restored XLocker/LG refractive droplet using the captured pre-lock screen.",
+                    OverlayPrefs.EFFECT_LG_G1_DEWDROP,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "G2 Particle",
+                    "Restored XLocker/LG particle ring using the captured pre-lock screen.",
                     OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                     current);
             addEffectOptionIfAvailable(effects,
-                    "LG G2 Crystal",
-                    "Inspired beta: crystal light refracts the wallpaper.",
-                    OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                    "G2 Light Particle",
+                    "Restored XLocker/LG light and bokeh ring using the captured pre-lock screen.",
+                    OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
                     current);
             addEffectOptionIfAvailable(effects,
-                    "Xperia Z1 Blinds",
+                    "G2 Crystal",
+                    "Restored faceted crystal refraction using the captured pre-lock screen.",
+                    OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                    current);
+            effects.addView(sectionLabel("Experimental WIP"));
+            addEffectOptionIfAvailable(effects,
+                    "Xperia Z1 Blinds (WIP)",
                     "Clean-room Sony-style strips open across the wallpaper.",
                     OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                     current);
             addEffectOptionIfAvailable(effects,
-                    "Revolving Glass",
+                    "Revolving Glass (WIP)",
                     "Inspired beta: rotates the cached lockscreen image, not live UI.",
                     OverlayPrefs.EFFECT_REVOLVING_GLASS,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "G2 Pixelate (WIP)",
+                    "Deferred priority 14: requires separate lockscreen and underlay sources.",
+                    OverlayPrefs.EFFECT_LG_G2_PIXELATE,
                     current);
         }
         effects.addView(sectionLabel("Good Lock"));
@@ -2282,7 +2315,10 @@ public class ControlActivity extends Activity {
                 current);
         root.addView(effects);
         root.addView(infoFooter());
-        if (effectUsesColormapCache(current)) {
+        if (effectUsesColormapCache(current)
+                || OverlayPrefs.usesLgPreLockUnderlay(current)
+                || (BuildFlavor.TESTER
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)) {
             root.addView(screenshotServiceControls(current));
         }
         return root;
@@ -2484,6 +2520,45 @@ public class ControlActivity extends Activity {
         if (!rendererWallpaperExpanded) {
             return section;
         }
+        if (OverlayPrefs.usesLgPreLockUnderlay(currentEffect)) {
+            String effectName = OverlayPrefs.effectLabel(currentEffect);
+            section.addView(infoText(
+                    effectName + " uses Last screen: on a normal screen-off, L.L.E captures "
+                            + "the final unlocked app/launcher frame and supplies that private "
+                            + "buffer only to LG effects. It is separate from, and never "
+                            + "replaces, the lockscreen colormap used by other effects."));
+            section.addView(sectionLabel("LOCKSCREEN CACHE · OTHER EFFECTS"));
+            section.addView(infoText(effectBackgroundProfileStatus(
+                    currentEffect, FoldDisplayTarget.cacheProfileForContext(this))));
+            section.addView(outlineButton("Force lockscreen cache recapture",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            applyPendingUnlockEffect();
+                            OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
+                            Toast.makeText(ControlActivity.this,
+                                    "Lockscreen cache recapture queued",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    }));
+            section.addView(outlineButton("View lockscreen cache",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            showEffectBackgroundScreenshot();
+                        }
+                    }));
+            addLgLastScreenCacheControls(section, currentEffect);
+            addTesterUnderlayProbeControls(section);
+            return section;
+        }
+        if (!effectUsesColormapCache(currentEffect)) {
+            section.addView(infoText(
+                    "The selected effect is intentionally colormap-free. No wallpaper image "
+                            + "is captured or supplied to its renderer."));
+            addTesterUnderlayProbeControls(section);
+            return section;
+        }
         final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
         final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
         boolean multipleProfiles = profiles.length > 1;
@@ -2547,7 +2622,180 @@ public class ControlActivity extends Activity {
             section.addView(infoText("These settings apply only to Automatic screenshot. "
                     + "Direct wallpaper sources remain fixed until you replace them."));
         }
+        addTesterUnderlayProbeControls(section);
         return section;
+    }
+
+    private void addLgLastScreenCacheControls(LinearLayout section, final int effect) {
+        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+        section.addView(sectionLabel("LAST SCREEN"));
+        section.addView(outlineButton("View Last screen", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLgLastScreenCache();
+            }
+        }));
+        section.addView(outlineButton("Force wallpaper fallback", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmLgLastScreenFallback(effect, target);
+            }
+        }));
+        section.addView(infoText(
+                "Fallback is a one-time safety seed: it copies an exact-size wallpaper cache "
+                        + "into Last screen. The next successful screen-off capture replaces "
+                        + "it with the real last unlocked frame."));
+    }
+
+    private void showLgLastScreenCache() {
+        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+        Argb8888BitmapStore.Info sourceInfo = LgLastScreenCache.inspect(target);
+        if (sourceInfo == null) {
+            Toast.makeText(this,
+                    "No Last screen cache yet. Turn the screen off once while normally unlocked.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final Bitmap bitmap = decodePreviewBitmap(target.file);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, "Last screen cache unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("Last screen"));
+        String source = LgLastScreenCache.isWallpaperFallback(this, target)
+                ? "forced wallpaper fallback" : "last unlocked frame";
+        root.addView(infoText(source + " | " + target.profile + " | "
+                + sourceInfo.width + " x " + sourceInfo.height + " | "
+                + Math.max(1L, target.file.length() / 1024L) + " KB"));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private void confirmLgLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        File fallback = LgLastScreenCache.findWallpaperFallback(this, effect, target);
+        if (fallback == null) {
+            Toast.makeText(this,
+                    "No exact-size wallpaper cache is available. Capture or import one first.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Force wallpaper fallback?")
+                .setMessage("This replaces the current Last screen image with the traditional "
+                        + "wallpaper cache. It is only a safety fallback; the next successful "
+                        + "screen-off capture will replace it with the real last screen.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Force fallback", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        forceLgLastScreenFallback(effect, target);
+                    }
+                })
+                .show();
+    }
+
+    private void forceLgLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        Toast.makeText(this, "Preparing Last screen fallback…", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final LgLastScreenCache.FallbackResult result =
+                        LgLastScreenCache.forceWallpaperFallback(
+                                ControlActivity.this, effect, target);
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (result.saved) {
+                            ChargingAccessibilityService.reloadLgLastScreenCache();
+                        }
+                        Toast.makeText(ControlActivity.this, result.message,
+                                result.saved ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+                        if (!isFinishing() && !isDestroyed()) {
+                            showTab(selectedTab, false, 0);
+                        }
+                    }
+                });
+            }
+        }, "LLE-last-screen-fallback").start();
+    }
+
+    private void addTesterUnderlayProbeControls(LinearLayout section) {
+        if (!BuildFlavor.TESTER
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return;
+        }
+        section.addView(sectionLabel("TESTER - LG underlay API probe"));
+        section.addView(infoText(
+                "Tests whether Android exposes the launcher or previous app as a separate "
+                        + "accessibility window while locked. This does not replace or modify "
+                        + "the current colormap."));
+        section.addView(infoText("Status: "
+                + ChargingAccessibilityService.testerUnderlayProbeStatus(this)));
+        section.addView(outlineButton("Arm probe (30-second window)",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        applyPendingUnlockEffect();
+                        boolean armed = ChargingAccessibilityService
+                                .scheduleTesterUnderlayProbe(0L);
+                        Toast.makeText(ControlActivity.this,
+                                armed
+                                        ? "Probe armed. Go Home, lock and wake to the lockscreen within 30 seconds."
+                                        : "Accessibility service unavailable or API unsupported",
+                                Toast.LENGTH_LONG).show();
+                        if (armed) {
+                            showTab(selectedTab, false, 0);
+                        }
+                    }
+                }));
+        section.addView(outlineButton("View last underlay probe",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showTesterUnderlayProbe();
+                    }
+                }));
     }
 
     private void addDirectWallpaperProfileControls(LinearLayout section, final int effect,
@@ -2745,6 +2993,23 @@ public class ControlActivity extends Activity {
     }
 
     private String effectBackgroundStatus(int effect) {
+        if (OverlayPrefs.usesLgPreLockUnderlay(effect)) {
+            LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+            Argb8888BitmapStore.Info info = LgLastScreenCache.inspect(target);
+            if (info == null) {
+                return "Last screen (" + target.profile + "): empty. Unlock normally, leave "
+                        + "the app or launcher you want visible, then turn the screen off once.";
+            }
+            long capturedAt = LgLastScreenCache.capturedAt(this, target);
+            long ageMs = capturedAt <= 0L
+                    ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
+            String source = LgLastScreenCache.isWallpaperFallback(this, target)
+                    ? "forced wallpaper fallback" : "captured last unlocked frame";
+            return "Last screen (" + target.profile + "): ready, "
+                    + info.width + " x " + info.height + ", age " + ageLabel(ageMs)
+                    + ", source: " + source
+                    + ". Dedicated cache; lockscreen colormap unchanged.";
+        }
         if (!effectUsesColormapCache(effect)) {
             return "Screenshot cache: not used by this effect.";
         }
@@ -2822,7 +3087,6 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
                 || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
-                || effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE
                 || effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE
                 || effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL
                 || effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS
@@ -3841,6 +4105,10 @@ public class ControlActivity extends Activity {
                 return R.drawable.preview_unlock_stoneskipping_s5;
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return R.drawable.preview_unlock_mass_tension;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return R.drawable.preview_unlock_lg_soda;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return R.drawable.lg_lightparticle_bg;
             default:
                 return 0;
         }
@@ -3884,6 +4152,10 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_s5_stone_skipping_lle;
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return R.drawable.icon_effect_mass_tension;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return R.drawable.preview_unlock_lg_soda;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return R.drawable.lg_lightparticle_a_1;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return R.drawable.icon_effect_s5_brilliant_ring_lle;
             case OverlayPrefs.EFFECT_TABS_BLIND:
@@ -4043,6 +4315,70 @@ public class ControlActivity extends Activity {
             paint.setColor(Color.argb(78, 255, 255, 255));
             canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
                     width * rs[i] * 0.28f, paint);
+        }
+    }
+
+    private void showTesterUnderlayProbe() {
+        File result = ChargingAccessibilityService.testerUnderlayProbeFile(this);
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(result);
+        if (bounds == null) {
+            Toast.makeText(this,
+                    "No underlay image. "
+                            + ChargingAccessibilityService.testerUnderlayProbeStatus(this),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final Bitmap bitmap = decodePreviewBitmap(result);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, "Underlay probe result unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("LG underlay API probe"));
+        root.addView(infoText(ChargingAccessibilityService.testerUnderlayProbeStatus(this)
+                + "\nprivate ARGB8888 | source " + bounds.width + " x " + bounds.height
+                + " | preview " + bitmap.getWidth() + " x " + bitmap.getHeight()));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        root.addView(infoText(
+                "Interpretation: launcher/app pixels mean the API can drive a future LG "
+                        + "underlay source. A SystemUI-only/no-window failure means it cannot."));
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
         }
     }
 
@@ -4617,7 +4953,7 @@ public class ControlActivity extends Activity {
                 ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
         return effectOption(
-                "N5 Colored Droplet",
+                "N5 Colored Droplet (WIP)",
                 "Colorful liquid droplets rolling across screen.",
                 effect,
                 OverlayPrefs.isColourDropletEffect(current),
@@ -4663,7 +4999,7 @@ public class ControlActivity extends Activity {
     private View lensFlareEffectOption(int current) {
         return effectOption(
                 "S4 Lens Flare",
-                "Original, Blue Ring, Blood and procedural Lightning styles.",
+                "Original, Blue Ring, Blood and Lightning texture families.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 -1,
@@ -4706,12 +5042,7 @@ public class ControlActivity extends Activity {
             swatch.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-                    SharedPreferences.Editor editor = prefs.edit()
-                            .putString(OverlayPrefs.LENS_FLARE_MODE, mode);
-                    if (OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
-                        editor.putBoolean(OverlayPrefs.LENS_FLARE_GLES_RENDERER, true);
-                    }
-                    editor.apply();
+                    prefs.edit().putString(OverlayPrefs.LENS_FLARE_MODE, mode).apply();
                     showTab(selectedTab);
                 }
             });
@@ -4728,26 +5059,6 @@ public class ControlActivity extends Activity {
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
-        boolean lightning = OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(selectedMode);
-        boolean canvasSelected = !lightning
-                && !OverlayPrefs.lensFlareGlesRendererEnabled(this);
-        final Switch rendererMode = compactEffectVariantSwitch(
-                canvasSelected ? "Canvas" : "GL", canvasSelected);
-        rendererMode.setEnabled(!lightning);
-        rendererMode.setAlpha(lightning ? 0.45f : 1.0f);
-        rendererMode.setContentDescription(lightning
-                ? "Lens Flare renderer: GL required for Lightning"
-                : "Lens Flare renderer: toggle between GL and Canvas");
-        rendererMode.setOnCheckedChangeListener(
-                new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                buttonView.setText(isChecked ? "Canvas" : "GL");
-                prefs.edit().putBoolean(
-                        OverlayPrefs.LENS_FLARE_GLES_RENDERER, !isChecked).apply();
-            }
-        });
-        controls.addView(rendererMode);
         return controls;
     }
 
@@ -4758,13 +5069,16 @@ public class ControlActivity extends Activity {
         if (OverlayPrefs.LENS_FLARE_MODE_BLOOD.equals(mode)) {
             return R.drawable.keyguard_blood_light_00040;
         }
+        if (OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
+            return R.drawable.keyguard_lightning_light_00040;
+        }
         return R.drawable.keyguard_flare_light_00040;
     }
 
     /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
     private View rippleInkEffectOption(int current) {
         return effectOption(
-                "N3 Ripple Ink",
+                "N3 Ripple Ink (WIP)",
                 "Ink ripples with a selectable colour palette.",
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 current == OverlayPrefs.EFFECT_RIPPLE_INK,

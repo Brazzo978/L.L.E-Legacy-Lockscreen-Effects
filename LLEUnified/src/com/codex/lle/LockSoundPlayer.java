@@ -137,6 +137,20 @@ final class LockSoundPlayer {
                     load(R.raw.brilliantcut_lock);
             effectSounds[OverlayPrefs.EFFECT_MASS_TENSION] =
                     load(R.raw.mass_tension_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE] =
+                    load(R.raw.lg_whitehole_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_SODA] =
+                    load(R.raw.lg_soda_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G1_DEWDROP] =
+                    load(R.raw.lg_dewdrop_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G2_PARTICLE] =
+                    load(R.raw.lg_particle_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE] =
+                    load(R.raw.lg_lightparticle_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G2_CRYSTAL] =
+                    load(R.raw.lg_crystal_lock);
+            effectSounds[OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS] =
+                    load(R.raw.xperia_z1_blinds_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);

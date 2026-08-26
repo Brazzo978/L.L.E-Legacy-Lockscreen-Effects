@@ -52,8 +52,8 @@ if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
 
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
-$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 40 } else { 0 }
-$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.6.B1" } else { "" }
+$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 41 } else { 0 }
+$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.6.B2" } else { "" }
 if ($LegacyVendorEffects) {
     $launcherLabel += " Legacy"
 }
@@ -97,7 +97,12 @@ $lensFlareVariantAssets = @(
     "keyguard_blood_particle.png", "keyguard_blood_long.png",
     "keyguard_blood_rainbow.png", "keyguard_blood_hoverlight.png",
     "keyguard_blood_hexagon_blue.png", "keyguard_blood_hexagon_orange.png",
-    "keyguard_blood_hexagon_green.png"
+    "keyguard_blood_hexagon_green.png",
+    "keyguard_lightning_light_00040.png", "keyguard_lightning_ring.png",
+    "keyguard_lightning_particle.png", "keyguard_lightning_long.png",
+    "keyguard_lightning_rainbow.png", "keyguard_lightning_hoverlight.png",
+    "keyguard_lightning_hexagon_blue.png", "keyguard_lightning_hexagon_orange.png",
+    "keyguard_lightning_hexagon_green.png"
 )
 foreach ($lensFlareVariantAsset in $lensFlareVariantAssets) {
     $lensFlareVariantPath = Join-Path $root "res\drawable-nodpi\$lensFlareVariantAsset"

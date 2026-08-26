@@ -51,7 +51,7 @@ public class LensFlareEffectView extends FrameLayout
     private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
     private static final float BASE_TAP_AREA_RADIUS_PX = 600f;
     private static final float BASE_SCREEN_WIDTH_PX = 1080f;
-    private static final int TAP_HEXAGON_TOTAL = 5;
+    private static final int TAP_HEXAGON_TOTAL = 7;
     private static final int DRAG_HEXAGON_TOTAL = 6;
     private static final String ADDITIVE_COMPOSITE_SHADER =
             "uniform shader flare;"
@@ -101,6 +101,7 @@ public class LensFlareEffectView extends FrameLayout
     private final float fingerYOffsetPx;
     private final float maxAlphaDistancePx;
     private final float tapAreaRadiusPx;
+    private final float modeAssetScale;
     private final SoundPool soundPool;
     private final int tapSound;
     private final int unlockSound;
@@ -153,6 +154,7 @@ public class LensFlareEffectView extends FrameLayout
 
         String mode = OverlayPrefs.lensFlareMode(context);
         String assetPrefix = OverlayPrefs.lensFlareAssetPrefix(context);
+        modeAssetScale = LensFlareScene.assetScaleForMode(mode);
         flareLight = loadDrawable(assetPrefix + "light_00040");
         flareRing = loadDrawable(assetPrefix + "ring");
         flareParticle = loadDrawable(assetPrefix + "particle");
@@ -645,7 +647,7 @@ public class LensFlareEffectView extends FrameLayout
             float distance = random.nextFloat() * tapAreaRadiusPx;
             float dx = (float) Math.cos(angle) * distance;
             float dy = (float) Math.sin(angle) * distance;
-            float scale = 0.2f + random.nextFloat() * 0.8f;
+            float scale = 0.3f + random.nextFloat() * 0.8f;
             Bitmap bitmap = tapHexagons[i % tapHexagons.length];
             animationHexagons[i] = new TapHexagon(
                     dx,
@@ -694,7 +696,7 @@ public class LensFlareEffectView extends FrameLayout
             float distance = startDistance + i * distanceGap
                     + (random.nextFloat() - 0.5f) * 0.4f;
             dragHexagonDistance[i] = distance;
-            dragHexagonScale[i] = dragHexagonDistance[i] + 0.1f;
+            dragHexagonScale[i] = dragHexagonDistance[i] + 0.2f;
         }
         for (int i = DRAG_HEXAGON_TOTAL - 1; i > 0; i--) {
             int swapIndex = random.nextInt(i + 1);
@@ -760,6 +762,7 @@ public class LensFlareEffectView extends FrameLayout
         }
         return Math.max(bitmap.getWidth(), bitmap.getHeight())
                 * DEFAULT_IN_SAMPLE_SIZE
+                * modeAssetScale
                 * Math.max(0f, scale);
     }
 

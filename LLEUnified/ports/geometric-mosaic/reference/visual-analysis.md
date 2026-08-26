@@ -22,6 +22,15 @@ Scope: original/legacy visual references only. This document does not treat the 
 5. **Installed ARM32 LLE renderer on S23**
    The native renderer loaded successfully at 1440 x 3088 (`libsecveGeometricMosaic.so`, effect 8, no crash). A timed `screencap` attempt was invalid for visual comparison: the first varying frames captured the AOD-to-lockscreen brightness transition, while the following set was black/unchanged because the device returned to doze/protected composition. These frames must not be used as visual ground truth. Accessibility was restored byte-for-byte to Bitwarden + `com.codex.lle.arm64dev` (`Ordinal ExactMatch=True`).
 
+### Device-family attribution
+
+Current attribution is **Galaxy A5-era, medium confidence**, not proven origin.
+The A5-labelled reproduction and product-era evidence support that name, while
+the original native implementation recovered for this port came from a Note 4
+firmware and confirms availability there. Until an A5 firmware containing the
+same Samsung class/native library is inspected, UI naming must not be treated as
+proof that the A5 was the first shipping device.
+
 ## Static composition: reliable observations
 
 ### Local interaction footprint

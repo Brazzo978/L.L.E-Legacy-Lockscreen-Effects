@@ -660,6 +660,13 @@ public class TouchBoxSetupActivity extends Activity {
             return dedicated;
         }
         int effect = OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.usesLgPreLockUnderlay(effect)) {
+            LgLastScreenCache.Target lastScreen = LgLastScreenCache.activeTarget(this);
+            if (FoldDisplayTarget.normalizeProfile(profile).equals(lastScreen.profile)
+                    && LgLastScreenCache.isReady(lastScreen)) {
+                return lastScreen.file;
+            }
+        }
         if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
             File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
             if (imported != null && imported.exists() && imported.length() > 0L) {

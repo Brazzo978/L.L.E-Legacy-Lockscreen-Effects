@@ -32,6 +32,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Display;
+import android.view.Choreographer;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -76,6 +77,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             "com.codex.lle.DEBUG_CAPTURE_GEOMETRIC_HINT";
     private static final String ACTION_DEBUG_CAPTURE_ABSTRACT_TILES =
             "com.codex.lle.DEBUG_CAPTURE_ABSTRACT_TILES";
+    private static final String TESTER_UNDERLAY_PROBE_FILE =
+            "tester_lg_underlay_probe.argb8888";
+    private static final String TESTER_UNDERLAY_PROBE_STATUS =
+            "tester_lg_underlay_probe_status";
     static final String ACTION_EFFECT_BACKGROUND_REFRESH =
             "com.codex.lle.EFFECT_BACKGROUND_REFRESH";
     private static final int UNLOCK_TRIGGER_DISTANCE_DP = 120;
@@ -96,10 +101,17 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_ABSTRACT_TILES_TAIL_MS = 925L;
     private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS = 930L;
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS = 600L;
-    private static final long PIN_ENTRY_DELAY_S5_NONE_TAIL_MS = 375L;
+    private static final long PIN_ENTRY_DELAY_S3_NONE_TAIL_MS = 375L;
     private static final long PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS = 440L;
     private static final long PIN_ENTRY_DELAY_LG_G2_PARTICLE_TAIL_MS = 440L;
     private static final long PIN_ENTRY_DELAY_LG_G2_CRYSTAL_TAIL_MS = 500L;
+    private static final long PIN_ENTRY_DELAY_LG_G1_WHITE_HOLE_TAIL_MS =
+            LgWhiteHoleEffectView.COMPLETE_MS;
+    private static final long PIN_ENTRY_DELAY_LG_SODA_TAIL_MS = LgSodaEffectView.COMPLETE_MS;
+    private static final long PIN_ENTRY_DELAY_LG_G1_DEWDROP_TAIL_MS =
+            LgDewdropEffectView.COMPLETE_MS;
+    // The shared swipe stage adds 60 ms, matching the donor's 500 ms unlock clock.
+    private static final long PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS = 440L;
     private static final long PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS = 340L;
     private static final long PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS = 660L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
@@ -132,6 +144,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long BOOT_SAFETY_WINDOW_MS = 120_000L;
     private static final long UNLOCK_AFFORDANCE_DELAY_MS = 500L;
     private static final long ACTIVE_EFFECT_PROFILE_SAMPLE_DELAY_MS = 220L;
+    private static final long TESTER_UNDERLAY_PROBE_ARM_WINDOW_MS = 30_000L;
+    private static final long TESTER_UNDERLAY_PROBE_POLL_MS = 250L;
     private static final long DEBUG_LOOP_STEP_DELAY_MS = 120L;
     private static final long DEBUG_LOOP_RESTART_DELAY_MS = 620L;
     private static final long SCREEN_ON_REFRESH_FAST_MS = 35L;
@@ -615,6 +629,12 @@ public class ChargingAccessibilityService extends AccessibilityService
             scheduleCandidateWakeRefreshes("display_changed");
         }
     };
+    private final Runnable testerUnderlayProbeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            runTesterUnderlayProbe();
+        }
+    };
     private final Runnable unlockEffectBenchmarkStepRunnable = new Runnable() {
         @Override
         public void run() {
@@ -753,6 +773,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private long pinEntryHandoffSwipeQueuedAt;
     private long pinEntryHandoffTouchRemovalElapsedMs = -1L;
     private long pinEntryHandoffWindowAlphaElapsedMs = -1L;
+    private long testerUnderlayProbeDeadlineAt;
+    private boolean testerUnderlayProbeSawLockedScreen;
+    private int testerUnderlayProbeLastWindowCount = -1;
+    private int testerUnderlayProbeLastCandidateCount = -1;
     private int pinEntryHandoffTouchWindowsBefore = -1;
     private int pinEntryHandoffTouchWindowsAfter = -1;
     private int unlockEffectBackgroundEffect = -1;
@@ -770,6 +794,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean unlockEffectRendererNeedsRecreate;
     private String unlockEffectRendererRecreateReason = "";
     private boolean colorScreenshotInFlight;
+    private boolean lgPreLockUnderlayCaptureInFlight;
+    private int lgPreLockUnderlayCaptureGeneration;
     private boolean colorScreenshotAttemptedThisSession;
     private boolean unlockEffectBackgroundCaptureSucceededThisSession;
     private boolean skipCachedEffectBackgroundLoad;
@@ -791,6 +817,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int blockedSurfaceScanInFlightRequestId;
     private int notificationShadeClearSuccessCount;
     private int inputSafetyGeneration;
+    private int testerUnderlayProbeGeneration;
     private int scheduledPinEntrySafetyGeneration;
     private int queuedPinSwipeSafetyGeneration;
     private int pinEntryHandoffGeneration;
@@ -877,6 +904,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 refreshChargingState();
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                if (!captureLgPreLockUnderlayIfNeeded()) {
+                    captureTesterPreLockFrame();
+                }
                 cancelUnlockAffordanceDispatch(false, "screen_off");
                 clearGlobalActionsSuppression("screen_off", false);
                 clearActiveRuntimeBlock("screen_off");
@@ -964,6 +994,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                         + " interactive=" + (powerManager == null || powerManager.isInteractive())
                         + " locked=" + isLockscreenLocked(false)
                         + " sinceScreenOffMs=" + elapsedSinceScreenOff());
+                if (BuildFlavor.TESTER
+                        && testerUnderlayProbeDeadlineAt > SystemClock.uptimeMillis()) {
+                    handler.removeCallbacks(testerUnderlayProbeRunnable);
+                    handler.post(testerUnderlayProbeRunnable);
+                }
                 unlockAffordancePending = true;
                 boolean backgroundCaptureOwnsWake =
                         shouldSuppressWakeSurfacesForBackgroundCapture();
@@ -1020,10 +1055,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (ACTION_DEBUG_SET_LENS_FLARE_GLES_RENDERER.equals(intent.getAction())) {
                 boolean enabled = intent.getBooleanExtra("enabled", false);
                 OverlayPrefs.get(ChargingAccessibilityService.this).edit()
-                        .putBoolean(OverlayPrefs.LENS_FLARE_GLES_RENDERER, enabled)
+                        .putBoolean(OverlayPrefs.LENS_FLARE_GLES_RENDERER, false)
                         .apply();
-                Log.i(TAG, "debug Lens Flare renderer A/B requested="
-                        + (enabled ? "gles" : "canvas"));
+                Log.w(TAG, "ignored retired Lens Flare GLES request enabled=" + enabled
+                        + "; Canvas/HWUI is mandatory");
             } else if (ACTION_DEBUG_SET_LENS_FLARE_MODE.equals(intent.getAction())) {
                 String requested = OverlayPrefs.normalizeLensFlareMode(
                         intent.getStringExtra("mode"));
@@ -1581,8 +1616,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         snapshot.append("effect_lens_flare_mode=")
                 .append(OverlayPrefs.lensFlareMode(service)).append('\n');
         snapshot.append("effect_lens_flare_renderer=")
-                .append(OverlayPrefs.lensFlareGlesRendererEnabled(service)
-                        ? "gles" : "canvas").append('\n');
+                .append("canvas").append('\n');
         snapshot.append("effect_gesture_active=")
                 .append(service.unlockEffectGestureActive).append('\n');
         snapshot.append("effect_window_not_touchable=")
@@ -1740,6 +1774,489 @@ public class ChargingAccessibilityService extends AccessibilityService
         return snapshot.toString();
     }
 
+    static boolean scheduleTesterUnderlayProbe(long delayMs) {
+        ChargingAccessibilityService service = activeService;
+        if (!BuildFlavor.TESTER
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                || service == null || !service.serviceAlive) {
+            return false;
+        }
+        service.testerUnderlayProbeGeneration++;
+        service.testerUnderlayProbeDeadlineAt = SystemClock.uptimeMillis()
+                + TESTER_UNDERLAY_PROBE_ARM_WINDOW_MS;
+        service.testerUnderlayProbeSawLockedScreen = false;
+        service.testerUnderlayProbeLastWindowCount = -1;
+        service.testerUnderlayProbeLastCandidateCount = -1;
+        service.handler.removeCallbacks(service.testerUnderlayProbeRunnable);
+        File previous = testerUnderlayProbeFile(service);
+        if (previous.exists() && !previous.delete()) {
+            Log.d(TAG, "tester underlay probe could not clear previous private result");
+        }
+        service.setTesterUnderlayProbeStatus(
+                "armed for 30 seconds | waiting for an awake lockscreen");
+        Log.i(TAG, "tester underlay probe armed windowMs="
+                + TESTER_UNDERLAY_PROBE_ARM_WINDOW_MS);
+        service.handler.postDelayed(service.testerUnderlayProbeRunnable,
+                Math.min(250L, Math.max(0L, delayMs)));
+        return true;
+    }
+
+    static File testerUnderlayProbeFile(Context context) {
+        return new File(context.getFilesDir(), TESTER_UNDERLAY_PROBE_FILE);
+    }
+
+    static void reloadLgLastScreenCache() {
+        final ChargingAccessibilityService service = activeService;
+        if (service == null || !service.serviceAlive) {
+            return;
+        }
+        service.handler.post(new Runnable() {
+            @Override
+            public void run() {
+                int effect = OverlayPrefs.unlockEffect(service);
+                if (service.effectUsesLgPreLockUnderlay(effect)) {
+                    service.invalidateLoadedLgPreLockUnderlay(effect);
+                }
+            }
+        });
+    }
+
+    private boolean captureLgPreLockUnderlayIfNeeded() {
+        final int effect = OverlayPrefs.unlockEffect(this);
+        final long now = SystemClock.uptimeMillis();
+        if (!effectUsesLgPreLockUnderlay(effect)
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+                || lgPreLockUnderlayCaptureInFlight
+                || !interactiveSessionWasUnlocked) {
+            return false;
+        }
+        final int captureGeneration = ++lgPreLockUnderlayCaptureGeneration;
+        final int lifecycleGeneration = serviceLifecycleGeneration;
+        final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        final String captureProfile = FoldDisplayTarget.normalizeProfile(activeDisplayProfile);
+        final long requestedAt = SystemClock.uptimeMillis();
+        final boolean mirrorTesterProbe = BuildFlavor.TESTER
+                && testerUnderlayProbeDeadlineAt > now;
+        if (mirrorTesterProbe) {
+            testerUnderlayProbeDeadlineAt = 0L;
+            handler.removeCallbacks(testerUnderlayProbeRunnable);
+            setTesterUnderlayProbeStatus("capturing production pre-lock underlay");
+        }
+        lgPreLockUnderlayCaptureInFlight = true;
+        try {
+            takeScreenshot(captureDisplayId, mainExecutor, new TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(ScreenshotResult screenshotResult) {
+                    final Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
+                    if (bitmap == null) {
+                        finishLgPreLockUnderlayCapture(captureGeneration);
+                        if (mirrorTesterProbe) {
+                            setTesterUnderlayProbeStatus(
+                                    "pre-lock underlay capture returned an empty bitmap");
+                        }
+                        return;
+                    }
+                    if (!serviceAlive
+                            || lifecycleGeneration != serviceLifecycleGeneration
+                            || captureGeneration != lgPreLockUnderlayCaptureGeneration) {
+                        bitmap.recycle();
+                        finishLgPreLockUnderlayCapture(captureGeneration);
+                        return;
+                    }
+                    final int width = bitmap.getWidth();
+                    final int height = bitmap.getHeight();
+                    final long callbackMs = Math.max(0L,
+                            SystemClock.uptimeMillis() - requestedAt);
+                    try {
+                        ioExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                File target = OverlayPrefs.lgPreLockUnderlayFile(
+                                        ChargingAccessibilityService.this,
+                                        captureProfile, captureDisplayId, width, height);
+                                File temp = new File(
+                                        target.getParentFile(), target.getName() + ".tmp");
+                                boolean saved = Argb8888BitmapStore.write(temp, bitmap);
+                                if (saved) {
+                                    saved = swapEffectBackgroundCacheFile(temp, target);
+                                }
+                                boolean testerSaved = !mirrorTesterProbe
+                                        || Argb8888BitmapStore.write(
+                                                testerUnderlayProbeFile(
+                                                        ChargingAccessibilityService.this),
+                                                bitmap);
+                                bitmap.recycle();
+                                if (!saved && temp.exists()) {
+                                    //noinspection ResultOfMethodCallIgnored
+                                    temp.delete();
+                                }
+                                final boolean committed = saved;
+                                final boolean probeCommitted = testerSaved;
+                                handler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        finishLgPreLockUnderlayCapture(captureGeneration);
+                                        if (!serviceAlive
+                                                || lifecycleGeneration
+                                                != serviceLifecycleGeneration
+                                                || !committed) {
+                                            if (mirrorTesterProbe) {
+                                                setTesterUnderlayProbeStatus(
+                                                        "pre-lock underlay private save failed");
+                                            }
+                                            return;
+                                        }
+                                        int generation = OverlayPrefs
+                                                .markLgPreLockUnderlayCaptured(
+                                                        ChargingAccessibilityService.this,
+                                                        captureProfile, captureDisplayId,
+                                                        width, height,
+                                                        System.currentTimeMillis());
+                                        invalidateLoadedLgPreLockUnderlay(effect);
+                                        if (mirrorTesterProbe) {
+                                            setTesterUnderlayProbeStatus(probeCommitted
+                                                    ? "ready | production pre-lock underlay "
+                                                            + width + " x " + height
+                                                            + " | callbackMs=" + callbackMs
+                                                            + " | generation=" + generation
+                                                    : "production underlay saved; tester mirror failed");
+                                        }
+                                        Log.i(TAG, "LG pre-lock underlay ready dimensions="
+                                                + width + "x" + height
+                                                + " displayId=" + captureDisplayId
+                                                + " profile=" + captureProfile
+                                                + " generation=" + generation
+                                                + " callbackMs=" + callbackMs);
+                                    }
+                                });
+                            }
+                        });
+                    } catch (RejectedExecutionException e) {
+                        bitmap.recycle();
+                        finishLgPreLockUnderlayCapture(captureGeneration);
+                        if (mirrorTesterProbe) {
+                            setTesterUnderlayProbeStatus(
+                                    "pre-lock underlay save executor unavailable");
+                        }
+                    }
+                }
+
+                @Override
+                public void onFailure(int errorCode) {
+                    finishLgPreLockUnderlayCapture(captureGeneration);
+                    long callbackMs = Math.max(0L,
+                            SystemClock.uptimeMillis() - requestedAt);
+                    if (mirrorTesterProbe) {
+                        setTesterUnderlayProbeStatus("pre-lock underlay capture failed | code="
+                                + errorCode + " | callbackMs=" + callbackMs);
+                    }
+                    Log.i(TAG, "LG pre-lock underlay failed code=" + errorCode
+                            + " callbackMs=" + callbackMs);
+                }
+            });
+            return true;
+        } catch (Throwable t) {
+            finishLgPreLockUnderlayCapture(captureGeneration);
+            if (mirrorTesterProbe) {
+                setTesterUnderlayProbeStatus("pre-lock underlay capture request failed");
+            }
+            Log.i(TAG, "LG pre-lock underlay request failed");
+            return false;
+        }
+    }
+
+    private void finishLgPreLockUnderlayCapture(int generation) {
+        if (generation == lgPreLockUnderlayCaptureGeneration) {
+            lgPreLockUnderlayCaptureInFlight = false;
+        }
+    }
+
+    private void invalidateLoadedLgPreLockUnderlay(int effect) {
+        if (unlockEffectRendererType != effect
+                || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
+            return;
+        }
+        ((BackgroundSourceRenderer) unlockEffectRenderer).clearBackgroundSourceBitmap();
+        if (unlockEffectBackgroundEffect == effect) {
+            unlockEffectBackgroundEffect = -1;
+            unlockEffectBackgroundCapturedAt = 0L;
+        }
+        // The file has already been atomically committed when this method runs. Reload it now;
+        // otherwise the parked renderer keeps an empty texture until it is recreated, and the
+        // next full lock cycle can neither draw nor leave the readiness gesture buffer.
+        loadCachedUnlockEffectBackgroundSourceIfNeeded(effect);
+    }
+
+    private void captureTesterPreLockFrame() {
+        if (!BuildFlavor.TESTER
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+                || testerUnderlayProbeDeadlineAt <= SystemClock.uptimeMillis()) {
+            return;
+        }
+        testerUnderlayProbeDeadlineAt = 0L;
+        handler.removeCallbacks(testerUnderlayProbeRunnable);
+        final int probeGeneration = testerUnderlayProbeGeneration;
+        final int lifecycleGeneration = serviceLifecycleGeneration;
+        final long requestedAt = SystemClock.uptimeMillis();
+        setTesterUnderlayProbeStatus("capturing display at screen-off transition");
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, new TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(ScreenshotResult screenshotResult) {
+                    final Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
+                    if (bitmap == null) {
+                        setTesterUnderlayProbeStatus(
+                                "screen-off display capture returned an empty bitmap");
+                        return;
+                    }
+                    if (!serviceAlive
+                            || lifecycleGeneration != serviceLifecycleGeneration
+                            || probeGeneration != testerUnderlayProbeGeneration) {
+                        bitmap.recycle();
+                        return;
+                    }
+                    final long callbackMs = Math.max(0L,
+                            SystemClock.uptimeMillis() - requestedAt);
+                    try {
+                        ioExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                boolean saved = Argb8888BitmapStore.write(
+                                        testerUnderlayProbeFile(
+                                                ChargingAccessibilityService.this), bitmap);
+                                int width = bitmap.getWidth();
+                                int height = bitmap.getHeight();
+                                bitmap.recycle();
+                                if (!serviceAlive
+                                        || lifecycleGeneration != serviceLifecycleGeneration
+                                        || probeGeneration != testerUnderlayProbeGeneration) {
+                                    return;
+                                }
+                                setTesterUnderlayProbeStatus(saved
+                                        ? "ready | screen-off display " + width + " x " + height
+                                                + " | callbackMs=" + callbackMs
+                                        : "screen-off private ARGB8888 save failed");
+                                Log.i(TAG, saved
+                                        ? "tester pre-lock display probe ready dimensions="
+                                                + width + "x" + height
+                                                + " callbackMs=" + callbackMs
+                                        : "tester pre-lock display probe private save failed");
+                            }
+                        });
+                    } catch (RejectedExecutionException e) {
+                        bitmap.recycle();
+                        setTesterUnderlayProbeStatus(
+                                "screen-off private save executor unavailable");
+                    }
+                }
+
+                @Override
+                public void onFailure(int errorCode) {
+                    if (serviceAlive
+                            && lifecycleGeneration == serviceLifecycleGeneration
+                            && probeGeneration == testerUnderlayProbeGeneration) {
+                        long callbackMs = Math.max(0L,
+                                SystemClock.uptimeMillis() - requestedAt);
+                        setTesterUnderlayProbeStatus("screen-off display capture failed | code="
+                                + errorCode + " | callbackMs=" + callbackMs);
+                        Log.i(TAG, "tester pre-lock display probe failed code="
+                                + errorCode + " callbackMs=" + callbackMs);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            setTesterUnderlayProbeStatus("screen-off display capture request failed");
+            Log.i(TAG, "tester pre-lock display probe request failed");
+        }
+    }
+
+    static String testerUnderlayProbeStatus(Context context) {
+        return OverlayPrefs.get(context).getString(
+                TESTER_UNDERLAY_PROBE_STATUS, "not run yet");
+    }
+
+    private void setTesterUnderlayProbeStatus(String status) {
+        OverlayPrefs.get(this).edit()
+                .putString(TESTER_UNDERLAY_PROBE_STATUS,
+                        status == null ? "unknown" : status)
+                .apply();
+    }
+
+    private void runTesterUnderlayProbe() {
+        if (!BuildFlavor.TESTER
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                || !serviceAlive) {
+            setTesterUnderlayProbeStatus("unsupported or service unavailable");
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (now >= testerUnderlayProbeDeadlineAt) {
+            if (testerUnderlayProbeSawLockedScreen) {
+                setTesterUnderlayProbeStatus(
+                        "timed out | locked screen seen; no eligible application window"
+                                + " | windows=" + testerUnderlayProbeLastWindowCount
+                                + " | candidates=" + testerUnderlayProbeLastCandidateCount);
+                Log.i(TAG, "tester underlay probe timed out without application window"
+                        + " windows=" + testerUnderlayProbeLastWindowCount
+                        + " candidates=" + testerUnderlayProbeLastCandidateCount);
+            } else {
+                setTesterUnderlayProbeStatus(
+                        "timed out | no locked screen appeared within 30 seconds");
+                Log.i(TAG, "tester underlay probe timed out before locked screen");
+            }
+            return;
+        }
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (!isLockscreenLocked(false)) {
+            setTesterUnderlayProbeStatus(
+                    "armed | waiting for keyguard locked | interactive=" + interactive);
+            handler.postDelayed(testerUnderlayProbeRunnable,
+                    TESTER_UNDERLAY_PROBE_POLL_MS);
+            return;
+        }
+        testerUnderlayProbeSawLockedScreen = true;
+
+        List<AccessibilityWindowInfo> windows;
+        try {
+            windows = getWindows();
+        } catch (Throwable t) {
+            setTesterUnderlayProbeStatus("window enumeration failed");
+            return;
+        }
+        int totalWindows = windows == null ? 0 : windows.size();
+        testerUnderlayProbeLastWindowCount = totalWindows;
+        AccessibilityWindowInfo chosen = null;
+        int candidates = 0;
+        if (windows != null) {
+            for (AccessibilityWindowInfo window : windows) {
+                if (window == null
+                        || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
+                    continue;
+                }
+                AccessibilityNodeInfo root = null;
+                CharSequence packageName = null;
+                try {
+                    root = window.getRoot();
+                    packageName = root == null ? null : root.getPackageName();
+                } catch (Throwable ignored) {
+                    // An inaccessible window is not a usable screenshot candidate.
+                } finally {
+                    if (root != null) {
+                        try {
+                            root.recycle();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+                if (packageName == null) {
+                    continue;
+                }
+                String packageToken = packageName.toString();
+                if (getPackageName().equals(packageToken)
+                        || "com.android.systemui".equals(packageToken)) {
+                    continue;
+                }
+                candidates++;
+                if (chosen == null || window.getLayer() > chosen.getLayer()) {
+                    chosen = window;
+                }
+            }
+        }
+        testerUnderlayProbeLastCandidateCount = candidates;
+        if (chosen == null) {
+            setTesterUnderlayProbeStatus("locked screen found; waiting for app window"
+                    + " | interactive=" + interactive
+                    + " | windows=" + totalWindows + " | candidates=" + candidates);
+            handler.postDelayed(testerUnderlayProbeRunnable,
+                    TESTER_UNDERLAY_PROBE_POLL_MS);
+            return;
+        }
+
+        testerUnderlayProbeDeadlineAt = 0L;
+
+        final int probeGeneration = testerUnderlayProbeGeneration;
+        final int lifecycleGeneration = serviceLifecycleGeneration;
+        final int windowId = chosen.getId();
+        final int layer = chosen.getLayer();
+        final boolean active = chosen.isActive();
+        final boolean focused = chosen.isFocused();
+        final int windowCount = totalWindows;
+        final int candidateCount = candidates;
+        setTesterUnderlayProbeStatus("capturing application window | windows="
+                + windowCount + " | candidates=" + candidateCount);
+        try {
+            takeScreenshotOfWindow(windowId, mainExecutor, new TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(ScreenshotResult screenshotResult) {
+                    final Bitmap bitmap = bitmapFromScreenshot(screenshotResult);
+                    if (bitmap == null) {
+                        setTesterUnderlayProbeStatus("capture returned an empty bitmap");
+                        return;
+                    }
+                    if (!serviceAlive
+                            || lifecycleGeneration != serviceLifecycleGeneration
+                            || probeGeneration != testerUnderlayProbeGeneration) {
+                        bitmap.recycle();
+                        return;
+                    }
+                    setTesterUnderlayProbeStatus("saving private ARGB8888 result");
+                    try {
+                        ioExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                boolean saved = Argb8888BitmapStore.write(
+                                        testerUnderlayProbeFile(
+                                                ChargingAccessibilityService.this), bitmap);
+                                int width = bitmap.getWidth();
+                                int height = bitmap.getHeight();
+                                bitmap.recycle();
+                                if (!serviceAlive
+                                        || lifecycleGeneration != serviceLifecycleGeneration
+                                        || probeGeneration != testerUnderlayProbeGeneration) {
+                                    return;
+                                }
+                                String status = saved
+                                        ? "ready | source window " + width + " x " + height
+                                                + " | layer=" + layer
+                                                + " | active=" + active
+                                                + " | focused=" + focused
+                                                + " | windows=" + windowCount
+                                                + " | candidates=" + candidateCount
+                                        : "private ARGB8888 save failed";
+                                setTesterUnderlayProbeStatus(status);
+                                Log.i(TAG, saved
+                                        ? "tester underlay probe ready dimensions="
+                                                + width + "x" + height
+                                                + " windows=" + windowCount
+                                                + " candidates=" + candidateCount
+                                        : "tester underlay probe private save failed");
+                            }
+                        });
+                    } catch (RejectedExecutionException e) {
+                        bitmap.recycle();
+                        setTesterUnderlayProbeStatus("private save executor unavailable");
+                    }
+                }
+
+                @Override
+                public void onFailure(int errorCode) {
+                    if (serviceAlive
+                            && lifecycleGeneration == serviceLifecycleGeneration
+                            && probeGeneration == testerUnderlayProbeGeneration) {
+                        setTesterUnderlayProbeStatus("window screenshot failed | code="
+                                + errorCode + " | candidates=" + candidateCount);
+                        Log.i(TAG, "tester underlay probe screenshot failed code="
+                                + errorCode + " candidates=" + candidateCount);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            setTesterUnderlayProbeStatus("window screenshot request failed");
+            Log.i(TAG, "tester underlay probe request failed");
+        }
+    }
+
     private static long ageSince(long timestamp) {
         return timestamp <= 0L ? -1L : Math.max(0L, SystemClock.uptimeMillis() - timestamp);
     }
@@ -1843,26 +2360,27 @@ public class ChargingAccessibilityService extends AccessibilityService
             applyRippleInkPalettePreference();
             return;
         }
-        if (OverlayPrefs.LENS_FLARE_GLES_RENDERER.equals(key)
-                || OverlayPrefs.LENS_FLARE_MODE.equals(key)) {
+        if (OverlayPrefs.LENS_FLARE_GLES_RENDERER.equals(key)) {
+            boolean staleEnabled = OverlayPrefs.get(this).getBoolean(key, false);
+            if (staleEnabled) {
+                OverlayPrefs.get(this).edit().putBoolean(key, false).apply();
+            }
+            Log.w(TAG, "ignored retired Lens Flare GLES preference enabled=" + staleEnabled
+                    + "; Canvas/HWUI remains active");
+            return;
+        }
+        if (OverlayPrefs.LENS_FLARE_MODE.equals(key)) {
             if (OverlayPrefs.unlockEffect(this) != OverlayPrefs.EFFECT_S4_LENS_FLARE) {
                 return;
             }
-            boolean rendererChanged = OverlayPrefs.LENS_FLARE_GLES_RENDERER.equals(key);
-            String reason = rendererChanged
-                    ? "prefs:lens_flare_renderer_ab" : "prefs:lens_flare_mode";
+            String reason = "prefs:lens_flare_mode";
             cancelUnlockAffordanceDispatch(false, reason);
-            if (rendererChanged) {
-                clearCachedUnlockEffectBackgroundBitmap();
-            }
             if (unlockEffectRenderer != null) {
                 destroyUnlockEffectOverlay();
             }
             preloadAndAttachSelectedUnlockEffectParked(reason);
             evaluateVisibility(reason, false);
-            Log.i(TAG, "Lens Flare renderer A/B="
-                    + (OverlayPrefs.lensFlareGlesRendererEnabled(this) ? "gles" : "canvas")
-                    + " mode=" + OverlayPrefs.lensFlareMode(this));
+            Log.i(TAG, "Lens Flare Canvas mode=" + OverlayPrefs.lensFlareMode(this));
             return;
         }
         if (OverlayPrefs.isExperimentalNativeRefreshPhysicsPreferenceKey(key)) {
@@ -2488,27 +3006,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean isKnownUnlockEffect(int effect) {
-        return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
-                || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
-                || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
-                || effect == OverlayPrefs.EFFECT_S5_POPPING_COLOURS
-                || effect == OverlayPrefs.EFFECT_WATERCOLOUR
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
-                || effect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO
-                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES
-                || effect == OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP
-                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET
-                || effect == OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED
-                || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
-                || effect == OverlayPrefs.EFFECT_TABS_BLIND
-                || effect == OverlayPrefs.EFFECT_STONE_SKIPPING
-                || effect == OverlayPrefs.EFFECT_MASS_TENSION
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT
-                || OverlayPrefs.isSeasonalUnlockEffect(effect);
+        // Keep tester/debug selection aligned with the actual flavor/ABI availability table.
+        return EffectAvailability.isAvailable(effect);
     }
 
     private static final class EffectProfileResult {
@@ -3998,14 +4497,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         long constructStartedAt = SystemClock.uptimeMillis();
         try {
             if (effect == OverlayPrefs.EFFECT_S4_LENS_FLARE) {
-                String lensMode = OverlayPrefs.lensFlareMode(this);
-                boolean lightning = OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(lensMode);
-                unlockEffectRenderer = lightning
-                        ? new LensFlareGlesEffectView(
-                                rendererContext(), LensFlareGlesEffectView.MODE_LIGHTNING)
-                        : OverlayPrefs.lensFlareGlesRendererEnabled(this)
-                                ? new LensFlareGlesEffectView(rendererContext())
-                                : new LensFlareEffectView(rendererContext());
+                unlockEffectRenderer = new LensFlareEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE) {
                 if (EffectAvailability.is64BitProcess()) {
                     S3Arm64RippleEffectView renderer =
@@ -4098,7 +4590,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new StoneSkippingEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_MASS_TENSION) {
                 unlockEffectRenderer = new MassTensionEffectView(rendererContext());
-            } else if (effect == OverlayPrefs.EFFECT_S5_NONE) {
+            } else if (effect == OverlayPrefs.EFFECT_S3_NONE) {
                 unlockEffectRenderer = new NoneCircleUnlockEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS) {
                 unlockEffectRenderer = new XperiaBlindsEffectView(rendererContext());
@@ -4118,6 +4610,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                         OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect));
             } else if (effect == OverlayPrefs.EFFECT_REVOLVING_GLASS) {
                 unlockEffectRenderer = new RevolvingGlassEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE) {
+                unlockEffectRenderer = new LgWhiteHoleEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_SODA) {
+                unlockEffectRenderer = new LgSodaEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G1_DEWDROP) {
+                unlockEffectRenderer = new LgDewdropEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
+                unlockEffectRenderer = new LgLightParticleEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
                 unlockEffectRenderer = new RippleInkPortEffectView(
                         rendererContext(),
@@ -4678,6 +5178,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         int effect = OverlayPrefs.unlockEffect(this);
+        if (effectUsesLgPreLockUnderlay(effect)
+                && !OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
+            loadCachedUnlockEffectBackgroundSourceIfNeeded(effect);
+            return;
+        }
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
             if (OverlayPrefs.effectBackgroundWakeCaptureActive(this)) {
                 completeForcedEffectBackgroundRefresh("imported_source_active");
@@ -4691,7 +5196,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         boolean hasBackground = hasUnlockEffectBackgroundSource(effect);
-        if (unlockEffectBackgroundCaptureSucceededThisSession && hasBackground) {
+        boolean lgSharedCacheRequest = effectUsesLgPreLockUnderlay(effect)
+                && OverlayPrefs.effectBackgroundWakeCaptureActive(this);
+        if (unlockEffectBackgroundCaptureSucceededThisSession && hasBackground
+                && !lgSharedCacheRequest) {
             return;
         }
         boolean shouldRefresh = shouldRefreshUnlockEffectBackground(effect, hasBackground, reason);
@@ -4818,7 +5326,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                         showPendingUnlockAffordance("background_rejected:" + reason);
                         return;
                     }
-                    applyUnlockEffectBackgroundSource(bitmap, "accessibility_screenshot");
+                    boolean lgSharedCacheOnly = effectUsesLgPreLockUnderlay(captureEffect);
+                    if (!lgSharedCacheOnly) {
+                        applyUnlockEffectBackgroundSource(bitmap, "accessibility_screenshot");
+                    }
                     persistEffectBackgroundScreenshotAsync(
                             bitmap, captureGeneration, captureEffect, captureProfile);
                     unlockEffectBackgroundCapturedAt = now;
@@ -4826,7 +5337,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                     unlockEffectBackgroundNextAttemptAt = 0L;
                     unlockEffectBackgroundCaptureSucceededThisSession = true;
                     skipCachedEffectBackgroundLoad = false;
-                    Log.i(TAG, "unlock effect background screenshot applied reason=" + reason
+                    Log.i(TAG, "unlock effect background screenshot "
+                            + (lgSharedCacheOnly ? "saved for shared fallback" : "applied")
+                            + " reason=" + reason
                             + " size=" + bitmap.getWidth() + "x" + bitmap.getHeight()
                             + " displayState=" + displayStateName(currentDisplayState())
                             + " displayId=" + captureDisplayId
@@ -4892,6 +5405,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return false;
         }
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            // LG renderers consume Last screen, but an explicit request still maintains the
+            // independent lockscreen cache used when the user switches to another effect.
+            return OverlayPrefs.effectBackgroundWakeCaptureActive(this);
+        }
         return shouldRefreshUnlockEffectBackground(
                 effect, hasUnlockEffectBackgroundSource(effect), reason);
     }
@@ -4936,6 +5454,9 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean shouldRefreshUnlockEffectBackground(int effect, boolean hasBackground,
             String reason) {
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            return OverlayPrefs.effectBackgroundWakeCaptureActive(this);
+        }
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return false;
         }
@@ -4977,8 +5498,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean canCaptureUnlockEffectBackground() {
-        if (usesImportedEffectBackground(
-                OverlayPrefs.unlockEffect(this), activeDisplayProfile)) {
+        int effect = OverlayPrefs.unlockEffect(this);
+        if ((effectUsesLgPreLockUnderlay(effect)
+                && !OverlayPrefs.effectBackgroundWakeCaptureActive(this))
+                || usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return false;
         }
         boolean interactive = powerManager == null || powerManager.isInteractive();
@@ -5169,7 +5692,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         int effect = OverlayPrefs.unlockEffect(this);
-        if (!effectUsesCachedScreenshotBackground(effect)) {
+        if (effectUsesLgPreLockUnderlay(effect)
+                || !effectUsesCachedScreenshotBackground(effect)) {
             cancelEffectBackgroundRefreshAlarm();
             return;
         }
@@ -5444,6 +5968,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean usesImportedEffectBackground(int effect, String profile) {
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            return false;
+        }
         if (!OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
             return false;
         }
@@ -5540,6 +6067,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
             return;
         }
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            loadLgPreLockUnderlaySource(effect, startedAt);
+            return;
+        }
         BackgroundSourceRenderer backgroundRenderer =
                 (BackgroundSourceRenderer) unlockEffectRenderer;
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
@@ -5621,6 +6152,61 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     }
 
+    private void loadLgPreLockUnderlaySource(int effect, long startedAt) {
+        BackgroundSourceRenderer backgroundRenderer =
+                (BackgroundSourceRenderer) unlockEffectRenderer;
+        if (unlockEffectBackgroundEffect == effect
+                && backgroundRenderer.hasBackgroundSourceBitmap()) {
+            return;
+        }
+        int width = activeDisplayWidth > 0
+                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
+        int height = activeDisplayHeight > 0
+                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
+        int displayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        File file = OverlayPrefs.lgPreLockUnderlayFile(
+                this, activeDisplayProfile, displayId, width, height);
+        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
+        if (info == null || info.width != width || info.height != height) {
+            return;
+        }
+        if (applyRawArgb8888BackgroundSourceIfSupported(
+                file, effect, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE)) {
+            unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
+            unlockEffectBackgroundEffect = effect;
+            colorScreenshotAttemptedThisSession = true;
+            unlockEffectBackgroundCaptureSucceededThisSession = true;
+            skipCachedEffectBackgroundLoad = false;
+            Log.i(TAG, "LG pre-lock underlay mapped size=" + width + "x" + height
+                    + " effect=" + effect
+                    + " displayId=" + displayId
+                    + " profile=" + activeDisplayProfile
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
+            return;
+        }
+        Bitmap bitmap = Argb8888BitmapStore.decode(file);
+        if (bitmap == null || bitmap.isRecycled()) {
+            return;
+        }
+        try {
+            backgroundRenderer.setBackgroundSourceBitmap(
+                    bitmap, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE);
+            unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
+            unlockEffectBackgroundEffect = effect;
+            colorScreenshotAttemptedThisSession = true;
+            unlockEffectBackgroundCaptureSucceededThisSession = true;
+            skipCachedEffectBackgroundLoad = false;
+            Log.i(TAG, "LG pre-lock underlay loaded size=" + width + "x" + height
+                    + " effect=" + effect
+                    + " displayId=" + displayId
+                    + " profile=" + activeDisplayProfile
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
     private boolean applyRawArgb8888BackgroundSourceIfSupported(
             File file, int effect, String sourceName) {
         if (unlockEffectRendererType != effect
@@ -5635,6 +6221,18 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean hasUsableEffectBackgroundCache(int effect) {
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            int width = activeDisplayWidth > 0
+                    ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
+            int height = activeDisplayHeight > 0
+                    ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
+            int displayId = activeDisplayId == Display.INVALID_DISPLAY
+                    ? Display.DEFAULT_DISPLAY : activeDisplayId;
+            Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(
+                    OverlayPrefs.lgPreLockUnderlayFile(
+                            this, activeDisplayProfile, displayId, width, height));
+            return info != null && info.width == width && info.height == height;
+        }
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return ManualEffectBackground.isUsable(
                     OverlayPrefs.importedEffectBackgroundFile(
@@ -5959,6 +6557,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean effectUsesCachedScreenshotBackground(int effect) {
         return effectUsesScreenshotBackground(effect);
+    }
+
+    private boolean effectUsesLgPreLockUnderlay(int effect) {
+        return OverlayPrefs.usesLgPreLockUnderlay(effect);
     }
 
     private boolean hasUnlockEffectBackgroundSource(int effect) {
@@ -6347,6 +6949,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                                     capturedProfile,
                                     System.currentTimeMillis(),
                                     capturedRefreshToken);
+                            if (effectUsesLgPreLockUnderlay(effect)) {
+                                // This one-shot capture keeps the traditional lockscreen cache
+                                // ready for other effects. Never feed it into an LG renderer:
+                                // LG continues to use its independent Last screen source.
+                                copy.recycle();
+                                scheduleEffectBackgroundRefreshAlarm("shared_cache_saved_for_lg");
+                                return;
+                            }
                             if (generation != unlockEffectBackgroundGeneration
                                     || !capturedProfile.equals(activeDisplayProfile)) {
                                 copy.recycle();
@@ -6444,6 +7054,9 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean effectUsesScreenshotBackground(int effect) {
+        if (effectUsesLgPreLockUnderlay(effect)) {
+            return true;
+        }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
             return false;
         }
@@ -6955,6 +7568,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             ((SparklingBubblesAppOwnedEffectView) renderer).parkForReuse();
         } else if (renderer instanceof ColourDropletAppOwnedEffectView) {
             ((ColourDropletAppOwnedEffectView) renderer).parkForReuse();
+        } else if (renderer instanceof G2ParticleEffectView) {
+            ((G2ParticleEffectView) renderer).parkForReuse();
         } else if (renderer != null) {
             renderer.resetEffect();
         }
@@ -6975,6 +7590,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             ((SparklingBubblesAppOwnedEffectView) renderer).resumeForReuse();
         } else if (renderer instanceof ColourDropletAppOwnedEffectView) {
             ((ColourDropletAppOwnedEffectView) renderer).resumeForReuse();
+        } else if (renderer instanceof G2ParticleEffectView) {
+            ((G2ParticleEffectView) renderer).resumeForReuse();
         }
     }
 
@@ -7151,15 +7768,47 @@ public class ChargingAccessibilityService extends AccessibilityService
         long startedAt = SystemClock.uptimeMillis();
         boolean hadWindow = unlockEffectOverlayAttached
                 && unlockEffectView != null && unlockEffectWindowParams != null;
-        setUnlockEffectWindowAlpha(0f, true, reason);
+        boolean retainLgPreLockFrame = retainsLgPreLockFrameDuringHandoff();
+        float targetAlpha = retainLgPreLockFrame ? 1f : 0f;
+        if (retainLgPreLockFrame) {
+            // TYPE_ACCESSIBILITY_OVERLAY is trusted by InputDispatcher. Keep the dedicated
+            // visual window fully opaque and permanently outside hit testing; only the
+            // separate touch-listen windows are neutralized during the LG handoff.
+            int requiredFlags = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            boolean needsUpdate = hadWindow
+                    && (Math.abs(unlockEffectWindowParams.alpha - 1f) >= 0.001f
+                    || (unlockEffectWindowParams.flags & requiredFlags) != requiredFlags);
+            if (needsUpdate) {
+                float previousAlpha = unlockEffectWindowParams.alpha;
+                int previousFlags = unlockEffectWindowParams.flags;
+                unlockEffectWindowParams.alpha = 1f;
+                unlockEffectWindowParams.flags |= requiredFlags;
+                try {
+                    windowManager.updateViewLayout(unlockEffectView, unlockEffectWindowParams);
+                } catch (RuntimeException e) {
+                    unlockEffectWindowParams.alpha = previousAlpha;
+                    unlockEffectWindowParams.flags = previousFlags;
+                    Log.w(TAG, "LG visual overlay state update failed reason=" + reason, e);
+                }
+            }
+            unlockEffectWindowNeutralizedForHandoff = false;
+        } else {
+            setUnlockEffectWindowAlpha(targetAlpha, true, reason);
+        }
         pinEntryHandoffWindowAlphaElapsedMs = Math.max(
                 0L, SystemClock.uptimeMillis() - startedAt);
         if (!hadWindow) {
             pinEntryHandoffWindowAlphaResult = "no_effect_window";
-        } else if (unlockEffectWindowNeutralizedForHandoff
-                && unlockEffectWindowParams != null
-                && Math.abs(unlockEffectWindowParams.alpha) < 0.001f) {
-            pinEntryHandoffWindowAlphaResult = "request_accepted";
+        } else if (unlockEffectWindowParams != null
+                && Math.abs(unlockEffectWindowParams.alpha - targetAlpha) < 0.001f
+                && (!retainLgPreLockFrame || (unlockEffectWindowParams.flags
+                & (WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE))
+                == (WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE))) {
+            pinEntryHandoffWindowAlphaResult = retainLgPreLockFrame
+                    ? "lg_visual_opaque_not_touchable" : "request_accepted";
         } else {
             pinEntryHandoffWindowAlphaResult = "failed";
         }
@@ -7168,6 +7817,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " elapsedMs=" + pinEntryHandoffWindowAlphaElapsedMs
                 + " attached=" + unlockEffectOverlayAttached
                 + " type=" + unlockEffectRendererType);
+    }
+
+    private boolean retainsLgPreLockFrameDuringHandoff() {
+        // White Hole is the first recovered LG effect with this two-phase handoff.
+        // Future effects such as Soda can opt in here without changing Samsung effects.
+        return unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_SODA
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G1_DEWDROP
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PARTICLE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE;
     }
 
     private void restoreUnlockEffectWindowAfterHandoff(String reason) {
@@ -7282,6 +7941,49 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " result=" + (removalSucceeded ? "request_completed" : "exception")
                 + " elapsedMs=" + elapsedMs);
         return removalSucceeded;
+    }
+
+    /**
+     * First phase of the LG handoff: publish NOT_TOUCHABLE while the input windows are still
+     * attached. Removing them on the following frame gives WindowManager/InputDispatcher a
+     * safe intermediate state instead of racing removal directly against injected ACTION_DOWN.
+     */
+    private boolean neutralizeTouchDebugOverlayForLgHandoff(String reason) {
+        long startedAt = SystemClock.uptimeMillis();
+        int before = touchDebugWindowCount();
+        boolean succeeded = true;
+        pinEntryHandoffTouchWindowsBefore = before;
+        pinEntryHandoffTouchRemovalMode = "lg_neutralize_frame_remove_frame";
+        for (int i = 0; i < before; i++) {
+            TouchDebugView view = touchDebugViewAt(i);
+            WindowManager.LayoutParams params = touchDebugParamsAt(i);
+            if (view == null || params == null) {
+                continue;
+            }
+            int previousFlags = params.flags;
+            params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            try {
+                windowManager.updateViewLayout(view, params);
+            } catch (RuntimeException e) {
+                params.flags = previousFlags;
+                succeeded = false;
+                Log.w(TAG, "LG touch window neutralization failed index=" + i
+                        + " reason=" + reason, e);
+            }
+        }
+        touchDebugTouchable = false;
+        pinEntryHandoffTouchWindowsAfter = touchDebugWindowCount();
+        pinEntryHandoffTouchRemovalElapsedMs = Math.max(
+                0L, SystemClock.uptimeMillis() - startedAt);
+        pinEntryHandoffTouchRemovalResult = succeeded
+                ? "neutralized_pending_frame_removal" : "neutralize_exception";
+        Log.i(TAG, "LG pin entry touch windows neutralized"
+                + " before=" + before
+                + " attached=" + pinEntryHandoffTouchWindowsAfter
+                + " result=" + pinEntryHandoffTouchRemovalResult
+                + " elapsedMs=" + pinEntryHandoffTouchRemovalElapsedMs);
+        return succeeded;
     }
 
     private int touchDebugWindowCount() {
@@ -8348,8 +9050,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS;
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
                 return PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS;
-            case OverlayPrefs.EFFECT_S5_NONE:
-                return PIN_ENTRY_DELAY_S5_NONE_TAIL_MS;
+            case OverlayPrefs.EFFECT_S3_NONE:
+                return PIN_ENTRY_DELAY_S3_NONE_TAIL_MS;
             case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
                 return PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS;
             case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
@@ -8360,6 +9062,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS;
             case OverlayPrefs.EFFECT_REVOLVING_GLASS:
                 return PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                return PIN_ENTRY_DELAY_LG_G1_WHITE_HOLE_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return PIN_ENTRY_DELAY_LG_SODA_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                return PIN_ENTRY_DELAY_LG_G1_DEWDROP_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS;
             default:
                 return -1L;
         }
@@ -8396,6 +9106,18 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
 
         pinEntryRequested = true;
+        if (retainsLgPreLockFrameDuringHandoff()) {
+            if (!neutralizeTouchDebugOverlayForLgHandoff("pin_entry_requested")) {
+                recoverTouchPathAfterPinEntryHandoffFailure("touch_window_neutralize_exception");
+                return;
+            }
+            neutralizeUnlockEffectWindowForHandoff("pin_entry_requested");
+            pinEntryHandoffPreparedAt = SystemClock.uptimeMillis();
+            scheduleUnlockEffectCleanup();
+            queueLgPinEntrySwipeAfterInputSettle(pinEntryHandoffPreparedAt);
+            evaluateVisibility("pin_entry_requested");
+            return;
+        }
         if (!removeTouchDebugOverlayImmediatelyForHandoff("pin_entry_requested")) {
             recoverTouchPathAfterPinEntryHandoffFailure("touch_window_remove_exception");
             return;
@@ -8422,6 +9144,72 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " effectAlpha=" + pinEntryHandoffWindowAlphaResult
                 + " effectAlphaMs=" + pinEntryHandoffWindowAlphaElapsedMs);
         evaluateVisibility("pin_entry_requested");
+    }
+
+    private void queueLgPinEntrySwipeAfterInputSettle(final long handoffStartedAt) {
+        final int handoffGeneration = pinEntryHandoffGeneration;
+        final int safetyGeneration = inputSafetyGeneration;
+        handler.removeCallbacks(pinEntrySwipeRunnable);
+        Choreographer.getInstance().postFrameCallback(
+                new Choreographer.FrameCallback() {
+                    @Override
+                    public void doFrame(long frameTimeNanos) {
+                        if (!isLgHandoffGenerationCurrent(
+                                handoffGeneration, safetyGeneration)) {
+                            return;
+                        }
+                        long removeStartedAt = SystemClock.uptimeMillis();
+                        boolean removed = removeTouchDebugOverlayImmediatelyForHandoff(
+                                "lg_first_frame");
+                        pinEntryHandoffTouchWindowsAfter = touchDebugWindowCount();
+                        pinEntryHandoffTouchRemovalElapsedMs = Math.max(
+                                0L, SystemClock.uptimeMillis() - removeStartedAt);
+                        pinEntryHandoffTouchRemovalResult = removed
+                                ? "neutralized_then_removed" : "frame_remove_exception";
+                        if (!removed) {
+                            recoverTouchPathAfterPinEntryHandoffFailure(
+                                    "touch_window_frame_remove_exception");
+                            return;
+                        }
+                        Choreographer.getInstance().postFrameCallback(
+                                new Choreographer.FrameCallback() {
+                                    @Override
+                                    public void doFrame(long secondFrameTimeNanos) {
+                                        if (!isLgHandoffGenerationCurrent(
+                                                handoffGeneration, safetyGeneration)) {
+                                            return;
+                                        }
+                                        long elapsed = Math.max(0L,
+                                                SystemClock.uptimeMillis()
+                                                        - handoffStartedAt);
+                                        long remaining = Math.max(0L,
+                                                PIN_ENTRY_SWIPE_START_DELAY_MS - elapsed);
+                                        queuedPinSwipeSafetyGeneration = inputSafetyGeneration;
+                                        pinEntryHandoffSwipeQueuedAt =
+                                                SystemClock.uptimeMillis();
+                                        handler.postDelayed(pinEntrySwipeRunnable, remaining);
+                                        Log.i(TAG, "LG pin entry swipe queued after input settle"
+                                                + " remainingMs=" + remaining
+                                                + " elapsedMs=" + elapsed
+                                                + " touchWindowsBefore="
+                                                + pinEntryHandoffTouchWindowsBefore
+                                                + " touchWindowsAfter="
+                                                + pinEntryHandoffTouchWindowsAfter
+                                                + " visual="
+                                                + pinEntryHandoffWindowAlphaResult);
+                                    }
+                                });
+                    }
+                });
+    }
+
+    private boolean isLgHandoffGenerationCurrent(
+            int handoffGeneration, int safetyGeneration) {
+        return pinEntryRequested
+                && pinEntryHandoffActive
+                && handoffGeneration == pinEntryHandoffGeneration
+                && safetyGeneration == inputSafetyGeneration
+                && pinEntryHandoffSafetyGeneration == inputSafetyGeneration;
     }
 
     private long pinEntrySwipeStartDelayMs() {

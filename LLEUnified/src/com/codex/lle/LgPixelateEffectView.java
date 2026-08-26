@@ -34,9 +34,10 @@ interface LgPixelateRendererListener {
  * 1.0.6-beta-only app-owned GLES2 Pixelate renderer.
  *
  * <p>The view composites only the locally pixelated circle over the existing lockscreen. It
- * samples the normal LLE colormap (bitmap or direct ARGB8888 upload) but never paints it as a
- * full-screen background, keeping the rest of the overlay transparent. This is an independent
- * implementation and deliberately contains no XLocker Java, GLSL, sound, bitmap or binary.</p>
+ * samples the dedicated pre-lock underlay supplied by the service (bitmap or direct ARGB8888
+ * upload), never the normal lockscreen colormap, and never paints it as a full-screen background.
+ * This is an independent implementation and deliberately contains no XLocker Java, GLSL, sound,
+ * bitmap or binary.</p>
  */
 public final class LgPixelateEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, RawArgb8888BackgroundRenderer,
@@ -54,6 +55,8 @@ public final class LgPixelateEffectView extends FrameLayout
     private boolean gestureActive;
     private boolean backgroundAccepted;
     private File rawBackgroundFile;
+    private long rawBackgroundLength;
+    private long rawBackgroundModified;
     private float affordanceX;
     private float affordanceY;
     private final Runnable affordanceRunnable = new Runnable() {
@@ -148,12 +151,16 @@ public final class LgPixelateEffectView extends FrameLayout
         Bitmap owned = source.copy(Bitmap.Config.ARGB_8888, false);
         if (owned == null || owned.isRecycled()) return;
         rawBackgroundFile = null;
+        rawBackgroundLength = 0L;
+        rawBackgroundModified = 0L;
         backgroundAccepted = true;
         glSurface.setBackgroundBitmap(owned);
     }
 
     @Override public void clearBackgroundSourceBitmap() {
         rawBackgroundFile = null;
+        rawBackgroundLength = 0L;
+        rawBackgroundModified = 0L;
         backgroundAccepted = false;
         glSurface.clearBackground();
     }
@@ -165,10 +172,20 @@ public final class LgPixelateEffectView extends FrameLayout
     @Override public void setRawArgb8888BackgroundSource(File file, String sourceName) {
         Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
         if (destroyed || info == null || !info.raw) return;
+        long length = file.length();
+        long modified = file.lastModified();
+        if (backgroundAccepted && rawBackgroundFile != null
+                && rawBackgroundFile.getAbsolutePath().equals(file.getAbsolutePath())
+                && rawBackgroundLength == length
+                && rawBackgroundModified == modified) {
+            return;
+        }
         rawBackgroundFile = file;
+        rawBackgroundLength = length;
+        rawBackgroundModified = modified;
         backgroundAccepted = true;
         glSurface.setBackgroundFile(file);
-        Log.i(TAG, "raw colormap accepted " + info.width + "x" + info.height);
+        Log.i(TAG, "raw pre-lock underlay accepted " + info.width + "x" + info.height);
     }
 
     @Override public void destroy() {
@@ -177,6 +194,8 @@ public final class LgPixelateEffectView extends FrameLayout
         resetEffect();
         backgroundAccepted = false;
         rawBackgroundFile = null;
+        rawBackgroundLength = 0L;
+        rawBackgroundModified = 0L;
         glSurface.destroyRenderer();
         transition(STATE_FAILED, "destroyed");
         readinessListener = null;
@@ -200,11 +219,22 @@ public final class LgPixelateEffectView extends FrameLayout
         super.onDetachedFromWindow();
     }
 
-    @Override public void onSurfaceReady() { transition(STATE_SURFACE_READY, "transparent EGL surface ready"); }
-    @Override public void onResourcesReady(boolean hasBackground) {
-        transition(STATE_RESOURCES_READY, hasBackground ? "colormap texture ready" : "waiting for colormap");
+    @Override public void onSurfaceReady() {
+        advanceReadiness(STATE_SURFACE_READY, "transparent EGL surface ready");
     }
-    @Override public void onFirstFrame() { transition(STATE_FIRST_FRAME_READY, "first transparent GLES frame drawn"); }
+    @Override public void onResourcesReady(boolean hasBackground) {
+        if (hasBackground) {
+            advanceReadiness(STATE_RESOURCES_READY, "pre-lock underlay texture ready");
+        } else if (attached && !destroyed && readinessState >= STATE_CONSTRUCTED
+                && readinessState < STATE_RESOURCES_READY) {
+            transition(Math.max(readinessState, STATE_SURFACE_READY),
+                    "waiting for pre-lock underlay");
+        }
+    }
+    @Override public void onFirstFrame() {
+        advanceReadiness(STATE_FIRST_FRAME_READY,
+                "first textured transparent GLES frame drawn");
+    }
     @Override public void onFailure(Throwable error, String detail) {
         Log.e(TAG, "renderer failure " + detail, error);
         transition(STATE_FAILED, detail);
@@ -219,6 +249,10 @@ public final class LgPixelateEffectView extends FrameLayout
         return new Rect(0, 0, Math.max(1, metrics.widthPixels), Math.max(1, metrics.heightPixels));
     }
     private void transition(int state, String detail) { readinessState = state; readinessDetail = detail; notifyReadiness(); }
+    private void advanceReadiness(int state, String detail) {
+        if (attached && !destroyed && readinessState != STATE_FAILED
+                && state >= readinessState) transition(state, detail);
+    }
     private void notifyReadiness() {
         final ReadinessListener listener = readinessListener;
         if (listener != null && attached && !destroyed) post(new Runnable() {
@@ -347,7 +381,7 @@ public final class LgPixelateEffectView extends FrameLayout
                     idleCleared = false;
                 }
                 lastPresentationNs = nanos;
-                if (!firstFrame) {
+                if (!firstFrame && mapReady) {
                     firstFrame = true;
                     post(new Runnable() { @Override public void run() { listener.onFirstFrame(); } });
                 }

@@ -7,6 +7,7 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.AppOpsManager;
+import android.app.Dialog;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -15,6 +16,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -27,10 +29,12 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -787,6 +791,10 @@ public class SetupWizardActivity extends Activity {
         body.addView(title("How should L.L.E get the wallpaper?"));
         body.addView(paragraph("Choose the source shown behind the effect. You can change it "
                 + "later from the main screen."));
+        body.addView(paragraph("LG effects also keep a separate cache named Last screen. It "
+                + "captures the final unlocked app or launcher frame when the screen turns "
+                + "off; the wallpaper choices below remain available independently and can "
+                + "be used as a manual fallback."));
         if (FoldDisplayTarget.isTabletDevice(this)
                 && !FoldDisplayTarget.isFoldDevice(this)) {
             body.addView(tabletModeToggle());
@@ -1038,8 +1046,15 @@ public class SetupWizardActivity extends Activity {
         final boolean noColormap = MODE_NO_COLORMAP.equals(mode);
         final boolean unlockEnabled = OverlayPrefs.get(this).getBoolean(
                 OverlayPrefs.UNLOCK_EFFECT_ENABLED, true);
-        final boolean captureReady = noColormap || !automatic || !unlockEnabled
-                || isAutomaticBackgroundReady();
+        final int selectedEffect = OverlayPrefs.unlockEffect(this);
+        final boolean usesLastScreen = OverlayPrefs.usesLgPreLockUnderlay(selectedEffect);
+        final LgLastScreenCache.Target lastScreenTarget =
+                LgLastScreenCache.activeTarget(this);
+        final boolean lastScreenReady = LgLastScreenCache.isReady(lastScreenTarget);
+        final boolean lockscreenCacheReady = !automatic || isAutomaticBackgroundReady();
+        final boolean captureReady = noColormap || !unlockEnabled
+                || (usesLastScreen ? lastScreenReady && lockscreenCacheReady
+                : lockscreenCacheReady);
 
         LinearLayout body = stepBody();
         body.addView(kicker("STEP 6", captureReady ? "READY" : "CAPTURE REQUIRED",
@@ -1058,6 +1073,69 @@ public class SetupWizardActivity extends Activity {
                     "Only compatible effects can be selected. If an incompatible saved choice "
                             + "is encountered, L.L.E falls back to Mass Tension.",
                     true));
+        } else if (usesLastScreen && unlockEnabled) {
+            body.addView(title("Prepare both effect caches"));
+            body.addView(paragraph(automatic
+                    ? "Leave the unlocked app or launcher you want visible and turn the screen "
+                            + "off. Wake to the lockscreen, wait there for about 2–3 seconds, "
+                            + "then unlock and return. L.L.E keeps the lockscreen cache for all "
+                            + "other effects and Last screen separately for LG effects."
+                    : "Your fixed lockscreen cache is kept for all other effects. Turn the "
+                            + "screen off once while the wanted app or launcher is visible to "
+                            + "create the separate Last screen cache for LG effects."));
+            body.addView(statusCard(lockscreenCacheReady
+                            ? "Lockscreen cache ready"
+                            : "Waiting for lockscreen cache",
+                    lockscreenCacheReady
+                            ? "The traditional cache remains available to Samsung and all "
+                                    + "other screenshot-backed effects."
+                            : "Wake to the lockscreen and wait 2–3 seconds. This cache is never "
+                                    + "discarded when Last screen is captured.",
+                    lockscreenCacheReady));
+            if (lockscreenCacheReady) {
+                Button viewLockscreenCache = quietButton("Show lockscreen cache");
+                viewLockscreenCache.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showWizardLockscreenCache(selectedEffect, lastScreenTarget);
+                    }
+                });
+                body.addView(viewLockscreenCache, quietParams());
+            }
+            String readyDescription = LgLastScreenCache.isWallpaperFallback(
+                    this, lastScreenTarget)
+                    ? "An exact wallpaper cache is currently being used as the forced "
+                            + "fallback. The next successful screen-off capture replaces it."
+                    : "The last unlocked frame for the active " + activeProfileLabel()
+                            + " display is ready.";
+            body.addView(statusCard(lastScreenReady
+                            ? "Last screen captured"
+                            : "Waiting for Last screen",
+                    lastScreenReady
+                            ? readyDescription
+                            : "Complete one unlocked → screen off cycle. This page checks the "
+                                    + "dedicated cache automatically when you return.",
+                    lastScreenReady));
+            if (lastScreenReady) {
+                Button viewLastScreen = quietButton("Show Last screen");
+                viewLastScreen.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showWizardLastScreenCache();
+                    }
+                });
+                body.addView(viewLastScreen, quietParams());
+            }
+            Button fallback = quietButton("Force wallpaper fallback");
+            fallback.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    confirmWizardLastScreenFallback(selectedEffect, lastScreenTarget);
+                }
+            });
+            body.addView(fallback, quietParams());
+            body.addView(paragraph("Fallback is available only when an exact-size automatic or "
+                    + "imported wallpaper cache already exists."));
         } else if (automatic && unlockEnabled) {
             boolean tabletProfiles = FoldDisplayTarget.usesTabletProfiles(this);
             body.addView(title("Capture the lockscreen once"));
@@ -1104,29 +1182,45 @@ public class SetupWizardActivity extends Activity {
         primary.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!automatic || !unlockEnabled || isAutomaticBackgroundReady()) {
+                boolean readyNow = noColormap || !unlockEnabled
+                        || (usesLastScreen
+                        ? LgLastScreenCache.isReady(LgLastScreenCache.activeTarget(
+                                SetupWizardActivity.this))
+                                && (!automatic || isAutomaticBackgroundReady())
+                        : (!automatic || isAutomaticBackgroundReady()));
+                if (readyNow) {
                     showStep(STEP_TOUCH_BOX, true, 1);
                     return;
                 }
                 Toast.makeText(SetupWizardActivity.this,
-                        "No screenshot yet. Lock the phone, wait on the lockscreen, then "
-                                + "unlock and return here.",
+                        usesLastScreen
+                                ? "Both caches are required. Turn the screen off from the "
+                                        + "wanted app, wait 2–3 seconds on the lockscreen, then "
+                                        + "unlock and return here."
+                                : "No screenshot yet. Lock the phone, wait on the lockscreen, "
+                                        + "then unlock and return here.",
                         Toast.LENGTH_LONG).show();
                 showStep(STEP_PREPARE_SOURCE, false, 1);
             }
         });
         body.addView(primary, actionParams());
 
-        if (automatic && unlockEnabled && !captureReady) {
-            Button later = quietButton("Continue without screenshot");
+        if ((automatic || usesLastScreen) && unlockEnabled && !captureReady) {
+            Button later = quietButton(usesLastScreen
+                    ? "Continue without complete caches" : "Continue without screenshot");
             later.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     new AlertDialog.Builder(SetupWizardActivity.this)
-                            .setTitle("Continue without a captured wallpaper?")
-                            .setMessage("The touch-box editor will request its own lockscreen "
-                                    + "capture. Unlock effects may still look wrong until the "
-                                    + "normal effect screenshot has been captured.")
+                            .setTitle(usesLastScreen
+                                    ? "Continue without both caches?"
+                                    : "Continue without a captured wallpaper?")
+                            .setMessage(usesLastScreen
+                                    ? "LG effects may render without their background until a "
+                                            + "screen-off capture or forced fallback succeeds."
+                                    : "The touch-box editor will request its own lockscreen "
+                                            + "capture. Unlock effects may still look wrong until "
+                                            + "the normal effect screenshot has been captured.")
                             .setNegativeButton("Go back", null)
                             .setPositiveButton("Continue", new DialogInterface.OnClickListener() {
                                 @Override
@@ -1148,6 +1242,140 @@ public class SetupWizardActivity extends Activity {
             body.addView(later, quietParams());
         }
         return scroll(body);
+    }
+
+    private void showWizardLastScreenCache() {
+        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+        Argb8888BitmapStore.Info info = LgLastScreenCache.inspect(target);
+        if (info == null) {
+            Toast.makeText(this, "No Last screen cache yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        showWizardCache(target.file, "Last screen",
+                (LgLastScreenCache.isWallpaperFallback(this, target)
+                        ? "Forced wallpaper fallback" : "Last unlocked frame")
+                        + " · " + target.profile + " · "
+                        + info.width + " × " + info.height);
+    }
+
+    private void showWizardLockscreenCache(int effect, LgLastScreenCache.Target target) {
+        File file = LgLastScreenCache.findWallpaperFallback(this, effect, target);
+        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
+        if (file == null || info == null) {
+            Toast.makeText(this, "No lockscreen cache yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        showWizardCache(file, "Lockscreen cache",
+                "Traditional effect source · " + target.profile + " · "
+                        + info.width + " × " + info.height);
+    }
+
+    private void showWizardCache(File file, String cacheTitle, String cacheMeta) {
+        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
+        if (info == null) {
+            Toast.makeText(this, cacheTitle + " unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int sample = 1;
+        while (Math.max(info.width, info.height) / sample > 1600) {
+            sample *= 2;
+        }
+        final Bitmap bitmap = Argb8888BitmapStore.decode(file, sample);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, cacheTitle + " unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackgroundColor(Color.WHITE);
+        root.addView(title(cacheTitle));
+        root.addView(paragraph(cacheMeta));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        Button close = quietButton("Close");
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        });
+        root.addView(close, quietParams());
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private void confirmWizardLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        if (LgLastScreenCache.findWallpaperFallback(this, effect, target) == null) {
+            Toast.makeText(this,
+                    "No exact-size wallpaper cache is available. Go back and import one first.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Force wallpaper fallback?")
+                .setMessage("The traditional wallpaper cache will be copied into Last screen. "
+                        + "The next successful screen-off capture replaces it automatically.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Force fallback", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        forceWizardLastScreenFallback(effect, target);
+                    }
+                })
+                .show();
+    }
+
+    private void forceWizardLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        Toast.makeText(this, "Preparing Last screen fallback…", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final LgLastScreenCache.FallbackResult result =
+                        LgLastScreenCache.forceWallpaperFallback(
+                                SetupWizardActivity.this, effect, target);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (result.saved) {
+                            ChargingAccessibilityService.reloadLgLastScreenCache();
+                        }
+                        Toast.makeText(SetupWizardActivity.this, result.message,
+                                result.saved ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+                        if (!isFinishing() && !isDestroyed()) {
+                            showStep(STEP_PREPARE_SOURCE, false, 1);
+                        }
+                    }
+                });
+            }
+        }, "LLE-wizard-last-screen-fallback").start();
     }
 
     private View touchBoxStep() {
@@ -1523,6 +1751,10 @@ public class SetupWizardActivity extends Activity {
             return true;
         }
         int effect = OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.usesLgPreLockUnderlay(effect)
+                && LgLastScreenCache.isReady(LgLastScreenCache.activeTarget(this))) {
+            return true;
+        }
         if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
             File imported = OverlayPrefs.importedEffectBackgroundFile(this, effect, profile);
             if (imported != null && imported.exists() && imported.length() > 0L) {

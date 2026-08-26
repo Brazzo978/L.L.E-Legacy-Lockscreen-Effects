@@ -4,501 +4,679 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Camera;
 import android.graphics.Canvas;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.LightingColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
+import android.graphics.Shader;
+import android.media.SoundPool;
 import android.os.SystemClock;
 import android.view.View;
 
-/* JADX INFO: loaded from: XperiaBlindsEffectView.class */
-public final class XperiaBlindsEffectView extends View implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
-    private static final int STRIP_COUNT = 17;
-    private static final int AFFECTED_STRIP_COUNT = 5;
-    private static final float AFFECTED_RANGE = 0.29411766f;
-    private static final float MAX_FOLD_DEGREES = 17.0f;
-    private static final float CAMERA_DEPTH = 3.0f;
-    private static final float SPRING_STIFFNESS = 400.0f;
-    private static final float SPRING_DAMPING_RATIO = 0.85f;
-    private static final float EXIT_DURATION_MS = 300.0f;
+/**
+ * Canvas reconstruction of the normal Xperia Z1 Blinds renderer from
+ * com.othlocks.xperia.blinds v1.0.3.
+ *
+ * <p>The stock effect folds 17 horizontal bands with {@link Camera#rotateX(float)}.
+ * It uses the full captured frame as-is: source and destination rectangles always
+ * describe the same band, so there is no centre crop or gesture-driven zoom.</p>
+ */
+public final class XperiaBlindsEffectView extends View implements UnlockEffectRenderer,
+        BackgroundSourceRenderer, UnlockEffectReadiness {
+    static final int STRIP_COUNT = 17;
+    static final int AFFECTED_STRIP_COUNT = 5;
+    static final float AFFECTED_RANGE = (float) AFFECTED_STRIP_COUNT / STRIP_COUNT;
+    static final float HORIZONTAL_FOLD_DEGREES = 3.0f;
+    static final float CAMERA_FOLD_DEGREES = 17.0f;
+    static final float CAMERA_DEPTH = 3.0f;
+    static final float SHADE_STRENGTH = 2.0f;
+    static final float SPRING_STIFFNESS = 400.0f;
+    static final float SPRING_DAMPING_RATIO = 0.85f;
+    static final long STRIP_FADE_MS = 300L;
+    static final long EXIT_FADE_DELAY_MS = 40L;
+    static final long EXIT_FADE_MS = 160L;
+    static final long EXIT_COMPLETE_MS = 200L;
+    static final long AFFORDANCE_HOLD_MS = 130L;
+    static final long MAX_PHYSICS_STEP_NS = 50_000_000L;
+
     private static final float IDLE_POSITION_EPSILON = 0.0015f;
     private static final float IDLE_VELOCITY_EPSILON = 0.012f;
-    private static final long MAX_PHYSICS_STEP_NS = 50000000;
-    private final Paint stripPaint;
-    private final Paint seamPaint;
-    private final Rect sourceRect;
-    private final Rect destinationRect;
-    private final Camera camera;
-    private final Matrix transform;
-    private final Matrix cameraTransform;
-    private final ColorMatrix colorMatrix;
-    private final float[] springOutput;
+    private static final int SEAM_COLOR = 0xbb2b2b2b;
+    private static final int SHADOW_COLOR = 0xbb000000;
+
+    private final Paint stripPaint = new Paint(Paint.ANTI_ALIAS_FLAG
+            | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+    private final Paint seamPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect sourceRect = new Rect();
+    private final Rect destinationRect = new Rect();
+    private final Camera camera = new Camera();
+    private final Matrix transform = new Matrix();
+    private final Matrix cameraTransform = new Matrix();
+    private final PorterDuffColorFilter[] brightFilters = new PorterDuffColorFilter[100];
+    private final LightingColorFilter[] darkFilters = new LightingColorFilter[100];
+    private final float[] springOutput = new float[2];
+    private final float[] stripAlpha = new float[STRIP_COUNT];
+    private final SoundPool soundPool;
+    private final int touchSound;
+    private final int unlockSound;
+
+    private final Runnable affordanceBegin = new Runnable() {
+        @Override
+        public void run() {
+            if (!destroyed) {
+                beginGesture(affordanceX, affordanceY);
+                postDelayed(affordanceRelease, AFFORDANCE_HOLD_MS);
+            }
+        }
+    };
+    private final Runnable affordanceRelease = new Runnable() {
+        @Override
+        public void run() {
+            if (!destroyed) {
+                finishGesture(false);
+            }
+        }
+    };
+
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
     private boolean externalBackground;
-    private String backgroundSource;
+    private String backgroundSource = "none";
     private boolean destroyed;
     private boolean firstFrameDrawn;
     private boolean gestureActive;
     private boolean exitRequested;
     private long exitStartedAtNs;
     private long lastFrameAtNs;
+    private long lastExitFrameAtNs;
     private float touchX;
     private float touchY;
     private float springPosition;
     private float springVelocity;
     private float targetPosition;
+    private float stripFadePerMs;
+    private float affordanceX;
+    private float affordanceY;
+    private int lastSoundStrip = -1;
     private UnlockEffectReadiness.ReadinessListener readinessListener;
-    private final Runnable affordanceRelease;
 
     public XperiaBlindsEffectView(Context context) {
         super(context);
-        this.stripPaint = new Paint(7);
-        this.seamPaint = new Paint(1);
-        this.sourceRect = new Rect();
-        this.destinationRect = new Rect();
-        this.camera = new Camera();
-        this.transform = new Matrix();
-        this.cameraTransform = new Matrix();
-        this.colorMatrix = new ColorMatrix();
-        this.springOutput = new float[2];
-        this.backgroundSource = "none";
-        this.affordanceRelease = new Runnable() {
-            @Override
-            public void run() {
-                if (!XperiaBlindsEffectView.this.destroyed) {
-                    XperiaBlindsEffectView.this.requestExit();
-                }
-            }
-        };
         setWillNotDraw(false);
-        setBackgroundColor(0);
-        setLayerType(2, null);
-        this.seamPaint.setColor(1426063360);
-        this.seamPaint.setStrokeWidth(1.0f);
-    }
+        setBackgroundColor(Color.TRANSPARENT);
+        setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-    public View asView() {
-        return this;
-    }
-
-    public String effectName() {
-        return "Xperia Blinds";
-    }
-
-    public boolean supportsHighFrameRate() {
-        return true;
-    }
-
-    public boolean supportsSpeedMultiplier() {
-        return false;
-    }
-
-    public void beginGesture(float f, float f2) {
-        if (this.destroyed) {
-            return;
+        seamPaint.setColor(SEAM_COLOR);
+        seamPaint.setStrokeWidth(2.0f);
+        shadowPaint.setStyle(Paint.Style.FILL);
+        resetStripAlpha();
+        for (int i = 0; i < 100; i++) {
+            brightFilters[i] = new PorterDuffColorFilter(
+                    Color.argb(i, 255, 255, 255), PorterDuff.Mode.OVERLAY);
+            int value = 255 - i;
+            darkFilters[i] = new LightingColorFilter(Color.rgb(value, value, value), 0);
         }
-        removeCallbacks(this.affordanceRelease);
-        this.gestureActive = true;
-        this.exitRequested = false;
-        this.exitStartedAtNs = 0L;
-        this.touchX = clamp(f, 0.0f, Math.max(0.0f, getRenderWidth() - 1.0f));
-        this.touchY = clamp(f2, 0.0f, Math.max(0.0f, getRenderHeight() - 1.0f));
-        this.springPosition = 0.0f;
-        this.springVelocity = 0.0f;
-        this.targetPosition = 1.0f;
-        this.lastFrameAtNs = 0L;
+
+        soundPool = new SoundPool.Builder()
+                .setMaxStreams(4)
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
+                .build();
+        touchSound = soundPool.load(context, R.raw.xperia_z1_blinds_touch, 1);
+        unlockSound = soundPool.load(context, R.raw.xperia_z1_blinds_unlock, 1);
+    }
+
+    @Override public View asView() { return this; }
+    @Override public String effectName() { return "Xperia Z1 Blinds"; }
+    public boolean supportsHighFrameRate() { return true; }
+    public boolean supportsSpeedMultiplier() { return false; }
+
+    @Override
+    public void beginGesture(float x, float y) {
+        if (destroyed) return;
+        removeCallbacks(affordanceBegin);
+        removeCallbacks(affordanceRelease);
+        if (exitRequested) {
+            springPosition = 0f;
+            springVelocity = 0f;
+        }
+        gestureActive = true;
+        exitRequested = false;
+        exitStartedAtNs = 0L;
+        lastExitFrameAtNs = 0L;
+        resetStripAlpha();
+        touchX = clamp(x, 0f, Math.max(0f, renderWidth() - 1f));
+        touchY = clamp(y, 0f, Math.max(0f, renderHeight() - 1f));
+        targetPosition = 1f;
+        lastFrameAtNs = 0L;
+        lastSoundStrip = -1;
+        updateTouchSound();
         postInvalidateOnAnimation();
     }
 
-    public void updateGesture(float f, float f2) {
-        if (this.destroyed) {
+    @Override
+    public void updateGesture(float x, float y) {
+        if (destroyed) return;
+        if (!gestureActive) {
+            beginGesture(x, y);
             return;
         }
-        if (!this.gestureActive) {
-            beginGesture(f, f2);
-            return;
-        }
-        this.touchX = clamp(f, 0.0f, Math.max(0.0f, getRenderWidth() - 1.0f));
-        this.touchY = clamp(f2, 0.0f, Math.max(0.0f, getRenderHeight() - 1.0f));
+        touchX = clamp(x, 0f, Math.max(0f, renderWidth() - 1f));
+        touchY = clamp(y, 0f, Math.max(0f, renderHeight() - 1f));
+        updateTouchSound();
         postInvalidateOnAnimation();
     }
 
-    public void finishGesture(boolean z) {
-        if (this.destroyed) {
-            return;
+    @Override
+    public void finishGesture(boolean completed) {
+        if (destroyed || !gestureActive) return;
+        gestureActive = false;
+        lastSoundStrip = -1;
+        targetPosition = 0f;
+        if (completed) {
+            play(unlockSound);
+            requestExit();
+        } else {
+            postInvalidateOnAnimation();
         }
-        if (!this.gestureActive && !this.exitRequested) {
-            return;
-        }
-        this.gestureActive = false;
-        requestExit();
     }
 
+    @Override
     public void cancelGesture() {
-        if (this.destroyed) {
-            return;
-        }
-        clearMotion();
-        invalidate();
-    }
-
-    public void resetEffect() {
-        if (!this.destroyed) {
-            removeCallbacks(this.affordanceRelease);
+        if (!destroyed) {
+            removeCallbacks(affordanceBegin);
+            removeCallbacks(affordanceRelease);
             clearMotion();
             invalidate();
         }
     }
 
+    @Override
+    public void resetEffect() {
+        if (!destroyed) {
+            removeCallbacks(affordanceBegin);
+            removeCallbacks(affordanceRelease);
+            clearMotion();
+            invalidate();
+        }
+    }
+
+    @Override
     public void warmUp() {
-        if (this.destroyed) {
-            return;
+        if (!destroyed) {
+            if (validBackground()) backgroundBitmap.prepareToDraw();
+            invalidate();
         }
-        if (this.backgroundBitmap != null && !this.backgroundBitmap.isRecycled()) {
-            this.backgroundBitmap.prepareToDraw();
-        }
-        invalidate();
     }
 
-    public void showUnlockAffordance(Rect rect, long j) {
-        if (this.destroyed) {
-            return;
+    @Override
+    public void showUnlockAffordance(Rect rect, long startDelayMs) {
+        if (destroyed) return;
+        Rect target = rect;
+        if (target == null || target.width() <= 0 || target.height() <= 0) {
+            target = new Rect(0, 0, renderWidth(), renderHeight());
         }
-        Rect rect2 = rect;
-        if (rect2 == null || rect2.width() <= 0 || rect2.height() <= 0) {
-            rect2 = new Rect(0, 0, getRenderWidth(), getRenderHeight());
-        }
-        beginGesture(rect2.exactCenterX(), rect2.exactCenterY());
-        removeCallbacks(this.affordanceRelease);
-        postDelayed(this.affordanceRelease, Math.max(0L, j) + 130);
+        affordanceX = target.exactCenterX();
+        affordanceY = target.exactCenterY();
+        removeCallbacks(affordanceBegin);
+        removeCallbacks(affordanceRelease);
+        postDelayed(affordanceBegin, Math.max(0L, startDelayMs));
     }
 
+    @Override
     public boolean hasBackgroundSourceBitmap() {
-        return this.externalBackground && this.backgroundBitmap != null && !this.backgroundBitmap.isRecycled() && this.backgroundBitmap.getWidth() == getRenderWidth() && this.backgroundBitmap.getHeight() == getRenderHeight();
+        return externalBackground && validBackground()
+                && backgroundBitmap.getWidth() == renderWidth()
+                && backgroundBitmap.getHeight() == renderHeight();
     }
 
-    public void setBackgroundSourceBitmap(Bitmap bitmap, String str) {
-        if (this.destroyed || bitmap == null || bitmap.isRecycled()) {
-            return;
-        }
-        int renderWidth = getRenderWidth();
-        int renderHeight = getRenderHeight();
-        boolean zCanBorrowSharedCache = BackgroundSourceRenderer.canBorrowSharedCache(bitmap, str, renderWidth, renderHeight);
-        Bitmap bitmapCreateCenterCropBitmap = zCanBorrowSharedCache ? bitmap : createCenterCropBitmap(bitmap, renderWidth, renderHeight);
-        bitmapCreateCenterCropBitmap.prepareToDraw();
+    @Override
+    public void setBackgroundSourceBitmap(Bitmap source, String sourceName) {
+        if (destroyed || source == null || source.isRecycled()) return;
+        int width = renderWidth();
+        int height = renderHeight();
+        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap next = borrow ? source : createExactMappingBitmap(source, width, height);
+        next.prepareToDraw();
         releaseBackgroundBitmap();
-        this.backgroundBitmap = bitmapCreateCenterCropBitmap;
-        this.ownsBackgroundBitmap = !zCanBorrowSharedCache;
-        this.externalBackground = true;
-        this.backgroundSource = str == null ? "external" : str;
+        backgroundBitmap = next;
+        ownsBackgroundBitmap = !borrow;
+        externalBackground = true;
+        backgroundSource = sourceName == null ? "external" : sourceName;
         invalidate();
     }
 
+    @Override
     public void clearBackgroundSourceBitmap() {
-        if (this.destroyed) {
-            return;
-        }
+        if (destroyed) return;
         releaseBackgroundBitmap();
-        this.externalBackground = false;
-        this.backgroundSource = "none";
+        externalBackground = false;
+        backgroundSource = "none";
         invalidate();
     }
 
+    @Override
     public boolean isUsingBackgroundSourceBitmap(Bitmap bitmap) {
-        return bitmap != null && bitmap == this.backgroundBitmap;
+        return bitmap != null && bitmap == backgroundBitmap;
     }
 
+    @Override
     public int getReadinessState() {
-        if (this.destroyed) {
-            return -1;
-        }
-        if (!isAttachedToWindow()) {
-            return 1;
-        }
-        if (this.firstFrameDrawn) {
-            return AFFECTED_STRIP_COUNT;
-        }
-        return isLaidOut() ? 4 : 2;
+        if (destroyed) return UnlockEffectReadiness.STATE_FAILED;
+        if (!isAttachedToWindow()) return UnlockEffectReadiness.STATE_CONSTRUCTED;
+        if (firstFrameDrawn) return UnlockEffectReadiness.STATE_FIRST_FRAME_READY;
+        return isLaidOut()
+                ? UnlockEffectReadiness.STATE_RESOURCES_READY
+                : UnlockEffectReadiness.STATE_ATTACHED;
     }
 
+    @Override
     public String getReadinessDetail() {
-        if (this.destroyed) {
-            return "Xperia Blinds: renderer destroyed";
+        if (destroyed) return "Xperia Z1 Blinds: renderer destroyed";
+        if (!isAttachedToWindow()) return "Xperia Z1 Blinds: canvas constructed";
+        if (firstFrameDrawn) {
+            return "Xperia Z1 Blinds: app-owned canvas warm frame drawn";
         }
-        if (!isAttachedToWindow()) {
-            return "Xperia Blinds: canvas constructed";
-        }
-        if (this.firstFrameDrawn) {
-            return "Xperia Blinds: app-owned canvas warm frame drawn";
-        }
-        if (isLaidOut()) {
-            return "Xperia Blinds: canvas resources ready";
-        }
-        return "Xperia Blinds: canvas attached; waiting for layout";
+        return isLaidOut()
+                ? "Xperia Z1 Blinds: canvas resources ready"
+                : "Xperia Z1 Blinds: canvas attached; waiting for layout";
     }
 
-    public void setReadinessListener(UnlockEffectReadiness.ReadinessListener readinessListener) {
-        this.readinessListener = readinessListener;
+    @Override
+    public void setReadinessListener(
+            UnlockEffectReadiness.ReadinessListener listener) {
+        readinessListener = listener;
         notifyReadinessChanged();
     }
 
+    @Override
     public void destroy() {
-        if (this.destroyed) {
-            return;
-        }
-        removeCallbacks(this.affordanceRelease);
+        if (destroyed) return;
+        removeCallbacks(affordanceBegin);
+        removeCallbacks(affordanceRelease);
         clearMotion();
-        this.destroyed = true;
+        destroyed = true;
+        soundPool.release();
         releaseBackgroundBitmap();
-        this.readinessListener = null;
+        readinessListener = null;
     }
 
-    @Override // android.view.View
+    @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (!this.firstFrameDrawn) {
-            this.firstFrameDrawn = true;
+        if (!firstFrameDrawn) {
+            firstFrameDrawn = true;
             notifyReadinessChanged();
         }
-        if (this.destroyed || this.backgroundBitmap == null || this.backgroundBitmap.isRecycled()) {
-            return;
-        }
+        if (destroyed || !validBackground()) return;
         int width = getWidth();
         int height = getHeight();
-        if (width <= 0 || height <= 0 || this.backgroundBitmap.getWidth() != width || this.backgroundBitmap.getHeight() != height) {
-            return;
+        if (width <= 0 || height <= 0
+                || backgroundBitmap.getWidth() != width
+                || backgroundBitmap.getHeight() != height) return;
+
+        long now = SystemClock.elapsedRealtimeNanos();
+        advancePhysics(now);
+        updateExitFade(now);
+        float exitAlpha = exitAlpha(now);
+        if (springPosition > IDLE_POSITION_EPSILON && exitAlpha > 0f) {
+            drawBlinds(canvas, width, height, exitAlpha);
         }
-        long jElapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos();
-        advancePhysics(jElapsedRealtimeNanos);
-        float fExitAlpha = exitAlpha(jElapsedRealtimeNanos);
-        if (this.springPosition > IDLE_POSITION_EPSILON && fExitAlpha > 0.0f) {
-            drawBlinds(canvas, width, height, this.springPosition, fExitAlpha);
-        }
-        if (needsNextFrame(fExitAlpha)) {
+        if (needsNextFrame(now)) {
             postInvalidateOnAnimation();
-        } else if (this.exitRequested) {
+        } else if (exitRequested
+                || (!gestureActive && springPosition <= IDLE_POSITION_EPSILON)) {
             clearMotion();
         }
     }
 
-    private void drawBlinds(Canvas canvas, int i, int i2, float f, float f2) {
-        float fClamp = clamp(this.touchY / Math.max(1.0f, i2), 0.0f, 1.0f);
-        float f3 = fClamp - 0.14705883f;
-        float f4 = fClamp + 0.14705883f;
-        int iClampInt = clampInt((int) Math.floor((f3 * MAX_FOLD_DEGREES) + 0.5f), 0, 16);
-        int iClampInt2 = clampInt((int) Math.ceil((f4 * MAX_FOLD_DEGREES) - 0.5f), 0, STRIP_COUNT);
-        if (iClampInt2 <= iClampInt) {
-            return;
+    private void drawBlinds(Canvas canvas, int width, int height, float exitAlpha) {
+        float pressY = clamp(touchY / Math.max(1f, height), 0f, 1f);
+        int start = affectedStart(pressY);
+        int end = affectedEnd(pressY);
+        if (end <= start) return;
+
+        // L.L.E. keeps the live lockscreen visible underneath this transparent
+        // overlay. Sample the cached frame only for the bands that stock Blinds
+        // actually deforms; untouched areas must remain transparent.
+        int middle = start + ((end - start) / 2);
+        for (int strip = middle; strip >= start; strip--) {
+            drawFoldedStrip(canvas, width, height, strip, pressY, exitAlpha);
         }
-        int i3 = iClampInt + ((iClampInt2 - iClampInt) / 2);
-        for (int i4 = i3; i4 >= iClampInt; i4--) {
-            drawStrip(canvas, i, i2, i4, fClamp, f, f2);
-        }
-        for (int i5 = i3 + 1; i5 < iClampInt2; i5++) {
-            drawStrip(canvas, i, i2, i5, fClamp, f, f2);
+        for (int strip = middle + 1; strip < end; strip++) {
+            drawFoldedStrip(canvas, width, height, strip, pressY, exitAlpha);
         }
     }
 
-    private void drawStrip(Canvas canvas, int i, int i2, int i3, float f, float f2, float f3) {
-        int iRound = Math.round((i3 * i2) / MAX_FOLD_DEGREES);
-        int iRound2 = Math.round(((i3 + 1) * i2) / MAX_FOLD_DEGREES);
-        if (iRound2 <= iRound) {
-            return;
+    private void drawFoldedStrip(
+            Canvas canvas, int width, int height, int strip,
+            float pressY, float exitAlpha) {
+        int top = bandTop(height, strip);
+        int bottom = bandTop(height, strip + 1);
+        if (bottom <= top) return;
+        float normalizedDistance = normalizedDistance(strip, pressY);
+        if (Math.abs(normalizedDistance) >= 1f) return;
+
+        float wave = (float) Math.sin(Math.PI * normalizedDistance);
+        float fold = (1f + (float) Math.cos(Math.PI * normalizedDistance))
+                * springPosition;
+        sourceRect.set(0, top, width, bottom);
+        destinationRect.set(sourceRect);
+
+        transform.setTranslate(-sourceRect.centerX(), -sourceRect.centerY());
+        float normalizedX = touchX / Math.max(1f, width);
+        float rotationPivotX = normalizedX < .5f
+                ? sourceRect.centerX() : -sourceRect.centerX();
+        transform.postRotate(
+                (.5f - normalizedX) * HORIZONTAL_FOLD_DEGREES * fold,
+                rotationPivotX,
+                sourceRect.width() / 2f);
+
+        camera.save();
+        camera.translate(0f, 0f, CAMERA_DEPTH * fold);
+        camera.rotateX(CAMERA_FOLD_DEGREES * wave * springPosition);
+        cameraTransform.reset();
+        camera.getMatrix(cameraTransform);
+        camera.restore();
+        transform.postConcat(cameraTransform);
+        transform.postTranslate(sourceRect.centerX(), sourceRect.centerY());
+
+        setFoldColorFilter(wave * springPosition);
+        int alpha = Math.round(stripAlphaFor(strip, exitAlpha));
+        stripPaint.setAlpha(alpha);
+        seamPaint.setAlpha(alpha);
+        int save = canvas.save();
+        canvas.concat(transform);
+        canvas.drawBitmap(backgroundBitmap, sourceRect, destinationRect, stripPaint);
+
+        if (springPosition > .5f) {
+            float shadowLength = (1f - Math.abs(normalizedDistance)) * 50f;
+            shadowPaint.setShader(new LinearGradient(
+                    sourceRect.left, sourceRect.top - .5f,
+                    sourceRect.left, sourceRect.top + shadowLength,
+                    SHADOW_COLOR, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawRect(
+                    sourceRect.left, sourceRect.top - .5f,
+                    sourceRect.right, sourceRect.top + shadowLength,
+                    shadowPaint);
         }
-        float f4 = (2.0f * (((i3 + 0.5f) / MAX_FOLD_DEGREES) - f)) / AFFECTED_RANGE;
-        if (Math.abs(f4) >= 1.0f) {
-            return;
+        if (fold > .1f) {
+            canvas.drawLine(
+                    sourceRect.left, sourceRect.top - 1f,
+                    sourceRect.right, sourceRect.top - 1f,
+                    seamPaint);
+            canvas.drawLine(
+                    sourceRect.left, sourceRect.bottom,
+                    sourceRect.right, sourceRect.bottom,
+                    seamPaint);
         }
-        float fSin = (float) Math.sin(3.141592653589793d * ((double) f4));
-        float fCos = (1.0f + ((float) Math.cos(3.141592653589793d * ((double) f4)))) * f2;
-        if (fCos <= IDLE_POSITION_EPSILON) {
-            return;
-        }
-        this.sourceRect.set(0, iRound, i, iRound2);
-        this.destinationRect.set(0, iRound, i, iRound2);
-        float f5 = i * 0.5f;
-        float f6 = (iRound + iRound2) * 0.5f;
-        this.transform.reset();
-        this.transform.postTranslate(-f5, -f6);
-        this.camera.save();
-        this.camera.translate(0.0f, 0.0f, CAMERA_DEPTH * fCos);
-        this.camera.rotateX(MAX_FOLD_DEGREES * fSin * f2);
-        this.cameraTransform.reset();
-        this.camera.getMatrix(this.cameraTransform);
-        this.camera.restore();
-        this.transform.postConcat(this.cameraTransform);
-        this.transform.postTranslate(f5, f6);
-        float fClamp = clamp(fSin * fCos * 0.3f, -0.3f, 0.3f);
-        float f7 = fClamp * 96.0f;
-        this.colorMatrix.set(new float[]{1.0f + (fClamp * 0.25f), 0.0f, 0.0f, 0.0f, f7, 0.0f, 1.0f + (fClamp * 0.25f), 0.0f, 0.0f, f7, 0.0f, 0.0f, 1.0f + (fClamp * 0.25f), 0.0f, f7, 0.0f, 0.0f, 0.0f, f3, 0.0f});
-        this.stripPaint.setColorFilter(new ColorMatrixColorFilter(this.colorMatrix));
-        int iSave = canvas.save();
-        canvas.concat(this.transform);
-        canvas.drawBitmap(this.backgroundBitmap, this.sourceRect, this.destinationRect, this.stripPaint);
-        if (fCos > 0.12f) {
-            this.seamPaint.setAlpha(Math.round(70.0f * fCos * f3));
-            canvas.drawLine(0.0f, iRound, i, iRound, this.seamPaint);
-            canvas.drawLine(0.0f, iRound2, i, iRound2, this.seamPaint);
-            this.seamPaint.setAlpha(255);
-        }
-        canvas.restoreToCount(iSave);
-        this.stripPaint.setColorFilter(null);
+        canvas.restoreToCount(save);
+
+        shadowPaint.setShader(null);
+        stripPaint.setColorFilter(null);
+        stripPaint.setAlpha(255);
+        seamPaint.setAlpha(255);
     }
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void requestExit() {
-        if (this.exitRequested) {
-            return;
-        }
-        this.gestureActive = false;
-        this.exitRequested = true;
-        this.targetPosition = 0.0f;
-        this.exitStartedAtNs = SystemClock.elapsedRealtimeNanos();
-        this.lastFrameAtNs = 0L;
+    private void setFoldColorFilter(float value) {
+        int index = clampInt(
+                (int) (99f * Math.abs(value) * SHADE_STRENGTH), 0, 99);
+        stripPaint.setColorFilter(
+                value > 0f ? brightFilters[index] : darkFilters[index]);
+    }
+
+    private void requestExit() {
+        if (exitRequested) return;
+        exitRequested = true;
+        targetPosition = 0f;
+        exitStartedAtNs = SystemClock.elapsedRealtimeNanos();
+        lastExitFrameAtNs = exitStartedAtNs;
+        configureExitStripFade();
+        lastFrameAtNs = 0L;
         postInvalidateOnAnimation();
     }
 
-    @Override // android.view.View
+    private void advancePhysics(long now) {
+        if (lastFrameAtNs == 0L) {
+            lastFrameAtNs = now;
+            return;
+        }
+        long deltaNs = Math.max(
+                0L, Math.min(MAX_PHYSICS_STEP_NS, now - lastFrameAtNs));
+        lastFrameAtNs = now;
+        if (deltaNs == 0L) return;
+        springStepInto(
+                springPosition, springVelocity, targetPosition,
+                deltaNs / 1_000_000_000f, springOutput);
+        springPosition = Math.max(0f, springOutput[0]);
+        springVelocity = springOutput[1];
+    }
+
+    private float exitAlpha(long now) {
+        if (!exitRequested) return 1f;
+        float elapsedMs = (now - exitStartedAtNs) / 1_000_000f;
+        return elapsedMs <= EXIT_FADE_DELAY_MS
+                ? 1f
+                : 1f - clamp(
+                        (elapsedMs - EXIT_FADE_DELAY_MS) / EXIT_FADE_MS,
+                        0f, 1f);
+    }
+
+    private boolean needsNextFrame(long now) {
+        if (gestureActive) return true;
+        if (exitRequested) {
+            return (now - exitStartedAtNs) / 1_000_000L < EXIT_COMPLETE_MS;
+        }
+        return springPosition > IDLE_POSITION_EPSILON
+                || Math.abs(springVelocity) > IDLE_VELOCITY_EPSILON;
+    }
+
+    private void clearMotion() {
+        gestureActive = false;
+        exitRequested = false;
+        exitStartedAtNs = 0L;
+        lastExitFrameAtNs = 0L;
+        lastFrameAtNs = 0L;
+        springPosition = 0f;
+        springVelocity = 0f;
+        targetPosition = 0f;
+        lastSoundStrip = -1;
+        resetStripAlpha();
+    }
+
+    private void configureExitStripFade() {
+        float pressY = clamp(touchY / Math.max(1f, getHeight()), 0f, 1f);
+        float greatestDistance = 0f;
+        for (int strip = 0; strip < STRIP_COUNT; strip++) {
+            greatestDistance = Math.max(
+                    greatestDistance,
+                    Math.abs(((strip + .5f) / STRIP_COUNT) - pressY));
+        }
+        float maxAlpha = 255f;
+        for (int strip = 0; strip < STRIP_COUNT; strip++) {
+            float distance = Math.abs(((strip + .5f) / STRIP_COUNT) - pressY);
+            stripAlpha[strip] = 255f + 600f
+                    * (greatestDistance <= 0f ? 0f : distance / greatestDistance);
+            maxAlpha = Math.max(maxAlpha, stripAlpha[strip]);
+        }
+        stripFadePerMs = maxAlpha / STRIP_FADE_MS;
+    }
+
+    private void updateExitFade(long now) {
+        if (!exitRequested || lastExitFrameAtNs == 0L) return;
+        float elapsedMs = Math.max(
+                0f, Math.min(50f, (now - lastExitFrameAtNs) / 1_000_000f));
+        lastExitFrameAtNs = now;
+        for (int strip = 0; strip < STRIP_COUNT; strip++) {
+            stripAlpha[strip] = Math.max(
+                    0f, stripAlpha[strip] - stripFadePerMs * elapsedMs);
+        }
+    }
+
+    private float stripAlphaFor(int strip, float globalAlpha) {
+        return Math.min(255f, stripAlpha[clampInt(strip, 0, STRIP_COUNT - 1)])
+                * globalAlpha;
+    }
+
+    private void resetStripAlpha() {
+        for (int strip = 0; strip < STRIP_COUNT; strip++) stripAlpha[strip] = 255f;
+        stripFadePerMs = 0f;
+    }
+
+    private void updateTouchSound() {
+        int soundStrip = clampInt(
+                (int) (STRIP_COUNT * clamp(
+                        touchY / Math.max(1f, renderHeight()), 0f, 1f)),
+                0, STRIP_COUNT - 1);
+        if (soundStrip != lastSoundStrip) {
+            lastSoundStrip = soundStrip;
+            play(touchSound);
+        }
+    }
+
+    private void play(int soundId) {
+        if (soundId != 0
+                && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+            soundPool.play(soundId, 1f, 1f, 0, 0, 1f);
+        }
+    }
+
+    static float[] springStep(
+            float position, float velocity, float target, float seconds) {
+        float[] output = new float[2];
+        springStepInto(position, velocity, target, seconds, output);
+        return output;
+    }
+
+    private static void springStepInto(
+            float position, float velocity, float target,
+            float seconds, float[] output) {
+        float dt = clamp(seconds, 0f, .05f);
+        float omega = (float) Math.sqrt(SPRING_STIFFNESS);
+        float dampedOmega = omega
+                * (float) Math.sqrt(1f
+                        - SPRING_DAMPING_RATIO * SPRING_DAMPING_RATIO);
+        float offset = position - target;
+        float exp = (float) Math.exp(-SPRING_DAMPING_RATIO * omega * dt);
+        float cos = (float) Math.cos(dampedOmega * dt);
+        float sin = (float) Math.sin(dampedOmega * dt);
+        float velocityTerm = (velocity
+                + SPRING_DAMPING_RATIO * omega * offset) / dampedOmega;
+        float displacement = offset * cos + velocityTerm * sin;
+        output[0] = target + exp * displacement;
+        output[1] = exp * (-SPRING_DAMPING_RATIO * omega * displacement
+                - offset * dampedOmega * sin
+                + velocityTerm * dampedOmega * cos);
+    }
+
+    static int affectedStart(float y) {
+        return clampInt(
+                (int) Math.floor(
+                        (clamp(y, 0f, 1f) - AFFECTED_RANGE * .5f)
+                                * STRIP_COUNT + .5f),
+                0, STRIP_COUNT - 1);
+    }
+
+    static int affectedEnd(float y) {
+        return clampInt(
+                (int) Math.ceil(
+                        (clamp(y, 0f, 1f) + AFFECTED_RANGE * .5f)
+                                * STRIP_COUNT - .5f),
+                0, STRIP_COUNT);
+    }
+
+    static float stripWave(int strip, float y) {
+        return (float) Math.sin(
+                Math.PI * normalizedDistance(strip, clamp(y, 0f, 1f)));
+    }
+
+    static float stripFold(int strip, float y, float position) {
+        float distance = normalizedDistance(strip, clamp(y, 0f, 1f));
+        return (1f + (float) Math.cos(Math.PI * distance)) * position;
+    }
+
+    private static float normalizedDistance(int strip, float y) {
+        return 2f * (((strip + .5f) / STRIP_COUNT) - y) / AFFECTED_RANGE;
+    }
+
+    static int bandTop(int height, int strip) {
+        return (int) (height * (strip / (float) STRIP_COUNT));
+    }
+
+    private Bitmap createExactMappingBitmap(Bitmap source, int width, int height) {
+        Bitmap copy = Bitmap.createBitmap(
+                Math.max(1, width), Math.max(1, height), Bitmap.Config.ARGB_8888);
+        new Canvas(copy).drawBitmap(
+                source, null,
+                new Rect(0, 0, copy.getWidth(), copy.getHeight()),
+                new Paint(Paint.FILTER_BITMAP_FLAG));
+        return copy;
+    }
+
+    private boolean validBackground() {
+        return backgroundBitmap != null && !backgroundBitmap.isRecycled();
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap && validBackground()) backgroundBitmap.recycle();
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
+    }
+
+    private int renderWidth() {
+        return getWidth() > 0
+                ? getWidth()
+                : Math.max(1, getResources().getDisplayMetrics().widthPixels);
+    }
+
+    private int renderHeight() {
+        return getHeight() > 0
+                ? getHeight()
+                : Math.max(1, getResources().getDisplayMetrics().heightPixels);
+    }
+
+    @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        this.firstFrameDrawn = false;
+        firstFrameDrawn = false;
         notifyReadinessChanged();
         warmUp();
     }
 
-    @Override // android.view.View
+    @Override
     protected void onDetachedFromWindow() {
-        this.firstFrameDrawn = false;
+        firstFrameDrawn = false;
         notifyReadinessChanged();
         super.onDetachedFromWindow();
     }
 
-    @Override // android.view.View
-    protected void onSizeChanged(int i, int i2, int i3, int i4) {
-        super.onSizeChanged(i, i2, i3, i4);
-        this.firstFrameDrawn = false;
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        firstFrameDrawn = false;
         notifyReadinessChanged();
     }
 
-    private void advancePhysics(long j) {
-        if (this.lastFrameAtNs == 0) {
-            this.lastFrameAtNs = j;
-            return;
-        }
-        long jMax = Math.max(0L, Math.min(MAX_PHYSICS_STEP_NS, j - this.lastFrameAtNs));
-        this.lastFrameAtNs = j;
-        if (jMax == 0) {
-            return;
-        }
-        advanceSpring(jMax / 1.0E9f);
-    }
-
-    private float exitAlpha(long j) {
-        if (!this.exitRequested) {
-            return 1.0f;
-        }
-        return 1.0f - clamp(Math.max(0.0f, (j - this.exitStartedAtNs) / 1000000.0f) / EXIT_DURATION_MS, 0.0f, 1.0f);
-    }
-
-    private boolean needsNextFrame(float f) {
-        if (this.gestureActive) {
-            return true;
-        }
-        if (this.exitRequested) {
-            return f > 0.0f || this.springPosition > IDLE_POSITION_EPSILON || Math.abs(this.springVelocity) > IDLE_VELOCITY_EPSILON;
-        }
-        return false;
-    }
-
-    private void clearMotion() {
-        this.gestureActive = false;
-        this.exitRequested = false;
-        this.exitStartedAtNs = 0L;
-        this.lastFrameAtNs = 0L;
-        this.springPosition = 0.0f;
-        this.springVelocity = 0.0f;
-        this.targetPosition = 0.0f;
-    }
-
-    static float[] springStep(float f, float f2, float f3, float f4) {
-        float[] fArr = new float[2];
-        springStepInto(f, f2, f3, f4, fArr);
-        return fArr;
-    }
-
-    private static void springStepInto(float f, float f2, float f3, float f4, float[] fArr) {
-        float fClamp = clamp(f4, 0.0f, 0.05f);
-        float fSqrt = (float) Math.sqrt(400.0d);
-        float fSqrt2 = fSqrt * ((float) Math.sqrt(0.2774999737739563d));
-        float f5 = f - f3;
-        float fExp = (float) Math.exp((-0.85f) * fSqrt * fClamp);
-        float fCos = (float) Math.cos(fSqrt2 * fClamp);
-        float fSin = (float) Math.sin(fSqrt2 * fClamp);
-        float f6 = (f2 + ((SPRING_DAMPING_RATIO * fSqrt) * f5)) / fSqrt2;
-        float f7 = (f5 * fCos) + (f6 * fSin);
-        fArr[0] = f3 + (fExp * f7);
-        fArr[1] = fExp * (((-0.85f) * fSqrt * f7) + ((-f5) * fSqrt2 * fSin) + (f6 * fSqrt2 * fCos));
-    }
-
-    private void advanceSpring(float f) {
-        springStepInto(this.springPosition, this.springVelocity, this.targetPosition, f, this.springOutput);
-        this.springPosition = Math.max(0.0f, this.springOutput[0]);
-        this.springVelocity = this.springOutput[1];
-    }
-
-    private Bitmap createCenterCropBitmap(Bitmap bitmap, int i, int i2) {
-        Rect rect;
-        if (bitmap.getWidth() == i && bitmap.getHeight() == i2) {
-            return bitmap.copy(Bitmap.Config.ARGB_8888, false);
-        }
-        Bitmap bitmapCreateBitmap = Bitmap.createBitmap(i, i2, Bitmap.Config.ARGB_8888);
-        float f = i / i2;
-        if (bitmap.getWidth() / bitmap.getHeight() > f) {
-            int iMax = Math.max(1, Math.round(bitmap.getHeight() * f));
-            int iMax2 = Math.max(0, (bitmap.getWidth() - iMax) / 2);
-            rect = new Rect(iMax2, 0, Math.min(bitmap.getWidth(), iMax2 + iMax), bitmap.getHeight());
-        } else {
-            int iMax3 = Math.max(1, Math.round(bitmap.getWidth() / f));
-            int iMax4 = Math.max(0, (bitmap.getHeight() - iMax3) / 2);
-            rect = new Rect(0, iMax4, bitmap.getWidth(), Math.min(bitmap.getHeight(), iMax4 + iMax3));
-        }
-        new Canvas(bitmapCreateBitmap).drawBitmap(bitmap, rect, new Rect(0, 0, i, i2), new Paint(7));
-        return bitmapCreateBitmap;
-    }
-
-    private void releaseBackgroundBitmap() {
-        if (this.ownsBackgroundBitmap && this.backgroundBitmap != null && !this.backgroundBitmap.isRecycled()) {
-            this.backgroundBitmap.recycle();
-        }
-        this.backgroundBitmap = null;
-        this.ownsBackgroundBitmap = false;
-    }
-
-    private int getRenderWidth() {
-        return getWidth() > 0 ? getWidth() : Math.max(1, getResources().getDisplayMetrics().widthPixels);
-    }
-
-    private int getRenderHeight() {
-        return getHeight() > 0 ? getHeight() : Math.max(1, getResources().getDisplayMetrics().heightPixels);
-    }
-
     private void notifyReadinessChanged() {
-        UnlockEffectReadiness.ReadinessListener readinessListener = this.readinessListener;
         if (readinessListener != null) {
             try {
                 readinessListener.onReadinessChanged();
-            } catch (RuntimeException e) {
+            } catch (RuntimeException ignored) {
+                // Readiness is advisory and must never break rendering.
             }
         }
     }
 
-    private static float clamp(float f, float f2, float f3) {
-        return Math.max(f2, Math.min(f3, f));
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
-    private static int clampInt(int i, int i2, int i3) {
-        return Math.max(i2, Math.min(i3, i));
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

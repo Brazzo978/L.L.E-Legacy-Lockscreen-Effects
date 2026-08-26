@@ -1,6 +1,6 @@
 package com.codex.lle;
 
-/** Host-only regression checks for the bounded app-owned G2 Particle scene. */
+/** Host-only regression checks for the recovered LG G2 Particle scene. */
 public final class G2ParticleSceneTest {
     private G2ParticleSceneTest() {
     }
@@ -8,14 +8,14 @@ public final class G2ParticleSceneTest {
     public static void main(String[] args) {
         testBoundedThreeBandBatch();
         testTrackingRadiusAndFiniteVertices();
-        testUnlockTailIsExactlyBoundedToFourHundredMs();
+        testUnlockKeepsRecoveredExpansionAndLleHold();
         testSpeedMultiplierSafetyClamp();
     }
 
     private static void testBoundedThreeBandBatch() {
         G2ParticleScene scene = new G2ParticleScene();
-        assertInt("bounded particle budget", 216, scene.particleCount());
-        assertInt("tuple count", scene.particleCount() * 4,
+        assertInt("recovered donor particle count", 3090, scene.particleCount());
+        assertInt("tuple count", scene.particleCount() * G2ParticleScene.VERTEX_STRIDE,
                 scene.fillVertices(1L).length);
     }
 
@@ -36,19 +36,19 @@ public final class G2ParticleSceneTest {
         }
     }
 
-    private static void testUnlockTailIsExactlyBoundedToFourHundredMs() {
+    private static void testUnlockKeepsRecoveredExpansionAndLleHold() {
         G2ParticleScene scene = new G2ParticleScene();
         scene.setSurfaceSize(720, 1280);
         scene.begin(200f, 300f, 1_000L);
         scene.move(500f, 600f, 1_050L);
         scene.finish(true, 1_100L);
-        scene.fillVertices(1_499L);
+        scene.fillVertices(2_049L);
         if (!scene.isAnimating()) {
-            throw new AssertionError("unlock tail ended before 400 ms");
+            throw new AssertionError("unlock tail ended before expansion plus hold");
         }
-        scene.fillVertices(1_500L);
+        scene.fillVertices(2_050L);
         if (scene.isAnimating()) {
-            throw new AssertionError("unlock tail exceeded 400 ms");
+            throw new AssertionError("unlock tail exceeded expansion plus hold");
         }
     }
 

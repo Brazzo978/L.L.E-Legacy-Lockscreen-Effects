@@ -1,14 +1,17 @@
 # XLocker research note (2026-08-15)
 
-## Release decision
+## Updated release decision
 
-Do not import XLocker code, native libraries, audio, or artwork into L.L.E.
-The themes were distributed as proprietary freeware, and the only official
-repository found does not provide a license granting reuse or redistribution.
+The initial clean-room restriction below was superseded after direct contact with
+Erik, the original XLocker/OptimusDev author. He supplied the archived effect APKs
+and authorized their use for the L.L.E legacy-restoration project. The project may
+therefore use the original effect code, artwork, shaders and audio when required
+for an authentic restoration.
 
-XLocker may be used only as a secondary, private visual oracle. Samsung firmware
-and recovered Samsung implementations remain the authoritative sources for
-effect behaviour, timing, and release assets.
+Archive-derived material must remain identifiable by effect and provenance. L.L.E
+adapts the renderers to its own overlay/capture lifecycle and does not bundle the
+obsolete XLocker host application. Samsung firmware remains the preferred source
+for Samsung effects such as S3 None.
 
 ## Primary source checked
 
@@ -28,15 +31,16 @@ already reconstructed from better Samsung sources: Geometric Mosaic, Water
 Droplet, Abstract Tiles, Particle/Popping Colours, Watercolor, Ripple, and Lens
 Flare.
 
-The one useful future candidate is **S5 Circle**. It should not be recovered from
-an XLocker package: the local Samsung firmware material already contains
+The useful Samsung candidate is **S3 None** (called Circle by the XLocker
+theme). It should not be recovered from an XLocker package: the local Samsung
+firmware material already contains
 `CircleUnlockEffect.java`, `CircleUnlockCircle.java`, and the corresponding
 `KeyguardEffectViewNone.java` integration. That source indicates a Canvas effect
 without a colormap, with approximately 666 ms enter and 333 ms exit timing.
 
-## Backlog
+## Backlog at time of initial research
 
-- Consider a clean S5 Circle port from the local Samsung firmware sources.
-- Treat LG/Sony XLocker themes only as discovery leads; obtain their behaviour
-  from the corresponding OEM firmware before implementing anything.
-- Do not add XLocker binaries or extracted resources to release artifacts.
+- Use the clean S3 None port from the local S3 Neo firmware sources.
+- Restore LG themes from the authorized archive when it provides the complete
+  effect implementation; consult LG firmware when archive material is incomplete.
+- Keep archive assets scoped to their corresponding restored effect.

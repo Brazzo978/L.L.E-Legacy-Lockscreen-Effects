@@ -10,7 +10,7 @@ public final class LensFlareSceneTimingTest {
         checkGestureAndFadeTiming();
         checkUnlockTailTiming();
         checkAffordanceTiming();
-        checkProceduralLightningMode();
+        checkArchivedVariantDensity();
     }
 
     private static void checkWarmFrame() {
@@ -32,6 +32,8 @@ public final class LensFlareSceneTimingTest {
         long start = 20_000L;
         scene.begin(200f, 300f, start);
         require("gesture starts active", scene.isGestureActive());
+        require("tap burst retains all seven recovered Samsung hexagons",
+                countHexagons(scene.frame(start)) == 7);
         require("gesture remains live at the recovered 6 s show boundary",
                 scene.frame(start + 6000L).keepAnimating);
         scene.move(800f, 900f);
@@ -75,24 +77,15 @@ public final class LensFlareSceneTimingTest {
                 countAsset(scene.frame(start + 1300L), LensFlareScene.LIGHT) == 0);
     }
 
-    private static void checkProceduralLightningMode() {
-        long start = 50_000L;
-        LensFlareScene stock = new LensFlareScene(1500f, 600f, true, false);
-        stock.begin(400f, 600f, start);
-        require("stock Lens modes remain free of procedural bolt geometry",
-                stock.frame(start).lightningBolts.isEmpty());
-
-        LensFlareScene lightning = new LensFlareScene(1500f, 600f, true, true);
-        lightning.begin(400f, 600f, start);
-        LensFlareScene.Frame first = lightning.frame(start);
-        require("lightning mode starts with assetless generated bolts",
-                !first.lightningBolts.isEmpty());
-        require("generated bolt has a path and visible core", first.lightningBolts.get(0).points.length
-                >= 4 && first.lightningBolts.get(0).coreWidthPx > 0f);
-
-        lightning.finish(false, start + 1L);
-        require("lightning pulse clears after its independent 720 ms envelope",
-                lightning.frame(start + 722L).lightningBolts.isEmpty());
+    private static void checkArchivedVariantDensity() {
+        require("stock half-xxhdpi assets retain the calibrated scale",
+                near(LensFlareScene.assetScaleForMode("flare"), 1f, 0.000001f));
+        require("Blue Ring xhdpi assets emulate xxhdpi selection before inSampleSize",
+                near(LensFlareScene.assetScaleForMode("bluering"), 0.75f, 0.000001f));
+        require("Blood xxhdpi assets are halved once",
+                near(LensFlareScene.assetScaleForMode("blood"), 0.5f, 0.000001f));
+        require("Lightning uses its archived xxhdpi family, not procedural geometry",
+                near(LensFlareScene.assetScaleForMode("lightning"), 0.5f, 0.000001f));
     }
 
     private static int countAsset(LensFlareScene.Frame frame, int asset) {
@@ -103,6 +96,12 @@ public final class LensFlareSceneTimingTest {
             }
         }
         return count;
+    }
+
+    private static int countHexagons(LensFlareScene.Frame frame) {
+        return countAsset(frame, LensFlareScene.HEXAGON_BLUE)
+                + countAsset(frame, LensFlareScene.HEXAGON_ORANGE)
+                + countAsset(frame, LensFlareScene.HEXAGON_GREEN);
     }
 
     private static boolean near(float actual, float expected, float tolerance) {

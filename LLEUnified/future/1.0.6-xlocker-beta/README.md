@@ -26,10 +26,10 @@ The six proposed IDs are reserved as follows. Keep them stable and set `EFFECT_C
 
 | Research APK | SHA-256 | Proposed ID and constant | Relationship to LLE | Clean-room disposition |
 |---|---|---|---|---|
-| `s5-circle.apk` | `A8EBCA46E566289CE0F0CF1B518A508EF9F8F54A8F8D4557BE3783E2A83A41B5` | 31 — `EFFECT_S5_NONE` | New effect; UI label: **S5 Circle (None)** | Feasible OEM-backed Canvas implementation from the independently held Samsung firmware sources listed below. No colormap. |
+| `s5-circle.apk` | `A8EBCA46E566289CE0F0CF1B518A508EF9F8F54A8F8D4557BE3783E2A83A41B5` | 31 — `EFFECT_S3_NONE` | New effect; UI label: **S3 None** | OEM-backed Canvas implementation reconstructed from independently held S3 Neo firmware. No colormap. |
 | `g2-pixelate.apk` | `564183A65804EF26ACE815AE2C4F50BF17B3EC8D93D06389FFD741CD51BC18C2` | 32 — `EFFECT_LG_G2_PIXELATE` | New experimental effect | Feasible clean app-owned GLES renderer; colormap required. Do not copy XLocker shaders or assets. |
 | `g2-particle.apk` | `34E405C182C9C1FBF762BC88079A68157AB9AA5D5BAAA8448167ADC4B6117D9F` | 33 — `EFFECT_LG_G2_PARTICLE` | New experimental effect; distinct from Popping Colours | Feasible clean app-owned GLES particles/hole renderer; colormap required for faithful colour sampling. A synthetic map is test-only and non-faithful. |
-| `g2-crystal.apk` | `DC4DB36AE7496C5ADD1D7818646A34664FAC2D2CE9B68669562FE377202022BD` | 34 — `EFFECT_LG_G2_CRYSTAL` | New experimental effect | Procedural app-owned GLES inspired beta; colormap required for refraction. Do not copy the four XLocker textures. |
+| `g2-crystal.apk` | `DC4DB36AE7496C5ADD1D7818646A34664FAC2D2CE9B68669562FE377202022BD` | 34 — `EFFECT_LG_G2_CRYSTAL` | Restored G2 effect | Modern app-owned GLES implementation of the recovered ten-facet renderer; authorized archived artwork/audio restored as resources; last-screen cache required for refraction. |
 | `z1-blinds.apk` | `74725EA7205B12BBFFA147A5E9508DDB359365AA03A51625597757A1B40488B3` | 35 — `EFFECT_XPERIA_Z1_BLINDS` | New effect; distinct from ID 11 Tab S Blind | Feasible clean app-owned Canvas strip renderer; screenshot/colormap required. Do not copy Sony/XLocker shaders or assets. |
 | `revolving-glass.apk` | `27F4111DAE4AFF7E3D5FACB2B279AF470CB3256D33B6E4493B9081BC30376292` | 36 — `EFFECT_REVOLVING_GLASS` | New experimental effect | Original port is blocked. Only a clearly labelled procedural clean-room/inspired renderer is eligible; colormap required. |
 
@@ -96,7 +96,7 @@ The researched APK uses `lib/armeabi/libmodel_jni.so`, `lib/armeabi/libms4d_jni.
 
 - Put these entries in a dedicated **XLocker research beta** section with explicit `clean-room` or `inspired beta` badges.
 - Gate all six through tester/beta availability until separately validated. A persisted effect that becomes unavailable must resolve to the normal safe fallback.
-- Label ID 31 **S5 Circle (None)**. Do not call IDs 32–36 stock/authentic/1:1 without an independent OEM oracle.
+- Label ID 31 **S3 None**. Do not call IDs 32–36 stock/authentic/1:1 without an independent OEM oracle.
 - Ensure no-colormap mode exposes ID 31 but greys out IDs 32–36.
 
 ## Required verification before any beta build

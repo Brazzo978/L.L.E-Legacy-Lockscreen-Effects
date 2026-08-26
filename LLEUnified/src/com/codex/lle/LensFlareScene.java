@@ -25,14 +25,9 @@ final class LensFlareScene {
     private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
     private static final long AFFORDANCE_ON_DURATION_MS = 200L;
     private static final long AFFORDANCE_OFF_DURATION_MS = 1100L;
-    // The procedural Lightning mode deliberately has a much shorter envelope than the
-    // recovered Samsung flare timelines. It is an app-owned style, not an attempt to
-    // replay an external texture animation.
-    private static final long LIGHTNING_PULSE_DURATION_MS = 720L;
-    private static final long LIGHTNING_PULSE_INTERVAL_MS = 220L;
     private static final float GLOBAL_ALPHA = 0.8f;
     private static final float FOG_MAX_ALPHA = 0.6f;
-    private static final int TAP_HEXAGON_TOTAL = 5;
+    private static final int TAP_HEXAGON_TOTAL = 7;
     private static final int DRAG_HEXAGON_TOTAL = 6;
 
     private static final int[] TAP_HEXAGONS = {
@@ -65,29 +60,9 @@ final class LensFlareScene {
 
     static final class Frame {
         final List<Sprite> sprites = new ArrayList<Sprite>(32);
-        /** Untextured bolts are rendered as additive geometry by the GLES path only. */
-        final List<LightningBolt> lightningBolts = new ArrayList<LightningBolt>(12);
         float vignetteAlpha;
         boolean keepAnimating;
         boolean warmFrameDrawn;
-    }
-
-    /**
-     * One app-generated electric bolt in screen pixels. The points are immutable so the
-     * GLES renderer never needs an external image, shader source, or per-frame randomness.
-     */
-    static final class LightningBolt {
-        final float[] points;
-        final float alpha;
-        final float glowWidthPx;
-        final float coreWidthPx;
-
-        LightningBolt(float[] points, float alpha, float glowWidthPx, float coreWidthPx) {
-            this.points = points;
-            this.alpha = alpha;
-            this.glowWidthPx = glowWidthPx;
-            this.coreWidthPx = coreWidthPx;
-        }
     }
 
     private final Random random;
@@ -97,8 +72,6 @@ final class LensFlareScene {
     private final float[] dragHexagonRotations = new float[DRAG_HEXAGON_TOTAL];
     private final float maxAlphaDistancePx;
     private final float tapAreaRadiusPx;
-    private final boolean lightningMode;
-    private final List<LightningPulse> lightningPulses = new ArrayList<LightningPulse>(4);
 
     private boolean warmUpPending;
     private boolean gestureActive;
@@ -116,22 +89,15 @@ final class LensFlareScene {
     private TapAnimation tapAnimation;
     private UnlockAnimation unlockAnimation;
     private AffordanceAnimation affordanceAnimation;
-    private long nextLightningPulseAt;
 
     LensFlareScene(float maxAlphaDistancePx, float tapAreaRadiusPx) {
-        this(maxAlphaDistancePx, tapAreaRadiusPx, false, false);
+        this(maxAlphaDistancePx, tapAreaRadiusPx, false);
     }
 
     LensFlareScene(float maxAlphaDistancePx, float tapAreaRadiusPx,
             boolean deterministicAb) {
-        this(maxAlphaDistancePx, tapAreaRadiusPx, deterministicAb, false);
-    }
-
-    LensFlareScene(float maxAlphaDistancePx, float tapAreaRadiusPx,
-            boolean deterministicAb, boolean lightningMode) {
         this.maxAlphaDistancePx = maxAlphaDistancePx;
         this.tapAreaRadiusPx = tapAreaRadiusPx;
-        this.lightningMode = lightningMode;
         random = deterministicAb ? new Random(AB_RANDOM_SEED) : new Random();
         for (int i = 0; i < tapHexagonRotations.length; i++) {
             tapHexagonRotations[i] = random.nextInt(360);
@@ -160,11 +126,6 @@ final class LensFlareScene {
         tapAnimation = createTapAnimation(x, y, now);
         unlockAnimation = null;
         affordanceAnimation = null;
-        if (lightningMode) {
-            lightningPulses.clear();
-            addLightningPulse(x, y, now, false);
-            nextLightningPulseAt = now + LIGHTNING_PULSE_INTERVAL_MS;
-        }
     }
 
     void move(float x, float y) {
@@ -185,9 +146,6 @@ final class LensFlareScene {
         if (completed) {
             unlockAnimation = new UnlockAnimation(
                     startX, startY, currentX, currentY, now, unlockRotation());
-            if (lightningMode) {
-                addLightningPulse(currentX, currentY, now, true);
-            }
         }
     }
 
@@ -220,7 +178,6 @@ final class LensFlareScene {
         tapAnimation = null;
         unlockAnimation = null;
         affordanceAnimation = null;
-        lightningPulses.clear();
     }
 
     boolean isGestureActive() {
@@ -280,71 +237,23 @@ final class LensFlareScene {
             }
         }
 
-        if (lightningMode) {
-            if (gestureActive && now >= nextLightningPulseAt) {
-                addLightningPulse(currentX, currentY, now, false);
-                nextLightningPulseAt = now + LIGHTNING_PULSE_INTERVAL_MS;
-            }
-            addLightningPulses(frame, now);
-        }
         return frame;
     }
 
-    private void addLightningPulses(Frame frame, long now) {
-        for (int i = lightningPulses.size() - 1; i >= 0; i--) {
-            LightningPulse pulse = lightningPulses.get(i);
-            float t = (now - pulse.startedAt) / (float) LIGHTNING_PULSE_DURATION_MS;
-            if (t >= 1f) {
-                lightningPulses.remove(i);
-                continue;
-            }
-            // A fast flash with a readable blue afterglow. This is intentionally
-            // procedural and does not encode any XLocker frame or texture data.
-            float flash = t < 0.16f ? 1f : 1f - (t - 0.16f) / 0.84f;
-            for (LightningPath path : pulse.paths) {
-                frame.lightningBolts.add(new LightningBolt(path.points,
-                        clamp01(path.alpha * flash), path.glowWidthPx,
-                        path.coreWidthPx));
-            }
-            frame.keepAnimating = true;
+    /**
+     * The archived theme stores Stock at half of its xxhdpi source dimensions, Blue Ring at
+     * xhdpi, and Blood/Lightning at xxhdpi. The app decodes every imported bitmap as nodpi and
+     * emulates Samsung's historical inSampleSize=2 in the renderer, so preserve the original
+     * relative density here instead of letting every variant render at twice its intended size.
+     */
+    static float assetScaleForMode(String mode) {
+        if ("bluering".equals(mode)) {
+            return 0.75f;
         }
-    }
-
-    private void addLightningPulse(float x, float y, long now, boolean unlockBurst) {
-        int boltCount = unlockBurst ? 4 : 3;
-        LightningPath[] paths = new LightningPath[boltCount];
-        for (int i = 0; i < boltCount; i++) {
-            float direction = (float) (Math.PI * (1.1 + random.nextFloat() * 0.8));
-            float distance = (unlockBurst ? 290f : 190f) + random.nextFloat()
-                    * (unlockBurst ? 310f : 230f);
-            float endX = x + (float) Math.cos(direction) * distance;
-            float endY = y + (float) Math.sin(direction) * distance;
-            float alpha = i == 0 ? 0.95f : 0.48f + random.nextFloat() * 0.20f;
-            float glow = i == 0 ? 18f : 11f;
-            float core = i == 0 ? 4.2f : 2.6f;
-            paths[i] = new LightningPath(createLightningPath(x, y, endX, endY,
-                    i == 0 ? 8 : 6, 30f + random.nextFloat() * 24f),
-                    alpha, glow, core);
+        if ("blood".equals(mode) || "lightning".equals(mode)) {
+            return 0.5f;
         }
-        lightningPulses.add(new LightningPulse(now, paths));
-    }
-
-    private float[] createLightningPath(float startX, float startY, float endX, float endY,
-            int segments, float jitterPx) {
-        float[] points = new float[(segments + 1) * 2];
-        float dx = endX - startX;
-        float dy = endY - startY;
-        float length = Math.max(1f, (float) Math.hypot(dx, dy));
-        float normalX = -dy / length;
-        float normalY = dx / length;
-        for (int i = 0; i <= segments; i++) {
-            float progress = i / (float) segments;
-            float offset = i == 0 || i == segments ? 0f
-                    : (random.nextFloat() - 0.5f) * jitterPx;
-            points[i * 2] = startX + dx * progress + normalX * offset;
-            points[i * 2 + 1] = startY + dy * progress + normalY * offset;
-        }
-        return points;
+        return 1f;
     }
 
     private void addWarmUpFrame(Frame frame) {
@@ -451,7 +360,7 @@ final class LensFlareScene {
             animationHexagons[i] = new TapHexagon(
                     (float) Math.cos(angle) * distance,
                     (float) Math.sin(angle) * distance,
-                    0.2f + random.nextFloat() * 0.8f,
+                    0.3f + random.nextFloat() * 0.8f,
                     TAP_HEXAGONS[i % TAP_HEXAGONS.length],
                     tapHexagonRotations[i]);
         }
@@ -464,7 +373,7 @@ final class LensFlareScene {
         for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
             dragHexagonDistance[i] = startDistance + i * distanceGap
                     + (random.nextFloat() - 0.5f) * 0.4f;
-            dragHexagonScale[i] = dragHexagonDistance[i] + 0.1f;
+            dragHexagonScale[i] = dragHexagonDistance[i] + 0.2f;
         }
         for (int i = DRAG_HEXAGON_TOTAL - 1; i > 0; i--) {
             int swapIndex = random.nextInt(i + 1);
@@ -588,27 +497,4 @@ final class LensFlareScene {
         }
     }
 
-    private static final class LightningPulse {
-        final long startedAt;
-        final LightningPath[] paths;
-
-        LightningPulse(long startedAt, LightningPath[] paths) {
-            this.startedAt = startedAt;
-            this.paths = paths;
-        }
-    }
-
-    private static final class LightningPath {
-        final float[] points;
-        final float alpha;
-        final float glowWidthPx;
-        final float coreWidthPx;
-
-        LightningPath(float[] points, float alpha, float glowWidthPx, float coreWidthPx) {
-            this.points = points;
-            this.alpha = alpha;
-            this.glowWidthPx = glowWidthPx;
-            this.coreWidthPx = coreWidthPx;
-        }
-    }
 }

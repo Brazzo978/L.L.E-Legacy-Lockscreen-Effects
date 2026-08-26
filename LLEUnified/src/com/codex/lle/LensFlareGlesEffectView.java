@@ -41,10 +41,7 @@ public final class LensFlareGlesEffectView extends FrameLayout
         RawArgb8888BackgroundRenderer, UnlockEffectReadiness,
         LensFlareGlesListener {
     private static final String TAG = "LLELensFlareGles";
-    /**
-     * App-owned GLES-only experimental style. Central integration may construct this view with
-     * this value without adding an XLocker resource, shader, or sound to the application.
-     */
+    /** Archived fourth Lens Flare texture family. */
     public static final String MODE_LIGHTNING = "lightning";
     private static final float BASE_FINGER_Y_OFFSET_PX = -80f;
     private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
@@ -106,11 +103,10 @@ public final class LensFlareGlesEffectView extends FrameLayout
         scene = new LensFlareScene(
                 BASE_MAX_ALPHA_DISTANCE_PX * ratio,
                 BASE_TAP_AREA_RADIUS_PX * ratio,
-                BuildFlavor.TESTER,
-                MODE_LIGHTNING.equals(lensFlareMode));
+                BuildFlavor.TESTER);
         glView = new GlesView(context, sceneLock, scene, this,
-                MODE_LIGHTNING.equals(lensFlareMode)
-                        ? "keyguard_flare_" : OverlayPrefs.lensFlareAssetPrefix(context));
+                "keyguard_" + lensFlareMode + "_",
+                LensFlareScene.assetScaleForMode(lensFlareMode));
         addView(glView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
@@ -125,7 +121,7 @@ public final class LensFlareGlesEffectView extends FrameLayout
                 + " mode=" + lensFlareMode);
     }
 
-    /** Returns the app-owned lightning hook or one of the already persisted Lens modes. */
+    /** Returns the archived Lightning family or one of the already persisted Lens modes. */
     public static String normalizeMode(String requestedMode) {
         if (MODE_LIGHTNING.equals(requestedMode)) {
             return MODE_LIGHTNING;
@@ -441,12 +437,6 @@ public final class LensFlareGlesEffectView extends FrameLayout
                 "precision highp float; varying vec2 vTexCoord;"
                 + "uniform sampler2D uTexture; uniform float uAlpha;"
                 + "void main(){gl_FragColor=texture2D(uTexture,vTexCoord)*uAlpha;}";
-        private static final String LIGHTNING_VERTEX =
-                "attribute vec2 aPosition;"
-                + "void main(){gl_Position=vec4(aPosition,0.0,1.0);}";
-        private static final String LIGHTNING_FRAGMENT =
-                "precision mediump float; uniform vec4 uColor;"
-                + "void main(){gl_FragColor=uColor;}";
         private static final String FINAL_VERTEX =
                 "attribute vec2 aPosition; attribute vec2 aTexCoord; varying vec2 vTexCoord;"
                 + "void main(){gl_Position=vec4(aPosition,0.0,1.0);vTexCoord=aTexCoord;}";
@@ -480,9 +470,6 @@ public final class LensFlareGlesEffectView extends FrameLayout
         private final String[] assetNames;
         private final AtomicInteger animationGeneration = new AtomicInteger();
         private final FloatBuffer spriteVertices = allocateFloats(16);
-        // One bolt is currently at most eight segments. Keep a little headroom for a future
-        // longer procedural branch without allocating on the GL thread.
-        private final FloatBuffer lightningVertices = allocateFloats(512);
         private final FloatBuffer fullScreenVertices = makeBuffer(new float[] {
                 -1f, 1f, 0f, 0f, -1f, -1f, 0f, 1f,
                 1f, 1f, 1f, 0f, 1f, -1f, 1f, 1f
@@ -490,6 +477,7 @@ public final class LensFlareGlesEffectView extends FrameLayout
         private final int[] assetTextures = new int[LensFlareScene.ASSET_COUNT];
         private final int[] assetWidths = new int[LensFlareScene.ASSET_COUNT];
         private final int[] assetHeights = new int[LensFlareScene.ASSET_COUNT];
+        private final float assetScale;
         private final Object sourceLock = new Object();
         private File backgroundFile;
         private Bitmap fallbackBitmap;
@@ -499,7 +487,6 @@ public final class LensFlareGlesEffectView extends FrameLayout
         private int surfaceWidth;
         private int surfaceHeight;
         private int spriteProgram;
-        private int lightningProgram;
         private int finalProgram;
         private int vignetteTexture;
         private int backgroundTexture;
@@ -518,11 +505,12 @@ public final class LensFlareGlesEffectView extends FrameLayout
         private float backgroundOffsetY;
 
         GlesView(Context context, Object sceneLock, LensFlareScene scene,
-                LensFlareGlesListener listener, String assetPrefix) {
+                LensFlareGlesListener listener, String assetPrefix, float assetScale) {
             super(context);
             this.sceneLock = sceneLock;
             this.scene = scene;
             this.listener = listener;
+            this.assetScale = assetScale;
             assetNames = assetNames(assetPrefix);
             setZOrderOnTop(true);
             getHolder().setFormat(PixelFormat.TRANSLUCENT);
@@ -542,7 +530,6 @@ public final class LensFlareGlesEffectView extends FrameLayout
             try {
                 releaseGlObjects();
                 spriteProgram = createProgram(SPRITE_VERTEX, SPRITE_FRAGMENT);
-                lightningProgram = createProgram(LIGHTNING_VERTEX, LIGHTNING_FRAGMENT);
                 finalProgram = createProgram(FINAL_VERTEX, FINAL_FRAGMENT);
                 uploadAssets();
                 vignetteTexture = uploadDrawable("keyguard_flare_vignetting", null);
@@ -734,7 +721,8 @@ public final class LensFlareGlesEffectView extends FrameLayout
                 if (asset < 0 || asset >= assetTextures.length || assetTextures[asset] == 0) {
                     continue;
                 }
-                float factor = DEFAULT_IN_SAMPLE_SIZE * Math.max(0f, sprite.scale);
+                float factor = DEFAULT_IN_SAMPLE_SIZE * assetScale
+                        * Math.max(0f, sprite.scale);
                 float width = assetWidths[asset] * factor;
                 float height = assetHeights[asset] * factor;
                 fillSpriteVertices(sprite.x, sprite.y, width, height, sprite.rotation);
@@ -750,81 +738,8 @@ public final class LensFlareGlesEffectView extends FrameLayout
             }
             GLES20.glDisableVertexAttribArray(position);
             GLES20.glDisableVertexAttribArray(texCoord);
-            drawLightning(frame);
             GLES20.glDisable(GLES20.GL_BLEND);
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
-        }
-
-        /** Draws generated bolts into the same additive accumulation target as Lens sprites. */
-        private void drawLightning(LensFlareScene.Frame frame) {
-            if (lightningProgram == 0 || frame.lightningBolts.isEmpty()) {
-                return;
-            }
-            GLES20.glUseProgram(lightningProgram);
-            int position = GLES20.glGetAttribLocation(lightningProgram, "aPosition");
-            int color = GLES20.glGetUniformLocation(lightningProgram, "uColor");
-            GLES20.glEnableVertexAttribArray(position);
-            for (LensFlareScene.LightningBolt bolt : frame.lightningBolts) {
-                drawLightningBolt(position, color, bolt, bolt.glowWidthPx,
-                        0.16f, 0.48f, 1f, 0.42f);
-                drawLightningBolt(position, color, bolt, bolt.coreWidthPx,
-                        0.82f, 0.94f, 1f, 1f);
-            }
-            GLES20.glDisableVertexAttribArray(position);
-        }
-
-        private void drawLightningBolt(int position, int color, LensFlareScene.LightningBolt bolt,
-                float widthPx, float red, float green, float blue, float colorAlpha) {
-            if (bolt.points == null || bolt.points.length < 4 || widthPx <= 0f) {
-                return;
-            }
-            float alpha = Math.max(0f, Math.min(1f, bolt.alpha * colorAlpha));
-            if (alpha <= 0f) {
-                return;
-            }
-            int vertices = fillLightningVertices(bolt.points, widthPx);
-            if (vertices == 0) {
-                return;
-            }
-            GLES20.glUniform4f(color, red * alpha, green * alpha, blue * alpha, alpha);
-            lightningVertices.position(0);
-            GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT, false,
-                    2 * 4, lightningVertices);
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertices);
-        }
-
-        private int fillLightningVertices(float[] points, float widthPx) {
-            lightningVertices.position(0);
-            int vertexCount = 0;
-            float halfWidth = widthPx * 0.5f;
-            for (int index = 0; index + 3 < points.length; index += 2) {
-                float x0 = points[index];
-                float y0 = points[index + 1];
-                float x1 = points[index + 2];
-                float y1 = points[index + 3];
-                float dx = x1 - x0;
-                float dy = y1 - y0;
-                float length = (float) Math.hypot(dx, dy);
-                if (length < 0.01f || lightningVertices.remaining() < 12) {
-                    continue;
-                }
-                float offsetX = -dy / length * halfWidth;
-                float offsetY = dx / length * halfWidth;
-                putLightningVertex(x0 - offsetX, y0 - offsetY);
-                putLightningVertex(x0 + offsetX, y0 + offsetY);
-                putLightningVertex(x1 - offsetX, y1 - offsetY);
-                putLightningVertex(x1 - offsetX, y1 - offsetY);
-                putLightningVertex(x0 + offsetX, y0 + offsetY);
-                putLightningVertex(x1 + offsetX, y1 + offsetY);
-                vertexCount += 6;
-            }
-            lightningVertices.position(0);
-            return vertexCount;
-        }
-
-        private void putLightningVertex(float x, float y) {
-            lightningVertices.put(x * 2f / surfaceWidth - 1f);
-            lightningVertices.put(1f - y * 2f / surfaceHeight);
         }
 
         private void drawComposite(LensFlareScene.Frame frame) {
@@ -1184,10 +1099,6 @@ public final class LensFlareGlesEffectView extends FrameLayout
             if (spriteProgram != 0) {
                 GLES20.glDeleteProgram(spriteProgram);
                 spriteProgram = 0;
-            }
-            if (lightningProgram != 0) {
-                GLES20.glDeleteProgram(lightningProgram);
-                lightningProgram = 0;
             }
             if (finalProgram != 0) {
                 GLES20.glDeleteProgram(finalProgram);

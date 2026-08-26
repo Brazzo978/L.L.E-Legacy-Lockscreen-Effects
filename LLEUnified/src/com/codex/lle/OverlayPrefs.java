@@ -104,8 +104,8 @@ final class OverlayPrefs {
     static final String DEBUG_LEGACY_QUICK_PANEL_DETECTION =
             "debug_legacy_quick_panel_detection";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
-    /** Lens Flare renderer selector. GLES is the default; false selects original Canvas. */
-    static final String LENS_FLARE_GLES_RENDERER = "lens_flare_gles_renderer";
+    /** Retired Lens Flare GLES A/B key. Kept only so older tester commands stay harmless. */
+    static final String LENS_FLARE_GLES_RENDERER = "lens_flare_gles_renderer_v2";
     static final String LENS_FLARE_MODE = "lens_flare_mode";
     static final String LENS_FLARE_MODE_FLARE = "flare";
     static final String LENS_FLARE_MODE_BLUE_RING = "bluering";
@@ -145,6 +145,11 @@ final class OverlayPrefs {
     static final String POPPING_COLOR_REFRESH_TOKEN = "popping_color_refresh_token";
     static final String EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED =
             "effect_background_auto_refresh_enabled";
+    private static final String LG_PRELOCK_UNDERLAY_METADATA_PREFIX =
+            "lg_prelock_underlay_metadata_";
+    static final String LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN = "last_screen";
+    static final String LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK =
+            "wallpaper_fallback";
     static final String EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS =
             "effect_background_refresh_interval_hours";
     static final String EFFECT_BACKGROUND_SKIP_NIGHT =
@@ -233,11 +238,11 @@ final class OverlayPrefs {
     static final int EFFECT_GOOD_LOCK_RECTANGLE = 29;
     /** App-owned Good Lock particle renderer: bouncing-color variant. */
     static final int EFFECT_GOOD_LOCK_BOUNCING = 30;
-    /** Tester-only app-owned reconstruction of Samsung's None / Circle Unlock. */
-    static final int EFFECT_S5_NONE = 31;
+    /** Tester-only app-owned reconstruction of the Galaxy S3 None / Circle Unlock. */
+    static final int EFFECT_S3_NONE = 31;
     /** Tester-only app-owned LG G2 Pixelate-inspired renderer. */
     static final int EFFECT_LG_G2_PIXELATE = 32;
-    /** Tester-only app-owned LG G2 Particle-inspired renderer. */
+    /** Tester-only restoration of LG G2 Particle from the authorized XLocker archive. */
     static final int EFFECT_LG_G2_PARTICLE = 33;
     /** Tester-only app-owned LG G2 Crystal-inspired renderer. */
     static final int EFFECT_LG_G2_CRYSTAL = 34;
@@ -245,7 +250,15 @@ final class OverlayPrefs {
     static final int EFFECT_XPERIA_Z1_BLINDS = 35;
     /** Tester-only clean-room revolving glass-inspired renderer. */
     static final int EFFECT_REVOLVING_GLASS = 36;
-    static final int EFFECT_COUNT = 37;
+    /** Tester-only restoration of LG G1 White Hole from the authorized XLocker archive. */
+    static final int EFFECT_LG_G1_WHITE_HOLE = 37;
+    /** Tester-only restoration of LG Soda from the authorized XLocker archive. */
+    static final int EFFECT_LG_SODA = 38;
+    /** Tester-only restoration of LG G1 Dewdrop from the authorized XLocker archive. */
+    static final int EFFECT_LG_G1_DEWDROP = 39;
+    /** Tester-only restoration of LG G2 Light Particle from the authorized XLocker archive. */
+    static final int EFFECT_LG_G2_LIGHT_PARTICLE = 40;
+    static final int EFFECT_COUNT = 41;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -639,7 +652,7 @@ final class OverlayPrefs {
                 || effect == EFFECT_S5_POPPING_COLOURS
                 || effect == EFFECT_STONE_SKIPPING
                 || effect == EFFECT_MASS_TENSION
-                || effect == EFFECT_S5_NONE
+                || effect == EFFECT_S3_NONE
                 || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
                 || isSeasonalUnlockEffect(effect);
     }
@@ -738,11 +751,11 @@ final class OverlayPrefs {
             case EFFECT_N5_COLOUR_DROPLET_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet (LLE renderer)"
-                        : "N5 Colored Droplet";
+                        : "N5 Colored Droplet (WIP)";
             case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet + Gyro (LLE renderer)"
-                        : "N5 Colored Droplet + Gyro";
+                        : "N5 Colored Droplet + Gyro (WIP)";
             case EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet + Gyro (Samsung legacy)"
@@ -754,7 +767,7 @@ final class OverlayPrefs {
             case EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (LLE renderer)"
-                        : "N5 Sparkling Bubbles";
+                        : "N5 Sparkling Bubbles (WIP)";
             case EFFECT_S6_WATER_DROPLET:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (Samsung legacy)"
@@ -762,7 +775,7 @@ final class OverlayPrefs {
             case EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (LLE renderer)"
-                        : "S6 Water Droplet";
+                        : "S6 Water Droplet (WIP)";
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -778,25 +791,33 @@ final class OverlayPrefs {
             case EFFECT_MASS_TENSION:
                 return "Mass Tension";
             case EFFECT_RIPPLE_INK:
-                return "N3 Ripple Ink";
+                return "N3 Ripple Ink (WIP)";
             case EFFECT_GOOD_LOCK_POPPING:
                 return "Good Lock Popping Color";
             case EFFECT_GOOD_LOCK_RECTANGLE:
                 return "Good Lock Rectangle Traveller";
             case EFFECT_GOOD_LOCK_BOUNCING:
                 return "Good Lock Bouncing Color";
-            case EFFECT_S5_NONE:
-                return "S5 Circle (None)";
+            case EFFECT_S3_NONE:
+                return "S3 None";
             case EFFECT_LG_G2_PIXELATE:
-                return "LG G2 Pixelate";
+                return "G2 Pixelate (WIP)";
             case EFFECT_LG_G2_PARTICLE:
-                return "LG G2 Particle";
+                return "G2 Particle";
             case EFFECT_LG_G2_CRYSTAL:
-                return "LG G2 Crystal";
+                return "G2 Crystal (WIP)";
             case EFFECT_XPERIA_Z1_BLINDS:
-                return "Xperia Z1 Blinds";
+                return "Xperia Z1 Blinds (WIP)";
             case EFFECT_REVOLVING_GLASS:
-                return "Revolving Glass";
+                return "Revolving Glass (WIP)";
+            case EFFECT_LG_G1_WHITE_HOLE:
+                return "G1 White Hole";
+            case EFFECT_LG_SODA:
+                return "G2 Soda";
+            case EFFECT_LG_G1_DEWDROP:
+                return "G1 Dewdrop";
+            case EFFECT_LG_G2_LIGHT_PARTICLE:
+                return "G2 Light Particle";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -970,7 +991,9 @@ final class OverlayPrefs {
     }
 
     static boolean lensFlareGlesRendererEnabled(Context context) {
-        return get(context).getBoolean(LENS_FLARE_GLES_RENDERER, true);
+        // The GLSurfaceView port proved unreliable across repeated keyguard attach/detach
+        // cycles. Lens Flare is Canvas/HWUI-only now, regardless of a stale saved tester value.
+        return false;
     }
 
     static String lensFlareMode(Context context) {
@@ -1658,6 +1681,76 @@ final class OverlayPrefs {
                 ? "" : "_" + normalized;
         return new File(context.getFilesDir(),
                 "unlock_effect_background" + suffix + ".argb8888");
+    }
+
+    static File lgPreLockUnderlayFile(Context context, String profile, int displayId,
+            int width, int height) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile)
+                .replaceAll("[^A-Za-z0-9_-]", "_");
+        return new File(context.getFilesDir(),
+                "lg_prelock_underlay_" + normalized
+                        + "_d" + Math.max(0, displayId)
+                        + "_" + Math.max(1, width) + "x" + Math.max(1, height)
+                        + ".argb8888");
+    }
+
+    static boolean usesLgPreLockUnderlay(int effect) {
+        // Pixelate is the first architecture carrier, not a claim that its renderer is final.
+        // Future clean-room LG renderers can opt in without sharing the lockscreen colormap.
+        return effect == EFFECT_LG_G2_PIXELATE
+                || effect == EFFECT_LG_G2_PARTICLE
+                || effect == EFFECT_LG_G1_WHITE_HOLE
+                || effect == EFFECT_LG_SODA
+                || effect == EFFECT_LG_G1_DEWDROP
+                || effect == EFFECT_LG_G2_LIGHT_PARTICLE;
+    }
+
+    static int markLgPreLockUnderlayCaptured(Context context, String profile, int displayId,
+            int width, int height, long timestamp) {
+        return markLgPreLockUnderlay(
+                context, profile, displayId, width, height, timestamp,
+                LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN);
+    }
+
+    static int markLgPreLockUnderlayFallback(Context context, String profile, int displayId,
+            int width, int height, long timestamp) {
+        return markLgPreLockUnderlay(
+                context, profile, displayId, width, height, timestamp,
+                LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK);
+    }
+
+    static long lgPreLockUnderlayCapturedAt(Context context, String profile, int displayId,
+            int width, int height) {
+        return get(context).getLong(lgPreLockUnderlayMetadataKey(
+                profile, displayId, width, height) + "_captured_at", 0L);
+    }
+
+    static String lgPreLockUnderlayOrigin(Context context, String profile, int displayId,
+            int width, int height) {
+        return get(context).getString(lgPreLockUnderlayMetadataKey(
+                        profile, displayId, width, height) + "_origin",
+                LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN);
+    }
+
+    private static int markLgPreLockUnderlay(Context context, String profile, int displayId,
+            int width, int height, long timestamp, String origin) {
+        String key = lgPreLockUnderlayMetadataKey(profile, displayId, width, height);
+        SharedPreferences prefs = get(context);
+        int generation = Math.max(0, prefs.getInt(key + "_generation", 0)) + 1;
+        prefs.edit()
+                .putInt(key + "_generation", generation)
+                .putLong(key + "_captured_at", Math.max(0L, timestamp))
+                .putString(key + "_origin", origin)
+                .apply();
+        return generation;
+    }
+
+    private static String lgPreLockUnderlayMetadataKey(String profile, int displayId,
+            int width, int height) {
+        return LG_PRELOCK_UNDERLAY_METADATA_PREFIX
+                + FoldDisplayTarget.normalizeProfile(profile)
+                + "_d" + Math.max(0, displayId)
+                + "_" + Math.max(1, width) + "x" + Math.max(1, height);
     }
 
     static File legacyPngEffectBackgroundFile(Context context, String profile) {
