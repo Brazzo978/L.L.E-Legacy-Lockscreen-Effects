@@ -135,7 +135,7 @@ public final class LgLightParticleEffectView extends View
     @Override public View asView() { return this; }
 
     @Override public String effectName() {
-        return "G2 Light Particle (XLocker restoration tester)";
+        return "G2 Light Particle";
     }
 
     @Override public void beginGesture(float screenX, float screenY) {

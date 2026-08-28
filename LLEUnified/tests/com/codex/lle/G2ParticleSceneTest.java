@@ -42,11 +42,13 @@ public final class G2ParticleSceneTest {
         scene.begin(200f, 300f, 1_000L);
         scene.move(500f, 600f, 1_050L);
         scene.finish(true, 1_100L);
-        scene.fillVertices(2_049L);
+        long tailEnd = 1_100L + G2ParticleScene.EXIT_DURATION_MS
+                + G2ParticleScene.COMPLETE_HOLD_MS;
+        scene.fillVertices(tailEnd - 1L);
         if (!scene.isAnimating()) {
             throw new AssertionError("unlock tail ended before expansion plus hold");
         }
-        scene.fillVertices(2_050L);
+        scene.fillVertices(tailEnd);
         if (scene.isAnimating()) {
             throw new AssertionError("unlock tail exceeded expansion plus hold");
         }

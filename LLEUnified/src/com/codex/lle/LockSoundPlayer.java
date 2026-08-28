@@ -151,6 +151,8 @@ final class LockSoundPlayer {
                     load(R.raw.lg_crystal_lock);
             effectSounds[OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS] =
                     load(R.raw.xperia_z1_blinds_lock);
+            effectSounds[OverlayPrefs.EFFECT_REVOLVING_GLASS] =
+                    load(R.raw.revolving_glass_lock);
 
             seasonalSounds[SEASONAL_SPRING] = load(R.raw.spring_lock);
             seasonalSounds[SEASONAL_SUMMER] = load(R.raw.summer_lock);

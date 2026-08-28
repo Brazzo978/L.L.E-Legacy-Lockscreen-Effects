@@ -30,7 +30,7 @@ only; new effects and features target ARM64.
 | APK | ABI | Recommended use |
 |---|---|---|
 | `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
-| `LLE64-1.0.5.7-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
+| `LLE64-1.0.6.0-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
 | `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Historical final diagnostic build with frozen Samsung engines |
 
 Check the supported ABIs:
@@ -46,6 +46,7 @@ device.
 
 | Effect | ARM32 | ARM64 |
 |---|:---:|:---:|
+| S3 None | Not in frozen build | Available |
 | S4 Lens Flare | Available | Available |
 | S3 Water Ripple | Available | Available |
 | S5 Popping Colours | Available | Available |
@@ -65,6 +66,9 @@ device.
 | Tab S Brilliant Cut | Available | Available |
 | Seasonal / Spring / Summer / Autumn / Winter | Available | Available |
 | Good Lock-inspired Popping / Rectangle / Bouncing | Not in frozen build | Available |
+| LG G1 White Hole / Dewdrop | Not in frozen build | Available |
+| LG G2 Soda / Particle / Light Particle / Pixelate / Crystal | Not in frozen build | Available |
+| Sony Xperia Z1 Blinds / Revolving Glass | Not in frozen build | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -106,7 +110,7 @@ every screen in order.
 Quick ARM64 ADB update:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.5.7-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.6.0-64-bit.apk"
 ```
 
 Open ARM64:
@@ -252,6 +256,7 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.6.0 stable release notes](docs/RELEASE_NOTES_1.0.6.0.md)
 - [1.0.5.7 stable release notes](docs/RELEASE_NOTES_1.0.5.7.md)
 - [1.0.5.6 stable release notes](docs/RELEASE_NOTES_1.0.5.6.md)
 - [1.0.5 stable release notes](docs/RELEASE_NOTES_1.0.5.md)

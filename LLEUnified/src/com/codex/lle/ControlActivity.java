@@ -2094,9 +2094,10 @@ public class ControlActivity extends Activity {
             effects.addView(lightweightMode);
         }
         effects.addView(effectPreviewHint());
+        effects.addView(sectionLabel("Samsung"));
         addEffectOptionIfAvailable(effects,
                 "S3 None",
-                "Samsung's ultralight circle unlock, reconstructed from S3 firmware.",
+                "A clean white circle expands from your touch as the padlock flips open.",
                 OverlayPrefs.EFFECT_S3_NONE,
                 current);
         addEffectOptionIfAvailable(effects,
@@ -2127,9 +2128,7 @@ public class ControlActivity extends Activity {
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Popping Colours",
-                BuildFlavor.TESTER
-                        ? "Colorful ParticleSpace bursts (XLocker name: S5 Particle)."
-                        : "Colorful particles bursting from touch.",
+                "Colorful particles burst and scatter from your touch.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current);
         addEffectOptionIfAvailable(effects,
@@ -2187,7 +2186,7 @@ public class ControlActivity extends Activity {
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (LLE renderer)"
-                        : "S6 Water Droplet (WIP)",
+                        : "S6 Water Droplet",
                 "Refracted water droplets flowing across the wallpaper.",
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 current);
@@ -2218,74 +2217,72 @@ public class ControlActivity extends Activity {
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (LLE renderer)"
-                        : "N5 Sparkling Bubbles (WIP)",
+                        : "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
                 current);
-        if (BuildFlavor.TESTER) {
-            effects.addView(sectionLabel("LG effects"));
-            addEffectOptionIfAvailable(effects,
-                    "G1 White Hole",
-                    "Restored XLocker/LG effect using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G2 Soda",
-                    "Restored XLocker/LG bubbles using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_SODA,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G1 Dewdrop",
-                    "Restored XLocker/LG refractive droplet using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_G1_DEWDROP,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G2 Particle",
-                    "Restored XLocker/LG particle ring using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_G2_PARTICLE,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G2 Light Particle",
-                    "Restored XLocker/LG light and bokeh ring using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G2 Crystal",
-                    "Restored faceted crystal refraction using the captured pre-lock screen.",
-                    OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
-                    current);
-            effects.addView(sectionLabel("Experimental WIP"));
-            addEffectOptionIfAvailable(effects,
-                    "Xperia Z1 Blinds (WIP)",
-                    "Clean-room Sony-style strips open across the wallpaper.",
-                    OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "Revolving Glass (WIP)",
-                    "Inspired beta: rotates the cached lockscreen image, not live UI.",
-                    OverlayPrefs.EFFECT_REVOLVING_GLASS,
-                    current);
-            addEffectOptionIfAvailable(effects,
-                    "G2 Pixelate (WIP)",
-                    "Deferred priority 14: requires separate lockscreen and underlay sources.",
-                    OverlayPrefs.EFFECT_LG_G2_PIXELATE,
-                    current);
-        }
         effects.addView(sectionLabel("Good Lock"));
         addEffectOptionIfAvailable(effects,
                 "Good Lock Popping Color",
-                "Color particles drift from touch over the sampled wallpaper.",
+                "Bright color particles drift and scatter from your touch.",
                 OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Good Lock Rectangle Traveller",
-                "Bright rectangles travel from touch over the sampled wallpaper.",
+                "Bright rectangles race outward from your touch.",
                 OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
                 current);
         addEffectOptionIfAvailable(effects,
                 "Good Lock Bouncing Color",
-                "Color particles bounce from touch over the sampled wallpaper.",
+                "Color particles spring and bounce away from your touch.",
                 OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                current);
+        effects.addView(sectionLabel("LG effects"));
+        addEffectOptionIfAvailable(effects,
+                "G1 White Hole",
+                "A glittering white ring expands from your touch into a luminous portal.",
+                OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Soda",
+                "Bubbles and sparkling particles swirl around an expanding circular window.",
+                OverlayPrefs.EFFECT_LG_SODA,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G1 Dewdrop",
+                "A glossy liquid droplet bends the image beneath your touch before spreading outward.",
+                OverlayPrefs.EFFECT_LG_G1_DEWDROP,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Particle",
+                "A halo of bright particles gathers at your touch and sweeps outward with the drag.",
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Light Particle",
+                "Soft bokeh lights and glittering particles bloom around your touch.",
+                OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Pixelate",
+                "Triangular pixels grow larger with your drag, breaking the image into a shifting mosaic.",
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Crystal",
+                "A faceted crystal spins and refracts the image beneath your touch.",
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                current);
+        effects.addView(sectionLabel("Sony"));
+        addEffectOptionIfAvailable(effects,
+                "Xperia Z1 Blinds",
+                "Horizontal strips peel open from your touch to reveal the screen beneath.",
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Revolving Glass",
+                "A luminous glass tile lifts, tilts and spins with your swipe before shrinking away.",
+                OverlayPrefs.EFFECT_REVOLVING_GLASS,
                 current);
         effects.addView(sectionLabel("Seasonal"));
         addEffectOptionIfAvailable(effects,
@@ -2316,7 +2313,7 @@ public class ControlActivity extends Activity {
         root.addView(effects);
         root.addView(infoFooter());
         if (effectUsesColormapCache(current)
-                || OverlayPrefs.usesLgPreLockUnderlay(current)
+                || OverlayPrefs.needsLgPreLockUnderlay(current)
                 || (BuildFlavor.TESTER
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)) {
             root.addView(screenshotServiceControls(current));
@@ -2520,14 +2517,20 @@ public class ControlActivity extends Activity {
         if (!rendererWallpaperExpanded) {
             return section;
         }
-        if (OverlayPrefs.usesLgPreLockUnderlay(currentEffect)) {
+        if (OverlayPrefs.needsLgPreLockUnderlay(currentEffect)) {
             String effectName = OverlayPrefs.effectLabel(currentEffect);
-            section.addView(infoText(
-                    effectName + " uses Last screen: on a normal screen-off, L.L.E captures "
+            boolean secondary = OverlayPrefs.usesLgPreLockUnderlayAsSecondary(currentEffect);
+            section.addView(infoText(secondary
+                    ? effectName + " uses two independent images: Last screen remains fixed "
+                            + "under the effect, while the lockscreen cache is mapped only to "
+                            + "the rotating glass tile. Neither cache replaces the other."
+                    : effectName + " uses Last screen: on a normal screen-off, L.L.E captures "
                             + "the final unlocked app/launcher frame and supplies that private "
-                            + "buffer only to LG effects. It is separate from, and never "
-                            + "replaces, the lockscreen colormap used by other effects."));
-            section.addView(sectionLabel("LOCKSCREEN CACHE · OTHER EFFECTS"));
+                            + "buffer only to effects that request it. It is separate from, and "
+                            + "never replaces, the lockscreen colormap used by other effects."));
+            section.addView(sectionLabel(secondary
+                    ? "LOCKSCREEN CACHE · ROTATING TILE"
+                    : "LOCKSCREEN CACHE · OTHER EFFECTS"));
             section.addView(infoText(effectBackgroundProfileStatus(
                     currentEffect, FoldDisplayTarget.cacheProfileForContext(this))));
             section.addView(outlineButton("Force lockscreen cache recapture",
@@ -2993,22 +2996,31 @@ public class ControlActivity extends Activity {
     }
 
     private String effectBackgroundStatus(int effect) {
-        if (OverlayPrefs.usesLgPreLockUnderlay(effect)) {
+        if (OverlayPrefs.needsLgPreLockUnderlay(effect)) {
             LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
             Argb8888BitmapStore.Info info = LgLastScreenCache.inspect(target);
+            String lastScreenStatus;
             if (info == null) {
-                return "Last screen (" + target.profile + "): empty. Unlock normally, leave "
+                lastScreenStatus = "Last screen (" + target.profile
+                        + "): empty. Unlock normally, leave "
                         + "the app or launcher you want visible, then turn the screen off once.";
+            } else {
+                long capturedAt = LgLastScreenCache.capturedAt(this, target);
+                long ageMs = capturedAt <= 0L
+                        ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
+                String source = LgLastScreenCache.isWallpaperFallback(this, target)
+                        ? "forced wallpaper fallback" : "captured last unlocked frame";
+                lastScreenStatus = "Last screen (" + target.profile + "): ready, "
+                        + info.width + " x " + info.height + ", age " + ageLabel(ageMs)
+                        + ", source: " + source
+                        + ". Dedicated cache; lockscreen colormap unchanged.";
             }
-            long capturedAt = LgLastScreenCache.capturedAt(this, target);
-            long ageMs = capturedAt <= 0L
-                    ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
-            String source = LgLastScreenCache.isWallpaperFallback(this, target)
-                    ? "forced wallpaper fallback" : "captured last unlocked frame";
-            return "Last screen (" + target.profile + "): ready, "
-                    + info.width + " x " + info.height + ", age " + ageLabel(ageMs)
-                    + ", source: " + source
-                    + ". Dedicated cache; lockscreen colormap unchanged.";
+            if (OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)) {
+                return lastScreenStatus + "\nRotating tile: "
+                        + effectBackgroundProfileStatus(
+                                effect, FoldDisplayTarget.cacheProfileForContext(this));
+            }
+            return lastScreenStatus;
         }
         if (!effectUsesColormapCache(effect)) {
             return "Screenshot cache: not used by this effect.";
@@ -3684,6 +3696,30 @@ public class ControlActivity extends Activity {
                 return "effect_preview_s5_brilliant_ring.mp4";
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
                 return "effect_preview_tabs_brilliant_cut.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return "effect_preview_good_lock_popping.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return "effect_preview_good_lock_rectangle.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return "effect_preview_good_lock_bouncing.mp4";
+            case OverlayPrefs.EFFECT_S3_NONE:
+                return "effect_preview_s3_none.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                return "effect_preview_lg_pixelate.mp4";
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                return "effect_preview_lg_white_hole.mp4";
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return "effect_preview_lg_soda.mp4";
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                return "effect_preview_lg_dewdrop.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                return "effect_preview_lg_particle.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return "effect_preview_lg_light_particle.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return "effect_preview_lg_crystal.mp4";
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                return "effect_preview_xperia_z1_blinds.mp4";
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
             case OverlayPrefs.EFFECT_SEASONAL_SPRING:
             case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
@@ -3761,6 +3797,42 @@ public class ControlActivity extends Activity {
                 break;
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
                 drawable = R.drawable.effect_preview_tabs_brilliant_cut;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                drawable = R.drawable.effect_preview_good_lock_popping;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                drawable = R.drawable.effect_preview_good_lock_rectangle;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                drawable = R.drawable.effect_preview_good_lock_bouncing;
+                break;
+            case OverlayPrefs.EFFECT_S3_NONE:
+                drawable = R.drawable.effect_preview_s3_none;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                drawable = R.drawable.effect_preview_lg_pixelate;
+                break;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                drawable = R.drawable.effect_preview_lg_white_hole;
+                break;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                drawable = R.drawable.effect_preview_lg_soda;
+                break;
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                drawable = R.drawable.effect_preview_lg_dewdrop;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                drawable = R.drawable.effect_preview_lg_particle;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                drawable = R.drawable.effect_preview_lg_light_particle;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                drawable = R.drawable.effect_preview_lg_crystal;
+                break;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                drawable = R.drawable.effect_preview_xperia_z1_blinds;
                 break;
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
             case OverlayPrefs.EFFECT_SEASONAL_SPRING:
@@ -4116,6 +4188,8 @@ public class ControlActivity extends Activity {
 
     private int effectIconResId(int effect) {
         switch (effect) {
+            case OverlayPrefs.EFFECT_S3_NONE:
+                return R.drawable.icon_effect_s3_none_lle;
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return R.drawable.icon_effect_s3_ripple_lle;
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
@@ -4148,14 +4222,30 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
+            case OverlayPrefs.EFFECT_RIPPLE_INK:
+                return R.drawable.icon_effect_n3_ink_in_water_lle;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return R.drawable.icon_effect_s5_stone_skipping_lle;
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return R.drawable.icon_effect_mass_tension;
             case OverlayPrefs.EFFECT_LG_SODA:
-                return R.drawable.preview_unlock_lg_soda;
+                return R.drawable.icon_effect_lg_soda_lle;
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                return R.drawable.icon_effect_lg_dewdrop_lle;
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                return R.drawable.icon_effect_g2_particle_lle;
             case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
-                return R.drawable.lg_lightparticle_a_1;
+                return R.drawable.icon_effect_g2_light_particle_lle;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                return R.drawable.icon_effect_white_hole_lle;
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                return R.drawable.icon_effect_g2_pixelate_lle;
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return R.drawable.icon_effect_g2_crystal_lle;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                return R.drawable.icon_effect_xperia_z1_blinds_lle;
+            case OverlayPrefs.EFFECT_REVOLVING_GLASS:
+                return R.drawable.icon_effect_revolving_glass_lle;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return R.drawable.icon_effect_s5_brilliant_ring_lle;
             case OverlayPrefs.EFFECT_TABS_BLIND:
@@ -4953,7 +5043,7 @@ public class ControlActivity extends Activity {
                 ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
         return effectOption(
-                "N5 Colored Droplet (WIP)",
+                "N5 Colored Droplet",
                 "Colorful liquid droplets rolling across screen.",
                 effect,
                 OverlayPrefs.isColourDropletEffect(current),
@@ -4999,7 +5089,7 @@ public class ControlActivity extends Activity {
     private View lensFlareEffectOption(int current) {
         return effectOption(
                 "S4 Lens Flare",
-                "Original, Blue Ring, Blood and Lightning texture families.",
+                "A bright flare blooms under your touch in four selectable light styles.",
                 OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
                 -1,
@@ -5078,7 +5168,7 @@ public class ControlActivity extends Activity {
     /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
     private View rippleInkEffectOption(int current) {
         return effectOption(
-                "N3 Ripple Ink (WIP)",
+                "N3 Ripple Ink",
                 "Ink ripples with a selectable colour palette.",
                 OverlayPrefs.EFFECT_RIPPLE_INK,
                 current == OverlayPrefs.EFFECT_RIPPLE_INK,

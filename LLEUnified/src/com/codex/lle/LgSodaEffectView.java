@@ -135,7 +135,7 @@ public final class LgSodaEffectView extends View
     @Override public View asView() { return this; }
 
     @Override public String effectName() {
-        return "G2 Soda (XLocker restoration tester)";
+        return "G2 Soda";
     }
 
     @Override public void beginGesture(float x, float y) {

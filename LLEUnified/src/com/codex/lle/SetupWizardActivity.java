@@ -1047,7 +1047,7 @@ public class SetupWizardActivity extends Activity {
         final boolean unlockEnabled = OverlayPrefs.get(this).getBoolean(
                 OverlayPrefs.UNLOCK_EFFECT_ENABLED, true);
         final int selectedEffect = OverlayPrefs.unlockEffect(this);
-        final boolean usesLastScreen = OverlayPrefs.usesLgPreLockUnderlay(selectedEffect);
+        final boolean usesLastScreen = OverlayPrefs.needsLgPreLockUnderlay(selectedEffect);
         final LgLastScreenCache.Target lastScreenTarget =
                 LgLastScreenCache.activeTarget(this);
         final boolean lastScreenReady = LgLastScreenCache.isReady(lastScreenTarget);
@@ -1079,10 +1079,10 @@ public class SetupWizardActivity extends Activity {
                     ? "Leave the unlocked app or launcher you want visible and turn the screen "
                             + "off. Wake to the lockscreen, wait there for about 2–3 seconds, "
                             + "then unlock and return. L.L.E keeps the lockscreen cache for all "
-                            + "other effects and Last screen separately for LG effects."
+                            + "other effects and Last screen separately for effects that need it."
                     : "Your fixed lockscreen cache is kept for all other effects. Turn the "
                             + "screen off once while the wanted app or launcher is visible to "
-                            + "create the separate Last screen cache for LG effects."));
+                            + "create the separate Last screen cache."));
             body.addView(statusCard(lockscreenCacheReady
                             ? "Lockscreen cache ready"
                             : "Waiting for lockscreen cache",
@@ -1751,7 +1751,7 @@ public class SetupWizardActivity extends Activity {
             return true;
         }
         int effect = OverlayPrefs.unlockEffect(this);
-        if (OverlayPrefs.usesLgPreLockUnderlay(effect)
+        if (OverlayPrefs.needsLgPreLockUnderlay(effect)
                 && LgLastScreenCache.isReady(LgLastScreenCache.activeTarget(this))) {
             return true;
         }

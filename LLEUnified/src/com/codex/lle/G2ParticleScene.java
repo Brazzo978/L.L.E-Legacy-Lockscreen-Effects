@@ -3,7 +3,7 @@ package com.codex.lle;
 /** Allocation-free motion model recovered from the authorized OptimusDev/XLocker archive. */
 final class G2ParticleScene {
     static final long EXIT_DURATION_MS = 400L;
-    static final long COMPLETE_HOLD_MS = 550L;
+    static final long COMPLETE_HOLD_MS = 650L;
     static final int VERTEX_STRIDE = 5; // x, y, point size, alpha, mask start
 
     // Donor j.a(): two sets of eight emitters for each recovered count table.

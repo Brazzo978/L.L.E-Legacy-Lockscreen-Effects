@@ -35,7 +35,7 @@ import java.util.Set;
 public final class LgDewdropEffectView extends View
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     static final long COMPLETE_MS = 400L;
-    static final long COMPLETE_SOLID_HOLD_MS = 550L;
+    static final long COMPLETE_SOLID_HOLD_MS = 600L;
     static final long CANCEL_MS = 300L;
 
     private static final int STAGE_IDLE = 0;
@@ -136,7 +136,7 @@ public final class LgDewdropEffectView extends View
 
     @Override public View asView() { return this; }
     @Override public String effectName() {
-        return "G1 Dewdrop (XLocker restoration tester)";
+        return "G1 Dewdrop";
     }
 
     @Override public void beginGesture(float x, float y) {

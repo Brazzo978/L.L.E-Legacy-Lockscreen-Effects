@@ -77,14 +77,19 @@ the user.
 
 ## Included effects
 
+- S3 None
 - S3 Water Ripple
 - S4 Lens Flare
 - S5 Popping Colours, Stone Skipping, and Brilliant Ring
 - N2 Ink in Water / Indigo
-- N3 Watercolor
+- N3 Watercolor and Ripple Ink
 - N4 Abstract Tiles and Geometric Mosaic
 - N5 Colored Droplet, Gyro Droplet, and Sparkling Bubbles
 - Tab S Blind and Brilliant Cut
+- Good Lock Popping Color, Rectangle Traveller, and Bouncing Color
+- LG G1 White Hole and Dewdrop
+- LG G2 Soda, Particle, Light Particle, Pixelate, and Crystal
+- Sony Xperia Z1 Blinds and Revolving Glass
 - Seasonal Spring, Summer, Autumn, and Winter effects
 - Charging doodles and seasonal companion effects
 

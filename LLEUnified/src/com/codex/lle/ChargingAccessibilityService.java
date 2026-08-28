@@ -102,7 +102,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS = 930L;
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS = 600L;
     private static final long PIN_ENTRY_DELAY_S3_NONE_TAIL_MS = 375L;
-    private static final long PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS = 440L;
+    private static final long PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS =
+            LgPixelateScene.UNLOCK_HOLD_MS;
     private static final long PIN_ENTRY_DELAY_LG_G2_PARTICLE_TAIL_MS = 440L;
     private static final long PIN_ENTRY_DELAY_LG_G2_CRYSTAL_TAIL_MS = 500L;
     private static final long PIN_ENTRY_DELAY_LG_G1_WHITE_HOLE_TAIL_MS =
@@ -664,6 +665,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean runtimeStartedAfterBootSafety;
     private boolean resolvedTouchBoxesDirty = true;
     private UnlockEffectRenderer unlockEffectRenderer;
+    private UnlockEffectRenderer unlockAffordanceDeliveredRenderer;
     private View unlockEffectView;
     private WindowManager.LayoutParams unlockEffectWindowParams;
     private SeasonalUnlockEffectView seasonalUnlockPartnerRenderer;
@@ -1152,6 +1154,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
             Rect rect = unlockEffectVisibleRect();
             unlockEffectRenderer.showUnlockAffordance(rect, 0L);
+            unlockAffordanceDeliveredRenderer = unlockEffectRenderer;
             unlockAffordancePending = false;
             unlockAffordanceShownThisWake = true;
             Log.i(TAG, "unlock affordance dispatched generation="
@@ -1814,7 +1817,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             @Override
             public void run() {
                 int effect = OverlayPrefs.unlockEffect(service);
-                if (service.effectUsesLgPreLockUnderlay(effect)) {
+                if (service.effectNeedsLgPreLockUnderlay(effect)) {
                     service.invalidateLoadedLgPreLockUnderlay(effect);
                 }
             }
@@ -1824,7 +1827,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean captureLgPreLockUnderlayIfNeeded() {
         final int effect = OverlayPrefs.unlockEffect(this);
         final long now = SystemClock.uptimeMillis();
-        if (!effectUsesLgPreLockUnderlay(effect)
+        if (!effectNeedsLgPreLockUnderlay(effect)
                 || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
                 || lgPreLockUnderlayCaptureInFlight
                 || !interactiveSessionWasUnlocked) {
@@ -1977,10 +1980,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
             return;
         }
-        ((BackgroundSourceRenderer) unlockEffectRenderer).clearBackgroundSourceBitmap();
-        if (unlockEffectBackgroundEffect == effect) {
-            unlockEffectBackgroundEffect = -1;
-            unlockEffectBackgroundCapturedAt = 0L;
+        if (unlockEffectRenderer instanceof SecondaryBackgroundSourceRenderer
+                && OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)) {
+            ((SecondaryBackgroundSourceRenderer) unlockEffectRenderer)
+                    .clearSecondaryBackgroundSourceBitmap();
+        } else {
+            ((BackgroundSourceRenderer) unlockEffectRenderer).clearBackgroundSourceBitmap();
+            if (unlockEffectBackgroundEffect == effect) {
+                unlockEffectBackgroundEffect = -1;
+                unlockEffectBackgroundCapturedAt = 0L;
+            }
         }
         // The file has already been atomically committed when this method runs. Reload it now;
         // otherwise the parked renderer keeps an empty texture until it is recreated, and the
@@ -4467,6 +4476,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
+        boolean rearmAffordanceForReplacement = false;
         if (!EffectAvailability.isAvailable(this, effect)) {
             Log.e(TAG, "selected effect is unavailable in build flavor "
                     + EffectAvailability.buildFlavorLabel()
@@ -4491,6 +4501,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             Log.i(TAG, "native lockbg renderer recreating reason="
                     + unlockEffectRendererRecreateReason
                     + " type=" + effect);
+            rearmAffordanceForReplacement = unlockAffordanceShownThisWake
+                    && unlockAffordanceDeliveredRenderer == unlockEffectRenderer;
         }
         destroyUnlockEffectOverlay();
         unlockEffectRendererType = effect;
@@ -4595,19 +4607,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             } else if (effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS) {
                 unlockEffectRenderer = new XperiaBlindsEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE) {
-                LgPixelateEffectView renderer = new LgPixelateEffectView(rendererContext());
-                renderer.setHighFrameRateEnabled(
-                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect));
-                renderer.setSpeedMultiplier(
-                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect));
-                unlockEffectRenderer = renderer;
+                unlockEffectRenderer = new LgPixelateEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE) {
                 unlockEffectRenderer = new G2ParticleEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL) {
-                unlockEffectRenderer = new CrystalPrismBetaEffectView(
-                        rendererContext(),
-                        OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this, effect),
-                        OverlayPrefs.experimentalNativeRefreshPhysicsSpeedMultiplier(this, effect));
+                unlockEffectRenderer = new CrystalPrismBetaEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_REVOLVING_GLASS) {
                 unlockEffectRenderer = new RevolvingGlassEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE) {
@@ -4891,6 +4895,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
         }
+        if (rearmAffordanceForReplacement) {
+            unlockAffordanceShownThisWake = false;
+            unlockAffordancePending = true;
+            Log.i(TAG, "unlock affordance rearmed for replacement renderer type=" + effect);
+        }
         registerUnlockEffectReadinessListener();
         if (isRecreatableNativeEffect(effect)) {
             DisplayMetrics metrics = activeDisplayMetrics();
@@ -5037,6 +5046,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!supportsUnlockAffordance(effect)) {
             unlockAffordancePending = false;
             unlockAffordanceShownThisWake = true;
+            unlockAffordanceDeliveredRenderer = null;
             Log.i(TAG, "unlock affordance unsupported reason=" + reason
                     + " effect=" + effect);
             return;
@@ -5085,6 +5095,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         unlockAffordancePending = false;
         unlockAffordanceShownThisWake = true;
+        unlockAffordanceDeliveredRenderer = null;
         Log.i(TAG, "unlock affordance suppressed for active doodle reason=" + reason);
         return true;
     }
@@ -6062,9 +6073,12 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void loadCachedUnlockEffectBackgroundSourceIfNeeded(int effect) {
         long startedAt = SystemClock.uptimeMillis();
-        if (skipCachedEffectBackgroundLoad
-                || !effectUsesCachedScreenshotBackground(effect)
+        if (!effectUsesCachedScreenshotBackground(effect)
                 || !(unlockEffectRenderer instanceof BackgroundSourceRenderer)) {
+            return;
+        }
+        loadSecondaryPreLockUnderlaySourceIfNeeded(effect, startedAt);
+        if (skipCachedEffectBackgroundLoad) {
             return;
         }
         if (effectUsesLgPreLockUnderlay(effect)) {
@@ -6149,6 +6163,47 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + " applyMs=" + applyMs);
         } catch (Throwable t) {
             Log.d(TAG, "unlock effect background cache load failed", t);
+        }
+    }
+
+    private void loadSecondaryPreLockUnderlaySourceIfNeeded(int effect, long startedAt) {
+        if (!OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)
+                || unlockEffectRendererType != effect
+                || !(unlockEffectRenderer instanceof SecondaryBackgroundSourceRenderer)) {
+            return;
+        }
+        SecondaryBackgroundSourceRenderer renderer =
+                (SecondaryBackgroundSourceRenderer) unlockEffectRenderer;
+        if (renderer.hasSecondaryBackgroundSourceBitmap()) {
+            return;
+        }
+        int width = activeDisplayWidth > 0
+                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
+        int height = activeDisplayHeight > 0
+                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
+        int displayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        File file = OverlayPrefs.lgPreLockUnderlayFile(
+                this, activeDisplayProfile, displayId, width, height);
+        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
+        if (info == null || info.width != width || info.height != height) {
+            Log.i(TAG, "secondary Last screen unavailable effect=" + effect + " profile="
+                    + activeDisplayProfile + " displayId=" + displayId);
+            return;
+        }
+        Bitmap bitmap = Argb8888BitmapStore.decode(file);
+        if (bitmap == null || bitmap.isRecycled()) {
+            return;
+        }
+        try {
+            renderer.setSecondaryBackgroundSourceBitmap(
+                    bitmap, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE);
+            Log.i(TAG, "secondary Last screen loaded size=" + width + "x" + height
+                    + " displayId=" + displayId
+                    + " profile=" + activeDisplayProfile
+                    + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
+        } finally {
+            bitmap.recycle();
         }
     }
 
@@ -6561,6 +6616,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean effectUsesLgPreLockUnderlay(int effect) {
         return OverlayPrefs.usesLgPreLockUnderlay(effect);
+    }
+
+    private boolean effectNeedsLgPreLockUnderlay(int effect) {
+        return OverlayPrefs.needsLgPreLockUnderlay(effect);
     }
 
     private boolean hasUnlockEffectBackgroundSource(int effect) {
@@ -7057,6 +7116,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (effectUsesLgPreLockUnderlay(effect)) {
             return true;
         }
+        // Pixelate always needs both its regular lockscreen capture and the independent
+        // Last-screen underlay, even when the tester's generic no-colormap switch is enabled.
+        if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE) {
+            return true;
+        }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
             return false;
         }
@@ -7510,6 +7574,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             handler.removeCallbacks(unlockEffectBackgroundRetryRunnable);
         }
         if (unlockEffectRenderer != null) {
+            if (unlockAffordanceDeliveredRenderer == unlockEffectRenderer) {
+                unlockAffordanceDeliveredRenderer = null;
+            }
             if (unlockEffectRenderer instanceof UnlockEffectReadiness) {
                 try {
                     ((UnlockEffectReadiness) unlockEffectRenderer)
@@ -7826,7 +7893,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_SODA
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G1_DEWDROP
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PARTICLE
-                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE;
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
     private void restoreUnlockEffectWindowAfterHandoff(String reason) {
@@ -8233,6 +8301,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         cancelUnlockAffordanceDispatch(false, "debug_demo_gesture");
         unlockAffordancePending = false;
         unlockAffordanceShownThisWake = true;
+        unlockAffordanceDeliveredRenderer = null;
         final UnlockEffectRenderer renderer = unlockEffectRenderer;
         Rect box = resolveTouchBox();
         float span = Math.min(box.width(), box.height()) * 0.72f;
@@ -8944,6 +9013,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         cancelUnlockAffordanceDispatch(false, "three_finger_safety_bypass");
         unlockAffordancePending = false;
         unlockAffordanceShownThisWake = true;
+        unlockAffordanceDeliveredRenderer = null;
         cancelBufferedReadinessGesture("three_finger_safety_bypass", false);
         if (seasonalUnlockPartnerGestureActive) {
             cancelSeasonalUnlockPartnerGesture();

@@ -65,36 +65,32 @@ dependency.
 
 ### Phase 2 onward — user-prioritized port queue
 
-1. **G1 White Hole** — high interest; full-screen warp/feedback likely needs an
-   exact source-layer contract.
-2. **G1 Dewdrop** — high interest; a strong first underlay-capture oracle because
-   local refraction geometry is easy to compare.
-3. **G2 Particle** — high interest; transparent particle path plus sampled
-   underlay colour. Keep motion and audio clocks independent.
-4. **G2 Light Particle** — high interest; classify the firmware renderer before
-   assuming the current particle architecture.
-5. **G2 Soda** — high interest; recover feedback buffers and unlock chronology.
+1. **G1 White Hole** — restored expanding portal, animated edge glitter and
+   reversible gesture response.
+2. **G1 Dewdrop** — restored local refraction, interaction and unlock tail.
+3. **G2 Particle** — restored transparent particle path with fixed underlay.
+4. **G2 Light Particle** — restored bokeh/particle renderer without background
+   zoom.
+5. **G2 Soda** — restored circular reveal, orbiting particles and unlock timing.
 6. **G2 Crystal** — restored from the archived oracle as a ten-sector lit mesh
    with the four original overlay passes and exact release clocks.
-7. **Z1 Blinds** — next active port; the expected two-shader lockscreen-source
-   path still needs an APK oracle comparison.
-8. **Revolving Glass** — third active experiment and first deliberate two-source
-   carrier. Validate separate lockscreen and home/underlay captures without
-   destabilizing the existing single-source LG effects.
-9. **Z2 Particle** — maybe/final group; a sparkle-only partial port is not a
-    useful restoration without the rest of the donor effect.
-10. **G1 Ripple** — maybe/final group; it depends on both the captured source
-    and moving/deformable state, so a partial visual clone is not useful.
-11. **X10** — maybe/final group; low restoration value.
+7. **Z1 Blinds** — visually accepted restoration and promoted out of WIP.
+8. **Revolving Glass** — inspired modern restoration using independent
+   lockscreen and Last screen sources, bounded spin and a deterministic tail.
+9. **Z2 Particle — not planned.** A sparkle-only partial port is not a useful
+   restoration without the rest of the donor effect.
+10. **G1 Ripple — not planned.** Its moving/deformable background dependency is
+    impractical without reducing the restoration to a partial clone.
+11. **X10 — not planned.** Its restoration value is too low to justify a
+    dedicated renderer and maintenance burden.
 
-**G2 Pixelate** is deliberately parked at master priority 14. The donor appears
-to composite distinct lockscreen and home/underlay captures, so the inspired beta
-must not be promoted until the Revolving Glass experiment proves an explicit
-two-source contract.
+**G2 Pixelate** is included in 1.0.6.0 with its explicit two-source contract,
+donor-derived triangular mesh, fixed gesture origin, progressive pixel size and
+recovered 300/350/400-ms timing model.
 
-The configured Random-effect pool is a separate 1.0.6 feature and must resolve
-one compatible renderer per lock cycle without rerolling on QS/AOD/rotation.
-Detailed persistence and fallback requirements live in `TODO-1.0.6.md`.
+The configured Random-effect pool is deferred to 1.0.6.1 and must resolve one
+compatible renderer per lock cycle without rerolling on QS/AOD/rotation.
+Detailed persistence and fallback requirements live in `TODO-1.0.6.1.md`.
 
 ## Acceptance gates
 

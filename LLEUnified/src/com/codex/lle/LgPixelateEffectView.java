@@ -25,23 +25,21 @@ import javax.microedition.khronos.opengles.GL10;
 
 interface LgPixelateRendererListener {
     void onSurfaceReady();
-    void onResourcesReady(boolean hasBackground);
+    void onResourcesReady(boolean hasPrimary, boolean hasSecondary);
     void onFirstFrame();
     void onFailure(Throwable error, String detail);
 }
 
 /**
- * 1.0.6-beta-only app-owned GLES2 Pixelate renderer.
+ * Clean-room GLES2 restoration of LG G2 Pixelate.
  *
- * <p>The view composites only the locally pixelated circle over the existing lockscreen. It
- * samples the dedicated pre-lock underlay supplied by the service (bitmap or direct ARGB8888
- * upload), never the normal lockscreen colormap, and never paints it as a full-screen background.
- * This is an independent implementation and deliberately contains no XLocker Java, GLSL, sound,
- * bitmap or binary.</p>
+ * <p>The regular lockscreen capture is the primary triangular mosaic. The independent
+ * Last-screen cache is the stable full-screen underlay revealed by the donor-shaped alpha mask.
+ * Neither cache replaces the other.</p>
  */
 public final class LgPixelateEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, RawArgb8888BackgroundRenderer,
-        UnlockEffectReadiness, LgPixelateRendererListener {
+        SecondaryBackgroundSourceRenderer, UnlockEffectReadiness, LgPixelateRendererListener {
     private static final String TAG = "LLELgPixelate";
 
     private final Object sceneLock = new Object();
@@ -53,7 +51,8 @@ public final class LgPixelateEffectView extends FrameLayout
     private boolean destroyed;
     private boolean attached;
     private boolean gestureActive;
-    private boolean backgroundAccepted;
+    private boolean primaryAccepted;
+    private boolean secondaryAccepted;
     private File rawBackgroundFile;
     private long rawBackgroundLength;
     private long rawBackgroundModified;
@@ -65,7 +64,7 @@ public final class LgPixelateEffectView extends FrameLayout
             synchronized (sceneLock) {
                 scene.affordance(affordanceX, affordanceY, SystemClock.uptimeMillis());
             }
-            glSurface.activate();
+            glSurface.showAndActivate();
         }
     };
 
@@ -80,7 +79,7 @@ public final class LgPixelateEffectView extends FrameLayout
     }
 
     @Override public View asView() { return this; }
-    @Override public String effectName() { return "LG G2 Pixelate (app-owned GLES)"; }
+    @Override public String effectName() { return "G2 Pixelate (app-owned GLES)"; }
     @Override public int getReadinessState() { return readinessState; }
     @Override public String getReadinessDetail() { return effectName() + ": " + readinessDetail; }
 
@@ -89,12 +88,13 @@ public final class LgPixelateEffectView extends FrameLayout
         notifyReadiness();
     }
 
-    /** HFR changes presentation cadence but cannot make the elapsed-time scene run faster. */
-    public void setHighFrameRateEnabled(boolean enabled) { glSurface.setHighFrameRateEnabled(enabled); }
+    public void setHighFrameRateEnabled(boolean enabled) {
+        glSurface.setHighFrameRateEnabled(enabled);
+    }
     public boolean isHighFrameRateEnabled() { return glSurface.isHighFrameRateEnabled(); }
-
-    /** Optional future speed control, deliberately constrained to 1x--2x. */
-    public void setSpeedMultiplier(float multiplier) { glSurface.setSpeedMultiplier(sanitizeSpeedMultiplier(multiplier)); }
+    public void setSpeedMultiplier(float multiplier) {
+        glSurface.setSpeedMultiplier(sanitizeSpeedMultiplier(multiplier));
+    }
     public float getSpeedMultiplier() { return glSurface.getSpeedMultiplier(); }
 
     @Override public void beginGesture(float x, float y) {
@@ -102,71 +102,78 @@ public final class LgPixelateEffectView extends FrameLayout
         removeCallbacks(affordanceRunnable);
         gestureActive = true;
         synchronized (sceneLock) { scene.begin(x, y, SystemClock.uptimeMillis()); }
-        glSurface.activate();
+        glSurface.showAndActivate();
     }
 
     @Override public void updateGesture(float x, float y) {
         if (destroyed) return;
-        if (!gestureActive) { beginGesture(x, y); return; }
+        if (!gestureActive) {
+            beginGesture(x, y);
+            return;
+        }
         synchronized (sceneLock) { scene.move(x, y, SystemClock.uptimeMillis()); }
-        glSurface.activate();
+        glSurface.showAndActivate();
     }
 
     @Override public void finishGesture(boolean completed) {
         if (destroyed || !gestureActive) return;
         gestureActive = false;
         synchronized (sceneLock) { scene.finish(completed, SystemClock.uptimeMillis()); }
-        glSurface.activate();
+        glSurface.showAndActivate();
     }
 
     @Override public void cancelGesture() {
         if (destroyed || !gestureActive) return;
         gestureActive = false;
         synchronized (sceneLock) { scene.cancel(SystemClock.uptimeMillis()); }
-        glSurface.activate();
+        glSurface.showAndActivate();
     }
 
     @Override public void resetEffect() {
         removeCallbacks(affordanceRunnable);
         gestureActive = false;
         synchronized (sceneLock) { scene.reset(); }
-        glSurface.activate();
+        glSurface.hideSurface();
     }
 
-    @Override public void warmUp() { if (!destroyed) glSurface.activate(); }
+    @Override public void warmUp() {
+        if (destroyed) return;
+        if (readinessState >= STATE_FIRST_FRAME_READY) glSurface.activate();
+        else glSurface.showAndActivate();
+    }
 
     @Override public void showUnlockAffordance(Rect rect, long delayMs) {
         if (destroyed) return;
-        Rect safe = rect != null && rect.width() > 0 && rect.height() > 0 ? rect : displayRect();
+        Rect safe = rect != null && rect.width() > 0 && rect.height() > 0
+                ? rect : displayRect();
         affordanceX = safe.exactCenterX();
         affordanceY = safe.exactCenterY();
         removeCallbacks(affordanceRunnable);
         postDelayed(affordanceRunnable, Math.max(0L, delayMs));
     }
 
-    @Override public boolean hasBackgroundSourceBitmap() { return backgroundAccepted; }
+    @Override public boolean hasBackgroundSourceBitmap() { return primaryAccepted; }
 
     @Override public void setBackgroundSourceBitmap(Bitmap source, String sourceName) {
-        if (destroyed || source == null || source.isRecycled()) return;
-        Bitmap owned = source.copy(Bitmap.Config.ARGB_8888, false);
-        if (owned == null || owned.isRecycled()) return;
+        Bitmap owned = ownedCopy(source);
+        if (destroyed || owned == null) return;
         rawBackgroundFile = null;
         rawBackgroundLength = 0L;
         rawBackgroundModified = 0L;
-        backgroundAccepted = true;
-        glSurface.setBackgroundBitmap(owned);
+        primaryAccepted = true;
+        glSurface.setPrimaryBitmap(owned);
     }
 
     @Override public void clearBackgroundSourceBitmap() {
         rawBackgroundFile = null;
         rawBackgroundLength = 0L;
         rawBackgroundModified = 0L;
-        backgroundAccepted = false;
-        glSurface.clearBackground();
+        primaryAccepted = false;
+        glSurface.clearPrimary();
     }
 
     @Override public boolean hasRawArgb8888BackgroundSource() {
-        return backgroundAccepted && rawBackgroundFile != null;
+        return primaryAccepted && rawBackgroundFile != null;
     }
 
     @Override public void setRawArgb8888BackgroundSource(File file, String sourceName) {
@@ -174,28 +181,41 @@ public final class LgPixelateEffectView extends FrameLayout
         if (destroyed || info == null || !info.raw) return;
         long length = file.length();
         long modified = file.lastModified();
-        if (backgroundAccepted && rawBackgroundFile != null
+        if (primaryAccepted && rawBackgroundFile != null
                 && rawBackgroundFile.getAbsolutePath().equals(file.getAbsolutePath())
-                && rawBackgroundLength == length
-                && rawBackgroundModified == modified) {
-            return;
-        }
+                && rawBackgroundLength == length && rawBackgroundModified == modified) return;
         rawBackgroundFile = file;
         rawBackgroundLength = length;
         rawBackgroundModified = modified;
-        backgroundAccepted = true;
-        glSurface.setBackgroundFile(file);
-        Log.i(TAG, "raw pre-lock underlay accepted " + info.width + "x" + info.height);
+        primaryAccepted = true;
+        glSurface.setPrimaryFile(file);
+        Log.i(TAG, "raw lockscreen mosaic accepted " + info.width + "x" + info.height);
+    }
+
+    @Override public boolean hasSecondaryBackgroundSourceBitmap() { return secondaryAccepted; }
+
+    @Override public void setSecondaryBackgroundSourceBitmap(Bitmap source, String sourceName) {
+        Bitmap owned = ownedCopy(source);
+        if (destroyed || owned == null) return;
+        secondaryAccepted = true;
+        glSurface.setSecondaryBitmap(owned);
+    }
+
+    @Override public void clearSecondaryBackgroundSourceBitmap() {
+        secondaryAccepted = false;
+        glSurface.clearSecondary();
     }
 
     @Override public void destroy() {
         if (destroyed) return;
+        removeCallbacks(affordanceRunnable);
+        gestureActive = false;
+        synchronized (sceneLock) { scene.reset(); }
         destroyed = true;
-        resetEffect();
-        backgroundAccepted = false;
+        glSurface.hideSurface();
+        primaryAccepted = secondaryAccepted = false;
         rawBackgroundFile = null;
-        rawBackgroundLength = 0L;
-        rawBackgroundModified = 0L;
+        rawBackgroundLength = rawBackgroundModified = 0L;
         glSurface.destroyRenderer();
         transition(STATE_FAILED, "destroyed");
         readinessListener = null;
@@ -214,7 +234,7 @@ public final class LgPixelateEffectView extends FrameLayout
         resetEffect();
         if (!destroyed) {
             glSurface.pauseForDetach();
-            transition(STATE_DETACHED, "GLSurfaceView detached");
+            transition(STATE_DETACHED, "GLSurfaceView detached; cache copies retained");
         }
         super.onDetachedFromWindow();
     }
@@ -222,37 +242,57 @@ public final class LgPixelateEffectView extends FrameLayout
     @Override public void onSurfaceReady() {
         advanceReadiness(STATE_SURFACE_READY, "transparent EGL surface ready");
     }
-    @Override public void onResourcesReady(boolean hasBackground) {
-        if (hasBackground) {
-            advanceReadiness(STATE_RESOURCES_READY, "pre-lock underlay texture ready");
+
+    @Override public void onResourcesReady(boolean hasPrimary, boolean hasSecondary) {
+        if (hasPrimary) {
+            advanceReadiness(STATE_RESOURCES_READY, hasSecondary
+                    ? "lockscreen mosaic and Last screen textures ready"
+                    : "lockscreen mosaic ready; waiting for Last screen fallback");
         } else if (attached && !destroyed && readinessState >= STATE_CONSTRUCTED
                 && readinessState < STATE_RESOURCES_READY) {
             transition(Math.max(readinessState, STATE_SURFACE_READY),
-                    "waiting for pre-lock underlay");
+                    "waiting for lockscreen mosaic cache");
         }
     }
+
     @Override public void onFirstFrame() {
-        advanceReadiness(STATE_FIRST_FRAME_READY,
-                "first textured transparent GLES frame drawn");
+        advanceReadiness(STATE_FIRST_FRAME_READY, "first donor-mesh frame drawn");
     }
+
     @Override public void onFailure(Throwable error, String detail) {
         Log.e(TAG, "renderer failure " + detail, error);
         transition(STATE_FAILED, detail);
     }
 
     static float sanitizeSpeedMultiplier(float value) {
-        return Float.isNaN(value) || Float.isInfinite(value) ? 1f : Math.max(1f, Math.min(2f, value));
+        return Float.isNaN(value) || Float.isInfinite(value)
+                ? 1f : Math.max(1f, Math.min(2f, value));
+    }
+
+    private static Bitmap ownedCopy(Bitmap source) {
+        if (source == null || source.isRecycled()) return null;
+        Bitmap copy = source.copy(Bitmap.Config.ARGB_8888, false);
+        return copy == null || copy.isRecycled() ? null : copy;
     }
 
     private Rect displayRect() {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
-        return new Rect(0, 0, Math.max(1, metrics.widthPixels), Math.max(1, metrics.heightPixels));
+        return new Rect(0, 0, Math.max(1, metrics.widthPixels),
+                Math.max(1, metrics.heightPixels));
     }
-    private void transition(int state, String detail) { readinessState = state; readinessDetail = detail; notifyReadiness(); }
+
+    private void transition(int state, String detail) {
+        readinessState = state;
+        readinessDetail = detail;
+        notifyReadiness();
+    }
+
     private void advanceReadiness(int state, String detail) {
-        if (attached && !destroyed && readinessState != STATE_FAILED
-                && state >= readinessState) transition(state, detail);
+        if (attached && !destroyed && readinessState != STATE_FAILED && state >= readinessState) {
+            transition(state, detail);
+        }
     }
+
     private void notifyReadiness() {
         final ReadinessListener listener = readinessListener;
         if (listener != null && attached && !destroyed) post(new Runnable() {
@@ -260,46 +300,84 @@ public final class LgPixelateEffectView extends FrameLayout
         });
     }
 
-    /** GLES thread owns texture creation, upload and release. */
+    /** GLES thread owns texture creation and all draws; source copies survive context loss. */
     static final class PixelateGlSurface extends GLSurfaceView implements GLSurfaceView.Renderer {
         private static final long LEGACY_FRAME_NS = 16666667L;
-        private static final String VERTEX =
-                "attribute vec2 aPosition;attribute vec2 aTexCoord;varying vec2 vUv;"
-                + "void main(){gl_Position=vec4(aPosition,0.,1.);vUv=aTexCoord;}";
-        private static final String FRAGMENT =
-                "precision mediump float;varying vec2 vUv;uniform sampler2D uMap;"
-                + "uniform vec2 uSurface,uScale,uOffset,uCenter;uniform float uRadius,uPixel,uAlpha,uRaw,uHas;"
-                + "void main(){if(uHas<.5)discard;vec2 p=vUv*uSurface;float d=distance(p,uCenter);"
-                + "float edge=1.-smoothstep(uRadius*.84,uRadius,d);if(edge<=.001)discard;"
-                + "float block=max(uPixel,1.);vec2 cell=floor(p/block)*block+.5*block;"
-                + "vec4 c=texture2D(uMap,uOffset+(cell/uSurface)*uScale);if(uRaw>.5)c=c.bgra;"
-                + "gl_FragColor=vec4(c.rgb,c.a*edge*uAlpha);}";
+        private static final String MESH_VERTEX =
+                "attribute vec2 aPosition;attribute vec2 aTexCoord;"
+                + "attribute vec2 aTexCoord2;attribute float aUserAttrib;"
+                + "uniform vec2 uSurface,uCropScale,uCropOffset;uniform float uMeshScale;"
+                + "varying vec2 vUv;varying vec2 vUv2;varying float vUserAlpha;"
+                + "void main(){vec2 center=uSurface*.5;vec2 p=center+(aPosition-center)*uMeshScale;"
+                + "gl_Position=vec4(p.x/uSurface.x*2.-1.,1.-p.y/uSurface.y*2.,0.,1.);"
+                // The model mesh expands about the display centre.  Apply the matching
+                // inverse screen-space compensation to both UV streams so the captured
+                // lockscreen remains anchored while only the triangular cell size changes.
+                // Scaling UVs about (0,0) makes the image drift up-left and eventually
+                // clamps almost the whole screen to edge texels.
+                + "vec2 t=.5+(aTexCoord-.5)*uMeshScale;"
+                + "vec2 t2=.5+(aTexCoord2-.5)*uMeshScale;"
+                + "vUv=uCropOffset+t*uCropScale;vUv2=uCropOffset+t2*uCropScale;"
+                + "vUserAlpha=aUserAttrib;}";
+        private static final String MESH_FRAGMENT =
+                "precision mediump float;varying vec2 vUv;varying vec2 vUv2;"
+                + "varying float vUserAlpha;uniform sampler2D uMap;"
+                + "uniform float uTouch,uAlpha;"
+                + "void main(){vec4 normal=texture2D(uMap,vUv);vec4 mosaic=texture2D(uMap,vUv2);"
+                + "vec4 c=mix(normal,mosaic,step(.5,uTouch));"
+                + "c.a*=vUserAlpha*uAlpha;gl_FragColor=c;}";
+        private static final String REVEAL_VERTEX =
+                "attribute vec2 aPosition;attribute float aEffectAttrib;"
+                + "uniform vec2 uSurface,uCropScale,uCropOffset;uniform float uMeshScale;"
+                + "varying vec2 vUv;varying float vEffectAlpha;"
+                + "void main(){vec2 center=uSurface*.5;vec2 p=center+(aPosition-center)*uMeshScale;"
+                + "gl_Position=vec4(p.x/uSurface.x*2.-1.,1.-p.y/uSurface.y*2.,0.,1.);"
+                + "vUv=uCropOffset+(p/uSurface)*uCropScale;vEffectAlpha=aEffectAttrib;}";
+        private static final String REVEAL_FRAGMENT =
+                "precision mediump float;varying vec2 vUv;varying float vEffectAlpha;"
+                + "uniform sampler2D uMap;uniform float uForceFull;"
+                + "void main(){vec4 c=texture2D(uMap,vUv);"
+                + "c.a*=mix(vEffectAlpha,1.,uForceFull);gl_FragColor=c;}";
 
         private final Object sceneLock;
         private final LgPixelateScene scene;
         private final LgPixelateRendererListener listener;
-        private final FloatBuffer quad = buffer(new float[] {-1,1,0,0,-1,-1,0,1,1,1,1,0,1,-1,1,1});
         private final Object sourceLock = new Object();
-        private Bitmap bitmap;
-        private File rawFile;
-        private int sourceSerial;
-        private int uploadedSerial = -1;
-        private boolean raw;
+        private Bitmap primaryBitmap;
+        private File primaryRawFile;
+        private boolean primaryRaw;
+        private int primarySerial;
+        private int uploadedPrimarySerial = -1;
+        private Bitmap secondaryBitmap;
+        private int secondarySerial;
+        private int uploadedSecondarySerial = -1;
         private boolean destroyed;
         private boolean paused;
         private boolean hfr;
         private float speed = 1f;
-        private int program;
-        private int texture;
+        private int revealProgram;
+        private int meshProgram;
+        private int primaryTexture;
+        private int secondaryTexture;
         private int width;
         private int height;
-        private int mapWidth;
-        private int mapHeight;
-        private boolean rawBgra;
-        private boolean mapReady;
+        private int primaryWidth;
+        private int primaryHeight;
+        private int secondaryWidth;
+        private int secondaryHeight;
+        private boolean primaryReady;
+        private boolean secondaryReady;
         private boolean firstFrame;
-        private boolean idleCleared;
+        private volatile long surfaceActivitySerial;
+        private boolean idleHidePosted;
+        private int transparentIdleFrames;
         private long lastPresentationNs;
+        private LgPixelateMesh mesh;
+        private FloatBuffer positionBuffer;
+        private FloatBuffer textureBuffer;
+        private FloatBuffer mosaicBuffer;
+        private FloatBuffer alphaBuffer;
+        private FloatBuffer effectBuffer;
 
         PixelateGlSurface(Context context, Object lock, LgPixelateScene scene,
                 LgPixelateRendererListener listener) {
@@ -310,7 +388,7 @@ public final class LgPixelateEffectView extends FrameLayout
             setZOrderOnTop(true);
             getHolder().setFormat(PixelFormat.TRANSLUCENT);
             setEGLContextClientVersion(2);
-            setEGLConfigChooser(8,8,8,8,0,0);
+            setEGLConfigChooser(8, 8, 8, 8, 0, 0);
             setPreserveEGLContextOnPause(true);
             setRenderer(this);
             setRenderMode(RENDERMODE_CONTINUOUSLY);
@@ -320,24 +398,95 @@ public final class LgPixelateEffectView extends FrameLayout
         boolean isHighFrameRateEnabled() { return hfr; }
         void setSpeedMultiplier(float value) { speed = value; activate(); }
         float getSpeedMultiplier() { return speed; }
-        void activate() { if (!destroyed) requestRender(); }
-        void pauseForDetach() { if (!paused) { paused = true; onPause(); } }
+        void activate() { if (!destroyed && getVisibility() == VISIBLE) requestRender(); }
+
+        void showAndActivate() {
+            if (destroyed) return;
+            surfaceActivitySerial++;
+            idleHidePosted = false;
+            transparentIdleFrames = 0;
+            if (getVisibility() != VISIBLE) setVisibility(VISIBLE);
+            requestRender();
+        }
+
+        void hideSurface() {
+            surfaceActivitySerial++;
+            idleHidePosted = false;
+            // SurfaceView owns a separate SurfaceFlinger layer.  Making the child invisible
+            // removes that layer even when EGL is paused before a transparent clear can swap.
+            if (getVisibility() != INVISIBLE) setVisibility(INVISIBLE);
+        }
+
+        void pauseForDetach() {
+            hideSurface();
+            if (!paused) {
+                paused = true;
+                onPause();
+            }
+        }
         void resumeIfNeeded() { if (paused && !destroyed) { onResume(); paused = false; } }
-        void setBackgroundBitmap(Bitmap value) {
-            synchronized (sourceLock) { recycle(bitmap); bitmap = value; rawFile = null; raw = false; sourceSerial++; }
+
+        void setPrimaryBitmap(Bitmap value) {
+            synchronized (sourceLock) {
+                recycle(primaryBitmap);
+                primaryBitmap = value;
+                primaryRawFile = null;
+                primaryRaw = false;
+                primarySerial++;
+            }
             activate();
         }
-        void setBackgroundFile(File value) {
-            synchronized (sourceLock) { recycle(bitmap); bitmap = null; rawFile = value; raw = true; sourceSerial++; }
+
+        void setPrimaryFile(File value) {
+            synchronized (sourceLock) {
+                recycle(primaryBitmap);
+                primaryBitmap = null;
+                primaryRawFile = value;
+                primaryRaw = true;
+                primarySerial++;
+            }
             activate();
         }
-        void clearBackground() {
-            synchronized (sourceLock) { recycle(bitmap); bitmap = null; rawFile = null; raw = false; sourceSerial++; }
+
+        void clearPrimary() {
+            synchronized (sourceLock) {
+                recycle(primaryBitmap);
+                primaryBitmap = null;
+                primaryRawFile = null;
+                primaryRaw = false;
+                primarySerial++;
+            }
             activate();
         }
+
+        void setSecondaryBitmap(Bitmap value) {
+            synchronized (sourceLock) {
+                recycle(secondaryBitmap);
+                secondaryBitmap = value;
+                secondarySerial++;
+            }
+            activate();
+        }
+
+        void clearSecondary() {
+            synchronized (sourceLock) {
+                recycle(secondaryBitmap);
+                secondaryBitmap = null;
+                secondarySerial++;
+            }
+            activate();
+        }
+
         void destroyRenderer() {
             destroyed = true;
-            synchronized (sourceLock) { recycle(bitmap); bitmap = null; rawFile = null; sourceSerial++; }
+            synchronized (sourceLock) {
+                recycle(primaryBitmap);
+                recycle(secondaryBitmap);
+                primaryBitmap = secondaryBitmap = null;
+                primaryRawFile = null;
+                primarySerial++;
+                secondarySerial++;
+            }
             queueEvent(new Runnable() { @Override public void run() { releaseGl(); } });
         }
 
@@ -345,118 +494,353 @@ public final class LgPixelateEffectView extends FrameLayout
             if (destroyed) return;
             try {
                 releaseGl();
-                program = program(VERTEX, FRAGMENT);
+                revealProgram = program(REVEAL_VERTEX, REVEAL_FRAGMENT);
+                meshProgram = program(MESH_VERTEX, MESH_FRAGMENT);
                 GLES20.glDisable(GLES20.GL_DEPTH_TEST);
+                GLES20.glDisable(GLES20.GL_CULL_FACE);
                 GLES20.glEnable(GLES20.GL_BLEND);
-                GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
-                uploadedSerial = -1;
+                // The EGL layer is composited as premultiplied RGBA.  Keep RGB blended by
+                // source alpha, but accumulate framebuffer alpha separately.  Using the same
+                // SRC_ALPHA factor for alpha squared partially transparent values and made the
+                // lockscreen mosaic look colour-shifted/washed while the opaque hole source
+                // remained correct.
+                GLES20.glBlendFuncSeparate(
+                        GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA,
+                        GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+                clear();
+                GLES20.glFinish();
+                uploadedPrimarySerial = uploadedSecondarySerial = -1;
                 firstFrame = false;
+                idleHidePosted = false;
+                transparentIdleFrames = 0;
                 post(new Runnable() { @Override public void run() { listener.onSurfaceReady(); } });
-            } catch (Throwable error) { fail(error, "surface initialization failed"); }
+            } catch (Throwable error) {
+                fail(error, "surface initialization failed");
+            }
         }
 
         @Override public void onSurfaceChanged(GL10 ignored, int newWidth, int newHeight) {
             if (destroyed || newWidth <= 0 || newHeight <= 0) return;
-            width = newWidth; height = newHeight;
+            width = newWidth;
+            height = newHeight;
             GLES20.glViewport(0, 0, width, height);
+            rebuildMesh();
             uploadIfNeeded();
             ready();
         }
 
         @Override public void onDrawFrame(GL10 ignored) {
-            if (destroyed || program == 0 || width <= 0 || height <= 0) return;
+            if (destroyed || revealProgram == 0 || meshProgram == 0
+                    || width <= 0 || height <= 0) {
+                return;
+            }
             try {
                 uploadIfNeeded();
                 long nanos = System.nanoTime();
-                if (!hfr && lastPresentationNs != 0L && nanos - lastPresentationNs < LEGACY_FRAME_NS) return;
+                if (!hfr && lastPresentationNs != 0L
+                        && nanos - lastPresentationNs < LEGACY_FRAME_NS) return;
+                float density = Math.max(.5f, getResources().getDisplayMetrics().density);
+                float diagonal = (float) Math.hypot(width, height);
                 LgPixelateScene.Frame frame;
                 synchronized (sceneLock) {
-                    frame = scene.frameAt(SystemClock.uptimeMillis(), screenScale(), speed);
+                    frame = scene.frameAt(SystemClock.uptimeMillis(), 120f * density,
+                            diagonal, speed);
                 }
-                if (!mapReady || !frame.visible) {
-                    if (!idleCleared) clear();
-                    idleCleared = true;
+                if (!primaryReady || !frame.visible) {
+                    clear();
+                    // Complete rendering before retiring the SurfaceView.  The hide is the
+                    // fail-closed boundary; the transparent frame avoids a one-frame flash on
+                    // compositors which latch the final buffer while removing the layer.
+                    GLES20.glFinish();
+                    transparentIdleFrames++;
+                    if (transparentIdleFrames >= 3) postIdleHideIfUnchanged();
                 } else {
                     draw(frame);
-                    idleCleared = false;
+                    idleHidePosted = false;
+                    transparentIdleFrames = 0;
                 }
                 lastPresentationNs = nanos;
-                if (!firstFrame && mapReady) {
+                if (!firstFrame && primaryReady) {
                     firstFrame = true;
                     post(new Runnable() { @Override public void run() { listener.onFirstFrame(); } });
                 }
-            } catch (Throwable error) { fail(error, "draw failed"); }
+            } catch (Throwable error) {
+                fail(error, "draw failed");
+            }
+        }
+
+        private void rebuildMesh() {
+            mesh = LgPixelateMesh.build(width, height);
+            positionBuffer = buffer(mesh.positions);
+            textureBuffer = buffer(mesh.textureCoordinates);
+            mosaicBuffer = buffer(mesh.mosaicCoordinates);
+            alphaBuffer = buffer(mesh.userAlpha);
+            effectBuffer = buffer(mesh.effectAlpha);
         }
 
         private void uploadIfNeeded() {
-            final Bitmap pending;
-            final File file;
-            final boolean isRaw;
-            final int serial;
             synchronized (sourceLock) {
-                serial = sourceSerial;
-                if (serial == uploadedSerial) return;
-                pending = bitmap; file = rawFile; isRaw = raw;
+                if (uploadedPrimarySerial != primarySerial) {
+                    deletePrimaryTexture();
+                    primaryReady = false;
+                    primaryWidth = primaryHeight = 0;
+                    if (primaryRaw && primaryRawFile != null) {
+                        Argb8888BitmapStore.MappedImage image =
+                                Argb8888BitmapStore.map(primaryRawFile);
+                        if (image != null) try {
+                            primaryTexture = rawUpload(image);
+                            primaryWidth = image.width;
+                            primaryHeight = image.height;
+                            primaryReady = primaryTexture != 0;
+                        } finally {
+                            image.close();
+                        }
+                    } else if (primaryBitmap != null && !primaryBitmap.isRecycled()) {
+                        primaryTexture = bitmapUpload(primaryBitmap);
+                        primaryWidth = primaryBitmap.getWidth();
+                        primaryHeight = primaryBitmap.getHeight();
+                        primaryReady = primaryTexture != 0;
+                    }
+                    uploadedPrimarySerial = primarySerial;
+                }
+                if (uploadedSecondarySerial != secondarySerial) {
+                    deleteSecondaryTexture();
+                    secondaryReady = false;
+                    secondaryWidth = secondaryHeight = 0;
+                    if (secondaryBitmap != null && !secondaryBitmap.isRecycled()) {
+                        secondaryTexture = bitmapUpload(secondaryBitmap);
+                        secondaryWidth = secondaryBitmap.getWidth();
+                        secondaryHeight = secondaryBitmap.getHeight();
+                        secondaryReady = secondaryTexture != 0;
+                    }
+                    uploadedSecondarySerial = secondarySerial;
+                }
             }
-            deleteTexture(); mapReady = false; rawBgra = false; mapWidth = mapHeight = 0;
-            if (isRaw && file != null) {
-                Argb8888BitmapStore.MappedImage image = Argb8888BitmapStore.map(file);
-                if (image != null) try {
-                    rawUpload(image); mapWidth = image.width; mapHeight = image.height;
-                    rawBgra = true; mapReady = texture != 0;
-                } finally { image.close(); }
-            } else if (pending != null && !pending.isRecycled()) {
-                bitmapUpload(pending); mapWidth = pending.getWidth(); mapHeight = pending.getHeight(); mapReady = texture != 0;
-                synchronized (sourceLock) { if (serial == sourceSerial && bitmap == pending) { bitmap = null; recycle(pending); } }
-            }
-            uploadedSerial = serial;
             ready();
         }
 
         private void draw(LgPixelateScene.Frame frame) {
             clear();
-            GLES20.glUseProgram(program);
-            int pos = GLES20.glGetAttribLocation(program, "aPosition");
-            int uv = GLES20.glGetAttribLocation(program, "aTexCoord");
-            quad.position(0); GLES20.glEnableVertexAttribArray(pos);
-            GLES20.glVertexAttribPointer(pos,2,GLES20.GL_FLOAT,false,16,quad);
-            quad.position(2); GLES20.glEnableVertexAttribArray(uv);
-            GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,16,quad);
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0); GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,texture);
-            GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"uMap"),0);
-            GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"uSurface"),width,height);
-            float[] transform = centerCropTransform(mapWidth,mapHeight,width,height);
-            GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"uScale"),transform[0],transform[1]);
-            GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"uOffset"),transform[2],transform[3]);
-            GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"uCenter"),frame.x,frame.y);
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uRadius"),frame.radiusPx);
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uPixel"),frame.pixelSizePx);
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uAlpha"),frame.alpha);
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uRaw"),rawBgra ? 1f : 0f);
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uHas"),1f);
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);
-            GLES20.glDisableVertexAttribArray(pos); GLES20.glDisableVertexAttribArray(uv);
+            if (mesh == null) rebuildMesh();
+            mesh.updateUserAlpha(frame.x, frame.y, frame.dragPx, frame.meshScale);
+            alphaBuffer.position(0);
+            alphaBuffer.put(mesh.userAlpha);
+            alphaBuffer.position(0);
+            effectBuffer.position(0);
+            effectBuffer.put(mesh.effectAlpha);
+            effectBuffer.position(0);
+            if (secondaryReady && frame.revealUnderlay) drawUnderlay(frame);
+            if (frame.primaryVisible) drawPrimary(frame);
         }
 
-        private void bitmapUpload(Bitmap source) { int[] ids = new int[1]; GLES20.glGenTextures(1,ids,0); texture=ids[0]; bindTexture(); GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,source,0); }
-        private void rawUpload(Argb8888BitmapStore.MappedImage source) { int[] ids = new int[1]; GLES20.glGenTextures(1,ids,0); texture=ids[0]; bindTexture(); GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT,1); GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,source.width,source.height,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,source.pixels()); }
-        private void bindTexture() { GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,texture); GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR); GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_LINEAR); GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_CLAMP_TO_EDGE); GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE); }
-        private float screenScale() { return Math.min(width,height) <= 0 ? 1f : Math.min(width,height) / 1080f; }
-        private void clear() { GLES20.glClearColor(0,0,0,0); GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT); }
-        private void ready() { final boolean ready = mapReady; post(new Runnable() { @Override public void run() { listener.onResourcesReady(ready); } }); }
-        private void fail(final Throwable error, final String detail) { clear(); post(new Runnable() { @Override public void run() { listener.onFailure(error,detail); } }); }
-        private void releaseGl() { deleteTexture(); if(program!=0){GLES20.glDeleteProgram(program);program=0;} mapReady=false; }
-        private void deleteTexture() { if(texture!=0){GLES20.glDeleteTextures(1,new int[]{texture},0);texture=0;} }
-
-        static float[] centerCropTransform(int mw,int mh,int ow,int oh) {
-            if(mw<=0||mh<=0||ow<=0||oh<=0) return new float[]{1,1,0,0};
-            float ma=mw/(float)mh, oa=ow/(float)oh;
-            if(ma>oa){float sx=oa/ma;return new float[]{sx,1,(1-sx)*.5f,0};}
-            float sy=ma/oa; return new float[]{1,sy,0,(1-sy)*.5f};
+        private void drawUnderlay(LgPixelateScene.Frame frame) {
+            GLES20.glUseProgram(revealProgram);
+            int position = attribute(revealProgram, "aPosition", positionBuffer, 2);
+            int effectAlpha = attribute(revealProgram, "aEffectAttrib", effectBuffer, 1);
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, secondaryTexture);
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(revealProgram, "uMap"), 0);
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(revealProgram, "uSurface"),
+                    width, height);
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(revealProgram, "uMeshScale"),
+                    1f);
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(revealProgram, "uForceFull"), 1f);
+            setCropUniforms(revealProgram, secondaryWidth, secondaryHeight);
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, mesh.vertexCount);
+            GLES20.glDisableVertexAttribArray(position);
+            GLES20.glDisableVertexAttribArray(effectAlpha);
         }
-        private static int program(String vertex,String fragment) { int v=shader(GLES20.GL_VERTEX_SHADER,vertex),f=shader(GLES20.GL_FRAGMENT_SHADER,fragment),p=GLES20.glCreateProgram(); GLES20.glAttachShader(p,v);GLES20.glAttachShader(p,f);GLES20.glLinkProgram(p);int[] linked=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,linked,0);GLES20.glDeleteShader(v);GLES20.glDeleteShader(f);if(linked[0]==0){String log=GLES20.glGetProgramInfoLog(p);GLES20.glDeleteProgram(p);throw new IllegalStateException("pixelate link failed: "+log);}return p; }
-        private static int shader(int type,String source) { int s=GLES20.glCreateShader(type);GLES20.glShaderSource(s,source);GLES20.glCompileShader(s);int[] compiled=new int[1];GLES20.glGetShaderiv(s,GLES20.GL_COMPILE_STATUS,compiled,0);if(compiled[0]==0){String log=GLES20.glGetShaderInfoLog(s);GLES20.glDeleteShader(s);throw new IllegalStateException("pixelate shader failed: "+log);}return s; }
-        private static FloatBuffer buffer(float[] values) { FloatBuffer out=ByteBuffer.allocateDirect(values.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();out.put(values);out.position(0);return out; }
-        private static void recycle(Bitmap source) { if(source!=null&&!source.isRecycled())source.recycle(); }
+
+        private void drawPrimary(LgPixelateScene.Frame frame) {
+            GLES20.glUseProgram(meshProgram);
+            int position = attribute(meshProgram, "aPosition", positionBuffer, 2);
+            int uv = attribute(meshProgram, "aTexCoord", textureBuffer, 2);
+            int mosaicUv = attribute(meshProgram, "aTexCoord2", mosaicBuffer, 2);
+            int userAlpha = attribute(meshProgram, "aUserAttrib", alphaBuffer, 1);
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, primaryTexture);
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(meshProgram, "uMap"), 0);
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(meshProgram, "uSurface"),
+                    width, height);
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(meshProgram, "uMeshScale"),
+                    frame.meshScale);
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(meshProgram, "uTouch"),
+                    frame.mosaicEnabled ? 1f : 0f);
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(meshProgram, "uAlpha"),
+                    frame.primaryAlpha);
+            setCropUniforms(meshProgram, primaryWidth, primaryHeight);
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, mesh.vertexCount);
+            GLES20.glDisableVertexAttribArray(position);
+            GLES20.glDisableVertexAttribArray(uv);
+            GLES20.glDisableVertexAttribArray(mosaicUv);
+            GLES20.glDisableVertexAttribArray(userAlpha);
+        }
+
+        private static int attribute(int program, String name, FloatBuffer values, int size) {
+            int location = GLES20.glGetAttribLocation(program, name);
+            values.position(0);
+            GLES20.glEnableVertexAttribArray(location);
+            GLES20.glVertexAttribPointer(location, size, GLES20.GL_FLOAT, false, 0, values);
+            return location;
+        }
+
+        private void setCropUniforms(int program, int mapWidth, int mapHeight) {
+            float[] crop = centerCropTransform(mapWidth, mapHeight, width, height);
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uCropScale"),
+                    crop[0], crop[1]);
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uCropOffset"),
+                    crop[2], crop[3]);
+        }
+
+        private static int bitmapUpload(Bitmap source) {
+            int[] ids = new int[1];
+            GLES20.glGenTextures(1, ids, 0);
+            bindTexture(ids[0]);
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, source, 0);
+            return ids[0];
+        }
+
+        private static int rawUpload(Argb8888BitmapStore.MappedImage source) {
+            int[] ids = new int[1];
+            GLES20.glGenTextures(1, ids, 0);
+            bindTexture(ids[0]);
+            GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1);
+            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
+                    source.width, source.height, 0, GLES20.GL_RGBA,
+                    GLES20.GL_UNSIGNED_BYTE, source.pixels());
+            return ids[0];
+        }
+
+        private static void bindTexture(int texture) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER,
+                    GLES20.GL_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER,
+                    GLES20.GL_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S,
+                    GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T,
+                    GLES20.GL_CLAMP_TO_EDGE);
+        }
+
+        private void clear() {
+            GLES20.glClearColor(0f, 0f, 0f, 0f);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        }
+
+        private void postIdleHideIfUnchanged() {
+            if (idleHidePosted || destroyed) return;
+            idleHidePosted = true;
+            final long serial = surfaceActivitySerial;
+            post(new Runnable() {
+                @Override public void run() {
+                    if (destroyed || serial != surfaceActivitySerial) return;
+                    if (getVisibility() != INVISIBLE) setVisibility(INVISIBLE);
+                    Log.i(TAG, "transparent Pixelate surface retired at idle");
+                }
+            });
+        }
+
+        private void ready() {
+            final boolean primary = primaryReady;
+            final boolean secondary = secondaryReady;
+            post(new Runnable() {
+                @Override public void run() { listener.onResourcesReady(primary, secondary); }
+            });
+        }
+
+        private void fail(final Throwable error, final String detail) {
+            clear();
+            GLES20.glFinish();
+            post(new Runnable() {
+                @Override public void run() {
+                    hideSurface();
+                    listener.onFailure(error, detail);
+                }
+            });
+        }
+
+        private void releaseGl() {
+            deletePrimaryTexture();
+            deleteSecondaryTexture();
+            if (revealProgram != 0) GLES20.glDeleteProgram(revealProgram);
+            if (meshProgram != 0) GLES20.glDeleteProgram(meshProgram);
+            revealProgram = meshProgram = 0;
+            primaryReady = secondaryReady = false;
+        }
+
+        private void deletePrimaryTexture() {
+            if (primaryTexture != 0) {
+                GLES20.glDeleteTextures(1, new int[] {primaryTexture}, 0);
+                primaryTexture = 0;
+            }
+        }
+
+        private void deleteSecondaryTexture() {
+            if (secondaryTexture != 0) {
+                GLES20.glDeleteTextures(1, new int[] {secondaryTexture}, 0);
+                secondaryTexture = 0;
+            }
+        }
+
+        static float[] centerCropTransform(int mapWidth, int mapHeight,
+                int outputWidth, int outputHeight) {
+            if (mapWidth <= 0 || mapHeight <= 0 || outputWidth <= 0 || outputHeight <= 0) {
+                return new float[] {1f, 1f, 0f, 0f};
+            }
+            float mapAspect = mapWidth / (float) mapHeight;
+            float outputAspect = outputWidth / (float) outputHeight;
+            if (mapAspect > outputAspect) {
+                float scaleX = outputAspect / mapAspect;
+                return new float[] {scaleX, 1f, (1f - scaleX) * .5f, 0f};
+            }
+            float scaleY = mapAspect / outputAspect;
+            return new float[] {1f, scaleY, 0f, (1f - scaleY) * .5f};
+        }
+
+        private static int program(String vertex, String fragment) {
+            int vertexShader = shader(GLES20.GL_VERTEX_SHADER, vertex);
+            int fragmentShader = shader(GLES20.GL_FRAGMENT_SHADER, fragment);
+            int program = GLES20.glCreateProgram();
+            GLES20.glAttachShader(program, vertexShader);
+            GLES20.glAttachShader(program, fragmentShader);
+            GLES20.glLinkProgram(program);
+            int[] linked = new int[1];
+            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0);
+            GLES20.glDeleteShader(vertexShader);
+            GLES20.glDeleteShader(fragmentShader);
+            if (linked[0] == 0) {
+                String log = GLES20.glGetProgramInfoLog(program);
+                GLES20.glDeleteProgram(program);
+                throw new IllegalStateException("Pixelate link failed: " + log);
+            }
+            return program;
+        }
+
+        private static int shader(int type, String source) {
+            int shader = GLES20.glCreateShader(type);
+            GLES20.glShaderSource(shader, source);
+            GLES20.glCompileShader(shader);
+            int[] compiled = new int[1];
+            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0);
+            if (compiled[0] == 0) {
+                String log = GLES20.glGetShaderInfoLog(shader);
+                GLES20.glDeleteShader(shader);
+                throw new IllegalStateException("Pixelate shader failed: " + log);
+            }
+            return shader;
+        }
+
+        private static FloatBuffer buffer(float[] values) {
+            FloatBuffer out = ByteBuffer.allocateDirect(values.length * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            out.put(values);
+            out.position(0);
+            return out;
+        }
+
+        private static void recycle(Bitmap source) {
+            if (source != null && !source.isRecycled()) source.recycle();
+        }
     }
 }

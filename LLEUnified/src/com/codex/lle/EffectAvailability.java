@@ -76,7 +76,7 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_LG_SODA:
             case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
             case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
-                return BuildFlavor.TESTER && ARM64_PROCESS;
+                return ARM64_PROCESS;
             case OverlayPrefs.EFFECT_RIPPLE_INK:
                 return ARM64_PROCESS;
             case OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP:

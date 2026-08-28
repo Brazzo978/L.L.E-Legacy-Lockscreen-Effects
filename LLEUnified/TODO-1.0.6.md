@@ -1,6 +1,6 @@
 # L.L.E 1.0.6 TODO
 
-Updated: 2026-08-15
+Updated: 2026-08-28
 
 ## Firmware acquisition
 
@@ -12,26 +12,25 @@ Updated: 2026-08-15
 
 ## Effect port priority
 
-1. [ ] **G1 White Hole** — high interest.
-2. [ ] **G1 Dewdrop** — high interest.
-3. [ ] **G2 Particle** — high interest.
-4. [ ] **G2 Light Particle** — high interest.
-5. [ ] **G2 Soda** — high interest.
+1. [x] **G1 White Hole** — restored and device-tested.
+2. [x] **G1 Dewdrop** — restored and device-tested.
+3. [x] **G2 Particle** — restored and device-tested.
+4. [x] **G2 Light Particle** — restored and device-tested.
+5. [x] **G2 Soda** — restored and device-tested.
 6. [x] **G2 Crystal** — restored ten-facet GL mesh, OEM overlay passes,
    50/201 px drag geometry and 300/400 ms release timing.
-7. [ ] **Z1 Blinds** — next active port; validate the lockscreen-source and
-   two-shader path against the archived APK.
-8. [ ] **Revolving Glass** — third active experiment and first deliberate
-   two-source carrier; validate separate lockscreen and home/underlay captures
-   without changing the current single-source LG effects.
-9. [ ] **Z2 Particle** — maybe/final group; do not ship a sparkle-only partial port.
-10. [ ] **G1 Ripple** — maybe/final group; it requires the captured source plus
-    moving/deformable state, so do not ship a partial clone.
-11. [ ] **X10** — maybe/final group; low restoration value.
+7. [x] **Z1 Blinds** — visually accepted restoration; promoted out of WIP.
+8. [x] **Revolving Glass** — inspired modern restoration with independent
+   lockscreen and Last screen sources, bounded spin and deterministic handoff.
+9. [x] **Z2 Particle — not planned.** A sparkle-only partial port is not useful.
+10. [x] **G1 Ripple — not planned.** Its moving/deformable background dependency
+  is impractical without reducing the restoration to a clone.
+11. [x] **X10 — not planned.** Its restoration value is too low to justify a
+  dedicated renderer and maintenance burden.
 
-- [ ] **G2 Pixelate — master priority 14.** Defer the replacement until the
-  Revolving Glass experiment proves distinct lockscreen and home/underlay
-  captures; do not promote the current one-source inspired beta.
+- [x] **G2 Pixelate.** The donor-derived triangular mesh, two-source cache path,
+  progressive drag pixelation and corrected colour mapping are included in the
+  stable ARM64 release.
 
 Every port requires tap, stationary hold, drag, incomplete release, unlock-tail,
 orientation and 60/90/120/144 Hz validation. Route future audio only through
@@ -46,21 +45,10 @@ orientation and 60/90/120/144 Hz validation. Route future audio only through
   XLocker Circle package.
 - [ ] Physical S3/Note oracle comparison for arrow/lock artwork and scale.
 
-## Random effect mode
+## Deferred to 1.0.6.1
 
-- [ ] Add a **Random** picker entry and a configuration page containing a
-  selectable pool of effects.
-- [ ] Resolve one compatible effect once per lock cycle and keep it latched until
-  that cycle ends. QS, AOD, rotation and renderer recreation must not reroll it.
-- [ ] Filter the pool through `EffectAvailability`, build/ABI support and current
-  no-colormap compatibility before choosing.
-- [ ] Migrate legacy/WIP aliases to their effective app-owned IDs before storing
-  or resolving the pool.
-- [ ] If the filtered pool is empty, fall back to S3 None in tester no-colormap
-  mode; otherwise use the normal safe fallback.
-- [ ] Avoid immediate repetition when at least two compatible effects remain.
-- [ ] Log only selected effect ID, candidate count and fallback reason; do not
-  expose package names, wallpaper content or user input.
+- The configurable Random effect mode has moved to `TODO-1.0.6.1.md`; it is not
+  part of the 1.0.6.0 release.
 
 ## Under-lockscreen source experiment
 

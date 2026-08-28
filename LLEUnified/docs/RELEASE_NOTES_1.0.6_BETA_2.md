@@ -33,6 +33,8 @@ for the 1.0.6 restoration beta.
 - G2 Particle.
 - G2 Light Particle.
 - G2 Crystal.
+- Xperia Z1 Blinds, promoted from WIP after visual validation of the restored
+  strip geometry, lockscreen-source composition and interaction.
 
 ### G2 Crystal fidelity
 
@@ -46,7 +48,28 @@ for the 1.0.6 restoration beta.
 - Kept the modern L.L.E. last-screen cache and transparent lockscreen carrier;
   the obsolete root screenshot mechanism and donor APK code are not shipped.
 
-The remaining clean-room tests stay visibly labelled WIP in the picker.
+### Revolving Glass: inspired modernization
+
+Revolving Glass is intentionally shipped as an inspired, modernized
+reinterpretation rather than a literal restoration. The archived effect assumes
+an obsolete full-screen wallpaper/card composition that is impractical on a
+modern lockscreen and offers little value if reproduced verbatim. L.L.E therefore
+preserves the recognizable rotating-glass interaction while replacing that model
+with independent lockscreen and Last screen caches, a rounded luminous glass tile,
+bounded drag velocity and a deterministic post-unlock handoff.
+
+G2 Pixelate is the only remaining WIP effect. Its donor-derived triangular mesh
+and explicit lockscreen/Last-screen sources are implemented, but the current
+full-frame composition can flash and is not yet promoted for the 1.0.6 release.
+
+### Archived effects not planned for restoration
+
+- Xperia Z2 Particle will not be ported: restoring only its sparkle overlay would
+  omit the coupled background effect and would not constitute a useful faithful port.
+- LG G1 Ripple will not be ported: its moving/deformable background dependency is
+  impractical within L.L.E's modern lockscreen overlay without reducing it to a clone.
+- Xperia X10 will not be ported: its restoration value is too low to justify a
+  separate renderer and long-term maintenance.
 
 ## Physical-device validation
 

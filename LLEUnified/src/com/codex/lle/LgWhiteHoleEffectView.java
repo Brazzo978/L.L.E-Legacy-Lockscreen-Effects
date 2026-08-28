@@ -87,7 +87,7 @@ public final class LgWhiteHoleEffectView extends View
     }
 
     @Override public View asView() { return this; }
-    @Override public String effectName() { return "G1 White Hole (XLocker restoration tester)"; }
+    @Override public String effectName() { return "G1 White Hole"; }
 
     @Override public void beginGesture(float x, float y) {
         if (destroyed || !hasBackgroundSourceBitmap()) return;

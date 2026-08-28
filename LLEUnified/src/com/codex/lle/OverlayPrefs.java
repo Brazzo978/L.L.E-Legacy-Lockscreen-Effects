@@ -240,7 +240,7 @@ final class OverlayPrefs {
     static final int EFFECT_GOOD_LOCK_BOUNCING = 30;
     /** Tester-only app-owned reconstruction of the Galaxy S3 None / Circle Unlock. */
     static final int EFFECT_S3_NONE = 31;
-    /** Tester-only app-owned LG G2 Pixelate-inspired renderer. */
+    /** Clean-room LG G2 Pixelate restoration with separate lockscreen and Last screen sources. */
     static final int EFFECT_LG_G2_PIXELATE = 32;
     /** Tester-only restoration of LG G2 Particle from the authorized XLocker archive. */
     static final int EFFECT_LG_G2_PARTICLE = 33;
@@ -248,7 +248,7 @@ final class OverlayPrefs {
     static final int EFFECT_LG_G2_CRYSTAL = 34;
     /** Tester-only app-owned Xperia Z1 Blinds-inspired renderer. */
     static final int EFFECT_XPERIA_Z1_BLINDS = 35;
-    /** Tester-only clean-room revolving glass-inspired renderer. */
+    /** Clean-room Revolving Glass renderer with independent lockscreen and Last screen sources. */
     static final int EFFECT_REVOLVING_GLASS = 36;
     /** Tester-only restoration of LG G1 White Hole from the authorized XLocker archive. */
     static final int EFFECT_LG_G1_WHITE_HOLE = 37;
@@ -751,11 +751,11 @@ final class OverlayPrefs {
             case EFFECT_N5_COLOUR_DROPLET_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet (LLE renderer)"
-                        : "N5 Colored Droplet (WIP)";
+                        : "N5 Colored Droplet";
             case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet + Gyro (LLE renderer)"
-                        : "N5 Colored Droplet + Gyro (WIP)";
+                        : "N5 Colored Droplet + Gyro";
             case EFFECT_N5_COLOUR_DROPLET_GYRO:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Colored Droplet + Gyro (Samsung legacy)"
@@ -767,7 +767,7 @@ final class OverlayPrefs {
             case EFFECT_N5_SPARKLING_BUBBLES_WIP:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (LLE renderer)"
-                        : "N5 Sparkling Bubbles (WIP)";
+                        : "N5 Sparkling Bubbles";
             case EFFECT_S6_WATER_DROPLET:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (Samsung legacy)"
@@ -775,7 +775,7 @@ final class OverlayPrefs {
             case EFFECT_S6_WATER_DROPLET_APP_OWNED:
                 return EffectAvailability.hasLegacyVendorEffects()
                         ? "S6 Water Droplet (LLE renderer)"
-                        : "S6 Water Droplet (WIP)";
+                        : "S6 Water Droplet";
             case EFFECT_S4_ABSTRACT_TILES:
                 return "N4 Abstract Tiles";
             case EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -791,7 +791,7 @@ final class OverlayPrefs {
             case EFFECT_MASS_TENSION:
                 return "Mass Tension";
             case EFFECT_RIPPLE_INK:
-                return "N3 Ripple Ink (WIP)";
+                return "N3 Ripple Ink";
             case EFFECT_GOOD_LOCK_POPPING:
                 return "Good Lock Popping Color";
             case EFFECT_GOOD_LOCK_RECTANGLE:
@@ -801,15 +801,15 @@ final class OverlayPrefs {
             case EFFECT_S3_NONE:
                 return "S3 None";
             case EFFECT_LG_G2_PIXELATE:
-                return "G2 Pixelate (WIP)";
+                return "G2 Pixelate";
             case EFFECT_LG_G2_PARTICLE:
                 return "G2 Particle";
             case EFFECT_LG_G2_CRYSTAL:
-                return "G2 Crystal (WIP)";
+                return "G2 Crystal";
             case EFFECT_XPERIA_Z1_BLINDS:
-                return "Xperia Z1 Blinds (WIP)";
+                return "Xperia Z1 Blinds";
             case EFFECT_REVOLVING_GLASS:
-                return "Revolving Glass (WIP)";
+                return "Revolving Glass";
             case EFFECT_LG_G1_WHITE_HOLE:
                 return "G1 White Hole";
             case EFFECT_LG_SODA:
@@ -885,8 +885,6 @@ final class OverlayPrefs {
                 || effect == EFFECT_WATERCOLOUR
                 || effect == EFFECT_BRILLIANT_RING
                 || effect == EFFECT_BRILLIANT_CUT
-                || effect == EFFECT_LG_G2_PIXELATE
-                || effect == EFFECT_LG_G2_CRYSTAL
                 || effect == EFFECT_GOOD_LOCK_POPPING
                 || effect == EFFECT_GOOD_LOCK_RECTANGLE
                 || effect == EFFECT_GOOD_LOCK_BOUNCING;
@@ -899,8 +897,6 @@ final class OverlayPrefs {
                 || effect == EFFECT_N5_COLOUR_DROPLET_WIP
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
                 || effect == EFFECT_S5_POPPING_COLOURS
-                || effect == EFFECT_LG_G2_PIXELATE
-                || effect == EFFECT_LG_G2_CRYSTAL
                 || effect == EFFECT_GOOD_LOCK_POPPING
                 || effect == EFFECT_GOOD_LOCK_RECTANGLE
                 || effect == EFFECT_GOOD_LOCK_BOUNCING;
@@ -1695,14 +1691,19 @@ final class OverlayPrefs {
     }
 
     static boolean usesLgPreLockUnderlay(int effect) {
-        // Pixelate is the first architecture carrier, not a claim that its renderer is final.
-        // Future clean-room LG renderers can opt in without sharing the lockscreen colormap.
-        return effect == EFFECT_LG_G2_PIXELATE
-                || effect == EFFECT_LG_G2_PARTICLE
+        return effect == EFFECT_LG_G2_PARTICLE
                 || effect == EFFECT_LG_G1_WHITE_HOLE
                 || effect == EFFECT_LG_SODA
                 || effect == EFFECT_LG_G1_DEWDROP
                 || effect == EFFECT_LG_G2_LIGHT_PARTICLE;
+    }
+
+    static boolean usesLgPreLockUnderlayAsSecondary(int effect) {
+        return effect == EFFECT_LG_G2_PIXELATE || effect == EFFECT_REVOLVING_GLASS;
+    }
+
+    static boolean needsLgPreLockUnderlay(int effect) {
+        return usesLgPreLockUnderlay(effect) || usesLgPreLockUnderlayAsSecondary(effect);
     }
 
     static int markLgPreLockUnderlayCaptured(Context context, String profile, int displayId,

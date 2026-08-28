@@ -88,7 +88,7 @@ public final class G2ParticleEffectView extends GLSurfaceView
 
     @Override
     public String effectName() {
-        return "G2 Particle (XLocker restoration tester)";
+        return "G2 Particle";
     }
 
     /**
