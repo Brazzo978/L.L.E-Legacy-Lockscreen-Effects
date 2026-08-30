@@ -140,7 +140,7 @@ sent anywhere automatically.
 - Samsung nighttime wallpaper dimming can make captured and displayed
   brightness differ; disabling that option is strongly recommended.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
-- Beta effects can show small timing or rendering differences across GPUs.
+- Some very HEAVY effect will not show properly on low end smartphones.
 
 
 <p align="center"><sub><a href="https://support.legacylockscreeneffects.app">L.L.E will always be free - but if you insist... ♡</a></sub></p>
@@ -150,7 +150,3 @@ sent anywhere automatically.
 Project-authored source code is available under the
 [PolyForm Noncommercial License 1.0.0](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/feature/lle-1.0.5.6-effects/LICENSE.md).
 
-Some builds contain legacy proprietary compatibility components extracted from
-historical firmware. Rights in those components remain with their respective
-owners; they are not relicensed by this project. L.L.E is not affiliated with
-or endorsed by those owners.
