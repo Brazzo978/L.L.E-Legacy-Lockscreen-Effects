@@ -326,17 +326,30 @@ final class Argb8888BitmapStore {
             int outputHeight = Math.max(1, (header.height + sampleSize - 1) / sampleSize);
             Bitmap output = Bitmap.createBitmap(
                     outputWidth, outputHeight, Bitmap.Config.ARGB_8888);
+            Bitmap sourceRow = Bitmap.createBitmap(
+                    header.width, 1, Bitmap.Config.ARGB_8888);
+            int[] fullRow = new int[header.width];
             int[] row = new int[outputWidth];
-            mapped.order(ByteOrder.nativeOrder());
-            for (int outputY = 0; outputY < outputHeight; outputY++) {
-                int sourceY = Math.min(header.height - 1, outputY * sampleSize);
-                int rowOffset = HEADER_BYTES + sourceY * header.rowBytes;
-                for (int outputX = 0; outputX < outputWidth; outputX++) {
-                    int sourceX = Math.min(header.width - 1, outputX * sampleSize);
-                    row[outputX] = mapped.getInt(rowOffset + sourceX * 4);
+            try {
+                for (int outputY = 0; outputY < outputHeight; outputY++) {
+                    int sourceY = Math.min(header.height - 1, outputY * sampleSize);
+                    int rowOffset = HEADER_BYTES + sourceY * header.rowBytes;
+                    ByteBuffer rowPixels = mapped.duplicate();
+                    rowPixels.position(rowOffset);
+                    rowPixels.limit(rowOffset + header.rowBytes);
+                    sourceRow.copyPixelsFromBuffer(rowPixels.slice());
+                    sourceRow.getPixels(fullRow, 0, header.width,
+                            0, 0, header.width, 1);
+                    for (int outputX = 0; outputX < outputWidth; outputX++) {
+                        int sourceX = Math.min(
+                                header.width - 1, outputX * sampleSize);
+                        row[outputX] = fullRow[sourceX];
+                    }
+                    output.setPixels(row, 0, outputWidth,
+                            0, outputY, outputWidth, 1);
                 }
-                output.setPixels(row, 0, outputWidth,
-                        0, outputY, outputWidth, 1);
+            } finally {
+                sourceRow.recycle();
             }
             output.prepareToDraw();
             return output;

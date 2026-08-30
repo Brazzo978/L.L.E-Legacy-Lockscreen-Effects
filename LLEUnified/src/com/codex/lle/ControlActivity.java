@@ -2655,14 +2655,18 @@ public class ControlActivity extends Activity {
 
     private void showLgLastScreenCache() {
         final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
-        Argb8888BitmapStore.Info sourceInfo = LgLastScreenCache.inspect(target);
-        if (sourceInfo == null) {
+        int effect = OverlayPrefs.unlockEffect(this);
+        LgLastScreenCache.ResolvedSource resolved =
+                LgLastScreenCache.resolve(this, effect, target);
+        if (resolved == null) {
             Toast.makeText(this,
-                    "No Last screen cache yet. Turn the screen off once while normally unlocked.",
+                    "No Last screen or matching lockscreen fallback for this display yet.",
                     Toast.LENGTH_LONG).show();
             return;
         }
-        final Bitmap bitmap = decodePreviewBitmap(target.file);
+        final Argb8888BitmapStore.Info sourceInfo = resolved.info;
+        final File sourceFile = resolved.file;
+        final Bitmap bitmap = decodePreviewBitmap(sourceFile);
         if (bitmap == null || bitmap.isRecycled()) {
             Toast.makeText(this, "Last screen cache unreadable", Toast.LENGTH_SHORT).show();
             return;
@@ -2674,11 +2678,13 @@ public class ControlActivity extends Activity {
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
         root.setBackground(pageBackground());
         root.addView(sectionTitle("Last screen"));
-        String source = LgLastScreenCache.isWallpaperFallback(this, target)
-                ? "forced wallpaper fallback" : "last unlocked frame";
+        String source = resolved.fallback
+                ? (sourceFile.equals(target.file)
+                        ? "forced wallpaper fallback" : "automatic lockscreen fallback")
+                : "last unlocked frame";
         root.addView(infoText(source + " | " + target.profile + " | "
                 + sourceInfo.width + " x " + sourceInfo.height + " | "
-                + Math.max(1L, target.file.length() / 1024L) + " KB"));
+                + Math.max(1L, sourceFile.length() / 1024L) + " KB"));
 
         ImageView image = new ImageView(this);
         image.setBackgroundColor(Color.BLACK);
@@ -3001,20 +3007,27 @@ public class ControlActivity extends Activity {
     private String effectBackgroundStatus(int effect) {
         if (OverlayPrefs.needsLgPreLockUnderlay(effect)) {
             LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
-            Argb8888BitmapStore.Info info = LgLastScreenCache.inspect(target);
+            LgLastScreenCache.ResolvedSource resolved =
+                    LgLastScreenCache.resolve(this, effect, target);
             String lastScreenStatus;
-            if (info == null) {
+            if (resolved == null) {
                 lastScreenStatus = "Last screen (" + target.profile
-                        + "): empty. Unlock normally, leave "
-                        + "the app or launcher you want visible, then turn the screen off once.";
+                        + "): empty, and no exact-profile lockscreen fallback is available. "
+                        + "Unlock normally, leave the app or launcher you want visible, then "
+                        + "turn the screen off once.";
             } else {
                 long capturedAt = LgLastScreenCache.capturedAt(this, target);
                 long ageMs = capturedAt <= 0L
-                        ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
-                String source = LgLastScreenCache.isWallpaperFallback(this, target)
-                        ? "forced wallpaper fallback" : "captured last unlocked frame";
+                    ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
+                String source = resolved.fallback
+                        ? (resolved.file.equals(target.file)
+                                ? "forced wallpaper fallback"
+                                : "automatic lockscreen fallback")
+                        : "captured last unlocked frame";
                 lastScreenStatus = "Last screen (" + target.profile + "): ready, "
-                        + info.width + " x " + info.height + ", age " + ageLabel(ageMs)
+                        + resolved.info.width + " x " + resolved.info.height
+                        + (resolved.fallback && !resolved.file.equals(target.file)
+                                ? "" : ", age " + ageLabel(ageMs))
                         + ", source: " + source
                         + ". Dedicated cache; lockscreen colormap unchanged.";
             }

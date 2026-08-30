@@ -1861,6 +1861,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         final int captureDisplayId = activeDisplayId == Display.INVALID_DISPLAY
                 ? Display.DEFAULT_DISPLAY : activeDisplayId;
         final String captureProfile = FoldDisplayTarget.normalizeProfile(activeDisplayProfile);
+        final int captureWidth = activeDisplayWidth > 0
+                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
+        final int captureHeight = activeDisplayHeight > 0
+                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
         final long requestedAt = SystemClock.uptimeMillis();
         final boolean mirrorTesterProbe = BuildFlavor.TESTER
                 && testerUnderlayProbeDeadlineAt > now;
@@ -1885,13 +1889,26 @@ public class ChargingAccessibilityService extends AccessibilityService
                     }
                     if (!serviceAlive
                             || lifecycleGeneration != serviceLifecycleGeneration
-                            || captureGeneration != lgPreLockUnderlayCaptureGeneration) {
+                            || captureGeneration != lgPreLockUnderlayCaptureGeneration
+                            || captureDisplayId != (activeDisplayId == Display.INVALID_DISPLAY
+                                    ? Display.DEFAULT_DISPLAY : activeDisplayId)
+                            || !captureProfile.equals(activeDisplayProfile)
+                            || captureWidth != activeDisplayWidth
+                            || captureHeight != activeDisplayHeight
+                            || bitmap.getWidth() != captureWidth
+                            || bitmap.getHeight() != captureHeight) {
+                        Log.i(TAG, "LG pre-lock underlay discarded: display geometry changed"
+                                + " requested=" + captureDisplayId + "/" + captureProfile
+                                + "/" + captureWidth + "x" + captureHeight
+                                + " current=" + activeDisplayId + "/" + activeDisplayProfile
+                                + "/" + activeDisplayWidth + "x" + activeDisplayHeight
+                                + " bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight());
                         bitmap.recycle();
                         finishLgPreLockUnderlayCapture(captureGeneration);
                         return;
                     }
-                    final int width = bitmap.getWidth();
-                    final int height = bitmap.getHeight();
+                    final int width = captureWidth;
+                    final int height = captureHeight;
                     final long callbackMs = Math.max(0L,
                             SystemClock.uptimeMillis() - requestedAt);
                     try {
@@ -2790,7 +2807,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             return false;
         }
         boolean changed = target.displayId != activeDisplayId
-                || !target.cacheProfile.equals(activeDisplayProfile);
+                || !target.cacheProfile.equals(activeDisplayProfile)
+                || target.width != activeDisplayWidth
+                || target.height != activeDisplayHeight;
         if (!changed && windowManager != null && activeDisplayContext != null) {
             activeDisplayWidth = target.width;
             activeDisplayHeight = target.height;
@@ -2839,6 +2858,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, activeTouchBoxProfile());
         invalidateResolvedTouchBoxes();
         unlockEffectBackgroundGeneration++;
+        // A Fold transition or rotation can preserve the logical display id while changing
+        // its buffer geometry. Invalidate any screenshot callback captured for the old shape.
+        lgPreLockUnderlayCaptureGeneration++;
+        lgPreLockUnderlayCaptureInFlight = false;
         colorScreenshotInFlight = false;
         colorScreenshotAttemptedThisSession = false;
         unlockEffectBackgroundCaptureSucceededThisSession = false;
@@ -6309,6 +6332,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
     }
 
+    private LgLastScreenCache.Target activeLgLastScreenTarget() {
+        int width = activeDisplayWidth > 0
+                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
+        int height = activeDisplayHeight > 0
+                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
+        int displayId = activeDisplayId == Display.INVALID_DISPLAY
+                ? Display.DEFAULT_DISPLAY : activeDisplayId;
+        String profile = FoldDisplayTarget.normalizeProfile(activeDisplayProfile);
+        return new LgLastScreenCache.Target(profile, displayId, width, height,
+                OverlayPrefs.lgPreLockUnderlayFile(
+                        this, profile, displayId, width, height));
+    }
+
+    private LgLastScreenCache.ResolvedSource resolveLgLastScreenSource(int effect) {
+        return LgLastScreenCache.resolve(this, effect, activeLgLastScreenTarget());
+    }
+
     private void loadSecondaryPreLockUnderlaySourceIfNeeded(int effect, long startedAt) {
         if (!OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)
                 || unlockEffectRendererType != effect
@@ -6320,30 +6360,28 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (renderer.hasSecondaryBackgroundSourceBitmap()) {
             return;
         }
-        int width = activeDisplayWidth > 0
-                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
-        int height = activeDisplayHeight > 0
-                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
-        int displayId = activeDisplayId == Display.INVALID_DISPLAY
-                ? Display.DEFAULT_DISPLAY : activeDisplayId;
-        File file = OverlayPrefs.lgPreLockUnderlayFile(
-                this, activeDisplayProfile, displayId, width, height);
-        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
-        if (info == null || info.width != width || info.height != height) {
+        LgLastScreenCache.Target target = activeLgLastScreenTarget();
+        LgLastScreenCache.ResolvedSource source = resolveLgLastScreenSource(effect);
+        if (source == null) {
             Log.i(TAG, "secondary Last screen unavailable effect=" + effect + " profile="
-                    + activeDisplayProfile + " displayId=" + displayId);
+                    + target.profile + " displayId=" + target.displayId
+                    + " target=" + target.width + "x" + target.height);
             return;
         }
-        Bitmap bitmap = Argb8888BitmapStore.decode(file);
+        Bitmap bitmap = Argb8888BitmapStore.decode(source.file);
         if (bitmap == null || bitmap.isRecycled()) {
             return;
         }
         try {
             renderer.setSecondaryBackgroundSourceBitmap(
-                    bitmap, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE);
-            Log.i(TAG, "secondary Last screen loaded size=" + width + "x" + height
-                    + " displayId=" + displayId
-                    + " profile=" + activeDisplayProfile
+                    bitmap, source.fallback
+                            ? BackgroundSourceRenderer.LG_PRELOCK_FALLBACK_SOURCE
+                            : BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE);
+            Log.i(TAG, "secondary Last screen loaded size="
+                    + source.info.width + "x" + source.info.height
+                    + " displayId=" + target.displayId
+                    + " profile=" + target.profile
+                    + " fallback=" + source.fallback
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
         } finally {
             bitmap.recycle();
@@ -6357,48 +6395,52 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && backgroundRenderer.hasBackgroundSourceBitmap()) {
             return;
         }
-        int width = activeDisplayWidth > 0
-                ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
-        int height = activeDisplayHeight > 0
-                ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
-        int displayId = activeDisplayId == Display.INVALID_DISPLAY
-                ? Display.DEFAULT_DISPLAY : activeDisplayId;
-        File file = OverlayPrefs.lgPreLockUnderlayFile(
-                this, activeDisplayProfile, displayId, width, height);
-        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(file);
-        if (info == null || info.width != width || info.height != height) {
+        LgLastScreenCache.Target target = activeLgLastScreenTarget();
+        LgLastScreenCache.ResolvedSource source = resolveLgLastScreenSource(effect);
+        if (source == null) {
+            Log.i(TAG, "LG Last screen and lockscreen fallback unavailable effect=" + effect
+                    + " profile=" + target.profile
+                    + " displayId=" + target.displayId
+                    + " target=" + target.width + "x" + target.height);
             return;
         }
+        String sourceName = source.fallback
+                ? BackgroundSourceRenderer.LG_PRELOCK_FALLBACK_SOURCE
+                : BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE;
         if (applyRawArgb8888BackgroundSourceIfSupported(
-                file, effect, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE)) {
+                source.file, effect, sourceName)) {
             unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
             unlockEffectBackgroundEffect = effect;
             colorScreenshotAttemptedThisSession = true;
             unlockEffectBackgroundCaptureSucceededThisSession = true;
             skipCachedEffectBackgroundLoad = false;
-            Log.i(TAG, "LG pre-lock underlay mapped size=" + width + "x" + height
+            Log.i(TAG, "LG pre-lock underlay mapped size="
+                    + source.info.width + "x" + source.info.height
                     + " effect=" + effect
-                    + " displayId=" + displayId
-                    + " profile=" + activeDisplayProfile
+                    + " displayId=" + target.displayId
+                    + " profile=" + target.profile
+                    + " fallback=" + source.fallback
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
             return;
         }
-        Bitmap bitmap = Argb8888BitmapStore.decode(file);
+        Bitmap bitmap = Argb8888BitmapStore.decode(source.file);
         if (bitmap == null || bitmap.isRecycled()) {
             return;
         }
         try {
             backgroundRenderer.setBackgroundSourceBitmap(
-                    bitmap, BackgroundSourceRenderer.LG_PRELOCK_UNDERLAY_SOURCE);
+                    bitmap, sourceName);
             unlockEffectBackgroundCapturedAt = SystemClock.uptimeMillis();
             unlockEffectBackgroundEffect = effect;
             colorScreenshotAttemptedThisSession = true;
             unlockEffectBackgroundCaptureSucceededThisSession = true;
             skipCachedEffectBackgroundLoad = false;
-            Log.i(TAG, "LG pre-lock underlay loaded size=" + width + "x" + height
+            Log.i(TAG, "LG pre-lock underlay loaded size="
+                    + source.info.width + "x" + source.info.height
                     + " effect=" + effect
-                    + " displayId=" + displayId
-                    + " profile=" + activeDisplayProfile
+                    + " displayId=" + target.displayId
+                    + " profile=" + target.profile
+                    + " fallback=" + source.fallback
                     + " elapsedMs=" + (SystemClock.uptimeMillis() - startedAt));
         } finally {
             bitmap.recycle();
@@ -6420,16 +6462,7 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private boolean hasUsableEffectBackgroundCache(int effect) {
         if (effectUsesLgPreLockUnderlay(effect)) {
-            int width = activeDisplayWidth > 0
-                    ? activeDisplayWidth : Math.max(1, activeDisplayMetrics().widthPixels);
-            int height = activeDisplayHeight > 0
-                    ? activeDisplayHeight : Math.max(1, activeDisplayMetrics().heightPixels);
-            int displayId = activeDisplayId == Display.INVALID_DISPLAY
-                    ? Display.DEFAULT_DISPLAY : activeDisplayId;
-            Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(
-                    OverlayPrefs.lgPreLockUnderlayFile(
-                            this, activeDisplayProfile, displayId, width, height));
-            return info != null && info.width == width && info.height == height;
+            return resolveLgLastScreenSource(effect) != null;
         }
         if (usesImportedEffectBackground(effect, activeDisplayProfile)) {
             return ManualEffectBackground.isUsable(
@@ -7152,10 +7185,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                                     System.currentTimeMillis(),
                                     capturedRefreshToken);
                             if (effectUsesLgPreLockUnderlay(effect)) {
-                                // This one-shot capture keeps the traditional lockscreen cache
-                                // ready for other effects. Never feed it into an LG renderer:
-                                // LG continues to use its independent Last screen source.
+                                // Prefer the independent Last screen. If it is unavailable,
+                                // load this exact-profile lockscreen cache as a safe temporary
+                                // source; the next successful screen-off capture replaces it.
                                 copy.recycle();
+                                if (generation == unlockEffectBackgroundGeneration
+                                        && capturedProfile.equals(activeDisplayProfile)) {
+                                    loadCachedUnlockEffectBackgroundSourceIfNeeded(effect);
+                                }
                                 scheduleEffectBackgroundRefreshAlarm("shared_cache_saved_for_lg");
                                 return;
                             }
@@ -7190,6 +7227,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                                             .setBackgroundSourceBitmap(copy,
                                                     BackgroundSourceRenderer.SHARED_CACHE_SOURCE);
                                 }
+                            }
+                            if (OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)
+                                    && capturedProfile.equals(activeDisplayProfile)) {
+                                loadSecondaryPreLockUnderlaySourceIfNeeded(
+                                        effect, SystemClock.uptimeMillis());
                             }
                             scheduleEffectBackgroundRefreshAlarm("cache_saved");
                         }
@@ -7694,6 +7736,13 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockEffectWindowParams = null;
             unlockEffectWindowNeutralizedForHandoff = false;
             refreshUnlockEffectReadiness("detached");
+        }
+        // Parked is meaningful only while the renderer window is still attached at
+        // zero alpha. A display-profile handoff can already remove that window before
+        // this cleanup runs; keeping the old parked flag then blocks screenshot capture
+        // forever even though no L.L.E surface remains on the new panel.
+        if (!unlockEffectOverlayAttached) {
+            unlockEffectOverlayParked = false;
         }
         if (removed && !destroyingRenderer && isSamsungLockBgEffect(removedType)) {
             markUnlockEffectRendererStale("overlay_detached");

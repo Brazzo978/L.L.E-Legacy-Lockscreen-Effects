@@ -37,6 +37,18 @@ final class LgLastScreenCache {
         }
     }
 
+    static final class ResolvedSource {
+        final File file;
+        final Argb8888BitmapStore.Info info;
+        final boolean fallback;
+
+        ResolvedSource(File file, Argb8888BitmapStore.Info info, boolean fallback) {
+            this.file = file;
+            this.info = info;
+            this.fallback = fallback;
+        }
+    }
+
     private LgLastScreenCache() {
     }
 
@@ -74,33 +86,52 @@ final class LgLastScreenCache {
         return inspect(target) != null;
     }
 
-    static File findWallpaperFallback(Activity activity, int effect, Target target) {
-        if (activity == null || target == null) {
+    static ResolvedSource resolve(Context context, int effect, Target target) {
+        if (context == null || target == null) {
+            return null;
+        }
+        Argb8888BitmapStore.Info lastScreen = inspect(target);
+        if (lastScreen != null) {
+            return new ResolvedSource(target.file, lastScreen,
+                    isWallpaperFallback(context, target));
+        }
+        File fallback = findWallpaperFallback(context, effect, target);
+        Argb8888BitmapStore.Info fallbackInfo = Argb8888BitmapStore.inspect(fallback);
+        return fallbackInfo == null ? null
+                : new ResolvedSource(fallback, fallbackInfo, true);
+    }
+
+    static boolean isReadyOrFallback(Context context, int effect, Target target) {
+        return resolve(context, effect, target) != null;
+    }
+
+    static File findWallpaperFallback(Context context, int effect, Target target) {
+        if (context == null || target == null) {
             return null;
         }
         if (OverlayPrefs.importedEffectBackgroundEnabled(
-                activity, effect, target.profile)) {
+                context, effect, target.profile)) {
             File imported = OverlayPrefs.importedEffectBackgroundFile(
-                    activity, effect, target.profile);
+                    context, effect, target.profile);
             if (matches(imported, target)) {
                 return imported;
             }
         }
-        File shared = OverlayPrefs.effectBackgroundFile(activity, effect, target.profile);
+        File shared = OverlayPrefs.effectBackgroundFile(context, effect, target.profile);
         if (matches(shared, target)) {
             return shared;
         }
         File legacyProfile = OverlayPrefs.legacyPngEffectBackgroundFile(
-                activity, target.profile);
+                context, target.profile);
         if (matches(legacyProfile, target)) {
             return legacyProfile;
         }
-        File legacyEffect = OverlayPrefs.legacyEffectBackgroundFile(activity, effect);
+        File legacyEffect = OverlayPrefs.legacyEffectBackgroundFile(context, effect);
         return matches(legacyEffect, target) ? legacyEffect : null;
     }
 
-    static FallbackResult forceWallpaperFallback(Activity activity, int effect, Target target) {
-        File source = findWallpaperFallback(activity, effect, target);
+    static FallbackResult forceWallpaperFallback(Context context, int effect, Target target) {
+        File source = findWallpaperFallback(context, effect, target);
         if (source == null) {
             return new FallbackResult(false,
                     "No exact-size wallpaper cache is available for this display");
@@ -125,7 +156,7 @@ final class LgLastScreenCache {
                 return new FallbackResult(false, "Last screen fallback could not be saved");
             }
             OverlayPrefs.markLgPreLockUnderlayFallback(
-                    activity, target.profile, target.displayId,
+                    context, target.profile, target.displayId,
                     target.width, target.height, System.currentTimeMillis());
             return new FallbackResult(true,
                     "Wallpaper fallback saved as Last screen");
@@ -140,20 +171,20 @@ final class LgLastScreenCache {
         }
     }
 
-    static boolean isWallpaperFallback(Activity activity, Target target) {
+    static boolean isWallpaperFallback(Context context, Target target) {
         return target != null
                 && OverlayPrefs.LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK.equals(
                 OverlayPrefs.lgPreLockUnderlayOrigin(
-                        activity, target.profile, target.displayId,
+                        context, target.profile, target.displayId,
                         target.width, target.height));
     }
 
-    static long capturedAt(Activity activity, Target target) {
+    static long capturedAt(Context context, Target target) {
         if (target == null) {
             return 0L;
         }
         long markedAt = OverlayPrefs.lgPreLockUnderlayCapturedAt(
-                activity, target.profile, target.displayId, target.width, target.height);
+                context, target.profile, target.displayId, target.width, target.height);
         return markedAt > 0L ? markedAt : target.file.lastModified();
     }
 

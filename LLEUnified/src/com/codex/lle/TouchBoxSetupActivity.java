@@ -656,15 +656,21 @@ public class TouchBoxSetupActivity extends Activity {
 
     private File bestWizardScreenshotFile(String profile) {
         File dedicated = OverlayPrefs.touchBoxScreenshotFile(this, profile);
-        if (dedicated.exists() && dedicated.length() > 0L) {
+        boolean dedicatedReady = dedicated.exists() && dedicated.length() > 0L;
+        // Tester no-colormap mode creates exact-size black PNGs for touch-area setup.
+        // Those placeholders can survive a later switch back to automatic capture and
+        // must not mask a valid lockscreen/effect cache for the same Fold profile.
+        if (dedicatedReady && !isBlackEditorPlaceholder(dedicated)) {
             return dedicated;
         }
         int effect = OverlayPrefs.unlockEffect(this);
         if (OverlayPrefs.usesLgPreLockUnderlay(effect)) {
             LgLastScreenCache.Target lastScreen = LgLastScreenCache.activeTarget(this);
+            LgLastScreenCache.ResolvedSource source = LgLastScreenCache.resolve(
+                    this, effect, lastScreen);
             if (FoldDisplayTarget.normalizeProfile(profile).equals(lastScreen.profile)
-                    && LgLastScreenCache.isReady(lastScreen)) {
-                return lastScreen.file;
+                    && source != null) {
+                return source.file;
             }
         }
         if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
@@ -682,6 +688,36 @@ public class TouchBoxSetupActivity extends Activity {
             return legacyPng;
         }
         return dedicated;
+    }
+
+    private boolean isBlackEditorPlaceholder(File file) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
+            return false;
+        }
+        int sample = 1;
+        int largest = Math.max(bounds.width, bounds.height);
+        while (largest / sample > 128) {
+            sample *= 2;
+        }
+        Bitmap preview = Argb8888BitmapStore.decode(file, sample);
+        if (preview == null || preview.isRecycled()) {
+            return false;
+        }
+        try {
+            int width = preview.getWidth();
+            int height = preview.getHeight();
+            int[] pixels = new int[width * height];
+            preview.getPixels(pixels, 0, width, 0, 0, width, height);
+            for (int color : pixels) {
+                if (Color.red(color) > 8 || Color.green(color) > 8 || Color.blue(color) > 8) {
+                    return false;
+                }
+            }
+            return true;
+        } finally {
+            preview.recycle();
+        }
     }
 
     private Bitmap decodeOverviewBitmap(File file) {

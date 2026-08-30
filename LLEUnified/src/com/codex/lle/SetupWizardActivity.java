@@ -1048,9 +1048,12 @@ public class SetupWizardActivity extends Activity {
                 OverlayPrefs.UNLOCK_EFFECT_ENABLED, true);
         final int selectedEffect = OverlayPrefs.unlockEffect(this);
         final boolean usesLastScreen = OverlayPrefs.needsLgPreLockUnderlay(selectedEffect);
+        final boolean foldProfiles = FoldDisplayTarget.usesFoldProfiles(this);
         final LgLastScreenCache.Target lastScreenTarget =
                 LgLastScreenCache.activeTarget(this);
-        final boolean lastScreenReady = LgLastScreenCache.isReady(lastScreenTarget);
+        final LgLastScreenCache.ResolvedSource lastScreenSource = usesLastScreen
+                ? LgLastScreenCache.resolve(this, selectedEffect, lastScreenTarget) : null;
+        final boolean lastScreenReady = lastScreenSource != null;
         final boolean lockscreenCacheReady = !automatic || isAutomaticBackgroundReady();
         final boolean captureReady = noColormap || !unlockEnabled
                 || (usesLastScreen ? lastScreenReady && lockscreenCacheReady
@@ -1075,7 +1078,15 @@ public class SetupWizardActivity extends Activity {
                     true));
         } else if (usesLastScreen && unlockEnabled) {
             body.addView(title("Prepare both effect caches"));
-            body.addView(paragraph(automatic
+            body.addView(paragraph(foldProfiles
+                    ? "Capture both Fold panels. On the current panel, leave the app or "
+                            + "launcher you want visible, lock the phone, wake to the "
+                            + "lockscreen, and stay there until the L.L.E effect appears. "
+                            + "Unlock, switch to the other panel by opening or closing the "
+                            + "Fold, and repeat the same lock → wake → wait sequence. After "
+                            + "the effect appears on both Main and Cover, return to L.L.E to "
+                            + "finish the wizard."
+                    : automatic
                     ? "Leave the unlocked app or launcher you want visible and turn the screen "
                             + "off. Wake to the lockscreen, wait there for about 2–3 seconds, "
                             + "then unlock and return. L.L.E keeps the lockscreen cache for all "
@@ -1102,14 +1113,18 @@ public class SetupWizardActivity extends Activity {
                 });
                 body.addView(viewLockscreenCache, quietParams());
             }
-            String readyDescription = LgLastScreenCache.isWallpaperFallback(
-                    this, lastScreenTarget)
-                    ? "An exact wallpaper cache is currently being used as the forced "
-                            + "fallback. The next successful screen-off capture replaces it."
+            String readyDescription = lastScreenSource != null && lastScreenSource.fallback
+                    ? (lastScreenSource.file.equals(lastScreenTarget.file)
+                            ? "An exact wallpaper cache is currently being used as the forced "
+                                    + "fallback. The next successful screen-off capture replaces it."
+                            : "The dedicated Last screen is unavailable, so L.L.E will "
+                                    + "automatically use the exact-profile lockscreen cache. "
+                                    + "A later successful screen-off capture takes priority.")
                     : "The last unlocked frame for the active " + activeProfileLabel()
                             + " display is ready.";
             body.addView(statusCard(lastScreenReady
-                            ? "Last screen captured"
+                            ? (lastScreenSource != null && lastScreenSource.fallback
+                                    ? "Last screen fallback ready" : "Last screen captured")
                             : "Waiting for Last screen",
                     lastScreenReady
                             ? readyDescription
@@ -1138,8 +1153,18 @@ public class SetupWizardActivity extends Activity {
                     + "imported wallpaper cache already exists."));
         } else if (automatic && unlockEnabled) {
             boolean tabletProfiles = FoldDisplayTarget.usesTabletProfiles(this);
-            body.addView(title("Capture the lockscreen once"));
-            body.addView(paragraph(tabletProfiles
+            body.addView(title(foldProfiles
+                    ? "Capture both Fold screens"
+                    : tabletProfiles
+                            ? "Capture both tablet orientations"
+                            : "Capture the lockscreen once"));
+            body.addView(paragraph(foldProfiles
+                    ? "Capture both Fold panels. On the current panel, lock the phone, wake "
+                            + "to the lockscreen, and stay there until the L.L.E effect appears. "
+                            + "Unlock, switch to the other panel by opening or closing the Fold, "
+                            + "then repeat the same lock → wake → wait sequence. After the effect "
+                            + "appears on both Main and Cover, return to L.L.E to finish the wizard."
+                    : tabletProfiles
                     ? "Lock the tablet once in portrait and once in landscape. In each "
                             + "orientation, wait on the visible lockscreen for about 2–3 seconds "
                             + "before unlocking. L.L.E stores the two colormaps separately."
@@ -1147,15 +1172,25 @@ public class SetupWizardActivity extends Activity {
                             + "2–3 seconds, then unlock and return to L.L.E. This gives the "
                             + "selected effect a clean wallpaper source before touch-area calibration."));
             body.addView(statusCard(captureReady
-                            ? "Lockscreen screenshot captured"
-                            : "Waiting for the lockscreen screenshot",
+                            ? (foldProfiles
+                                    ? "Both Fold screenshots captured"
+                                    : "Lockscreen screenshot captured")
+                            : (foldProfiles
+                                    ? "Waiting for Main and Cover screenshots"
+                                    : "Waiting for the lockscreen screenshot"),
                     captureReady
-                            ? (tabletProfiles
+                            ? (foldProfiles
+                                    ? "Main and Cover colormaps are ready."
+                                    : tabletProfiles
                                     ? "Portrait and landscape colormaps are ready."
                                     : "The source for the active " + activeProfileLabel()
                                             + " display is ready.")
-                            : "Complete one lock → wait → unlock cycle. This page checks the "
-                                    + "saved source automatically when you return.",
+                            : (foldProfiles
+                                    ? "Complete the lock → wake → wait cycle on both Main and "
+                                            + "Cover. This page checks both saved sources when "
+                                            + "you return."
+                                    : "Complete one lock → wait → unlock cycle. This page checks "
+                                            + "the saved source automatically when you return."),
                     captureReady));
         } else if (automatic) {
             body.addView(title("Screenshot capture is optional"));
@@ -1184,8 +1219,10 @@ public class SetupWizardActivity extends Activity {
             public void onClick(View v) {
                 boolean readyNow = noColormap || !unlockEnabled
                         || (usesLastScreen
-                        ? LgLastScreenCache.isReady(LgLastScreenCache.activeTarget(
-                                SetupWizardActivity.this))
+                        ? LgLastScreenCache.isReadyOrFallback(
+                                SetupWizardActivity.this,
+                                OverlayPrefs.unlockEffect(SetupWizardActivity.this),
+                                LgLastScreenCache.activeTarget(SetupWizardActivity.this))
                                 && (!automatic || isAutomaticBackgroundReady())
                         : (!automatic || isAutomaticBackgroundReady()));
                 if (readyNow) {
@@ -1246,16 +1283,21 @@ public class SetupWizardActivity extends Activity {
 
     private void showWizardLastScreenCache() {
         final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
-        Argb8888BitmapStore.Info info = LgLastScreenCache.inspect(target);
-        if (info == null) {
-            Toast.makeText(this, "No Last screen cache yet", Toast.LENGTH_SHORT).show();
+        LgLastScreenCache.ResolvedSource resolved = LgLastScreenCache.resolve(
+                this, OverlayPrefs.unlockEffect(this), target);
+        if (resolved == null) {
+            Toast.makeText(this, "No Last screen or matching fallback yet",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
-        showWizardCache(target.file, "Last screen",
-                (LgLastScreenCache.isWallpaperFallback(this, target)
-                        ? "Forced wallpaper fallback" : "Last unlocked frame")
+        showWizardCache(resolved.file, "Last screen",
+                (resolved.fallback
+                        ? (resolved.file.equals(target.file)
+                                ? "Forced wallpaper fallback"
+                                : "Automatic lockscreen fallback")
+                        : "Last unlocked frame")
                         + " · " + target.profile + " · "
-                        + info.width + " × " + info.height);
+                        + resolved.info.width + " × " + resolved.info.height);
     }
 
     private void showWizardLockscreenCache(int effect, LgLastScreenCache.Target target) {
@@ -1752,7 +1794,8 @@ public class SetupWizardActivity extends Activity {
         }
         int effect = OverlayPrefs.unlockEffect(this);
         if (OverlayPrefs.needsLgPreLockUnderlay(effect)
-                && LgLastScreenCache.isReady(LgLastScreenCache.activeTarget(this))) {
+                && LgLastScreenCache.isReadyOrFallback(
+                        this, effect, LgLastScreenCache.activeTarget(this))) {
             return true;
         }
         if (OverlayPrefs.importedEffectBackgroundEnabled(this, effect, profile)) {
