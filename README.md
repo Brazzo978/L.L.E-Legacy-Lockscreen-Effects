@@ -2,10 +2,13 @@
 
 Bring classic Android lockscreen effects back to modern devices—without root.
 
+**Current stable release:** `1.0.6.1` · **Recommended build:** ARM64
+
 [Download the latest release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/latest)
 · [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
 · [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
-. [Telegram Group For Support](https://t.me/legacylockscreeneffect)
+· [Telegram support group](https://t.me/legacylockscreeneffect)
+· [L.L.E Companion](https://github.com/Brazzo978/LLE-Companion)
 
 > **Open source and local by design.** L.L.E's source code is published so its
 > permission and data handling can be inspected. The app does not request the
