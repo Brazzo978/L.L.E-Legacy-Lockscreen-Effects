@@ -14,6 +14,8 @@ public class TouchDebugView extends View {
     private static final String TAG = "LLEDebug";
     private static final long MOVE_LOG_INTERVAL_MS = 250L;
     private static final int INVALID_POINTER_ID = -1;
+    private static final int SAFETY_BYPASS_POINTER_COUNT = 3;
+    private static final int SAFETY_BYPASS_DISTANCE_DP = 48;
 
     interface TouchTriggerListener {
         boolean onTouchStarted(float screenX, float screenY);
@@ -25,6 +27,8 @@ public class TouchDebugView extends View {
         void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY, float distance);
 
         void onTouchCancelled();
+
+        void onSafetyBypassRequested();
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -45,6 +49,11 @@ public class TouchDebugView extends View {
     private boolean transparentMode = true;
     private boolean gestureActive;
     private boolean multiTouchSuppressed;
+    private boolean safetyBypassTracking;
+    private boolean safetyBypassTriggered;
+    private boolean safetyBypassEnabled = true;
+    private float safetyBypassStartScreenX;
+    private float safetyBypassStartScreenY;
     private boolean listeningEnabled = true;
     private int windowLeft;
     private int windowTop;
@@ -79,7 +88,15 @@ public class TouchDebugView extends View {
         this.listeningEnabled = listeningEnabled;
         gestureActive = false;
         multiTouchSuppressed = false;
+        resetSafetyBypassGesture();
         activePointerId = INVALID_POINTER_ID;
+    }
+
+    public void setSafetyBypassEnabled(boolean enabled) {
+        safetyBypassEnabled = enabled;
+        if (!enabled) {
+            resetSafetyBypassGesture();
+        }
     }
 
     @Override
@@ -102,11 +119,14 @@ public class TouchDebugView extends View {
         updatePointerCoordinates(event, pointerIndex);
         if (shouldLogTouch(action)) {
             Log.i(TAG, "action=" + lastAction
-                    + " local=" + Math.round(lastX) + "," + Math.round(lastY)
-                    + " raw=" + Math.round(lastRawX) + "," + Math.round(lastRawY)
-                    + " screen=" + Math.round(lastScreenX) + "," + Math.round(lastScreenY)
-                    + " window=" + windowLeft + "," + windowTop
-                    + " pointers=" + pointerCount);
+                    + " pointers=" + pointerCount
+                    + " gestureActive=" + gestureActive
+                    + " listening=" + listeningEnabled);
+        }
+
+        if (handleSafetyBypassGesture(event, action)) {
+            invalidateIfVisible();
+            return true;
         }
 
         if (action == MotionEvent.ACTION_POINTER_UP && pointerCount == 2) {
@@ -162,6 +182,72 @@ public class TouchDebugView extends View {
         }
         invalidateIfVisible();
         return true;
+    }
+
+    private boolean handleSafetyBypassGesture(MotionEvent event, int action) {
+        if (!safetyBypassEnabled) {
+            return false;
+        }
+        if (action == MotionEvent.ACTION_POINTER_UP
+                && pointerCount - 1 < SAFETY_BYPASS_POINTER_COUNT) {
+            resetSafetyBypassGesture();
+            return false;
+        }
+        if (pointerCount >= SAFETY_BYPASS_POINTER_COUNT) {
+            float centroidScreenX = windowLeft + pointerCentroidX(event);
+            float centroidScreenY = windowTop + pointerCentroidY(event);
+            if (!safetyBypassTracking) {
+                safetyBypassTracking = true;
+                safetyBypassTriggered = false;
+                safetyBypassStartScreenX = centroidScreenX;
+                safetyBypassStartScreenY = centroidScreenY;
+            } else if (!safetyBypassTriggered) {
+                float distance = (float) Math.hypot(
+                        centroidScreenX - safetyBypassStartScreenX,
+                        centroidScreenY - safetyBypassStartScreenY);
+                if (distance >= dp(SAFETY_BYPASS_DISTANCE_DP)) {
+                    safetyBypassTriggered = true;
+                    cancelActiveGesture();
+                    if (touchTriggerListener != null) {
+                        touchTriggerListener.onSafetyBypassRequested();
+                    }
+                    Log.w(TAG, "three-finger lock-cycle safety bypass requested distance="
+                            + Math.round(distance));
+                }
+            }
+            multiTouchSuppressed = true;
+            return safetyBypassTriggered;
+        }
+        if (safetyBypassTracking
+                && (action == MotionEvent.ACTION_POINTER_UP
+                || action == MotionEvent.ACTION_UP
+                || action == MotionEvent.ACTION_CANCEL)) {
+            resetSafetyBypassGesture();
+        }
+        return false;
+    }
+
+    private float pointerCentroidX(MotionEvent event) {
+        float sum = 0f;
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            sum += event.getX(i);
+        }
+        return sum / Math.max(1, event.getPointerCount());
+    }
+
+    private float pointerCentroidY(MotionEvent event) {
+        float sum = 0f;
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            sum += event.getY(i);
+        }
+        return sum / Math.max(1, event.getPointerCount());
+    }
+
+    private void resetSafetyBypassGesture() {
+        safetyBypassTracking = false;
+        safetyBypassTriggered = false;
+        safetyBypassStartScreenX = 0f;
+        safetyBypassStartScreenY = 0f;
     }
 
     private void invalidateIfVisible() {

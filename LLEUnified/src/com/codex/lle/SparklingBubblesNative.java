@@ -6,7 +6,7 @@ import android.graphics.Bitmap;
 final class SparklingBubblesNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_BLUR_MASK = 1;
-    static final int BRIDGE_VERSION = 1;
+    static final int BRIDGE_VERSION = 2;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -64,7 +64,17 @@ final class SparklingBubblesNative {
 
     static native void nativeUnlock(long handle);
 
+    /** Latches the renderer mode before touch events reach the native core. */
+    static native void nativeSetAdaptivePhysics(long handle, boolean enabled);
+
     static native boolean nativeStep(long handle, float elapsedSeconds);
+
+    /**
+     * Experimental display-refresh-driven physics. The default nativeStep()
+     * path remains the recovered fixed 60 Hz simulation.
+     */
+    static native boolean nativeStepAdaptive(
+            long handle, float elapsedSeconds, float speedMultiplier);
 
     static native boolean nativeDraw(long handle, int width, int height);
 

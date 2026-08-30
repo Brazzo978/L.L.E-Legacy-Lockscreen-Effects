@@ -75,6 +75,18 @@ size_t lle_spark_sim_hint(LleSparkSim *sim, float center_x, float center_y);
 /* Advances exactly one recovered 60 Hz simulation tick. */
 void lle_spark_sim_tick(LleSparkSim *sim);
 
+/*
+ * Experimental, display-refresh-driven path.  frame_delta is expressed in
+ * recovered 60 Hz frame units (therefore 0.5 at 120 Hz and 2.0 at 30 Hz).
+ * Unlike lle_spark_sim_tick(), this is intentionally not bit-for-bit stock:
+ * it retimes the per-frame operators so elapsed wall-clock time, lifetimes,
+ * damping and unlock motion remain stable across a 30--144 Hz display.
+ */
+void lle_spark_sim_advance_adaptive(LleSparkSim *sim, float frame_delta);
+
+/* Adaptive equivalent of touch_move() with a real-time emission cool-down. */
+bool lle_spark_sim_touch_move_adaptive(LleSparkSim *sim, float x, float y);
+
 /* Applies the recovered six-times radial velocity unlock impulse. */
 void lle_spark_sim_unlock(LleSparkSim *sim);
 
@@ -107,6 +119,7 @@ bool lle_spark_sim_get_particle(
  */
 size_t lle_spark_sim_export_draw_data(
         const LleSparkSim *sim,
+        float presentation_fraction,
         float *positions_xy,
         float *initial_positions_xy,
         float *sizes,

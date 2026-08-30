@@ -7,6 +7,38 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Keep checksum generation working even when Windows PowerShell does not
+# auto-load Microsoft.PowerShell.Utility/Get-FileHash.
+if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
+    function Get-FileHash {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string] $LiteralPath,
+            [ValidateSet("SHA256")]
+            [string] $Algorithm = "SHA256"
+        )
+        $resolvedPath = [IO.Path]::GetFullPath($LiteralPath)
+        $stream = [IO.File]::Open($resolvedPath, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $sha256 = [Security.Cryptography.SHA256]::Create()
+            try {
+                $digest = $sha256.ComputeHash($stream)
+            } finally {
+                $sha256.Dispose()
+            }
+        } finally {
+            $stream.Dispose()
+        }
+        [pscustomobject]@{
+            Algorithm = $Algorithm
+            Hash = [BitConverter]::ToString($digest).Replace("-", "")
+            Path = $resolvedPath
+        }
+    }
+}
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $buildTools = Join-Path $env:LOCALAPPDATA "Android\Sdk\build-tools\35.0.1"
 $apksigner = Join-Path $buildTools "apksigner.bat"

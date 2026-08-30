@@ -35,6 +35,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private static final int PARTICLE_UNLOCK_SPEED = 5;
     private static final int DRAWING_MARGIN_PX = 11;
     private static final long DRAWING_DELAY_MS = 16L;
+    private static final float SIMULATION_FRAMES_PER_SECOND = 60f;
+    private static final float ADAPTIVE_SPEED_MIN = 1f;
+    private static final float ADAPTIVE_SPEED_MAX = 2f;
+    private static final long ADAPTIVE_STALL_NANOS = 66_666_667L;
 
     private static final int DRAG_SOUND_COUNT_START_POINT = 40;
     private static final int DRAG_SOUND_COUNT_INTERVAL = 60;
@@ -47,6 +51,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             new ArrayList<Particle>(PARTICLE_MAX_ALIVE);
     private final float[] hsvOrigin = new float[3];
     private final float[] hsvTemp = new float[3];
+    private final int[] sampledColor = new int[1];
     private final UnlockEffectReadinessCoordinator readiness =
             new UnlockEffectReadinessCoordinator(this, "Popping Colours ARM64");
 
@@ -54,16 +59,20 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private final int tapSound;
     private final int dragSound;
     private final int unlockSound;
+    private final boolean adaptiveRefresh;
+    private final float adaptiveSpeedMultiplier;
 
     private Bitmap backgroundBitmap;
     private boolean ownsBackgroundBitmap;
     private boolean externalColorSource;
+    private boolean lightweightColorSource;
     private String backgroundSource = "none";
 
     private boolean destroyed;
     private boolean gestureActive;
     private boolean drawing;
     private boolean canvasReady;
+    private long lastAdaptiveFrameNanos;
     private int nextParticleIndex = -1;
     private int drawingLeft;
     private int drawingTop;
@@ -76,10 +85,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private float lastAddedX;
     private float lastAddedY;
     private int lastAddedColor;
+    private boolean lastAddedColorAvailable;
 
     private float pendingAffordanceX;
     private float pendingAffordanceY;
     private int pendingAffordanceColor;
+    private boolean pendingAffordanceColorAvailable;
 
     private final Runnable drawingRunnable = new Runnable() {
         @Override
@@ -87,17 +98,26 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             if (destroyed || !drawing) {
                 return;
             }
-            if (isAvailableDrawingRect()) {
-                invalidate(
-                        drawingLeft - DRAWING_MARGIN_PX,
-                        drawingTop - DRAWING_MARGIN_PX,
-                        drawingRight + DRAWING_MARGIN_PX,
-                        drawingBottom + DRAWING_MARGIN_PX);
+            if (adaptiveRefresh) {
+                advanceAdaptiveParticles(System.nanoTime());
+                invalidateAdaptiveDrawingBounds();
             } else {
-                invalidate(0, 0, 1, 1);
+                if (isAvailableDrawingRect()) {
+                    invalidate(
+                            drawingLeft - DRAWING_MARGIN_PX,
+                            drawingTop - DRAWING_MARGIN_PX,
+                            drawingRight + DRAWING_MARGIN_PX,
+                            drawingBottom + DRAWING_MARGIN_PX);
+                } else {
+                    invalidate(0, 0, 1, 1);
+                }
             }
             if (drawing && !destroyed) {
-                postDelayed(this, DRAWING_DELAY_MS);
+                if (adaptiveRefresh) {
+                    postOnAnimation(this);
+                } else {
+                    postDelayed(this, DRAWING_DELAY_MS);
+                }
             }
         }
     };
@@ -105,7 +125,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private final Runnable affordanceRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!destroyed) {
+            if (!destroyed && pendingAffordanceColorAvailable) {
                 addDots(CREATED_DOTS_AMOUNT_AFFORDANCE,
                         pendingAffordanceX,
                         pendingAffordanceY,
@@ -115,7 +135,21 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     };
 
     PoppingColoursArm64EffectView(Context context) {
+        this(context, false, 1f);
+    }
+
+    /**
+     * Creates the renderer with an optional display-vsync simulation path.
+     *
+     * <p>The legacy constructor deliberately keeps the original 16 ms scheduler and
+     * integer particle simulation. The adaptive path is opt-in so the master switch
+     * can leave stock rendering untouched.</p>
+     */
+    PoppingColoursArm64EffectView(Context context, boolean adaptiveRefresh,
+            float speedMultiplier) {
         super(context);
+        this.adaptiveRefresh = adaptiveRefresh;
+        this.adaptiveSpeedMultiplier = normalizeAdaptiveSpeed(speedMultiplier);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -172,8 +206,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         dragSoundCount = DRAG_SOUND_COUNT_START_POINT;
         lastDragSoundMoveAtMs = SystemClock.uptimeMillis();
         play(tapSound, TOUCH_SOUND_VOLUME);
-        addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY,
-                getColor(screenX, screenY));
+        if (sampleColor(screenX, screenY, sampledColor)) {
+            addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY, sampledColor[0]);
+        }
         Log.i(TAG, "popping colours ARM64 begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY));
     }
@@ -198,8 +233,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 dragSoundCount = 0;
             }
         }
-        addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY,
-                getColor(screenX, screenY));
+        if (sampleColor(screenX, screenY, sampledColor)) {
+            addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY, sampledColor[0]);
+        }
     }
 
     @Override
@@ -233,6 +269,8 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         gestureActive = false;
         dragSoundCount = 0;
         lastDragSoundMoveAtMs = 0L;
+        lastAddedColorAvailable = false;
+        pendingAffordanceColorAvailable = false;
         removeCallbacks(affordanceRunnable);
         stopDrawing();
         aliveParticles.clear();
@@ -259,10 +297,17 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         Rect rect = safeRect(screenRect);
         pendingAffordanceX = rect.exactCenterX();
         pendingAffordanceY = rect.exactCenterY();
-        pendingAffordanceColor = getColor(pendingAffordanceX, pendingAffordanceY);
+        pendingAffordanceColorAvailable = sampleColor(
+                pendingAffordanceX, pendingAffordanceY, sampledColor);
+        if (pendingAffordanceColorAvailable) {
+            pendingAffordanceColor = sampledColor[0];
+        }
         removeCallbacks(affordanceRunnable);
-        postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+        if (pendingAffordanceColorAvailable) {
+            postDelayed(affordanceRunnable, Math.max(0L, startDelayMs));
+        }
         Log.i(TAG, "popping colours ARM64 affordance queued delayMs=" + startDelayMs
+                + " colorMap=" + pendingAffordanceColorAvailable
                 + " rect=" + rect.left + "," + rect.top + ","
                 + rect.right + "," + rect.bottom);
     }
@@ -272,8 +317,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         return externalColorSource
                 && backgroundBitmap != null
                 && !backgroundBitmap.isRecycled()
-                && backgroundBitmap.getWidth() == Math.max(1, getRenderWidth())
-                && backgroundBitmap.getHeight() == Math.max(1, getRenderHeight());
+                && (lightweightColorSource
+                || backgroundBitmap.getWidth() == Math.max(1, getRenderWidth())
+                && backgroundBitmap.getHeight() == Math.max(1, getRenderHeight()));
     }
 
     @Override
@@ -283,14 +329,21 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
         int width = Math.max(1, getRenderWidth());
         int height = Math.max(1, getRenderHeight());
-        boolean borrow = BackgroundSourceRenderer.canBorrowSharedCache(
+        boolean lightweight = BackgroundSourceRenderer.isTesterSyntheticSource(sourceName);
+        boolean borrow = !lightweight && BackgroundSourceRenderer.canBorrowSharedCache(
                 source, sourceName, width, height);
-        Bitmap next = borrow ? source : createCenterCropBitmap(source, width, height);
+        Bitmap next = lightweight
+                ? source.copy(Bitmap.Config.ARGB_8888, false)
+                : borrow ? source : createCenterCropBitmap(source, width, height);
+        if (next == null) {
+            return;
+        }
         next.prepareToDraw();
         releaseBackgroundBitmap();
         backgroundBitmap = next;
         ownsBackgroundBitmap = !borrow;
         externalColorSource = true;
+        lightweightColorSource = lightweight;
         backgroundSource = sourceName == null ? "external" : sourceName;
         Log.i(TAG, "colour map replaced source=" + backgroundSource
                 + " size=" + next.getWidth() + "x" + next.getHeight());
@@ -299,7 +352,11 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     @Override
     public void clearBackgroundSourceBitmap() {
         externalColorSource = false;
+        lightweightColorSource = false;
         backgroundSource = "none";
+        lastAddedColorAvailable = false;
+        pendingAffordanceColorAvailable = false;
+        removeCallbacks(affordanceRunnable);
         releaseBackgroundBitmap();
     }
 
@@ -317,6 +374,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         destroyed = true;
         soundPool.release();
         externalColorSource = false;
+        lightweightColorSource = false;
         backgroundSource = "none";
         releaseBackgroundBitmap();
         readiness.destroyed();
@@ -360,8 +418,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 continue;
             }
 
-            particle.move();
-            particle.draw(canvas);
+            if (adaptiveRefresh) {
+                particle.drawAdaptive(canvas);
+            } else {
+                particle.move();
+                particle.draw(canvas);
+            }
             int left = particle.left();
             int top = particle.top();
             int right = particle.right();
@@ -380,6 +442,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         lastAddedX = x;
         lastAddedY = y;
         lastAddedColor = color;
+        lastAddedColorAvailable = true;
 
         Color.RGBToHSV(Color.red(color), Color.green(color), Color.blue(color), hsvOrigin);
         for (int index = 0; index < amount; index++) {
@@ -405,8 +468,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     }
 
     private void unlockDots() {
-        addDots(PARTICLE_MAX_ALIVE - aliveParticles.size(),
-                lastAddedX, lastAddedY, lastAddedColor);
+        if (lastAddedColorAvailable) {
+            addDots(PARTICLE_MAX_ALIVE - aliveParticles.size(),
+                    lastAddedX, lastAddedY, lastAddedColor);
+        }
         for (Particle particle : aliveParticles) {
             particle.unlock(PARTICLE_UNLOCK_SPEED);
         }
@@ -417,12 +482,108 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             return;
         }
         drawing = true;
-        postDelayed(drawingRunnable, DRAWING_DELAY_MS);
+        if (adaptiveRefresh) {
+            // Establish a real monotonic origin. There is no synthetic first 16 ms step.
+            lastAdaptiveFrameNanos = System.nanoTime();
+            postOnAnimation(drawingRunnable);
+        } else {
+            postDelayed(drawingRunnable, DRAWING_DELAY_MS);
+        }
     }
 
     private void stopDrawing() {
         drawing = false;
+        lastAdaptiveFrameNanos = 0L;
         removeCallbacks(drawingRunnable);
+    }
+
+    /**
+     * Advances once per display-vsync from a single monotonic elapsed sample. This is
+     * intentionally not an accumulator: a stall is discarded after its timestamp is
+     * sampled, so it cannot leave a fixed-step backlog for later frames.
+     */
+    private void advanceAdaptiveParticles(long nowNanos) {
+        long previousNanos = lastAdaptiveFrameNanos;
+        lastAdaptiveFrameNanos = nowNanos;
+        if (previousNanos == 0L || nowNanos <= previousNanos) {
+            return;
+        }
+        float simulationFrames = adaptiveSimulationFramesForElapsedNanos(
+                nowNanos - previousNanos, adaptiveSpeedMultiplier);
+        if (simulationFrames <= 0f) {
+            return;
+        }
+        for (Particle particle : aliveParticles) {
+            if (particle.alive) {
+                particle.advanceAdaptive(simulationFrames);
+            }
+        }
+    }
+
+    static float normalizeAdaptiveSpeed(float requestedSpeed) {
+        if (Float.isNaN(requestedSpeed) || Float.isInfinite(requestedSpeed)) {
+            return ADAPTIVE_SPEED_MIN;
+        }
+        return Math.max(ADAPTIVE_SPEED_MIN,
+                Math.min(ADAPTIVE_SPEED_MAX, requestedSpeed));
+    }
+
+    /** Package-visible pure timing seam for deterministic host checks. */
+    static float adaptiveSimulationFramesForElapsedNanos(long elapsedNanos,
+            float speedMultiplier) {
+        // Compare the unscaled display delta so a faster requested simulation never
+        // turns an otherwise valid vsync interval into a synthetic stall.
+        if (elapsedNanos <= 0L || elapsedNanos > ADAPTIVE_STALL_NANOS) {
+            return 0f;
+        }
+        return (float) (elapsedNanos * (double) SIMULATION_FRAMES_PER_SECOND
+                * normalizeAdaptiveSpeed(speedMultiplier) / 1_000_000_000d);
+    }
+
+    /** Invalidates both the previous draw and the current adaptive particle extents. */
+    private void invalidateAdaptiveDrawingBounds() {
+        boolean hasPreviousBounds = isAvailableDrawingRect();
+        int left = drawingLeft;
+        int top = drawingTop;
+        int right = drawingRight;
+        int bottom = drawingBottom;
+        boolean hasCurrentBounds = false;
+
+        for (Particle particle : aliveParticles) {
+            if (!particle.alive) {
+                continue;
+            }
+            int particleLeft = particle.left();
+            int particleTop = particle.top();
+            int particleRight = particle.right();
+            int particleBottom = particle.bottom();
+            if (!hasCurrentBounds) {
+                if (hasPreviousBounds) {
+                    left = Math.min(left, particleLeft);
+                    top = Math.min(top, particleTop);
+                    right = Math.max(right, particleRight);
+                    bottom = Math.max(bottom, particleBottom);
+                } else {
+                    left = particleLeft;
+                    top = particleTop;
+                    right = particleRight;
+                    bottom = particleBottom;
+                }
+                hasCurrentBounds = true;
+            } else {
+                left = Math.min(left, particleLeft);
+                top = Math.min(top, particleTop);
+                right = Math.max(right, particleRight);
+                bottom = Math.max(bottom, particleBottom);
+            }
+        }
+
+        if (hasPreviousBounds || hasCurrentBounds) {
+            invalidate(left - DRAWING_MARGIN_PX, top - DRAWING_MARGIN_PX,
+                    right + DRAWING_MARGIN_PX, bottom + DRAWING_MARGIN_PX);
+        } else {
+            invalidate(0, 0, 1, 1);
+        }
     }
 
     private boolean isAvailableDrawingRect() {
@@ -434,17 +595,19 @@ final class PoppingColoursArm64EffectView extends FrameLayout
                 && drawingBottom > 0;
     }
 
-    private int getColor(float x, float y) {
-        int color = 0x00ffffff;
+    private boolean sampleColor(float x, float y, int[] output) {
+        if (output == null || output.length == 0) {
+            return false;
+        }
         float stageWidth = Math.max(1f, getRenderWidth());
         float stageHeight = Math.max(1f, getRenderHeight());
         if (x <= 0f || x > stageWidth || y <= 0f || y > stageHeight) {
-            return color;
+            return false;
         }
 
         Bitmap bitmap = getBackgroundBitmap();
         if (bitmap == null || bitmap.isRecycled()) {
-            return color;
+            return false;
         }
         int bitmapWidth = bitmap.getWidth();
         int bitmapHeight = bitmap.getHeight();
@@ -465,29 +628,27 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         int sampleX = clamp(offsetX + (int) (x * ratio), 0, bitmapWidth - 1);
         int sampleY = clamp(offsetY + (int) (y * ratio), 0, bitmapHeight - 1);
         try {
-            return bitmap.getPixel(sampleX, sampleY);
+            output[0] = bitmap.getPixel(sampleX, sampleY);
+            return true;
         } catch (IllegalArgumentException ignored) {
-            return color;
+            return false;
         }
     }
 
     private Bitmap getBackgroundBitmap() {
-        int width = Math.max(1, getRenderWidth());
-        int height = Math.max(1, getRenderHeight());
         if (backgroundBitmap != null
-                && !backgroundBitmap.isRecycled()
-                && backgroundBitmap.getWidth() == width
-                && backgroundBitmap.getHeight() == height) {
+                && !backgroundBitmap.isRecycled()) {
+            // Sampling already center-crops arbitrary source dimensions. Retain the last
+            // valid map across layout/display-size changes until the service installs the
+            // correctly sized replacement instead of flashing a fabricated white map.
             return backgroundBitmap;
         }
-        releaseBackgroundBitmap();
-        backgroundBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        backgroundBitmap.eraseColor(Color.WHITE);
-        backgroundBitmap.prepareToDraw();
-        ownsBackgroundBitmap = true;
+        if (backgroundBitmap != null) {
+            releaseBackgroundBitmap();
+        }
         externalColorSource = false;
-        backgroundSource = "white_fallback";
-        return backgroundBitmap;
+        backgroundSource = "none";
+        return null;
     }
 
     private Bitmap createCenterCropBitmap(Bitmap source, int width, int height) {
@@ -574,6 +735,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         boolean alive;
         boolean unlocked;
         int life;
+        float adaptiveLife;
         int radius;
         float x;
         float y;
@@ -590,6 +752,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         void initialize(float initialX, float initialY, int color) {
             Random random = new Random();
             life = random.nextInt(100) + 50;
+            /* Stock draws the current integer life before decrementing it. Keep the
+             * same visible value at an exact 60 Hz elapsed frame while retaining a
+             * fractional value between high-refresh display frames. */
+            adaptiveLife = life + 1f;
             float randomTotal = random.nextInt(RANDOM_TOTAL) / (float) RANDOM_TOTAL;
             radius = (int) ((random.nextInt(10) == 0 ? bigRadius : smallRadius)
                     * randomTotal);
@@ -607,6 +773,12 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             y += dy;
         }
 
+        void advanceAdaptive(float simulationFrames) {
+            x += dx * simulationFrames;
+            y += dy * simulationFrames;
+            adaptiveLife -= simulationFrames;
+        }
+
         void draw(Canvas canvas) {
             int alphaStartFrame = unlocked ? 20 : 30;
             int alpha = life < alphaStartFrame
@@ -621,11 +793,24 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             }
         }
 
+        void drawAdaptive(Canvas canvas) {
+            float alphaStartFrame = unlocked ? 20f : 30f;
+            int alpha = adaptiveLife < alphaStartFrame
+                    ? Math.max(0, (int) (DOT_ALPHA * adaptiveLife / alphaStartFrame))
+                    : DOT_ALPHA;
+            paint.setAlpha(alpha);
+            canvas.drawCircle(x, y, radius, paint);
+            if (adaptiveLife <= 0f) {
+                alive = false;
+            }
+        }
+
         void unlock(float speed) {
             unlocked = true;
             dx *= speed;
             dy *= speed;
             life = 19;
+            adaptiveLife = life + 1f;
         }
 
         int left() {

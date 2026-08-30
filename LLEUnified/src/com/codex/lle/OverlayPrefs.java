@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 final class OverlayPrefs {
@@ -19,6 +20,8 @@ final class OverlayPrefs {
     private static volatile int cachedMinuteOfDay;
     static final String PREFS = "overlay_prefs";
     static final String MASTER_ENABLED = "master_enabled";
+    /** Tester-only low-memory mode: never capture, load or retain lockscreen colormaps. */
+    static final String TESTER_NO_COLORMAP_MODE = "tester_no_colormap_mode";
     static final String SHOW_AOD = "show_aod";
     static final String SHOW_HOME = "show_home";
     static final String SHOW_DOODLE = "show_doodle";
@@ -73,11 +76,46 @@ final class OverlayPrefs {
     static final String DEBUG_TOUCH_AREA = "debug_touch_area";
     static final String DEBUG_TOUCH_TRANSPARENT = "debug_touch_transparent";
     static final String DEBUG_TOUCH_STANDBY = "debug_touch_standby";
+    static final String THREE_FINGER_SAFETY_BYPASS_ENABLED =
+            "three_finger_safety_bypass_enabled";
     static final String DEBUG_BYPASS_BOOT_SAFETY = "debug_bypass_boot_safety";
+    static final String DEBUG_CONSERVATIVE_UNLOCK_HANDOFF =
+            "debug_conservative_unlock_handoff";
+    /**
+     * Opt-in comparison path for high-refresh unlock effects. Legacy motion and
+     * presentation stay the production default until device testing confirms
+     * the display-refresh path.
+     */
+    static final String DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS =
+            "debug_experimental_native_refresh_physics";
+    /** 1.0x–2.0x, stored as integer tenths to avoid preference float drift. */
+    static final String DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS =
+            "debug_experimental_native_refresh_physics_speed_tenths";
+    /** One-shot migration marker for the per-effect native-refresh preferences. */
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA =
+            "experimental_native_refresh_physics_per_effect_schema";
+    private static final int EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION = 1;
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX =
+            "experimental_native_refresh_physics_effect_";
+    private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX =
+            "experimental_native_refresh_physics_speed_tenths_effect_";
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT = 10;
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN = 10;
+    private static final int NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX = 20;
+    static final String DEBUG_LEGACY_QUICK_PANEL_DETECTION =
+            "debug_legacy_quick_panel_detection";
     static final String DEBUG_LENS_LOOP = "debug_lens_loop";
+    /** Retired Lens Flare GLES A/B key. Kept only so older tester commands stay harmless. */
+    static final String LENS_FLARE_GLES_RENDERER = "lens_flare_gles_renderer_v2";
+    static final String LENS_FLARE_MODE = "lens_flare_mode";
+    static final String LENS_FLARE_MODE_FLARE = "flare";
+    static final String LENS_FLARE_MODE_BLUE_RING = "bluering";
+    static final String LENS_FLARE_MODE_BLOOD = "blood";
+    static final String LENS_FLARE_MODE_LIGHTNING = "lightning";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
     static final String FOLD_MODE = "fold_mode";
+    static final String TABLET_MODE = "tablet_mode";
     static final String FOLD_COVER_UNLOCK_EFFECT_ENABLED =
             "fold_cover_unlock_effect_enabled";
     static final String FOLD_COVER_DOODLE_ENABLED = "fold_cover_doodle_enabled";
@@ -87,7 +125,25 @@ final class OverlayPrefs {
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    /** Random is a selection mode, never a renderer id. */
+    static final String UNLOCK_EFFECT_RANDOM_ENABLED = "unlock_effect_random_enabled";
+    /** String-set of decimal effect ids selected for the Random shuffle bag. */
+    static final String UNLOCK_EFFECT_RANDOM_POOL = "unlock_effect_random_pool";
+    /** Stable renderer selected for the current lock/unlock cycle. */
+    static final String UNLOCK_EFFECT_RANDOM_CURRENT = "unlock_effect_random_current";
+    /** Pool members not yet drawn in the current shuffle-bag pass. */
+    static final String UNLOCK_EFFECT_RANDOM_REMAINING = "unlock_effect_random_remaining";
+    /** Emergency None renderer remains active until the next completed unlock. */
+    private static final String UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE =
+            "unlock_effect_random_fallback_active";
+    /** Reserved until the Ripple Ink reverse path has a production-ready ABI. */
+    static final String RIPPLE_INK_PALETTE = "ripple_ink_palette";
+    static final int RIPPLE_INK_PALETTE_DEFAULT = 4;
+    static final int RIPPLE_INK_PALETTE_MIN = 1;
+    static final int RIPPLE_INK_PALETTE_MAX = 8;
     static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
+    static final String N5_COLOUR_DROPLET_GYRO_ENABLED =
+            "n5_colour_droplet_gyro_enabled";
     static final String EFFECT_PROFILE_LAST_SUMMARY = "effect_profile_last_summary";
     static final String EFFECT_PROFILE_DIAGNOSTIC_SUMMARY =
             "effect_profile_diagnostic_summary";
@@ -101,6 +157,11 @@ final class OverlayPrefs {
     static final String POPPING_COLOR_REFRESH_TOKEN = "popping_color_refresh_token";
     static final String EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED =
             "effect_background_auto_refresh_enabled";
+    private static final String LG_PRELOCK_UNDERLAY_METADATA_PREFIX =
+            "lg_prelock_underlay_metadata_";
+    static final String LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN = "last_screen";
+    static final String LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK =
+            "wallpaper_fallback";
     static final String EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS =
             "effect_background_refresh_interval_hours";
     static final String EFFECT_BACKGROUND_SKIP_NIGHT =
@@ -181,7 +242,35 @@ final class OverlayPrefs {
     static final int EFFECT_MASS_TENSION = 25;
     /** App-owned Galaxy S6 Water Droplet reconstruction, kept separate while it is WIP. */
     static final int EFFECT_S6_WATER_DROPLET_APP_OWNED = 26;
-    static final int EFFECT_COUNT = 27;
+    /** Reserved: hidden until Ripple Ink has a verified app-owned ABI path. */
+    static final int EFFECT_RIPPLE_INK = 27;
+    /** App-owned Good Lock particle renderer: popping-color variant. */
+    static final int EFFECT_GOOD_LOCK_POPPING = 28;
+    /** App-owned Good Lock particle renderer: rectangle-traveller variant. */
+    static final int EFFECT_GOOD_LOCK_RECTANGLE = 29;
+    /** App-owned Good Lock particle renderer: bouncing-color variant. */
+    static final int EFFECT_GOOD_LOCK_BOUNCING = 30;
+    /** Tester-only app-owned reconstruction of the Galaxy S3 None / Circle Unlock. */
+    static final int EFFECT_S3_NONE = 31;
+    /** Clean-room LG G2 Pixelate restoration with separate lockscreen and Last screen sources. */
+    static final int EFFECT_LG_G2_PIXELATE = 32;
+    /** Tester-only restoration of LG G2 Particle from the authorized XLocker archive. */
+    static final int EFFECT_LG_G2_PARTICLE = 33;
+    /** Tester-only app-owned LG G2 Crystal-inspired renderer. */
+    static final int EFFECT_LG_G2_CRYSTAL = 34;
+    /** Tester-only app-owned Xperia Z1 Blinds-inspired renderer. */
+    static final int EFFECT_XPERIA_Z1_BLINDS = 35;
+    /** Clean-room Revolving Glass renderer with independent lockscreen and Last screen sources. */
+    static final int EFFECT_REVOLVING_GLASS = 36;
+    /** Tester-only restoration of LG G1 White Hole from the authorized XLocker archive. */
+    static final int EFFECT_LG_G1_WHITE_HOLE = 37;
+    /** Tester-only restoration of LG Soda from the authorized XLocker archive. */
+    static final int EFFECT_LG_SODA = 38;
+    /** Tester-only restoration of LG G1 Dewdrop from the authorized XLocker archive. */
+    static final int EFFECT_LG_G1_DEWDROP = 39;
+    /** Tester-only restoration of LG G2 Light Particle from the authorized XLocker archive. */
+    static final int EFFECT_LG_G2_LIGHT_PARTICLE = 40;
+    static final int EFFECT_COUNT = 41;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -224,9 +313,17 @@ final class OverlayPrefs {
         return get(context).getBoolean(FOLD_MODE, FoldDisplayTarget.isFoldDevice(context));
     }
 
+    static boolean tabletModeEnabled(Context context) {
+        return get(context).getBoolean(TABLET_MODE,
+                FoldDisplayTarget.isTabletDevice(context)
+                        && !FoldDisplayTarget.isFoldDevice(context));
+    }
+
     static boolean foldPanelUnlockEffectEnabled(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
-        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+        if (!foldModeEnabled(context)
+                || (!FoldDisplayTarget.PROFILE_COVER.equals(normalized)
+                && !FoldDisplayTarget.PROFILE_MAIN.equals(normalized))) {
             return true;
         }
         String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
@@ -237,7 +334,9 @@ final class OverlayPrefs {
 
     static boolean foldPanelDoodleEnabled(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
-        if (!foldModeEnabled(context) || FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)) {
+        if (!foldModeEnabled(context)
+                || (!FoldDisplayTarget.PROFILE_COVER.equals(normalized)
+                && !FoldDisplayTarget.PROFILE_MAIN.equals(normalized))) {
             return true;
         }
         String key = FoldDisplayTarget.PROFILE_MAIN.equals(normalized)
@@ -273,7 +372,7 @@ final class OverlayPrefs {
 
     static boolean unlockEffectAllowedNow(Context context) {
         return unlockEffectEnabled(context)
-                && isImplementedEffect(unlockEffect(context))
+                && isImplementedEffect(context, unlockEffect(context))
                 && timeWindowAllows(context,
                 UNLOCK_EFFECT_TIME_ENABLED,
                 UNLOCK_EFFECT_TIME_START,
@@ -435,8 +534,67 @@ final class OverlayPrefs {
         return get(context).getBoolean(DEBUG_TOUCH_STANDBY, true);
     }
 
+    static boolean threeFingerSafetyBypassEnabled(Context context) {
+        return get(context).getBoolean(THREE_FINGER_SAFETY_BYPASS_ENABLED, true);
+    }
+
     static boolean debugBypassBootSafety(Context context) {
         return get(context).getBoolean(DEBUG_BYPASS_BOOT_SAFETY, false);
+    }
+
+    static boolean debugConservativeUnlockHandoff(Context context) {
+        return get(context).getBoolean(DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false);
+    }
+
+    static boolean debugExperimentalNativeRefreshPhysics(Context context) {
+        return get(context).getBoolean(DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS, false);
+    }
+
+    static int debugExperimentalNativeRefreshPhysicsSpeedTenths(Context context) {
+        int tenths = get(context).getInt(
+                DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS,
+                NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT);
+        return Math.max(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN,
+                Math.min(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX, tenths));
+    }
+
+    /**
+     * Copies the former global native-refresh controls into every renderer that supports
+     * them. Keep the legacy keys intact so a tester can safely roll back to an older build.
+     */
+    static void migrateExperimentalNativeRefreshPrefsIfNeeded(Context context) {
+        SharedPreferences preferences = get(context);
+        if (preferences.getInt(EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA, 0)
+                >= EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION) {
+            return;
+        }
+        boolean legacyEnabled = debugExperimentalNativeRefreshPhysics(context);
+        int legacySpeedTenths = debugExperimentalNativeRefreshPhysicsSpeedTenths(context);
+        SharedPreferences.Editor editor = preferences.edit();
+        for (int effect = 0; effect < EFFECT_COUNT; effect++) {
+            if (!supportsExperimentalNativeRefreshPhysics(effect)) {
+                continue;
+            }
+            editor.putBoolean(experimentalNativeRefreshPhysicsKey(effect), legacyEnabled);
+            if (supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+                editor.putInt(experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                        legacySpeedTenths);
+            }
+        }
+        // Write this last in the same synchronous transaction: a partial migration will run
+        // again, while a completed marker means all effect values became visible atomically.
+        boolean committed = editor.putInt(EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA,
+                EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION).commit();
+        if (committed) {
+            Log.i(TAG, "migrated native refresh preferences to per-effect schema"
+                    + " enabled=" + legacyEnabled + " speedTenths=" + legacySpeedTenths);
+        } else {
+            Log.w(TAG, "native refresh per-effect preference migration failed; will retry");
+        }
+    }
+
+    static boolean debugLegacyQuickPanelDetection(Context context) {
+        return get(context).getBoolean(DEBUG_LEGACY_QUICK_PANEL_DETECTION, false);
     }
 
     static boolean debugLensLoop(Context context) {
@@ -496,16 +654,291 @@ final class OverlayPrefs {
         return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
     }
 
+    static boolean randomUnlockEffectEnabled(Context context) {
+        return get(context).getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false);
+    }
+
+    static synchronized void setRandomUnlockEffectEnabled(Context context, boolean enabled) {
+        SharedPreferences preferences = get(context);
+        boolean wasEnabled = preferences.getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false);
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, enabled);
+        if (enabled && !preferences.contains(UNLOCK_EFFECT_RANDOM_POOL)) {
+            editor.putStringSet(UNLOCK_EFFECT_RANDOM_POOL,
+                    encodeRandomUnlockEffectPool(defaultRandomUnlockEffectPool(context)));
+        }
+        if (enabled && !wasEnabled) {
+            editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false);
+        }
+        editor.apply();
+    }
+
+    static Set<Integer> randomUnlockEffectPool(Context context) {
+        SharedPreferences preferences = get(context);
+        if (!preferences.contains(UNLOCK_EFFECT_RANDOM_POOL)) {
+            return defaultRandomUnlockEffectPool(context);
+        }
+        HashSet<Integer> result = new HashSet<Integer>();
+        Set<String> encoded;
+        try {
+            encoded = preferences.getStringSet(
+                    UNLOCK_EFFECT_RANDOM_POOL, new HashSet<String>());
+        } catch (ClassCastException malformedPreference) {
+            encoded = new HashSet<String>();
+        }
+        if (encoded != null) {
+            for (String value : encoded) {
+                try {
+                    int effect = Integer.parseInt(value);
+                    if (isRandomUnlockEffectEligible(context, effect)) {
+                        result.add(effect);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Ignore corrupt or future non-numeric members without losing the pool.
+                }
+            }
+        }
+        return result;
+    }
+
+    static boolean randomUnlockEffectSelected(Context context, int effect) {
+        return randomUnlockEffectPool(context).contains(effect);
+    }
+
+    static synchronized void setRandomUnlockEffectSelected(Context context, int effect,
+            boolean selected) {
+        if (!isRandomUnlockEffectEligible(context, effect)) {
+            return;
+        }
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (selected) {
+            pool.add(effect);
+        } else {
+            pool.remove(effect);
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putStringSet(UNLOCK_EFFECT_RANDOM_POOL, encodeRandomUnlockEffectPool(pool))
+                .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false);
+        if (!selected
+                && preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1) == effect) {
+            editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT);
+        }
+        editor.apply();
+    }
+
+    static synchronized int currentRandomUnlockEffect(Context context) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (pool.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        if (preferences.getBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)) {
+            return EFFECT_S3_NONE;
+        }
+        int current = preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1);
+        if (pool.contains(current) && isRandomUnlockEffectEligible(context, current)) {
+            return current;
+        }
+        return drawRandomUnlockEffect(context, pool, current);
+    }
+
+    static synchronized int advanceRandomUnlockEffect(Context context) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (pool.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        int previous = preferences.getBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                ? EFFECT_S3_NONE
+                : preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1);
+        preferences.edit()
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                .apply();
+        return drawRandomUnlockEffect(context, pool, previous);
+    }
+
+    static synchronized void useRandomUnlockEffectFallback(Context context) {
+        get(context).edit()
+                .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                .apply();
+    }
+
+    private static int drawRandomUnlockEffect(Context context, Set<Integer> pool,
+            int previous) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> remaining = decodeRandomUnlockEffectSet(
+                preferences.getStringSet(
+                        UNLOCK_EFFECT_RANDOM_REMAINING, new HashSet<String>()));
+        remaining.retainAll(pool);
+        remaining.remove(previous);
+        if (remaining.isEmpty()) {
+            remaining.addAll(pool);
+            if (remaining.size() > 1) {
+                remaining.remove(previous);
+            }
+        }
+        if (remaining.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        ArrayList<Integer> candidates = new ArrayList<Integer>(remaining);
+        int seed = (int) (System.nanoTime() ^ System.currentTimeMillis());
+        int next = candidates.get(new Random(seed).nextInt(candidates.size()));
+        remaining.remove(next);
+        preferences.edit()
+                .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, next)
+                .putStringSet(UNLOCK_EFFECT_RANDOM_REMAINING,
+                        encodeRandomUnlockEffectPool(remaining))
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                .apply();
+        Log.i(TAG, "random effect draw previous=" + previous
+                + " next=" + next
+                + " remaining=" + remaining.size()
+                + " pool=" + pool.size());
+        return next;
+    }
+
+    private static Set<Integer> decodeRandomUnlockEffectSet(Set<String> encoded) {
+        HashSet<Integer> result = new HashSet<Integer>();
+        if (encoded == null) {
+            return result;
+        }
+        for (String value : encoded) {
+            try {
+                result.add(Integer.parseInt(value));
+            } catch (NumberFormatException ignored) {
+                // Ignore corrupt or future non-numeric members.
+            }
+        }
+        return result;
+    }
+
+    static boolean isRandomUnlockEffectEligible(Context context, int effect) {
+        if (!EffectAvailability.isAvailable(context, effect)) {
+            return false;
+        }
+        return !testerNoColormapModeEnabled(context)
+                || supportsTesterNoColormapMode(effect);
+    }
+
+    /**
+     * Conservative first-release pool. These engines either retain several full-screen
+     * surfaces/textures, have costly native simulations, or have visibly slow cold starts.
+     */
+    static boolean isRandomUnlockEffectExcludedForCost(int effect) {
+        switch (effect) {
+            case EFFECT_S3_RIPPLE_NATIVE:
+            case EFFECT_N4_INK_IN_WATER:
+            case EFFECT_N5_COLOUR_DROPLET:
+            case EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case EFFECT_N5_COLOUR_DROPLET_WIP:
+            case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
+            case EFFECT_N5_SPARKLING_BUBBLES:
+            case EFFECT_N5_SPARKLING_BUBBLES_WIP:
+            case EFFECT_S6_WATER_DROPLET:
+            case EFFECT_S6_WATER_DROPLET_APP_OWNED:
+            case EFFECT_RIPPLE_INK:
+            case EFFECT_GOOD_LOCK_POPPING:
+            case EFFECT_GOOD_LOCK_RECTANGLE:
+            case EFFECT_GOOD_LOCK_BOUNCING:
+            case EFFECT_LG_G2_PARTICLE:
+            case EFFECT_REVOLVING_GLASS:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static Set<Integer> defaultRandomUnlockEffectPool(Context context) {
+        HashSet<Integer> result = new HashSet<Integer>();
+        for (int effect = 0; effect < EFFECT_COUNT; effect++) {
+            // Resource-heavy effects remain opt-in so every first inclusion passes through
+            // ControlActivity's explicit two-step warning.
+            if (isRandomUnlockEffectEligible(context, effect)
+                    && !isRandomUnlockEffectExcludedForCost(effect)) {
+                result.add(effect);
+            }
+        }
+        return result;
+    }
+
+    private static Set<String> encodeRandomUnlockEffectPool(Set<Integer> pool) {
+        HashSet<String> encoded = new HashSet<String>();
+        if (pool != null) {
+            for (Integer effect : pool) {
+                if (effect != null) {
+                    encoded.add(Integer.toString(effect));
+                }
+            }
+        }
+        return encoded;
+    }
+
+    static boolean testerNoColormapModeEnabled(Context context) {
+        return BuildFlavor.TESTER
+                && get(context).getBoolean(TESTER_NO_COLORMAP_MODE, false);
+    }
+
+    static boolean supportsTesterNoColormapMode(int effect) {
+        return effect == EFFECT_S4_LENS_FLARE
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_STONE_SKIPPING
+                || effect == EFFECT_MASS_TENSION
+                || effect == EFFECT_S3_NONE
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || isSeasonalUnlockEffect(effect);
+    }
+
+    static boolean usesTesterSyntheticColormap(int effect) {
+        return effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP;
+    }
+
     static boolean lockSoundEnabled(Context context) {
         return get(context).getBoolean(LOCK_SOUND_ENABLED, true);
+    }
+
+    static int rippleInkPalette(Context context) {
+        int palette = get(context).getInt(RIPPLE_INK_PALETTE, RIPPLE_INK_PALETTE_DEFAULT);
+        return Math.max(RIPPLE_INK_PALETTE_MIN, Math.min(RIPPLE_INK_PALETTE_MAX, palette));
     }
 
     static boolean abstractTilesLineEnabled(Context context) {
         return get(context).getBoolean(ABSTRACT_TILES_LINE_ENABLED, true);
     }
 
+    static boolean colourDropletGyroEnabled(Context context) {
+        SharedPreferences preferences = get(context);
+        if (preferences.contains(N5_COLOUR_DROPLET_GYRO_ENABLED)) {
+            return preferences.getBoolean(N5_COLOUR_DROPLET_GYRO_ENABLED, false);
+        }
+        return isColourDropletGyroEffect(preferences.getInt(
+                UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE));
+    }
+
     static int unlockEffect(Context context) {
         SharedPreferences preferences = get(context);
+        if (preferences.getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false)) {
+            return currentRandomUnlockEffect(context);
+        }
         int effect = preferences.getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
         // Values 1 and 6 belonged to superseded ripple experiments in early builds.
         if (effect == 1 || effect == 6) {
@@ -516,14 +949,21 @@ final class OverlayPrefs {
                 && EffectAvailability.isLegacyVendorEffect(effect)) {
             int previousEffect = effect;
             effect = samsungFreeReplacement(effect);
-            if (!isImplementedEffect(effect)) {
+            if (!isImplementedEffect(context, effect)) {
                 effect = EFFECT_S4_LENS_FLARE;
             }
             preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
             Log.i(TAG, "migrated unavailable legacy vendor effect "
                     + previousEffect + " -> " + effect);
         }
-        if (!isImplementedEffect(effect)) {
+        if (testerNoColormapModeEnabled(context)
+                && !supportsTesterNoColormapMode(effect)) {
+            int previousEffect = effect;
+            effect = EFFECT_MASS_TENSION;
+            preferences.edit().putInt(UNLOCK_EFFECT, effect).apply();
+            Log.w(TAG, "no-colormap mode fallback " + previousEffect + " -> " + effect);
+        }
+        if (!isImplementedEffect(context, effect)) {
             preferences.edit().putInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE).apply();
             return EFFECT_S4_LENS_FLARE;
         }
@@ -603,6 +1043,34 @@ final class OverlayPrefs {
                 return "S5 Stone Skipping";
             case EFFECT_MASS_TENSION:
                 return "Mass Tension";
+            case EFFECT_RIPPLE_INK:
+                return "N3 Ripple Ink";
+            case EFFECT_GOOD_LOCK_POPPING:
+                return "Good Lock Popping Color";
+            case EFFECT_GOOD_LOCK_RECTANGLE:
+                return "Good Lock Rectangle Traveller";
+            case EFFECT_GOOD_LOCK_BOUNCING:
+                return "Good Lock Bouncing Color";
+            case EFFECT_S3_NONE:
+                return "S3 None";
+            case EFFECT_LG_G2_PIXELATE:
+                return "G2 Pixelate";
+            case EFFECT_LG_G2_PARTICLE:
+                return "G2 Particle";
+            case EFFECT_LG_G2_CRYSTAL:
+                return "G2 Crystal";
+            case EFFECT_XPERIA_Z1_BLINDS:
+                return "Xperia Z1 Blinds";
+            case EFFECT_REVOLVING_GLASS:
+                return "Revolving Glass";
+            case EFFECT_LG_G1_WHITE_HOLE:
+                return "G1 White Hole";
+            case EFFECT_LG_SODA:
+                return "G2 Soda";
+            case EFFECT_LG_G1_DEWDROP:
+                return "G1 Dewdrop";
+            case EFFECT_LG_G2_LIGHT_PARTICLE:
+                return "G2 Light Particle";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -651,8 +1119,156 @@ final class OverlayPrefs {
                 || effect == EFFECT_N5_COLOUR_DROPLET_GYRO;
     }
 
+    static boolean isColourDropletGyroEffect(int effect) {
+        return effect == EFFECT_N5_COLOUR_DROPLET_GYRO
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP;
+    }
+
+    /** Effects with an ARM64 renderer that can opt into display-refresh timing. */
+    static boolean supportsExperimentalNativeRefreshPhysics(int effect) {
+        return effect == EFFECT_S6_WATER_DROPLET_APP_OWNED
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_S4_ABSTRACT_TILES
+                || effect == EFFECT_S4_GEOMETRIC_MOSAIC
+                || effect == EFFECT_S3_RIPPLE_NATIVE
+                || effect == EFFECT_RIPPLE_INK
+                || effect == EFFECT_WATERCOLOUR
+                || effect == EFFECT_BRILLIANT_RING
+                || effect == EFFECT_BRILLIANT_CUT
+                || effect == EFFECT_GOOD_LOCK_POPPING
+                || effect == EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == EFFECT_GOOD_LOCK_BOUNCING;
+    }
+
+    /** Only these renderers consume the native-refresh motion-speed preference. */
+    static boolean supportsExperimentalNativeRefreshPhysicsSpeed(int effect) {
+        return effect == EFFECT_S6_WATER_DROPLET_APP_OWNED
+                || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_WIP
+                || effect == EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                || effect == EFFECT_S5_POPPING_COLOURS
+                || effect == EFFECT_GOOD_LOCK_POPPING
+                || effect == EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == EFFECT_GOOD_LOCK_BOUNCING;
+    }
+
+    /** Dynamic boolean key for one ARM64 renderer's native-refresh toggle. */
+    static String experimentalNativeRefreshPhysicsKey(int effect) {
+        requireExperimentalNativeRefreshPhysicsEffect(effect);
+        return EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX + effect;
+    }
+
+    /** Dynamic speed key for a renderer whose native-refresh simulation has speed control. */
+    static String experimentalNativeRefreshPhysicsSpeedTenthsKey(int effect) {
+        if (!supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+            throw new IllegalArgumentException("Native-refresh speed unsupported effect=" + effect);
+        }
+        return EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX + effect;
+    }
+
+    static boolean experimentalNativeRefreshPhysicsEnabled(Context context, int effect) {
+        return supportsExperimentalNativeRefreshPhysics(effect)
+                && get(context).getBoolean(experimentalNativeRefreshPhysicsKey(effect), true);
+    }
+
+    static int experimentalNativeRefreshPhysicsSpeedTenths(Context context, int effect) {
+        if (!supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
+            return NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT;
+        }
+        int tenths = get(context).getInt(experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_DEFAULT);
+        return Math.max(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MIN,
+                Math.min(NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_MAX, tenths));
+    }
+
+    static float experimentalNativeRefreshPhysicsSpeedMultiplier(Context context, int effect) {
+        return experimentalNativeRefreshPhysicsEnabled(context, effect)
+                && supportsExperimentalNativeRefreshPhysicsSpeed(effect)
+                ? experimentalNativeRefreshPhysicsSpeedTenths(context, effect) / 10.0f
+                : 1.0f;
+    }
+
+    /** Returns the supported effect encoded by an exact dynamic preference key, or -1. */
+    static int experimentalNativeRefreshPhysicsEffectFromPreferenceKey(String key) {
+        int effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX);
+        if (effect >= 0 && supportsExperimentalNativeRefreshPhysics(effect)) {
+            return effect;
+        }
+        effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX);
+        return effect >= 0 && supportsExperimentalNativeRefreshPhysicsSpeed(effect) ? effect : -1;
+    }
+
+    static boolean isExperimentalNativeRefreshPhysicsPreferenceKey(String key) {
+        return experimentalNativeRefreshPhysicsEffectFromPreferenceKey(key) >= 0;
+    }
+
+    static boolean isExperimentalNativeRefreshPhysicsSpeedTenthsPreferenceKey(String key) {
+        int effect = effectFromExactPreferenceKey(
+                key, EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX);
+        return effect >= 0 && supportsExperimentalNativeRefreshPhysicsSpeed(effect);
+    }
+
+    private static void requireExperimentalNativeRefreshPhysicsEffect(int effect) {
+        if (!supportsExperimentalNativeRefreshPhysics(effect)) {
+            throw new IllegalArgumentException("Native-refresh unsupported effect=" + effect);
+        }
+    }
+
+    private static int effectFromExactPreferenceKey(String key, String prefix) {
+        if (key == null || !key.startsWith(prefix)) {
+            return -1;
+        }
+        String encodedEffect = key.substring(prefix.length());
+        if (encodedEffect.length() == 0) {
+            return -1;
+        }
+        try {
+            int effect = Integer.parseInt(encodedEffect);
+            return Integer.toString(effect).equals(encodedEffect) ? effect : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
     static boolean isImplementedEffect(int effect) {
         return EffectAvailability.isAvailable(effect);
+    }
+
+    static boolean lensFlareGlesRendererEnabled(Context context) {
+        // The GLSurfaceView port proved unreliable across repeated keyguard attach/detach
+        // cycles. Lens Flare is Canvas/HWUI-only now, regardless of a stale saved tester value.
+        return false;
+    }
+
+    static String lensFlareMode(Context context) {
+        return normalizeLensFlareMode(
+                get(context).getString(LENS_FLARE_MODE, LENS_FLARE_MODE_FLARE));
+    }
+
+    static String normalizeLensFlareMode(String mode) {
+        if (LENS_FLARE_MODE_BLUE_RING.equals(mode) || "blue_ring".equals(mode)) {
+            return LENS_FLARE_MODE_BLUE_RING;
+        }
+        if (LENS_FLARE_MODE_BLOOD.equals(mode)) {
+            return LENS_FLARE_MODE_BLOOD;
+        }
+        if (LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
+            return LENS_FLARE_MODE_LIGHTNING;
+        }
+        return LENS_FLARE_MODE_FLARE;
+    }
+
+    static String lensFlareAssetPrefix(Context context) {
+        return "keyguard_" + lensFlareMode(context) + "_";
+    }
+
+    static boolean isImplementedEffect(Context context, int effect) {
+        return EffectAvailability.isAvailable(context, effect);
     }
 
     static boolean effectBackgroundAutoRefreshEnabled(Context context) {
@@ -962,7 +1578,7 @@ final class OverlayPrefs {
     }
 
     private static String touchBoxProfile(Context context) {
-        return FoldDisplayTarget.cacheProfileForContext(context);
+        return FoldDisplayTarget.touchBoxProfileForContext(context);
     }
 
     private static String touchBoxKey(String base, String profile) {
@@ -1215,8 +1831,10 @@ final class OverlayPrefs {
             int referenceWidth = prefs.getInt(TOUCH_BOX_REFERENCE_WIDTH,
                     DEFAULT_TOUCH_BOX_RIGHT);
             int referenceHeight = prefs.getInt(TOUCH_BOX_REFERENCE_HEIGHT, 2316);
-            String legacyProfile = FoldDisplayTarget.profileForSize(
-                    referenceWidth, referenceHeight);
+            String legacyProfile = (FoldDisplayTarget.PROFILE_TABLET_PORTRAIT.equals(normalized)
+                    || FoldDisplayTarget.PROFILE_TABLET_LANDSCAPE.equals(normalized))
+                    ? FoldDisplayTarget.tabletProfileForSize(referenceWidth, referenceHeight)
+                    : FoldDisplayTarget.profileForSize(referenceWidth, referenceHeight);
             if (normalized.equals(legacyProfile)) {
                 SharedPreferences.Editor editor = prefs.edit()
                         .putBoolean(touchBoxKey(TOUCH_BOX_CONFIGURED, normalized), true)
@@ -1307,6 +1925,89 @@ final class OverlayPrefs {
     }
 
     static File effectBackgroundFile(Context context, int effect, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
+                ? "" : "_" + normalized;
+        return new File(context.getFilesDir(),
+                "unlock_effect_background" + suffix + ".argb8888");
+    }
+
+    static File lgPreLockUnderlayFile(Context context, String profile, int displayId,
+            int width, int height) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile)
+                .replaceAll("[^A-Za-z0-9_-]", "_");
+        return new File(context.getFilesDir(),
+                "lg_prelock_underlay_" + normalized
+                        + "_d" + Math.max(0, displayId)
+                        + "_" + Math.max(1, width) + "x" + Math.max(1, height)
+                        + ".argb8888");
+    }
+
+    static boolean usesLgPreLockUnderlay(int effect) {
+        return effect == EFFECT_LG_G2_PARTICLE
+                || effect == EFFECT_LG_G1_WHITE_HOLE
+                || effect == EFFECT_LG_SODA
+                || effect == EFFECT_LG_G1_DEWDROP
+                || effect == EFFECT_LG_G2_LIGHT_PARTICLE;
+    }
+
+    static boolean usesLgPreLockUnderlayAsSecondary(int effect) {
+        return effect == EFFECT_LG_G2_PIXELATE || effect == EFFECT_REVOLVING_GLASS;
+    }
+
+    static boolean needsLgPreLockUnderlay(int effect) {
+        return usesLgPreLockUnderlay(effect) || usesLgPreLockUnderlayAsSecondary(effect);
+    }
+
+    static int markLgPreLockUnderlayCaptured(Context context, String profile, int displayId,
+            int width, int height, long timestamp) {
+        return markLgPreLockUnderlay(
+                context, profile, displayId, width, height, timestamp,
+                LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN);
+    }
+
+    static int markLgPreLockUnderlayFallback(Context context, String profile, int displayId,
+            int width, int height, long timestamp) {
+        return markLgPreLockUnderlay(
+                context, profile, displayId, width, height, timestamp,
+                LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK);
+    }
+
+    static long lgPreLockUnderlayCapturedAt(Context context, String profile, int displayId,
+            int width, int height) {
+        return get(context).getLong(lgPreLockUnderlayMetadataKey(
+                profile, displayId, width, height) + "_captured_at", 0L);
+    }
+
+    static String lgPreLockUnderlayOrigin(Context context, String profile, int displayId,
+            int width, int height) {
+        return get(context).getString(lgPreLockUnderlayMetadataKey(
+                        profile, displayId, width, height) + "_origin",
+                LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN);
+    }
+
+    private static int markLgPreLockUnderlay(Context context, String profile, int displayId,
+            int width, int height, long timestamp, String origin) {
+        String key = lgPreLockUnderlayMetadataKey(profile, displayId, width, height);
+        SharedPreferences prefs = get(context);
+        int generation = Math.max(0, prefs.getInt(key + "_generation", 0)) + 1;
+        prefs.edit()
+                .putInt(key + "_generation", generation)
+                .putLong(key + "_captured_at", Math.max(0L, timestamp))
+                .putString(key + "_origin", origin)
+                .apply();
+        return generation;
+    }
+
+    private static String lgPreLockUnderlayMetadataKey(String profile, int displayId,
+            int width, int height) {
+        return LG_PRELOCK_UNDERLAY_METADATA_PREFIX
+                + FoldDisplayTarget.normalizeProfile(profile)
+                + "_d" + Math.max(0, displayId)
+                + "_" + Math.max(1, width) + "x" + Math.max(1, height);
+    }
+
+    static File legacyPngEffectBackgroundFile(Context context, String profile) {
         String normalized = FoldDisplayTarget.normalizeProfile(profile);
         String suffix = FoldDisplayTarget.PROFILE_SINGLE.equals(normalized)
                 ? "" : "_" + normalized;

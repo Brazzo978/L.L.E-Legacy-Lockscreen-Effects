@@ -12,11 +12,12 @@ import android.util.Log;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-/** Transparent, fixed-60-Hz GLES host for the app-owned Sparkling Bubbles core. */
+/** Transparent, refresh-independent GLES host for the app-owned Sparkling Bubbles core. */
 final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
         implements GLSurfaceView.Renderer {
     interface Listener {
@@ -27,7 +28,10 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     }
 
     private static final String TAG = "LLESparklingBubblesGl";
-    private static final float FIXED_STEP_SECONDS = 1f / 60f;
+    private static final float TARGET_TICK_SECONDS = 1f / 60f;
+    private static final long STALLED_FRAME_NS = 66_666_668L;
+    /* 30 Hz plus ordinary compositor jitter; a larger stall is discarded. */
+    private static final long MAX_ADAPTIVE_FRAME_NS = 35_714_286L;
     private static final long DESTROY_TIMEOUT_MS = 500L;
     private static final int WARM_KEEP_ALIVE_FRAMES = 100;
 
@@ -41,16 +45,43 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     private volatile boolean resourcesReady;
     private volatile boolean destroyed;
     private volatile long minimumRenderUntilMs;
+    private final AtomicInteger animationGeneration = new AtomicInteger();
     private int surfaceWidth;
     private int surfaceHeight;
     private int drawCount;
     private volatile int keepAliveFrames;
     private int emptyFrames;
+    private float adaptiveKeepAliveCredit;
+    private float adaptiveEmptyFrameCredit;
+    private long lastSimulationTimeNs;
+    private volatile boolean simulationClockResetPending = true;
+    private final boolean nativeRefreshPhysicsEnabled;
+    private final float adaptiveSpeedMultiplier;
 
     SparklingBubblesAppOwnedGlView(
             Context context, Bitmap blurMask, Listener listener) {
+        this(context, blurMask, false, 1.0f, listener);
+    }
+
+    SparklingBubblesAppOwnedGlView(
+            Context context,
+            Bitmap blurMask,
+            boolean nativeRefreshPhysicsEnabled,
+            Listener listener) {
+        this(context, blurMask, nativeRefreshPhysicsEnabled, 1.0f, listener);
+    }
+
+    SparklingBubblesAppOwnedGlView(
+            Context context,
+            Bitmap blurMask,
+            boolean nativeRefreshPhysicsEnabled,
+            float speedMultiplier,
+            Listener listener) {
         super(context);
         this.blurMask = blurMask;
+        this.nativeRefreshPhysicsEnabled = nativeRefreshPhysicsEnabled;
+        this.adaptiveSpeedMultiplier = nativeRefreshPhysicsEnabled
+                ? Math.max(1.0f, Math.min(2.0f, speedMultiplier)) : 1.0f;
         this.listener = listener;
 
         setZOrderOnTop(true);
@@ -71,18 +102,22 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
         clearTransparent();
         try {
             if (nativeHandle == 0L) {
-                nativeHandle = SparklingBubblesNative.nativeCreate(
-                        1L);
+                nativeHandle = SparklingBubblesNative.nativeCreate(1L);
                 if (nativeHandle == 0L) {
                     throw new IllegalStateException("nativeCreate returned zero");
                 }
             } else {
                 SparklingBubblesNative.nativeAbandonGpu(nativeHandle);
             }
+            SparklingBubblesNative.nativeSetAdaptivePhysics(
+                    nativeHandle, nativeRefreshPhysicsEnabled);
             gpuReady = false;
             resourcesReady = false;
             drawCount = 0;
             emptyFrames = 0;
+            adaptiveKeepAliveCredit = 0.0f;
+            adaptiveEmptyFrameCredit = 0.0f;
+            resetSimulationClockFromGlThread();
             if (listener != null) {
                 post(new Runnable() {
                     @Override
@@ -132,6 +167,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             } else {
                 stopAnimationFromGlThread();
             }
+            resetSimulationClockFromGlThread();
         } catch (Throwable error) {
             fail(error);
         }
@@ -144,11 +180,13 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             return;
         }
         try {
-            // The stock Note 5 engine advances once per draw, so its speed follows
-            // the display cadence. Mirror the vendor oracle instead of wall-clock
-            // normalising it to 60 Hz.
-            if (!SparklingBubblesNative.nativeStep(
-                    nativeHandle, FIXED_STEP_SECONDS)) {
+            final boolean adaptivePhysics = nativeRefreshPhysicsEnabled;
+            final float elapsedSeconds = simulationElapsedSecondsForDraw(
+                    SystemClock.elapsedRealtimeNanos(), adaptivePhysics);
+            if (!(adaptivePhysics
+                    ? SparklingBubblesNative.nativeStepAdaptive(
+                            nativeHandle, elapsedSeconds, adaptiveSpeedMultiplier)
+                    : SparklingBubblesNative.nativeStep(nativeHandle, elapsedSeconds))) {
                 throw new IllegalStateException(nativeError());
             }
             if (!SparklingBubblesNative.nativeDraw(
@@ -164,17 +202,25 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
                     }
                 });
             }
-            if (keepAliveFrames > 0) {
+            if (adaptivePhysics) {
+                consumeAdaptiveKeepAliveFrames(elapsedSeconds);
+            } else if (keepAliveFrames > 0) {
                 keepAliveFrames--;
             }
             if (SparklingBubblesNative.nativeIsIdle(nativeHandle)
                     && keepAliveFrames <= 0
                     && SystemClock.uptimeMillis() >= minimumRenderUntilMs) {
-                if (++emptyFrames >= 2) {
+                if (adaptivePhysics) {
+                    adaptiveEmptyFrameCredit += elapsedSeconds / TARGET_TICK_SECONDS;
+                    if (adaptiveEmptyFrameCredit >= 2.0f) {
+                        stopAnimationFromGlThread();
+                    }
+                } else if (++emptyFrames >= 2) {
                     stopAnimationFromGlThread();
                 }
             } else {
                 emptyFrames = 0;
+                adaptiveEmptyFrameCredit = 0.0f;
             }
         } catch (Throwable error) {
             fail(error);
@@ -184,6 +230,34 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     boolean isRendererReady() {
         return !destroyed && nativeHandle != 0L && gpuReady && resourcesReady
                 && drawCount > 0;
+    }
+
+    String backgroundMemoryDebugSnapshot() {
+        Bitmap bitmap;
+        synchronized (bitmapLock) {
+            bitmap = backgroundBitmap;
+        }
+        return "spark_gl_background_dimensions=" + dimensions(bitmap) + '\n'
+                + "spark_gl_background_allocation_bytes=" + allocationBytes(bitmap) + '\n'
+                + "spark_gl_gpu_ready=" + gpuReady + '\n'
+                + "spark_gl_resources_ready=" + resourcesReady + '\n'
+                + "spark_gl_draw_count=" + drawCount + '\n';
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
     }
 
     void setBackgroundBitmap(final Bitmap bitmap) {
@@ -317,6 +391,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             return;
         }
         minimumRenderUntilMs = 0L;
+        requestSimulationClockReset();
         queueEvent(new Runnable() {
             @Override
             public void run() {
@@ -380,28 +455,86 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     }
 
     private void activateAnimation(long minimumDurationMs, int minimumFrames) {
+        animationGeneration.incrementAndGet();
         minimumRenderUntilMs = Math.max(
                 minimumRenderUntilMs, SystemClock.uptimeMillis() + minimumDurationMs);
         keepAliveFrames = Math.max(keepAliveFrames, Math.max(1, minimumFrames));
-        if (getRenderMode() != RENDERMODE_CONTINUOUSLY) {
+        adaptiveKeepAliveCredit = 0.0f;
+        adaptiveEmptyFrameCredit = 0.0f;
+        boolean wasStopped = getRenderMode() != RENDERMODE_CONTINUOUSLY;
+        if (wasStopped) {
+            requestSimulationClockReset();
             setRenderMode(RENDERMODE_CONTINUOUSLY);
         }
         requestRender();
     }
 
     private void stopAnimationFromGlThread() {
+        final int generation = animationGeneration.get();
         post(new Runnable() {
             @Override
             public void run() {
-                stopAnimation();
+                if (generation == animationGeneration.get()) {
+                    stopAnimation();
+                }
             }
         });
     }
 
     private void stopAnimation() {
+        animationGeneration.incrementAndGet();
+        requestSimulationClockReset();
         if (getRenderMode() != RENDERMODE_WHEN_DIRTY) {
             setRenderMode(RENDERMODE_WHEN_DIRTY);
         }
+    }
+
+    private void consumeAdaptiveKeepAliveFrames(float elapsedSeconds) {
+        if (keepAliveFrames <= 0 || elapsedSeconds <= 0.0f) {
+            return;
+        }
+        adaptiveKeepAliveCredit += elapsedSeconds / TARGET_TICK_SECONDS;
+        int completedFrames = (int) adaptiveKeepAliveCredit;
+        if (completedFrames <= 0) {
+            return;
+        }
+        keepAliveFrames = Math.max(0, keepAliveFrames - completedFrames);
+        adaptiveKeepAliveCredit -= completedFrames;
+    }
+
+    private float simulationElapsedSecondsForDraw(
+            long nowNs, boolean adaptivePhysics) {
+        if (simulationClockResetPending || lastSimulationTimeNs == 0L) {
+            resetSimulationClockFromGlThread();
+            lastSimulationTimeNs = nowNs;
+            return adaptivePhysics ? 0.0f : TARGET_TICK_SECONDS;
+        }
+        long elapsedNs = nowNs - lastSimulationTimeNs;
+        lastSimulationTimeNs = nowNs;
+        if (elapsedNs <= 0L) {
+            return 0.0f;
+        }
+        if (adaptivePhysics) {
+            /* A live 30 Hz display is valid; a longer compositor stall is not. */
+            if (elapsedNs > STALLED_FRAME_NS) {
+                return 0.0f;
+            }
+            return (float) Math.min(elapsedNs, MAX_ADAPTIVE_FRAME_NS)
+                    / 1_000_000_000.0f;
+        }
+        if (elapsedNs > STALLED_FRAME_NS) {
+            return TARGET_TICK_SECONDS;
+        }
+        return (float) elapsedNs / 1_000_000_000.0f;
+    }
+
+    private void requestSimulationClockReset() {
+        simulationClockResetPending = true;
+    }
+
+    private void resetSimulationClockFromGlThread() {
+        lastSimulationTimeNs = 0L;
+        simulationClockResetPending = false;
     }
 
     private boolean canIssueNativeCommand() {

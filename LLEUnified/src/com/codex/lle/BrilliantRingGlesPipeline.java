@@ -25,6 +25,11 @@ public final class BrilliantRingGlesPipeline {
     public static final int ACTION_UP = 1;
     public static final int ACTION_MOVE = 2;
 
+    // Native-refresh timing is deliberately expressed in the stock renderer's 60 Hz
+    // logical updates. The legacy boolean renderFrame path below remains untouched.
+    static final long STOCK_SIMULATION_TICK_NS = 16_666_667L;
+    static final long ADAPTIVE_STALL_NS = 66_666_667L;
+    static final float NOISE_CYCLE_CREDITS = 20.0f;
     private static final int LONG_AXIS_CELLS = 128;
     private static final int ADVECT_SCALE = 5;
     private static final int MAX_ACTIVE_RECORDS = 7;
@@ -118,6 +123,10 @@ public final class BrilliantRingGlesPipeline {
     private float lastEmissionX;
     private float lastEmissionY;
     private int updatesSinceEmission;
+    private float updatesSinceEmissionCredits;
+    private static final Object NOISE_PHASE_LOCK = new Object();
+    private static final AdaptiveNoisePhase adaptiveNoisePhase = new AdaptiveNoisePhase();
+    private final AdaptiveStepMode adaptiveStepMode = new AdaptiveStepMode();
     // SrkCommon's process-global phase starts at -1, survives reset and scene recreation.
     private static int noiseCounter = -1;
     // BOB4 imports rand/srand from API-21 Bionic. There rand() delegates to the default
@@ -168,6 +177,7 @@ public final class BrilliantRingGlesPipeline {
         lastEmissionY = y;
         hasLastEmission = true;
         updatesSinceEmission = 0;
+        updatesSinceEmissionCredits = 0.0f;
     }
 
     public void unlock() {
@@ -175,6 +185,18 @@ public final class BrilliantRingGlesPipeline {
             // Samsung consumes the queued touch packet before handling the subsequent 0x5b
             // unlock key. Keep that ordering so the type-1 radial starts at the final touch.
             processInput();
+            unlockActive = true;
+            addRecord(lastTouchX, lastTouchY, 0, TYPE_UNLOCK);
+        }
+    }
+
+    /**
+     * Adaptive counterpart to {@link #unlock()}. It preserves the stock ordering of the
+     * terminal touch before its type-1 record, but does not manufacture one 60 Hz update.
+     */
+    public void unlockAdaptive() {
+        if (initialized && !abandoned) {
+            processInputAdaptive(0.0f);
             unlockActive = true;
             addRecord(lastTouchX, lastTouchY, 0, TYPE_UNLOCK);
         }
@@ -193,6 +215,8 @@ public final class BrilliantRingGlesPipeline {
         unlockActive = false;
         hasLastEmission = false;
         updatesSinceEmission = 0;
+        updatesSinceEmissionCredits = 0.0f;
+        adaptiveStepMode.reset();
         tabOffsetX = 0.0f;
         tabOffsetY = 0.0f;
         clearIntermediate = true;
@@ -222,6 +246,84 @@ public final class BrilliantRingGlesPipeline {
         return !records.isEmpty() || !pendingInput.isEmpty();
     }
 
+    /**
+     * Advances by a measured number of stock-60-Hz logical credits.
+     *
+     * <p>Exactly one credit is routed through the original integer implementation. Besides
+     * keeping a real 60 Hz cadence bit-for-bit on the stock equations, that gives tests a
+     * direct equivalence seam. Fractional credits are only used by the opt-in native-refresh
+     * host.</p>
+     */
+    public boolean updateAndRender(float logicalCredits) {
+        if (!initialized || abandoned) {
+            return false;
+        }
+        if (isAdaptiveZeroCreditFrame(logicalCredits)) {
+            // A first/native-stall display frame still accepts queued touch packets and draws
+            // their current geometry. It advances neither logical age nor the shared RNG.
+            processInputAdaptive(0.0f);
+            if (!records.isEmpty()) {
+                updateSimulationAdaptive(0.0f);
+                uploadCpuFields();
+            }
+        } else if (logicalCredits > 0.0f && !Float.isInfinite(logicalCredits)) {
+            boolean useStockStep = adaptiveStepMode.usesStockStep(logicalCredits);
+            boolean enteringFractionalStep = adaptiveStepMode.record(logicalCredits);
+            if (useStockStep) {
+                processInput();
+                updatesSinceEmissionCredits = updatesSinceEmission;
+                if (!records.isEmpty()) {
+                    updateSimulation();
+                    captureLegacyFrameForAdaptiveHandoff();
+                    syncAdaptiveNoisePhaseFromStock();
+                    uploadCpuFields();
+                }
+            } else {
+                if (enteringFractionalStep) {
+                    synchronizeRecordsForFirstFractionalStep(logicalCredits);
+                }
+                processInputAdaptive(logicalCredits);
+                if (!records.isEmpty()) {
+                    updateSimulationAdaptive(logicalCredits);
+                    uploadCpuFields();
+                }
+            }
+        }
+        renderPasses();
+        return !records.isEmpty() || !pendingInput.isEmpty();
+    }
+
+    /** Aligns post-increment integer records to the last stock geometry before fractional draw. */
+    private void synchronizeRecordsForFirstFractionalStep(float logicalCredits) {
+        for (int i = 0; i < records.size(); ++i) {
+            Record record = records.get(i);
+            if (record.hasRenderedGeometry) {
+                record.adaptiveAge = firstAdaptiveAgeAfterLegacyRender(
+                        record.lastRenderedAge, logicalCredits);
+            }
+        }
+    }
+
+    /**
+     * The legacy simulation deliberately remains untouched. This sidecar snapshot is populated
+     * only when the opt-in float API selected one exact stock step, so a later 60→120 transition
+     * can start from the age that was actually drawn rather than the stored post-increment age.
+     */
+    private void captureLegacyFrameForAdaptiveHandoff() {
+        for (int i = 0; i < records.size(); ++i) {
+            Record record = records.get(i);
+            record.lastRenderedAge = record.age - 1.0f;
+            record.hasRenderedGeometry = true;
+            record.adaptiveAge = record.age;
+        }
+    }
+
+    private static void syncAdaptiveNoisePhaseFromStock() {
+        synchronized (NOISE_PHASE_LOCK) {
+            adaptiveNoisePhase.syncStockCounter(noiseCounter);
+        }
+    }
+
     /** Host-facing name used by the GLSurfaceView renderer. */
     public boolean renderFrame() {
         return updateAndRender();
@@ -230,6 +332,11 @@ public final class BrilliantRingGlesPipeline {
     /** Host-facing redraw with an independently gated stock simulation tick. */
     public boolean renderFrame(boolean advanceSimulation) {
         return updateAndRender(advanceSimulation);
+    }
+
+    /** Host-facing redraw with a measured native-refresh logical delta. */
+    public boolean renderFrame(float logicalCredits) {
+        return updateAndRender(logicalCredits);
     }
 
     public boolean isIdle() {
@@ -406,6 +513,57 @@ public final class BrilliantRingGlesPipeline {
         updatesSinceEmission++;
     }
 
+    /** Same packet ordering as {@link #processInput()}, with timeouts in 60 Hz credits. */
+    private void processInputAdaptive(float logicalCredits) {
+        if (pendingInput.isEmpty()) {
+            updatesSinceEmissionCredits = advanceLogicalAge(
+                    updatesSinceEmissionCredits, logicalCredits);
+            return;
+        }
+        for (int i = 0; i < pendingInput.size(); ++i) {
+            InputEvent event = pendingInput.get(i);
+            float x = event.x;
+            float y = event.y;
+            if (event.action == ACTION_DOWN) {
+                lastTouchX = x;
+                lastTouchY = y;
+                if (records.isEmpty()) {
+                    tabOffsetX = ((x - width * 0.5f) / (width * 0.5f)) * TAB_SHIFT_RANGE;
+                    tabOffsetY = ((height * 0.5f - y) / (height * 0.5f)) * TAB_SHIFT_RANGE;
+                }
+                addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                lastEmissionX = x;
+                lastEmissionY = y;
+                hasLastEmission = true;
+                updatesSinceEmissionCredits = 0.0f;
+            } else if (event.action == ACTION_MOVE) {
+                lastTouchX = x;
+                lastTouchY = y;
+                if (!hasLastEmission) {
+                    lastEmissionX = x;
+                    lastEmissionY = y;
+                    hasLastEmission = true;
+                }
+                float dx = x - lastEmissionX;
+                float dy = y - lastEmissionY;
+                float threshold = NORMAL_EMIT_DISTANCE_CELLS * screenPixelsPerCell;
+                float distance = (float) Math.sqrt(dx * dx + dy * dy);
+                if (distance > threshold
+                        || emissionTimeoutReached(updatesSinceEmissionCredits)) {
+                    addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                    lastEmissionX = x;
+                    lastEmissionY = y;
+                    updatesSinceEmissionCredits = 0.0f;
+                }
+            } else if (event.action == ACTION_UP || event.action == 3) {
+                hasLastEmission = false;
+            }
+        }
+        pendingInput.clear();
+        updatesSinceEmissionCredits = advanceLogicalAge(
+                updatesSinceEmissionCredits, logicalCredits);
+    }
+
     private void updateSimulation() {
         java.util.Arrays.fill(narrowField, 0.0f);
         java.util.Arrays.fill(wideField, 0.0f);
@@ -429,6 +587,54 @@ public final class BrilliantRingGlesPipeline {
             return;
         }
         updateNoise();
+    }
+
+    /** Fractional version of the stock update used only by the opt-in host path. */
+    private void updateSimulationAdaptive(float logicalCredits) {
+        java.util.Arrays.fill(narrowField, 0.0f);
+        java.util.Arrays.fill(wideField, 0.0f);
+        if (logicalCredits == 0.0f) {
+            Iterator<Record> zeroIterator = records.iterator();
+            while (zeroIterator.hasNext()) {
+                Record record = zeroIterator.next();
+                if (!record.hasRenderedGeometry) {
+                    if (!updateRecordGeometryAdaptive(record, 0.0f)) {
+                        zeroIterator.remove();
+                        continue;
+                    }
+                    record.lastRenderedAge = record.adaptiveAge;
+                    record.hasRenderedGeometry = true;
+                }
+                rasterizeRecord(record);
+            }
+            if (records.isEmpty()) {
+                unlockActive = false;
+                clearIntermediate = true;
+            }
+            return;
+        }
+        int overflow = records.size() - MAX_ACTIVE_RECORDS;
+        for (int i = 0; i < overflow; ++i) {
+            records.get(i).type = TYPE_FORCED_FADE;
+        }
+        Iterator<Record> iterator = records.iterator();
+        while (iterator.hasNext()) {
+            Record record = iterator.next();
+            if (!updateRecordGeometryAdaptive(record, logicalCredits)) {
+                iterator.remove();
+                continue;
+            }
+            record.lastRenderedAge = record.adaptiveAge;
+            record.hasRenderedGeometry = true;
+            rasterizeRecord(record);
+            record.adaptiveAge = advanceLogicalAge(record.adaptiveAge, logicalCredits);
+        }
+        if (records.isEmpty()) {
+            unlockActive = false;
+            clearIntermediate = true;
+            return;
+        }
+        updateNoiseAdaptive(logicalCredits);
     }
 
     private boolean updateRecordGeometry(Record record) {
@@ -469,6 +675,65 @@ public final class BrilliantRingGlesPipeline {
             }
         }
         return record.age < NORMAL_REMOVAL_AGE && record.opacity > 0.0f;
+    }
+
+    /**
+     * Temporal form of the discrete record update. Curved type-0 geometry remains a direct
+     * function of fractional age; type-1's per-update multipliers use exponentiation, and the
+     * type-2 linear fade consumes fractional logical credits.
+     */
+    private boolean updateRecordGeometryAdaptive(Record record, float logicalCredits) {
+        float age = record.adaptiveAge;
+        if (record.type == TYPE_UNLOCK) {
+            if (!isAdaptiveRecordAgeVisible(record.type, age)) {
+                return false;
+            }
+            if (age < UNLOCK_EARLY_LIMIT) {
+                float endAge = advanceLogicalAge(age, logicalCredits);
+                if (endAge < UNLOCK_EARLY_LIMIT) {
+                    record.outer = 27.2f * quintOut80(age / 33.0f);
+                    record.inner = age < 4.0f ? 0.0f
+                            : 26.7f * quintOut80((age - 4.0f) / 29.0f);
+                } else {
+                    record.outer = 27.2f * quintOut80(UNLOCK_EARLY_LIMIT / 33.0f);
+                    record.inner = 26.7f * quintOut80(
+                            (UNLOCK_EARLY_LIMIT - 4.0f) / 29.0f);
+                    float postEarlyCredits = endAge - UNLOCK_EARLY_LIMIT;
+                    record.outer *= scaleTickMultiplier(1.075f, postEarlyCredits);
+                    record.inner *= scaleTickMultiplier(1.01f, postEarlyCredits);
+                }
+            } else {
+                record.outer *= scaleTickMultiplier(1.075f, logicalCredits);
+                record.inner *= scaleTickMultiplier(1.01f, logicalCredits);
+            }
+            record.opacity = 1.0f;
+            return true;
+        }
+        if (record.type == TYPE_FORCED_FADE) {
+            record.opacity = scaleLinearFade(record.opacity,
+                    NORMAL_FORCED_FADE_STEP, logicalCredits);
+            if (record.opacity <= 0.0f) {
+                return false;
+            }
+        } else if (age < NORMAL_OPACITY_HOLD) {
+            record.opacity = 1.0f;
+        } else {
+            record.opacity = 1.0f - sineInOut80((age - NORMAL_OPACITY_HOLD)
+                    / (NORMAL_DURATION - NORMAL_OPACITY_HOLD));
+        }
+        record.outer = NORMAL_RADIUS * sineInOut90(age / NORMAL_DURATION);
+        record.inner = age < NORMAL_INNER_DELAY ? 0.0f
+                : NORMAL_RADIUS * sineInOut90((age - NORMAL_INNER_DELAY)
+                / (NORMAL_DURATION - NORMAL_INNER_DELAY));
+        if (unlockActive && record.inner > 0.0f) {
+            // Type-0 inner is derived from age every sample, so this stock unlock modifier is
+            // an instantaneous geometry scale, not the persistent type-1 recurrence above.
+            record.inner = applyNormalUnlockInnerScale(record.inner);
+            if (record.inner >= NORMAL_RADIUS) {
+                return false;
+            }
+        }
+        return isAdaptiveRecordAgeVisible(record.type, age) && record.opacity > 0.0f;
     }
 
     private void rasterizeRecord(Record record) {
@@ -520,6 +785,66 @@ public final class BrilliantRingGlesPipeline {
             }
         }
         float t = noiseCounter * 0.05f;
+        float inverse = 1.0f - t;
+        for (int i = 0; i < noiseCurrent.length; ++i) {
+            noiseCurrent[i] = noiseFrom[i] * inverse + noiseTarget[i] * t;
+        }
+    }
+
+    /**
+     * Advances the crystalline noise on the same 20-stock-update cadence. The target RNG is
+     * sampled only when a logical boundary is crossed; intermediate display frames simply
+     * interpolate the already-selected target.
+     */
+    private void updateNoiseAdaptive(float logicalCredits) {
+        synchronized (NOISE_PHASE_LOCK) {
+            // The phase and RNG are process-global. A recreated adaptive pipeline resumes the
+            // same fractional phase; it never creates a new target merely on attachment.
+            adaptiveNoisePhase.initializeFromStockCounter(noiseCounter);
+            float remainingCredits = logicalCredits;
+            if (adaptiveNoisePhase.credits() < 0.0f) {
+                float untilFirstTarget = -adaptiveNoisePhase.credits();
+                if (remainingCredits < untilFirstTarget) {
+                    adaptiveNoisePhase.setCredits(
+                            adaptiveNoisePhase.credits() + remainingCredits);
+                    noiseCounter = adaptiveNoisePhase.stockCounter();
+                    return;
+                }
+                remainingCredits -= untilFirstTarget;
+                adaptiveNoisePhase.setCredits(0.0f);
+                noiseCounter = 0;
+                beginAdaptiveNoiseTarget();
+            }
+            while (remainingCredits > 0.0f) {
+                float untilNextTarget = NOISE_CYCLE_CREDITS - adaptiveNoisePhase.credits();
+                if (remainingCredits < untilNextTarget) {
+                    adaptiveNoisePhase.setCredits(
+                            adaptiveNoisePhase.credits() + remainingCredits);
+                    noiseCounter = adaptiveNoisePhase.stockCounter();
+                    interpolateAdaptiveNoise();
+                    return;
+                }
+                // Stock never samples t=1.0: its wrap copies the last t=.95 field, then
+                // selects a target for a fresh t=0 cycle.
+                adaptiveNoisePhase.setCredits(NOISE_CYCLE_CREDITS);
+                interpolateAdaptiveNoise();
+                remainingCredits -= untilNextTarget;
+                adaptiveNoisePhase.setCredits(0.0f);
+                noiseCounter = 0;
+                beginAdaptiveNoiseTarget();
+            }
+        }
+    }
+
+    private void beginAdaptiveNoiseTarget() {
+        System.arraycopy(noiseCurrent, 0, noiseFrom, 0, noiseCurrent.length);
+        for (int i = 0; i < noiseTarget.length; ++i) {
+            noiseTarget[i] = libcRand() * 2.188608e-10f + 0.1f;
+        }
+    }
+
+    private void interpolateAdaptiveNoise() {
+        float t = adaptiveNoiseInterpolationForCredits(adaptiveNoisePhase.credits());
         float inverse = 1.0f - t;
         for (int i = 0; i < noiseCurrent.length; ++i) {
             noiseCurrent[i] = noiseFrom[i] * inverse + noiseTarget[i] * t;
@@ -729,6 +1054,163 @@ public final class BrilliantRingGlesPipeline {
         buffer.position(0);
         buffer.put(values);
         buffer.position(0);
+    }
+
+    /** Returns stock-60-Hz logical credits for one measured display interval. */
+    static float adaptiveSimulationCreditsForElapsedNanos(long elapsedNanos) {
+        if (elapsedNanos <= 0L || elapsedNanos > ADAPTIVE_STALL_NS) {
+            return 0.0f;
+        }
+        return (float) (elapsedNanos / (double) STOCK_SIMULATION_TICK_NS);
+    }
+
+    /** Exactly one logical credit follows the pre-existing integer implementation. */
+    static boolean usesExactStockStep(float logicalCredits) {
+        return Float.floatToIntBits(logicalCredits) == Float.floatToIntBits(1.0f);
+    }
+
+    /** Zero is a valid first/stall frame: accept input and redraw, but advance no simulation. */
+    static boolean isAdaptiveZeroCreditFrame(float logicalCredits) {
+        return logicalCredits == 0.0f;
+    }
+
+    /** Pure seam for temporal ages and emission credits. */
+    static float advanceLogicalAge(float age, float logicalCredits) {
+        if (!(logicalCredits > 0.0f) || Float.isInfinite(logicalCredits)) {
+            return age;
+        }
+        return age + logicalCredits;
+    }
+
+    /** First fractional geometry after legacy rendered {@code lastRenderedAge}. */
+    static float firstAdaptiveAgeAfterLegacyRender(float lastRenderedAge,
+            float logicalCredits) {
+        return advanceLogicalAge(lastRenderedAge, logicalCredits);
+    }
+
+    /** Converts a per-stock-tick multiplier to a fractional logical duration. */
+    static float scaleTickMultiplier(float perTickMultiplier, float logicalCredits) {
+        if (usesExactStockStep(logicalCredits)) {
+            return perTickMultiplier;
+        }
+        return (float) Math.pow(perTickMultiplier, logicalCredits);
+    }
+
+    /** Converts the stock type-2 linear opacity decrement to logical credits. */
+    static float scaleLinearFade(float opacity, float perTickFade, float logicalCredits) {
+        if (usesExactStockStep(logicalCredits)) {
+            return opacity - perTickFade;
+        }
+        return opacity - perTickFade * logicalCredits;
+    }
+
+    /** Applies the stateless normal-ring unlock geometry scale once per rendered sample. */
+    static float applyNormalUnlockInnerScale(float inner) {
+        return inner * 1.225f;
+    }
+
+    /** Fraction of the current 20-credit adaptive noise target blend. */
+    static float adaptiveNoiseInterpolationForCredits(float credits) {
+        // SrkCommon only samples 0.00 through 0.95. At the 20-credit wrap it copies that
+        // .95 field into noiseFrom before generating the next target; it never anchors at 1.
+        return Math.max(0.0f, Math.min(0.95f, credits * 0.05f));
+    }
+
+    /** The MOVE timeout is evaluated before the current frame's credits are added. */
+    static boolean emissionTimeoutReached(float creditsSinceEmission) {
+        return creditsSinceEmission >= NORMAL_EMIT_TIMEOUT_UPDATES;
+    }
+
+    /** A terminal age is removed on the next CPU update, after its prior frame was composed. */
+    static boolean isAdaptiveRecordAgeVisible(int type, float age) {
+        return type == TYPE_UNLOCK ? age < UNLOCK_REMOVAL_AGE : age < NORMAL_REMOVAL_AGE;
+    }
+
+    /**
+     * Monotonic native-refresh clock. It samples every timestamp, including a discarded
+     * compositor stall, so a later valid frame can never replay hidden elapsed time.
+     */
+    static final class AdaptiveSimulationClock {
+        private long previousFrameNanos = Long.MIN_VALUE;
+
+        float advance(long frameTimeNanos) {
+            if (previousFrameNanos == Long.MIN_VALUE) {
+                previousFrameNanos = frameTimeNanos;
+                return 0.0f;
+            }
+            long elapsedNanos = frameTimeNanos - previousFrameNanos;
+            previousFrameNanos = frameTimeNanos;
+            return adaptiveSimulationCreditsForElapsedNanos(elapsedNanos);
+        }
+
+        void reset() {
+            previousFrameNanos = Long.MIN_VALUE;
+        }
+    }
+
+    /**
+     * A dynamic panel can move from an exact 60 Hz interval to a fractional interval and back.
+     * Once fractional state exists, later unit deltas must keep consuming that same state instead
+     * of re-entering the legacy integer fields. Reset/recreation starts a fresh stock-compatible
+     * trace.
+     */
+    static final class AdaptiveStepMode {
+        private boolean fractionalStepSeen;
+
+        boolean usesStockStep(float logicalCredits) {
+            return !fractionalStepSeen && usesExactStockStep(logicalCredits);
+        }
+
+        boolean record(float logicalCredits) {
+            if (logicalCredits > 0.0f && !usesExactStockStep(logicalCredits)
+                    && !fractionalStepSeen) {
+                fractionalStepSeen = true;
+                return true;
+            }
+            return false;
+        }
+
+        void reset() {
+            fractionalStepSeen = false;
+        }
+    }
+
+    /**
+     * Fractional facade over SrkCommon's process-global integer noise phase. The stock counter
+     * is mirrored only at completed logical integer credits; random targets are still generated
+     * exclusively by the owning pipeline at its 20-credit boundaries.
+     */
+    static final class AdaptiveNoisePhase {
+        private boolean initialized;
+        private float logicalCredits = -1.0f;
+
+        void initializeFromStockCounter(int stockCounter) {
+            if (!initialized) {
+                logicalCredits = stockCounter;
+                initialized = true;
+            }
+        }
+
+        void syncStockCounter(int stockCounter) {
+            logicalCredits = stockCounter;
+            initialized = true;
+        }
+
+        float credits() {
+            return logicalCredits;
+        }
+
+        void setCredits(float credits) {
+            logicalCredits = credits;
+            initialized = true;
+        }
+
+        int stockCounter() {
+            if (logicalCredits < 0.0f) {
+                return -1;
+            }
+            return Math.min((int) NOISE_CYCLE_CREDITS - 1, (int) logicalCredits);
+        }
     }
 
     private static int clampByte(float value) {
@@ -1091,6 +1573,9 @@ public final class BrilliantRingGlesPipeline {
         float inner;
         float outer;
         int age;
+        float adaptiveAge;
+        float lastRenderedAge;
+        boolean hasRenderedGeometry;
         float opacity = 1.0f;
         int type;
 
@@ -1098,6 +1583,8 @@ public final class BrilliantRingGlesPipeline {
             this.x = x;
             this.y = y;
             this.age = age;
+            this.adaptiveAge = age;
+            this.lastRenderedAge = age;
             this.type = type;
         }
     }

@@ -12,13 +12,17 @@
 #include <string.h>
 
 #define LLE_COLOUR_LOG_TAG "LLEColourDroplet"
-#define LLE_COLOUR_BRIDGE_VERSION 1
+#define LLE_COLOUR_BRIDGE_VERSION 2
 #define LLE_COLOUR_HANDLE_MAGIC UINT64_C(0x4c4c45434f4c4f52)
 #define LLE_COLOUR_DEFAULT_WIDTH 1440
 #define LLE_COLOUR_DEFAULT_HEIGHT 2560
-#define LLE_COLOUR_FIXED_SECONDS (1.0 / (double) LLE_COLOUR_TICK_HZ)
+#define LLE_COLOUR_TARGET_SECONDS_PER_TICK (1.0 / 60.0)
+#define LLE_COLOUR_STOCK_TICK_SECONDS \
+    (1.0 / (double) LLE_COLOUR_TICK_HZ)
 #define LLE_COLOUR_MAX_TICKS_PER_STEP 8
 #define LLE_COLOUR_MAX_ELAPSED_SECONDS 0.25
+#define LLE_COLOUR_MIN_NATIVE_REFRESH_HZ 30
+#define LLE_COLOUR_MAX_NATIVE_REFRESH_HZ 144
 
 typedef struct LleColourHandle {
     uint64_t magic;
@@ -27,6 +31,8 @@ typedef struct LleColourHandle {
     LleColourDrawParticle *draw_particles;
     size_t draw_particle_capacity;
     double accumulator_seconds;
+    double presentation_tick_seconds;
+    float presentation_subparticle_scale;
     int project_kind;
     int width;
     int height;
@@ -157,7 +163,6 @@ Java_com_codex_lle_ColourDropletNative_nativeCreate(
                 project_kind);
         return 0;
     }
-
     LleColourHandle *handle =
             (LleColourHandle *) calloc(1U, sizeof(*handle));
     if (handle == NULL) {
@@ -168,6 +173,8 @@ Java_com_codex_lle_ColourDropletNative_nativeCreate(
         return 0;
     }
     handle->project_kind = project_kind;
+    handle->presentation_tick_seconds = LLE_COLOUR_TARGET_SECONDS_PER_TICK;
+    handle->presentation_subparticle_scale = 1.0f;
     handle->width = LLE_COLOUR_DEFAULT_WIDTH;
     handle->height = LLE_COLOUR_DEFAULT_HEIGHT;
     handle->logical_width = LLE_COLOUR_DEFAULT_WIDTH;
@@ -555,18 +562,66 @@ Java_com_codex_lle_ColourDropletNative_nativeStep(
 
     const double bounded = fmin(
             (double) elapsed_seconds, LLE_COLOUR_MAX_ELAPSED_SECONDS);
+    handle->presentation_tick_seconds = LLE_COLOUR_TARGET_SECONDS_PER_TICK;
+    handle->presentation_subparticle_scale = 1.0f;
     handle->accumulator_seconds += bounded;
     int tick_count = 0;
-    while (handle->accumulator_seconds >= LLE_COLOUR_FIXED_SECONDS
+    /*
+     * Intentional L.L.E cadence: retain each recovered full simulation tick
+     * at the selected app-owned simulation cadence.
+     */
+    while (handle->accumulator_seconds >= LLE_COLOUR_TARGET_SECONDS_PER_TICK
             && tick_count < LLE_COLOUR_MAX_TICKS_PER_STEP) {
         lle_colour_sim_tick(handle->sim);
-        handle->accumulator_seconds -= LLE_COLOUR_FIXED_SECONDS;
+        handle->accumulator_seconds -= LLE_COLOUR_TARGET_SECONDS_PER_TICK;
         ++tick_count;
     }
-    if (handle->accumulator_seconds >= LLE_COLOUR_FIXED_SECONDS) {
+    if (handle->accumulator_seconds >= LLE_COLOUR_TARGET_SECONDS_PER_TICK) {
         handle->accumulator_seconds =
-                fmod(handle->accumulator_seconds, LLE_COLOUR_FIXED_SECONDS);
+                fmod(handle->accumulator_seconds,
+                     LLE_COLOUR_TARGET_SECONDS_PER_TICK);
     }
+    colour_clear_error(handle);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_codex_lle_ColourDropletNative_nativeStepAtRefresh(
+        JNIEnv *env,
+        jclass clazz,
+        jlong native_handle,
+        jfloat elapsed_seconds,
+        jint physics_hz,
+        jfloat speed_multiplier) {
+    (void) env;
+    (void) clazz;
+    LleColourHandle *handle = colour_handle(native_handle);
+    if (!colour_require_gl_thread(handle, "nativeStepAtRefresh")) {
+        return JNI_FALSE;
+    }
+    if (!isfinite(elapsed_seconds) || elapsed_seconds < 0.0f
+            || physics_hz < LLE_COLOUR_MIN_NATIVE_REFRESH_HZ
+            || physics_hz > LLE_COLOUR_MAX_NATIVE_REFRESH_HZ
+            || !isfinite(speed_multiplier)
+            || speed_multiplier < 1.0f || speed_multiplier > 2.0f) {
+        colour_set_error(handle, "nativeStepAtRefresh received invalid input");
+        return JNI_FALSE;
+    }
+
+    if (elapsed_seconds == 0.0f) {
+        /* Same monotonic timestamp: present state again, never invent time. */
+        handle->accumulator_seconds = 0.0;
+        return JNI_TRUE;
+    }
+
+    /* One coefficient-scaled simulation advance for each display frame. */
+    const float frame_scale = elapsed_seconds *
+            (float)LLE_COLOUR_TICK_HZ * speed_multiplier;
+    handle->presentation_tick_seconds =
+            LLE_COLOUR_TARGET_SECONDS_PER_TICK * (double) frame_scale;
+    handle->presentation_subparticle_scale = frame_scale;
+    handle->accumulator_seconds = 0.0;
+    lle_colour_sim_tick_scaled(handle->sim, frame_scale);
     colour_clear_error(handle);
     return JNI_TRUE;
 }
@@ -635,6 +690,23 @@ Java_com_codex_lle_ColourDropletNative_nativeDraw(
     if (exported > handle->draw_particle_capacity) {
         colour_set_error(handle, "Particle export changed during a GL-thread draw");
         return JNI_FALSE;
+    }
+
+    const float presentation_fraction = (float) fmax(
+            0.0,
+            fmin(1.0,
+                 handle->accumulator_seconds /
+                          handle->presentation_tick_seconds));
+    for (size_t index = 0U; index < exported; ++index) {
+        LleColourDrawParticle *particle = &handle->draw_particles[index];
+        const float presentation_step =
+                (particle->flags & LLE_COLOUR_PARTICLE_SATELLITE) != 0U
+                        ? presentation_fraction *
+                                handle->presentation_subparticle_scale
+                        : presentation_fraction *
+                                (float) handle->presentation_tick_seconds;
+        particle->x += particle->velocity_x * presentation_step;
+        particle->y += particle->velocity_y * presentation_step;
     }
 
     LleColourDrawParams params;

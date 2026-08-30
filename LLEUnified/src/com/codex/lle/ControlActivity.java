@@ -57,6 +57,7 @@ import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -71,15 +72,15 @@ import android.widget.Toast;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Set;
 
 public class ControlActivity extends Activity {
+    private static final float COMPACT_EFFECT_SWITCH_SCALE = 0.765f;
     // Hidden framework constant intentionally used by value: getDisplays(String) is public
     // and this category is the only API that also returns the inactive Fold panel.
     private static final String DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED =
@@ -121,12 +122,32 @@ public class ControlActivity extends Activity {
     private static final int COLOR_GRACE_BLUE = Color.rgb(61, 111, 169);
     private static final int COLOR_GRACE_AQUA = Color.rgb(91, 199, 194);
     private static final int COLOR_GRACE_LILAC = Color.rgb(106, 79, 176);
+    private static final String[] RIPPLE_INK_PALETTE_NAMES = {
+            "pink", "amber", "green", "electric blue", "navy", "violet", "brown", "cyan"
+    };
     private static final int TAB_SWIPE_MIN_DISTANCE_DP = 72;
     private static final int TAB_DRAG_START_DISTANCE_DP = 12;
     private static final long TAB_ANIMATION_DURATION_MS = 270L;
     private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
     private static final float TAB_DRAG_AXIS_RATIO = 1.18f;
     private static final long EFFECT_SELECTION_APPLY_DELAY_MS = 2000L;
+
+    /**
+     * Preview one fully developed stock Samsung ink layer over white.  At w=1,
+     * the palette target is c / (c + (1.5 - c)), so each raw component is c/1.5.
+     */
+    private static int rippleInkPreviewColor(int selector) {
+        return Color.rgb(
+                rippleInkPreviewComponent(selector, 0),
+                rippleInkPreviewComponent(selector, 1),
+                rippleInkPreviewComponent(selector, 2));
+    }
+
+    private static int rippleInkPreviewComponent(int selector, int channel) {
+        float component = RippleInkPortEngine.paletteComponent(selector, channel);
+        float rendered = component / (component + (1.5f - component));
+        return Math.max(0, Math.min(255, Math.round(rendered * 255f)));
+    }
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final Runnable applyPendingUnlockEffectRunnable = new Runnable() {
@@ -166,11 +187,15 @@ public class ControlActivity extends Activity {
     private boolean doodleDebugExpanded;
     private boolean lockscreenDebugExpanded;
     private boolean rendererWallpaperExpanded;
-    private boolean screenshotServiceExpanded;
     private boolean touchBoxExpanded;
+    private boolean randomPoolEditMode;
+    private TextView randomPoolSummaryView;
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
+    private final HashMap<Integer, ArrayList<Switch>> highFrameRateSwitches =
+            new HashMap<Integer, ArrayList<Switch>>();
+    private boolean syncingHighFrameRateSwitches;
     private Typeface appFontRegular;
     private Typeface appFontBold;
     private PopupWindow effectPreviewPopup;
@@ -185,6 +210,7 @@ public class ControlActivity extends Activity {
         Log.i("LLE64", "native baseline abi=" + Lle64Abi.verify());
         configureGraceWindow();
         prefs = OverlayPrefs.get(this);
+        OverlayPrefs.migrateExperimentalNativeRefreshPrefsIfNeeded(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         ensureTouchAreaEnabled();
         if (savedInstanceState != null) {
@@ -852,7 +878,12 @@ public class ControlActivity extends Activity {
                     getWindow().getDecorView(),
                     tabSwipeDownX,
                     tabSwipeDownY,
-                    SeekBar.class);
+                    SeekBar.class)
+                    || isPointInsideViewType(
+                            getWindow().getDecorView(),
+                            tabSwipeDownX,
+                            tabSwipeDownY,
+                            Switch.class);
             return false;
         }
         if (action == MotionEvent.ACTION_MOVE) {
@@ -1497,7 +1528,7 @@ public class ControlActivity extends Activity {
                 doodleExtras));
         root.addView(controls);
         root.addView(seasonalEffectsCard());
-        if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+        if (FoldDisplayTarget.usesFoldProfiles(this)) {
             root.addView(foldPanelRoutingControls());
         }
         root.addView(positionControls());
@@ -1545,29 +1576,78 @@ public class ControlActivity extends Activity {
                 requestLockscreenWallpaperPreview();
             }
         }));
+        section.addView(outlineButton("Show lockscreen cache", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showEffectBackgroundScreenshot();
+            }
+        }));
+        section.addView(outlineButton("Show Last screen cache", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLgLastScreenCache();
+            }
+        }));
         if (EffectAvailability.is64BitProcess()) {
             section.addView(outlineButton("Create debug report", new View.OnClickListener() {
                 @Override
                 public void onClick(final View view) {
-                    createAndShareDebugReport(view);
+                    createAndShareDebugReport(view, false);
                 }
             }));
             section.addView(infoText("Creates a text-only support report and opens the "
                     + "share sheet. Wallpapers and images are never included."));
+            section.addView(outlineButton("Create advanced log (unredacted)",
+                    new View.OnClickListener() {
+                @Override
+                public void onClick(final View view) {
+                    confirmAdvancedDebugReport(view);
+                }
+            }));
+            TextView advancedLogWarning = infoText("DANGER: the advanced log is not "
+                    + "privacy-filtered. It may expose notification/accessibility text, "
+                    + "app names, filenames, paths and exact touch coordinates. Share it "
+                    + "only with a trusted recipient.");
+            advancedLogWarning.setTextColor(COLOR_ERROR);
+            advancedLogWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            section.addView(advancedLogWarning);
         }
         return section;
     }
 
-    private void createAndShareDebugReport(final View source) {
+    private void confirmAdvancedDebugReport(final View source) {
+        new AlertDialog.Builder(this)
+                .setTitle("Advanced log may expose personal data")
+                .setMessage("This unredacted report can contain notification or "
+                        + "accessibility text, installed/foreground app identifiers, "
+                        + "filenames, paths, imported source references and exact touch "
+                        + "coordinates. Do not post it publicly. Share it only with someone "
+                        + "you trust.\n\nCreate the advanced log now?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("I understand - create", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        createAndShareDebugReport(source, true);
+                    }
+                })
+                .show();
+    }
+
+    private void createAndShareDebugReport(final View source, final boolean advanced) {
         source.setEnabled(false);
-        Toast.makeText(this, "Creating debug report\u2026", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, advanced
+                        ? "Creating unredacted advanced log\u2026"
+                        : "Creating debug report\u2026",
+                Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 File report = null;
                 Throwable failure = null;
                 try {
-                    report = DebugReport.create(ControlActivity.this);
+                    report = advanced
+                            ? DebugReport.createAdvanced(ControlActivity.this)
+                            : DebugReport.create(ControlActivity.this);
                 } catch (Throwable error) {
                     failure = error;
                     Log.e("LLEControl", "Debug report creation failed", error);
@@ -1586,24 +1666,28 @@ public class ControlActivity extends Activity {
                                     Toast.LENGTH_LONG).show();
                             return;
                         }
-                        shareDebugReport(completedReport);
+                        shareDebugReport(completedReport, advanced);
                     }
                 });
             }
         }, "LLE-debug-report").start();
     }
 
-    private void shareDebugReport(File report) {
+    private void shareDebugReport(File report, boolean advanced) {
         Uri uri = DebugReportProvider.uriFor(this, report);
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
         share.putExtra(Intent.EXTRA_SUBJECT,
-                "L.L.E " + appVersionName() + " debug report");
+                "L.L.E " + appVersionName()
+                        + (advanced ? " advanced unredacted log" : " debug report"));
         share.putExtra(Intent.EXTRA_STREAM, uri);
-        share.setClipData(ClipData.newRawUri("L.L.E debug report", uri));
+        share.setClipData(ClipData.newRawUri(
+                advanced ? "L.L.E advanced unredacted log" : "L.L.E debug report", uri));
         share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
-            startActivity(Intent.createChooser(share, "Share L.L.E debug report"));
+            startActivity(Intent.createChooser(share, advanced
+                    ? "Share only with a trusted recipient"
+                    : "Share L.L.E debug report"));
         } catch (RuntimeException error) {
             Log.e("LLEControl", "Debug report share failed", error);
             Toast.makeText(this, "No app is available to share the report",
@@ -1887,6 +1971,7 @@ public class ControlActivity extends Activity {
         row.addView(slider, sliderParams);
         return row;
     }
+
     private View doodleDebugMenu() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -1931,6 +2016,7 @@ public class ControlActivity extends Activity {
     }
 
     private View effectSelector() {
+        highFrameRateSwitches.clear();
         LinearLayout root = verticalGroup();
         LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2000,7 +2086,23 @@ public class ControlActivity extends Activity {
         effects.setLayoutParams(effectsParams);
         styleCard(effects);
         effects.addView(sectionTitle("Effects"));
+        if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
+            TextView lightweightMode = infoText(
+                    "LIGHTWEIGHT TESTER MODE — lockscreen capture and colormap loading are "
+                            + "disabled. Grey effects require a colormap; Mass Tension is the "
+                            + "automatic safety fallback.");
+            lightweightMode.setTextColor(COLOR_ACCENT_DEEP);
+            lightweightMode.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            effects.addView(lightweightMode);
+        }
         effects.addView(effectPreviewHint());
+        effects.addView(randomEffectOption());
+        effects.addView(sectionLabel("Samsung"));
+        addEffectOptionIfAvailable(effects,
+                "S3 None",
+                "A clean white circle expands from your touch as the padlock flips open.",
+                OverlayPrefs.EFFECT_S3_NONE,
+                current);
         addEffectOptionIfAvailable(effects,
                 "S3 Water Ripple",
                 "Soft ripples flowing from your touch.",
@@ -2011,11 +2113,12 @@ public class ControlActivity extends Activity {
                 "Fluffy ink clouds blooming in water.",
                 OverlayPrefs.EFFECT_N4_INK_IN_WATER,
                 current);
-        addEffectOptionIfAvailable(effects,
-                "S4 Lens Flare",
-                "Bright flares following your finger.",
-                OverlayPrefs.EFFECT_S4_LENS_FLARE,
-                current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_S4_LENS_FLARE)) {
+            effects.addView(lensFlareEffectOption(current));
+        }
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_RIPPLE_INK)) {
+            effects.addView(rippleInkEffectOption(current));
+        }
         addEffectOptionIfAvailable(effects,
                 "N3 Watercolor",
                 "Watery paint spreading under your touch.",
@@ -2028,7 +2131,7 @@ public class ControlActivity extends Activity {
                 current);
         addEffectOptionIfAvailable(effects,
                 "S5 Popping Colours",
-                "Colorful particles bursting from touch.",
+                "Colorful particles burst and scatter from your touch.",
                 OverlayPrefs.EFFECT_S5_POPPING_COLOURS,
                 current);
         addEffectOptionIfAvailable(effects,
@@ -2054,15 +2157,8 @@ public class ControlActivity extends Activity {
                         ? pendingAbstractTilesLineMode == 1
                         : OverlayPrefs.abstractTilesLineEnabled(this);
                 effects.addView(abstractTilesEffectOption(
-                        "N4 Abstract Tiles · Lines",
-                        "Geometric tiles with bright line trails.",
-                        true,
-                        current,
-                        currentLineMode));
-                effects.addView(abstractTilesEffectOption(
-                        "N4 Abstract Tiles · No lines",
-                        "Clean tiles scattering across the wallpaper.",
-                        false,
+                        "N4 Abstract Tiles",
+                        "Geometric tiles scattering across the wallpaper.",
                         current,
                         currentLineMode));
             } else {
@@ -2097,34 +2193,23 @@ public class ControlActivity extends Activity {
                 "Refracted water droplets flowing across the wallpaper.",
                 OverlayPrefs.EFFECT_S6_WATER_DROPLET_APP_OWNED,
                 current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet (Samsung legacy)"
-                        : "N5 Colored Droplet",
-                "Colorful liquid droplets rolling across screen.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet + Gyro (Samsung legacy)"
-                        : "N5 Colored Droplet + Gyro",
-                "Liquid droplets flowing with phone movement.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet (LLE renderer)"
-                        : "N5 Colored Droplet",
-                "Colorful liquid droplets rolling across screen.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP,
-                current);
-        addEffectOptionIfAvailable(effects,
-                EffectAvailability.hasLegacyVendorEffects()
-                        ? "N5 Colored Droplet + Gyro (LLE renderer)"
-                        : "N5 Colored Droplet + Gyro",
-                "Liquid droplets flowing with phone movement.",
-                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP,
-                current);
+        if (EffectAvailability.hasLegacyVendorEffects()) {
+            addEffectOptionIfAvailable(effects,
+                    "N5 Colored Droplet (Samsung legacy)",
+                    "Colorful liquid droplets rolling across screen.",
+                    OverlayPrefs.EFFECT_N5_COLOUR_DROPLET,
+                    current);
+            addEffectOptionIfAvailable(effects,
+                    "N5 Colored Droplet + Gyro (Samsung legacy)",
+                    "Liquid droplets flowing with phone movement.",
+                    OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO,
+                    current);
+        }
+        if (EffectAvailability.isAvailable(OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP)
+                && EffectAvailability.isAvailable(
+                OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP)) {
+            effects.addView(colourDropletEffectOption(current));
+        }
         addEffectOptionIfAvailable(effects,
                 EffectAvailability.hasLegacyVendorEffects()
                         ? "N5 Sparkling Bubbles (Samsung legacy)"
@@ -2138,6 +2223,69 @@ public class ControlActivity extends Activity {
                         : "N5 Sparkling Bubbles",
                 "Glowing bubbles sparkling across the wallpaper.",
                 OverlayPrefs.EFFECT_N5_SPARKLING_BUBBLES_WIP,
+                current);
+        effects.addView(sectionLabel("Good Lock"));
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Popping Color",
+                "Bright color particles drift and scatter from your touch.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Rectangle Traveller",
+                "Bright rectangles race outward from your touch.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Good Lock Bouncing Color",
+                "Color particles spring and bounce away from your touch.",
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                current);
+        effects.addView(sectionLabel("LG effects"));
+        addEffectOptionIfAvailable(effects,
+                "G1 White Hole",
+                "A glittering white ring expands from your touch into a luminous portal.",
+                OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Soda",
+                "Bubbles and sparkling particles swirl around an expanding circular window.",
+                OverlayPrefs.EFFECT_LG_SODA,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G1 Dewdrop",
+                "A glossy liquid droplet bends the image beneath your touch before spreading outward.",
+                OverlayPrefs.EFFECT_LG_G1_DEWDROP,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Particle",
+                "A halo of bright particles gathers at your touch and sweeps outward with the drag.",
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Light Particle",
+                "Soft bokeh lights and glittering particles bloom around your touch.",
+                OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Pixelate",
+                "Triangular pixels grow larger with your drag, breaking the image into a shifting mosaic.",
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "G2 Crystal",
+                "A faceted crystal spins and refracts the image beneath your touch.",
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                current);
+        effects.addView(sectionLabel("Sony"));
+        addEffectOptionIfAvailable(effects,
+                "Xperia Z1 Blinds",
+                "Horizontal strips peel open from your touch to reveal the screen beneath.",
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                current);
+        addEffectOptionIfAvailable(effects,
+                "Revolving Glass",
+                "A luminous glass tile lifts, tilts and spins with your swipe before shrinking away.",
+                OverlayPrefs.EFFECT_REVOLVING_GLASS,
                 current);
         effects.addView(sectionLabel("Seasonal"));
         addEffectOptionIfAvailable(effects,
@@ -2167,7 +2315,10 @@ public class ControlActivity extends Activity {
                 current);
         root.addView(effects);
         root.addView(infoFooter());
-        if (effectUsesColormapCache(current)) {
+        if (effectUsesColormapCache(current)
+                || OverlayPrefs.needsLgPreLockUnderlay(current)
+                || (BuildFlavor.TESTER
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)) {
             root.addView(screenshotServiceControls(current));
         }
         return root;
@@ -2178,16 +2329,8 @@ public class ControlActivity extends Activity {
             return null;
         }
         final ArrayList<String> missingProfiles = new ArrayList<String>();
-        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
-        if (foldProfiles) {
-            addMissingAutomaticColormapProfile(
-                    missingProfiles, effect, FoldDisplayTarget.PROFILE_COVER);
-            addMissingAutomaticColormapProfile(
-                    missingProfiles, effect, FoldDisplayTarget.PROFILE_MAIN);
-        } else {
-            addMissingAutomaticColormapProfile(missingProfiles, effect,
-                    FoldDisplayTarget.cacheProfileForContext(this));
+        for (String profile : FoldDisplayTarget.backgroundProfiles(this)) {
+            addMissingAutomaticColormapProfile(missingProfiles, effect, profile);
         }
         if (missingProfiles.isEmpty()) {
             return null;
@@ -2298,23 +2441,12 @@ public class ControlActivity extends Activity {
         if (isReadableImageFile(screenshot)) {
             return;
         }
-        if (FoldDisplayTarget.PROFILE_COVER.equals(profile)) {
-            missingProfiles.add("Cover");
-        } else if (FoldDisplayTarget.PROFILE_MAIN.equals(profile)) {
-            missingProfiles.add("Main");
-        } else {
-            missingProfiles.add("this display");
-        }
+        missingProfiles.add(FoldDisplayTarget.PROFILE_SINGLE.equals(profile)
+                ? "this display" : FoldDisplayTarget.profileLabel(profile));
     }
 
     private boolean isReadableImageFile(File file) {
-        if (file == null || !file.exists() || file.length() <= 0L) {
-            return false;
-        }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        return bounds.outWidth > 0 && bounds.outHeight > 0;
+        return Argb8888BitmapStore.isUsable(file);
     }
 
     private String joinProfileLabels(ArrayList<String> profiles) {
@@ -2336,7 +2468,7 @@ public class ControlActivity extends Activity {
 
     private void addEffectOptionIfAvailable(LinearLayout effects, String title,
             String description, int effect, int current) {
-        if (!EffectAvailability.isAvailable(effect)) {
+        if (!EffectAvailability.isAvailable(this, effect)) {
             return;
         }
         effects.addView(effectOption(title, description, effect, current));
@@ -2388,19 +2520,62 @@ public class ControlActivity extends Activity {
         if (!rendererWallpaperExpanded) {
             return section;
         }
+        if (OverlayPrefs.needsLgPreLockUnderlay(currentEffect)) {
+            String effectName = OverlayPrefs.effectLabel(currentEffect);
+            boolean secondary = OverlayPrefs.usesLgPreLockUnderlayAsSecondary(currentEffect);
+            section.addView(infoText(secondary
+                    ? effectName + " uses two independent images: Last screen remains fixed "
+                            + "under the effect, while the lockscreen cache is mapped only to "
+                            + "the rotating glass tile. Neither cache replaces the other."
+                    : effectName + " uses Last screen: on a normal screen-off, L.L.E captures "
+                            + "the final unlocked app/launcher frame and supplies that private "
+                            + "buffer only to effects that request it. It is separate from, and "
+                            + "never replaces, the lockscreen colormap used by other effects."));
+            section.addView(sectionLabel(secondary
+                    ? "LOCKSCREEN CACHE · ROTATING TILE"
+                    : "LOCKSCREEN CACHE · OTHER EFFECTS"));
+            section.addView(infoText(effectBackgroundProfileStatus(
+                    currentEffect, FoldDisplayTarget.cacheProfileForContext(this))));
+            section.addView(outlineButton("Force lockscreen cache recapture",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            applyPendingUnlockEffect();
+                            OverlayPrefs.requestEffectBackgroundRefresh(ControlActivity.this);
+                            Toast.makeText(ControlActivity.this,
+                                    "Lockscreen cache recapture queued",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    }));
+            section.addView(outlineButton("View lockscreen cache",
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            showEffectBackgroundScreenshot();
+                        }
+                    }));
+            addLgLastScreenCacheControls(section, currentEffect);
+            addTesterUnderlayProbeControls(section);
+            return section;
+        }
+        if (!effectUsesColormapCache(currentEffect)) {
+            section.addView(infoText(
+                    "The selected effect is intentionally colormap-free. No wallpaper image "
+                            + "is captured or supplied to its renderer."));
+            addTesterUnderlayProbeControls(section);
+            return section;
+        }
         final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
-        boolean foldProfiles = FoldDisplayTarget.isFoldDevice(this)
-                && OverlayPrefs.foldModeEnabled(this);
-        boolean coverImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
-                this, currentEffect, FoldDisplayTarget.PROFILE_COVER);
-        boolean mainImported = foldProfiles && OverlayPrefs.importedEffectBackgroundEnabled(
-                this, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
-        boolean activeImported = !foldProfiles
-                && OverlayPrefs.importedEffectBackgroundEnabled(
-                        this, currentEffect, activeProfile);
-        boolean directModeActive = activeImported || coverImported || mainImported;
-        boolean automaticModeActive = foldProfiles
-                ? !coverImported || !mainImported : !activeImported;
+        final String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        boolean multipleProfiles = profiles.length > 1;
+        boolean directModeActive = false;
+        boolean automaticModeActive = false;
+        for (String profile : profiles) {
+            boolean imported = OverlayPrefs.importedEffectBackgroundEnabled(
+                    this, currentEffect, profile);
+            directModeActive |= imported;
+            automaticModeActive |= !imported;
+        }
 
         if (directModeActive) {
             section.addView(sectionLabel("EXTRA / BETA - Direct wallpaper active"));
@@ -2408,15 +2583,10 @@ public class ControlActivity extends Activity {
                     "Beta feature. LLE sends a private, display-sized wallpaper directly "
                             + "to screenshot-driven effects. Some effect UI masks may still "
                             + "need refinement."));
-            if (foldProfiles) {
-                addDirectWallpaperProfileControls(
-                        section, currentEffect, FoldDisplayTarget.PROFILE_COVER);
-                addDirectWallpaperProfileControls(
-                        section, currentEffect, FoldDisplayTarget.PROFILE_MAIN);
-            } else {
-                addDirectWallpaperProfileControls(section, currentEffect, activeProfile);
+            for (String profile : profiles) {
+                addDirectWallpaperProfileControls(section, currentEffect, profile);
             }
-            section.addView(outlineButton(foldProfiles
+            section.addView(outlineButton(multipleProfiles
                     ? "View direct wallpapers"
                     : "View direct wallpaper", new View.OnClickListener() {
                 @Override
@@ -2438,8 +2608,8 @@ public class ControlActivity extends Activity {
                             Toast.LENGTH_SHORT).show();
                 }
             }));
-            section.addView(outlineButton(foldProfiles
-                    ? "View automatic panel screenshots"
+            section.addView(outlineButton(multipleProfiles
+                    ? "View automatic profile screenshots"
                     : "View colormap screenshot", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -2447,8 +2617,197 @@ public class ControlActivity extends Activity {
                     showEffectBackgroundScreenshot();
                 }
             }));
+            section.addView(sectionLabel("Automatic recapture"));
+            section.addView(toggle("Auto recapture expired cache",
+                    OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
+            section.addView(effectBackgroundIntervalSelector());
+            section.addView(toggle("Pause auto recapture 23-07",
+                    OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
+            section.addView(toggle("Wake lockscreen for hard recapture",
+                    OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
+            section.addView(infoText("These settings apply only to Automatic screenshot. "
+                    + "Direct wallpaper sources remain fixed until you replace them."));
         }
+        addTesterUnderlayProbeControls(section);
         return section;
+    }
+
+    private void addLgLastScreenCacheControls(LinearLayout section, final int effect) {
+        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+        section.addView(sectionLabel("LAST SCREEN"));
+        section.addView(outlineButton("View Last screen", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLgLastScreenCache();
+            }
+        }));
+        section.addView(outlineButton("Force wallpaper fallback", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmLgLastScreenFallback(effect, target);
+            }
+        }));
+        section.addView(infoText(
+                "Fallback is a one-time safety seed: it copies an exact-size wallpaper cache "
+                        + "into Last screen. The next successful screen-off capture replaces "
+                        + "it with the real last unlocked frame."));
+    }
+
+    private void showLgLastScreenCache() {
+        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+        int effect = OverlayPrefs.unlockEffect(this);
+        LgLastScreenCache.ResolvedSource resolved =
+                LgLastScreenCache.resolve(this, effect, target);
+        if (resolved == null) {
+            Toast.makeText(this,
+                    "No Last screen or matching lockscreen fallback for this display yet.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final Argb8888BitmapStore.Info sourceInfo = resolved.info;
+        final File sourceFile = resolved.file;
+        final Bitmap bitmap = decodePreviewBitmap(sourceFile);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, "Last screen cache unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("Last screen"));
+        String source = resolved.fallback
+                ? (sourceFile.equals(target.file)
+                        ? "forced wallpaper fallback" : "automatic lockscreen fallback")
+                : "last unlocked frame";
+        root.addView(infoText(source + " | " + target.profile + " | "
+                + sourceInfo.width + " x " + sourceInfo.height + " | "
+                + Math.max(1L, sourceFile.length() / 1024L) + " KB"));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private void confirmLgLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        File fallback = LgLastScreenCache.findWallpaperFallback(this, effect, target);
+        if (fallback == null) {
+            Toast.makeText(this,
+                    "No exact-size wallpaper cache is available. Capture or import one first.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Force wallpaper fallback?")
+                .setMessage("This replaces the current Last screen image with the traditional "
+                        + "wallpaper cache. It is only a safety fallback; the next successful "
+                        + "screen-off capture will replace it with the real last screen.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Force fallback", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        forceLgLastScreenFallback(effect, target);
+                    }
+                })
+                .show();
+    }
+
+    private void forceLgLastScreenFallback(final int effect,
+            final LgLastScreenCache.Target target) {
+        Toast.makeText(this, "Preparing Last screen fallback…", Toast.LENGTH_SHORT).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final LgLastScreenCache.FallbackResult result =
+                        LgLastScreenCache.forceWallpaperFallback(
+                                ControlActivity.this, effect, target);
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (result.saved) {
+                            ChargingAccessibilityService.reloadLgLastScreenCache();
+                        }
+                        Toast.makeText(ControlActivity.this, result.message,
+                                result.saved ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+                        if (!isFinishing() && !isDestroyed()) {
+                            showTab(selectedTab, false, 0);
+                        }
+                    }
+                });
+            }
+        }, "LLE-last-screen-fallback").start();
+    }
+
+    private void addTesterUnderlayProbeControls(LinearLayout section) {
+        if (!BuildFlavor.TESTER
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return;
+        }
+        section.addView(sectionLabel("TESTER - LG underlay API probe"));
+        section.addView(infoText(
+                "Tests whether Android exposes the launcher or previous app as a separate "
+                        + "accessibility window while locked. This does not replace or modify "
+                        + "the current colormap."));
+        section.addView(infoText("Status: "
+                + ChargingAccessibilityService.testerUnderlayProbeStatus(this)));
+        section.addView(outlineButton("Arm probe (30-second window)",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        applyPendingUnlockEffect();
+                        boolean armed = ChargingAccessibilityService
+                                .scheduleTesterUnderlayProbe(0L);
+                        Toast.makeText(ControlActivity.this,
+                                armed
+                                        ? "Probe armed. Go Home, lock and wake to the lockscreen within 30 seconds."
+                                        : "Accessibility service unavailable or API unsupported",
+                                Toast.LENGTH_LONG).show();
+                        if (armed) {
+                            showTab(selectedTab, false, 0);
+                        }
+                    }
+                }));
+        section.addView(outlineButton("View last underlay probe",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showTesterUnderlayProbe();
+                    }
+                }));
     }
 
     private void addDirectWallpaperProfileControls(LinearLayout section, final int effect,
@@ -2457,8 +2816,7 @@ public class ControlActivity extends Activity {
         final int[] targetSize = effectBackgroundTargetSize(profile);
         final boolean imported = OverlayPrefs.importedEffectBackgroundEnabled(
                 this, effect, profile);
-        String profileLabel = FoldDisplayTarget.PROFILE_COVER.equals(profile)
-                ? "Cover" : FoldDisplayTarget.PROFILE_MAIN.equals(profile) ? "Main" : "Display";
+        String profileLabel = FoldDisplayTarget.profileLabel(profile);
         String sourceLabel = imported ? "DIRECT active" : "AUTO screenshot";
         section.addView(infoText(profileLabel.toUpperCase(Locale.US)
                 + "  |  " + targetSize[0] + " x " + targetSize[1]
@@ -2501,48 +2859,7 @@ public class ControlActivity extends Activity {
     }
 
     private int[] effectBackgroundTargetSize(String requestedProfile) {
-        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
-        DisplayMetrics activeMetrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getRealMetrics(activeMetrics);
-        int activeWidth = Math.max(1, activeMetrics.widthPixels);
-        int activeHeight = Math.max(1, activeMetrics.heightPixels);
-        int[] fallback = new int[] {
-                Math.min(activeWidth, activeHeight),
-                Math.max(activeWidth, activeHeight)
-        };
-        if (FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
-            return fallback;
-        }
-        try {
-            DisplayManager manager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
-            Display defaultDisplay = manager == null
-                    ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
-            String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
-            if (manager != null) {
-                Display[] displays = manager.getDisplays(
-                        DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
-                if (displays == null || displays.length == 0) {
-                    displays = manager.getDisplays();
-                }
-                for (Display display : displays) {
-                    if (display == null || (display.getDisplayId() != Display.DEFAULT_DISPLAY
-                            && (builtInName == null || !builtInName.equals(display.getName())))) {
-                        continue;
-                    }
-                    DisplayMetrics metrics = new DisplayMetrics();
-                    display.getRealMetrics(metrics);
-                    int width = Math.max(1, metrics.widthPixels);
-                    int height = Math.max(1, metrics.heightPixels);
-                    if (profile.equals(FoldDisplayTarget.profileForSize(width, height))) {
-                        return new int[] {
-                                Math.min(width, height), Math.max(width, height)};
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.d("LLEControl", "Fold panel wallpaper size lookup failed", t);
-        }
-        return fallback;
+        return FoldDisplayTarget.displaySizeForProfile(this, requestedProfile);
     }
 
     private void startImportedEffectBackgroundPicker(int effect, String requestedProfile) {
@@ -2552,7 +2869,64 @@ public class ControlActivity extends Activity {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        final String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        final int selectedEffect = effect;
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure?")
+                .setMessage("Direct wallpaper colormaps are still beta. Automatic screenshot "
+                        + "is the recommended and safest option.")
+                .setNegativeButton("Use automatic screenshot",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                useAutomaticScreenshotForProfile(profile);
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        showFinalDirectWallpaperConfirmation(selectedEffect, profile);
+                    }
+                })
+                .show();
+    }
+
+    private void showFinalDirectWallpaperConfirmation(final int effect,
+            final String profile) {
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure sure?")
+                .setMessage("L.L.E will use a manually supplied fixed colormap for this "
+                        + "display profile. Continue only if you understand how it differs "
+                        + "from Automatic screenshot.")
+                .setNegativeButton("Please use automatic screenshot if you don't know what "
+                                + "you're doing",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                useAutomaticScreenshotForProfile(profile);
+                            }
+                        })
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        openImportedEffectBackgroundPicker(effect, profile);
+                    }
+                })
+                .show();
+    }
+
+    private void useAutomaticScreenshotForProfile(String profile) {
+        OverlayPrefs.useAutomaticEffectBackgroundForAll(this, profile);
+        SetupWizardActivity.rememberWallpaperMode(
+                this, SetupWizardActivity.MODE_AUTOMATIC_SCREENSHOT);
+        OverlayPrefs.requestEffectBackgroundRefresh(this);
+        Toast.makeText(this,
+                "Automatic screenshot active for " + profile,
+                Toast.LENGTH_LONG).show();
+        showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+    }
+
+    private void openImportedEffectBackgroundPicker(int effect, String profile) {
         int[] targetSize = effectBackgroundTargetSize(profile);
         pendingImportedBackgroundEffect = effect;
         pendingImportedBackgroundProfile = profile;
@@ -2583,35 +2957,6 @@ public class ControlActivity extends Activity {
                         "No compatible image picker is available", Toast.LENGTH_LONG).show();
             }
         }
-    }
-
-    private View screenshotServiceDebugControls() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(8), 0, dp(8));
-        section.setLayoutParams(params);
-        styleInsetPanel(section);
-        section.addView(collapsibleHeader("Screenshot service", screenshotServiceExpanded,
-                new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                screenshotServiceExpanded = !screenshotServiceExpanded;
-                showTab(selectedTab, false, 0);
-            }
-        }));
-        if (screenshotServiceExpanded) {
-            section.addView(toggle("Auto recapture expired cache",
-                    OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
-            section.addView(effectBackgroundIntervalSelector());
-            section.addView(toggle("Pause auto recapture 23-07",
-                    OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
-            section.addView(toggle("Wake lockscreen for hard recapture",
-                    OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
-        }
-        return section;
     }
 
     private void queueUnlockEffectSelection(int value) {
@@ -2660,15 +3005,54 @@ public class ControlActivity extends Activity {
     }
 
     private String effectBackgroundStatus(int effect) {
+        if (OverlayPrefs.needsLgPreLockUnderlay(effect)) {
+            LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+            LgLastScreenCache.ResolvedSource resolved =
+                    LgLastScreenCache.resolve(this, effect, target);
+            String lastScreenStatus;
+            if (resolved == null) {
+                lastScreenStatus = "Last screen (" + target.profile
+                        + "): empty, and no exact-profile lockscreen fallback is available. "
+                        + "Unlock normally, leave the app or launcher you want visible, then "
+                        + "turn the screen off once.";
+            } else {
+                long capturedAt = LgLastScreenCache.capturedAt(this, target);
+                long ageMs = capturedAt <= 0L
+                    ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
+                String source = resolved.fallback
+                        ? (resolved.file.equals(target.file)
+                                ? "forced wallpaper fallback"
+                                : "automatic lockscreen fallback")
+                        : "captured last unlocked frame";
+                lastScreenStatus = "Last screen (" + target.profile + "): ready, "
+                        + resolved.info.width + " x " + resolved.info.height
+                        + (resolved.fallback && !resolved.file.equals(target.file)
+                                ? "" : ", age " + ageLabel(ageMs))
+                        + ", source: " + source
+                        + ". Dedicated cache; lockscreen colormap unchanged.";
+            }
+            if (OverlayPrefs.usesLgPreLockUnderlayAsSecondary(effect)) {
+                return lastScreenStatus + "\nRotating tile: "
+                        + effectBackgroundProfileStatus(
+                                effect, FoldDisplayTarget.cacheProfileForContext(this));
+            }
+            return lastScreenStatus;
+        }
         if (!effectUsesColormapCache(effect)) {
             return "Screenshot cache: not used by this effect.";
         }
         String profile = FoldDisplayTarget.cacheProfileForContext(this);
-        if (OverlayPrefs.foldModeEnabled(this)) {
-            return effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_COVER)
-                    + "\n"
-                    + effectBackgroundProfileStatus(effect, FoldDisplayTarget.PROFILE_MAIN)
-                    + "\nActive panel: " + profile;
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        if (profiles.length > 1) {
+            StringBuilder status = new StringBuilder();
+            for (String candidate : profiles) {
+                if (status.length() > 0) {
+                    status.append('\n');
+                }
+                status.append(effectBackgroundProfileStatus(effect, candidate));
+            }
+            status.append("\nActive profile: ").append(profile);
+            return status.toString();
         }
         return effectBackgroundProfileStatus(effect, profile);
     }
@@ -2706,6 +3090,9 @@ public class ControlActivity extends Activity {
     }
 
     private boolean effectUsesColormapCache(int effect) {
+        if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
+            return false;
+        }
         return effect == OverlayPrefs.EFFECT_S4_LENS_FLARE
                 || effect == OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE
                 || effect == OverlayPrefs.EFFECT_N4_INK_IN_WATER
@@ -2723,7 +3110,15 @@ public class ControlActivity extends Activity {
                 || effect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
                 || effect == OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC
                 || effect == OverlayPrefs.EFFECT_BRILLIANT_RING
-                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT;
+                || effect == OverlayPrefs.EFFECT_BRILLIANT_CUT
+                || effect == OverlayPrefs.EFFECT_RIPPLE_INK
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE
+                || effect == OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING
+                || effect == OverlayPrefs.EFFECT_LG_G2_PARTICLE
+                || effect == OverlayPrefs.EFFECT_LG_G2_CRYSTAL
+                || effect == OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS
+                || effect == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
     private String ageLabel(long ageMs) {
@@ -2888,8 +3283,8 @@ public class ControlActivity extends Activity {
 
     private void showEffectBackgroundScreenshot() {
         int effect = OverlayPrefs.unlockEffect(this);
-        if (OverlayPrefs.foldModeEnabled(this)) {
-            showFoldEffectBackgroundScreenshots(effect);
+        if (FoldDisplayTarget.backgroundProfiles(this).length > 1) {
+            showProfileEffectBackgroundScreenshots(effect);
             return;
         }
         File screenshot = colormapScreenshotFileForPreview(effect);
@@ -2956,13 +3351,14 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private void showFoldEffectBackgroundScreenshots(int effect) {
+    private void showProfileEffectBackgroundScreenshots(int effect) {
         final ArrayList<Bitmap> previews = new ArrayList<Bitmap>();
-        File cover = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_COVER);
-        File main = colormapScreenshotFileForPreview(effect, FoldDisplayTarget.PROFILE_MAIN);
-        if ((!cover.exists() || cover.length() <= 0L)
-                && (!main.exists() || main.length() <= 0L)) {
-            Toast.makeText(this, "No Fold screenshots yet", Toast.LENGTH_SHORT).show();
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        File first = colormapScreenshotFileForPreview(effect, profiles[0]);
+        File second = colormapScreenshotFileForPreview(effect, profiles[1]);
+        if ((!first.exists() || first.length() <= 0L)
+                && (!second.exists() || second.length() <= 0L)) {
+            Toast.makeText(this, "No profile screenshots yet", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -2971,8 +3367,9 @@ public class ControlActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
         root.setBackground(pageBackground());
-        root.addView(sectionTitle("Fold colormap screenshots"));
-        root.addView(infoText("The cover and main caches are independent. Missing panels are shown explicitly."));
+        root.addView(sectionTitle(FoldDisplayTarget.usesFoldProfiles(this)
+                ? "Fold colormap screenshots" : "Tablet colormap screenshots"));
+        root.addView(infoText("The two caches are independent. Missing profiles are shown explicitly."));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -2980,9 +3377,11 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         rowParams.setMargins(0, dp(10), 0, dp(10));
         root.addView(row, rowParams);
-        row.addView(foldScreenshotPreview("Cover", cover, previews),
+        row.addView(profileScreenshotPreview(
+                        FoldDisplayTarget.profileLabel(profiles[0]), first, previews),
                 foldScreenshotColumnParams(false));
-        row.addView(foldScreenshotPreview("Main", main, previews),
+        row.addView(profileScreenshotPreview(
+                        FoldDisplayTarget.profileLabel(profiles[1]), second, previews),
                 foldScreenshotColumnParams(true));
 
         root.addView(outlineButton("Close", new View.OnClickListener() {
@@ -3013,12 +3412,12 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private View foldScreenshotPreview(String label, File file, ArrayList<Bitmap> previews) {
+    private View profileScreenshotPreview(String label, File file, ArrayList<Bitmap> previews) {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(10), dp(10), dp(10), dp(10));
         column.setBackground(infoBackground());
-        column.addView(sectionLabel(label + " panel"));
+        column.addView(sectionLabel(label));
         if (file == null || !file.exists() || file.length() <= 0L) {
             TextView missing = infoText("No screenshot cached");
             missing.setGravity(Gravity.CENTER);
@@ -3026,8 +3425,9 @@ public class ControlActivity extends Activity {
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
             return column;
         }
+        Argb8888BitmapStore.Info sourceBounds = Argb8888BitmapStore.inspect(file);
         Bitmap bitmap = decodeFoldPreviewBitmap(file);
-        if (bitmap == null || bitmap.isRecycled()) {
+        if (sourceBounds == null || bitmap == null || bitmap.isRecycled()) {
             TextView missing = infoText("Screenshot unreadable");
             missing.setGravity(Gravity.CENTER);
             column.addView(missing, new LinearLayout.LayoutParams(
@@ -3035,8 +3435,10 @@ public class ControlActivity extends Activity {
             return column;
         }
         previews.add(bitmap);
-        column.addView(infoText(bitmap.getWidth() + " x " + bitmap.getHeight()
-                + " preview | " + Math.max(1L, file.length() / 1024L) + " KB"));
+        column.addView(infoText("source " + sourceBounds.width + " x "
+                + sourceBounds.height + " \u2022 preview " + bitmap.getWidth() + " x "
+                + bitmap.getHeight() + " \u2022 "
+                + Math.max(1L, file.length() / 1024L) + " KB"));
         ImageView image = new ImageView(this);
         image.setBackgroundColor(Color.BLACK);
         image.setAdjustViewBounds(true);
@@ -3310,6 +3712,30 @@ public class ControlActivity extends Activity {
                 return "effect_preview_s5_brilliant_ring.mp4";
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
                 return "effect_preview_tabs_brilliant_cut.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return "effect_preview_good_lock_popping.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return "effect_preview_good_lock_rectangle.mp4";
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return "effect_preview_good_lock_bouncing.mp4";
+            case OverlayPrefs.EFFECT_S3_NONE:
+                return "effect_preview_s3_none.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                return "effect_preview_lg_pixelate.mp4";
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                return "effect_preview_lg_white_hole.mp4";
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return "effect_preview_lg_soda.mp4";
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                return "effect_preview_lg_dewdrop.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                return "effect_preview_lg_particle.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return "effect_preview_lg_light_particle.mp4";
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return "effect_preview_lg_crystal.mp4";
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                return "effect_preview_xperia_z1_blinds.mp4";
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
             case OverlayPrefs.EFFECT_SEASONAL_SPRING:
             case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
@@ -3387,6 +3813,42 @@ public class ControlActivity extends Activity {
                 break;
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
                 drawable = R.drawable.effect_preview_tabs_brilliant_cut;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                drawable = R.drawable.effect_preview_good_lock_popping;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                drawable = R.drawable.effect_preview_good_lock_rectangle;
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                drawable = R.drawable.effect_preview_good_lock_bouncing;
+                break;
+            case OverlayPrefs.EFFECT_S3_NONE:
+                drawable = R.drawable.effect_preview_s3_none;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                drawable = R.drawable.effect_preview_lg_pixelate;
+                break;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                drawable = R.drawable.effect_preview_lg_white_hole;
+                break;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                drawable = R.drawable.effect_preview_lg_soda;
+                break;
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                drawable = R.drawable.effect_preview_lg_dewdrop;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                drawable = R.drawable.effect_preview_lg_particle;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                drawable = R.drawable.effect_preview_lg_light_particle;
+                break;
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                drawable = R.drawable.effect_preview_lg_crystal;
+                break;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                drawable = R.drawable.effect_preview_xperia_z1_blinds;
                 break;
             case OverlayPrefs.EFFECT_SEASONAL_AUTO:
             case OverlayPrefs.EFFECT_SEASONAL_SPRING:
@@ -3628,6 +4090,11 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 drawPreviewPoppingColours(canvas, paint, width, height);
                 break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                drawPreviewGoodLockParticles(canvas, paint, effect, width, height);
+                break;
             case OverlayPrefs.EFFECT_TABS_BLIND:
                 drawPreviewBlind(canvas, paint, width, height);
                 break;
@@ -3726,6 +4193,10 @@ public class ControlActivity extends Activity {
                 return R.drawable.preview_unlock_stoneskipping_s5;
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return R.drawable.preview_unlock_mass_tension;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return R.drawable.preview_unlock_lg_soda;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return R.drawable.lg_lightparticle_bg;
             default:
                 return 0;
         }
@@ -3733,6 +4204,8 @@ public class ControlActivity extends Activity {
 
     private int effectIconResId(int effect) {
         switch (effect) {
+            case OverlayPrefs.EFFECT_S3_NONE:
+                return R.drawable.icon_effect_s3_none_lle;
             case OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE:
                 return R.drawable.icon_effect_s3_ripple_lle;
             case OverlayPrefs.EFFECT_S4_LENS_FLARE:
@@ -3741,6 +4214,12 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_n3_watercolor_lle;
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return R.drawable.icon_effect_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return R.drawable.icon_effect_s5_popping_colours_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return R.drawable.icon_effect_n4_abstract_tiles_lle;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return R.drawable.icon_effect_n5_colored_droplet_lle;
             case OverlayPrefs.EFFECT_S4_ABSTRACT_TILES:
                 return R.drawable.icon_effect_n4_abstract_tiles_lle;
             case OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC:
@@ -3759,10 +4238,30 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_s6_water_droplet_lle;
             case OverlayPrefs.EFFECT_N4_INK_IN_WATER:
                 return R.drawable.icon_effect_n3_ink_in_water_lle;
+            case OverlayPrefs.EFFECT_RIPPLE_INK:
+                return R.drawable.icon_effect_n3_ink_in_water_lle;
             case OverlayPrefs.EFFECT_STONE_SKIPPING:
                 return R.drawable.icon_effect_s5_stone_skipping_lle;
             case OverlayPrefs.EFFECT_MASS_TENSION:
                 return R.drawable.icon_effect_mass_tension;
+            case OverlayPrefs.EFFECT_LG_SODA:
+                return R.drawable.icon_effect_lg_soda_lle;
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+                return R.drawable.icon_effect_lg_dewdrop_lle;
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+                return R.drawable.icon_effect_g2_particle_lle;
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+                return R.drawable.icon_effect_g2_light_particle_lle;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+                return R.drawable.icon_effect_white_hole_lle;
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+                return R.drawable.icon_effect_g2_pixelate_lle;
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return R.drawable.icon_effect_g2_crystal_lle;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+                return R.drawable.icon_effect_xperia_z1_blinds_lle;
+            case OverlayPrefs.EFFECT_REVOLVING_GLASS:
+                return R.drawable.icon_effect_revolving_glass_lle;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return R.drawable.icon_effect_s5_brilliant_ring_lle;
             case OverlayPrefs.EFFECT_TABS_BLIND:
@@ -3923,6 +4422,84 @@ public class ControlActivity extends Activity {
             canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
                     width * rs[i] * 0.28f, paint);
         }
+    }
+
+    private void showTesterUnderlayProbe() {
+        File result = ChargingAccessibilityService.testerUnderlayProbeFile(this);
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(result);
+        if (bounds == null) {
+            Toast.makeText(this,
+                    "No underlay image. "
+                            + ChargingAccessibilityService.testerUnderlayProbeStatus(this),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final Bitmap bitmap = decodePreviewBitmap(result);
+        if (bitmap == null || bitmap.isRecycled()) {
+            Toast.makeText(this, "Underlay probe result unreadable", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+        root.addView(sectionTitle("LG underlay API probe"));
+        root.addView(infoText(ChargingAccessibilityService.testerUnderlayProbeStatus(this)
+                + "\nprivate ARGB8888 | source " + bounds.width + " x " + bounds.height
+                + " | preview " + bitmap.getWidth() + " x " + bitmap.getHeight()));
+
+        ImageView image = new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(bitmap);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        imageParams.setMargins(0, dp(8), 0, dp(10));
+        root.addView(image, imageParams);
+        root.addView(infoText(
+                "Interpretation: launcher/app pixels mean the API can drive a future LG "
+                        + "underlay source. A SystemUI-only/no-window failure means it cannot."));
+        root.addView(outlineButton("Close", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dialog.dismiss();
+            }
+        }));
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        });
+        dialog.show();
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    /** App-owned static picker preview; production motion remains in the renderer. */
+    private void drawPreviewGoodLockParticles(Canvas canvas, Paint paint, int effect,
+            int width, int height) {
+        if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_POPPING) {
+            drawPreviewPoppingColours(canvas, paint, width, height);
+            return;
+        }
+        if (effect == OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE) {
+            drawPreviewTiles(canvas, paint, width, height, false);
+            return;
+        }
+        drawPreviewBubbles(canvas, paint, width, height);
     }
 
     private void drawPreviewBlind(Canvas canvas, Paint paint, int width, int height) {
@@ -4192,6 +4769,11 @@ public class ControlActivity extends Activity {
         if (shared.exists() && shared.length() > 0L) {
             return shared;
         }
+        File legacyProfile = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+        if (legacyProfile.exists() && legacyProfile.length() > 0L
+                && copyColormapScreenshotFile(legacyProfile, shared)) {
+            return shared;
+        }
         if (!FoldDisplayTarget.PROFILE_SINGLE.equals(profile)) {
             // The service validates dimensions before migrating a legacy screenshot.
             // The settings preview must never copy a cover bitmap into the inner slot.
@@ -4223,7 +4805,16 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
                 OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC,
                 OverlayPrefs.EFFECT_BRILLIANT_RING,
-                OverlayPrefs.EFFECT_BRILLIANT_CUT
+                OverlayPrefs.EFFECT_BRILLIANT_CUT,
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                OverlayPrefs.EFFECT_GOOD_LOCK_POPPING,
+                OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE,
+                OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING,
+                OverlayPrefs.EFFECT_LG_G2_PIXELATE,
+                OverlayPrefs.EFFECT_LG_G2_PARTICLE,
+                OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
+                OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
         for (int candidate : effects) {
             File file = OverlayPrefs.legacyEffectBackgroundFile(this, candidate);
@@ -4241,75 +4832,33 @@ public class ControlActivity extends Activity {
         if (source == null || target == null || !source.exists() || source.length() <= 0L) {
             return false;
         }
-        File parent = target.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            return false;
-        }
-        File temp = new File(parent, target.getName() + ".tmp");
-        FileInputStream input = null;
-        FileOutputStream output = null;
         try {
-            input = new FileInputStream(source);
-            output = new FileOutputStream(temp);
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            output.flush();
-            return temp.renameTo(target);
+            return Argb8888BitmapStore.migrate(source, target);
         } catch (Throwable t) {
             Log.d("LLEControl", "colormap screenshot migration failed", t);
             return false;
-        } finally {
-            if (input != null) {
-                try {
-                    input.close();
-                } catch (Throwable ignored) {
-                }
-            }
-            if (output != null) {
-                try {
-                    output.close();
-                } catch (Throwable ignored) {
-                }
-            }
-            if (temp.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                temp.delete();
-            }
         }
     }
 
     private Bitmap decodePreviewBitmap(File file) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
-
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = previewSampleSize(bounds.outWidth, bounds.outHeight);
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(
+                file, previewSampleSize(bounds.width, bounds.height));
     }
 
     private Bitmap decodeFoldPreviewBitmap(File file) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
         int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > 960) {
+        while (Math.max(bounds.width, bounds.height) / sample > 960) {
             sample *= 2;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = sample;
-        return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        return Argb8888BitmapStore.decode(file, sample);
     }
 
     private int previewSampleSize(int width, int height) {
@@ -4327,39 +4876,62 @@ public class ControlActivity extends Activity {
     }
 
     private View abstractTilesEffectOption(String title, String subtitle,
-            boolean lineEnabled, int current, boolean currentLineEnabled) {
+            int current, boolean lineEnabled) {
         return effectOption(
                 title,
                 subtitle,
                 OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
-                current == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES
-                        && lineEnabled == currentLineEnabled,
-                lineEnabled ? 1 : 0);
+                current == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES,
+                lineEnabled ? 1 : 0,
+                abstractTilesVariantControls(lineEnabled));
     }
 
     private View effectOption(String title, String subtitle, final int value,
             final boolean selected, final int abstractTilesLineMode) {
-        final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(11), dp(12), dp(11));
-        row.setMinimumHeight(dp(82));
+        return effectOption(title, subtitle, value, selected, abstractTilesLineMode, null);
+    }
+
+    private View effectOption(String title, String subtitle, final int value,
+            final boolean selected, final int abstractTilesLineMode,
+            View variantControls) {
+        final boolean randomMode = OverlayPrefs.randomUnlockEffectEnabled(this);
+        final boolean randomPoolEditing = randomMode && randomPoolEditMode;
+        final boolean randomEligible = OverlayPrefs.isRandomUnlockEffectEligible(this, value);
+        final boolean randomHighCost = randomEligible
+                && OverlayPrefs.isRandomUnlockEffectExcludedForCost(value);
+        final boolean[] includedInRandom = new boolean[] {
+                randomEligible && OverlayPrefs.randomUnlockEffectSelected(this, value)
+        };
+        final boolean fixedSelected = selected && !randomMode;
+        final boolean blockedByNoColormap =
+                OverlayPrefs.testerNoColormapModeEnabled(this)
+                && !OverlayPrefs.supportsTesterNoColormapMode(value);
+        final LinearLayout card = verticalGroup();
+        final LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(11), dp(12), dp(11));
+        header.setMinimumHeight(dp(82));
         final boolean[] previewOpened = new boolean[] {false};
         final float[] previewDown = new float[] {0f, 0f};
         final Runnable previewRunnable = new Runnable() {
             @Override
             public void run() {
-                if (tabSwipeDragging || tabAnimationRunning) {
+                if (randomPoolEditing || blockedByNoColormap
+                        || tabSwipeDragging || tabAnimationRunning) {
                     return;
                 }
                 previewOpened[0] = true;
-                row.setPressed(false);
-                showEffectPreviewBubble(row, value, title, previewDown[0], previewDown[1]);
+                header.setPressed(false);
+                showEffectPreviewBubble(header, value, title, previewDown[0], previewDown[1]);
             }
         };
-        row.setOnTouchListener(new View.OnTouchListener() {
+        header.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
+                if (blockedByNoColormap) {
+                    return false;
+                }
                 int action = event.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN) {
                     previewOpened[0] = false;
@@ -4384,49 +4956,53 @@ public class ControlActivity extends Activity {
                 return false;
             }
         });
-        row.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (previewOpened[0]) {
-                    previewOpened[0] = false;
-                    return;
-                }
-                if (abstractTilesLineMode >= 0) {
-                    queueAbstractTilesSelection(abstractTilesLineMode == 1);
-                } else {
-                    queueUnlockEffectSelection(value);
-                }
-                showTab(selectedTab);
-            }
-        });
-
-        row.setBackground(optionBackground(selected));
+        card.setBackground(optionBackground(
+                randomPoolEditing ? includedInRandom[0] : fixedSelected));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            row.setElevation(selected ? dp(4) : dp(1));
+            card.setElevation((randomPoolEditing && includedInRandom[0]) || fixedSelected
+                    ? dp(4) : dp(1));
         }
 
-        View marker = new GraceEffectIconView(value, selected);
+        FrameLayout marker = new FrameLayout(this);
+        marker.addView(new GraceEffectIconView(value, fixedSelected),
+                new FrameLayout.LayoutParams(dp(54), dp(54)));
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
         markerParams.setMargins(0, 0, dp(14), 0);
-        row.addView(marker, markerParams);
+        header.addView(marker, markerParams);
 
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
-        row.addView(copy, new LinearLayout.LayoutParams(
+        header.addView(copy, new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f));
+
+        LinearLayout titleLine = new LinearLayout(this);
+        titleLine.setOrientation(LinearLayout.HORIZONTAL);
+        titleLine.setGravity(Gravity.TOP | Gravity.LEFT);
+        copy.addView(titleLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView titleView = new TextView(this);
         titleView.setText(title);
         titleView.setTextColor(COLOR_TEXT);
         titleView.setTextSize(16f);
-        titleView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        titleView.setTypeface(Typeface.DEFAULT,
+                fixedSelected || (randomPoolEditing && includedInRandom[0])
+                        ? Typeface.BOLD : Typeface.NORMAL);
         titleView.setSingleLine(false);
-        copy.addView(titleView);
+        titleLine.addView(titleView, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView subtitleView = new TextView(this);
-        subtitleView.setText(subtitle);
+        String displayedSubtitle = blockedByNoColormap
+                ? subtitle + "\nRequires a lockscreen colormap."
+                : subtitle;
+        if (randomPoolEditing && randomHighCost) {
+            displayedSubtitle += "\nHigh resource use - double confirmation required.";
+        }
+        subtitleView.setText(displayedSubtitle);
         subtitleView.setTextColor(COLOR_MUTED);
         subtitleView.setTextSize(13f);
         subtitleView.setSingleLine(false);
@@ -4437,12 +5013,682 @@ public class ControlActivity extends Activity {
         subtitleParams.setMargins(0, dp(2), 0, 0);
         copy.addView(subtitleView, subtitleParams);
 
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (blockedByNoColormap) {
+                    Toast.makeText(ControlActivity.this,
+                            "This effect requires a lockscreen colormap. Choose another "
+                                    + "wallpaper mode in Setup to enable it.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (previewOpened[0]) {
+                    previewOpened[0] = false;
+                    return;
+                }
+                if (randomPoolEditing) {
+                    if (!randomEligible) {
+                        Toast.makeText(ControlActivity.this,
+                                "This effect is not compatible with the current build or "
+                                        + "wallpaper mode.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (includedInRandom[0]) {
+                        applyRandomPoolSelection(value, false, randomHighCost,
+                                includedInRandom, card, titleView);
+                    } else if (randomHighCost) {
+                        confirmHighCostRandomEffect(title, value, includedInRandom,
+                                card, titleView);
+                    } else {
+                        applyRandomPoolSelection(value, true, false,
+                                includedInRandom, card, titleView);
+                    }
+                    return;
+                }
+                randomPoolEditMode = false;
+                OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, false);
+                if (abstractTilesLineMode >= 0) {
+                    queueAbstractTilesSelection(abstractTilesLineMode == 1);
+                } else {
+                    queueUnlockEffectSelection(value);
+                }
+                showTab(selectedTab);
+            }
+        });
+
+        card.addView(header, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (variantControls != null && !blockedByNoColormap && !randomPoolEditing) {
+            card.addView(variantControls);
+        }
+        if (!blockedByNoColormap
+                && !randomPoolEditing
+                && supportsPerEffectHighFrameRate(value)
+                && hasInternalHighRefreshDisplay()) {
+            card.addView(perEffectHighFrameRateControls(value));
+        }
+        if (blockedByNoColormap || (randomPoolEditing && !randomEligible)) {
+            card.setAlpha(0.42f);
+        } else if (randomPoolEditing && randomHighCost && !includedInRandom[0]) {
+            card.setAlpha(0.68f);
+        }
+
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         rowParams.setMargins(0, dp(4), 0, dp(4));
-        row.setLayoutParams(rowParams);
-        return row;
+        card.setLayoutParams(rowParams);
+        return card;
+    }
+
+    private void applyRandomPoolSelection(int effect, boolean selected, boolean highCost,
+            boolean[] includedInRandom, LinearLayout card, TextView titleView) {
+        includedInRandom[0] = selected;
+        OverlayPrefs.setRandomUnlockEffectSelected(this, effect, selected);
+        card.setBackground(optionBackground(selected));
+        card.setAlpha(!selected && highCost ? 0.68f : 1f);
+        titleView.setTypeface(Typeface.DEFAULT,
+                selected ? Typeface.BOLD : Typeface.NORMAL);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(selected ? dp(4) : dp(1));
+        }
+        updateRandomPoolSummary();
+    }
+
+    private void confirmHighCostRandomEffect(final String title, final int effect,
+            final boolean[] includedInRandom, final LinearLayout card,
+            final TextView titleView) {
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure?")
+                .setMessage(title + " is a resource-heavy effect and may increase loading "
+                        + "time, memory use, and unlock lag when selected by Random.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        new AlertDialog.Builder(ControlActivity.this)
+                                .setTitle("Are you sure sure?")
+                                .setMessage("This uses a lot of resources! Enable " + title
+                                        + " in the Random pool anyway?")
+                                .setNegativeButton("Cancel", null)
+                                .setPositiveButton("Add anyway",
+                                        new DialogInterface.OnClickListener() {
+                                            @Override
+                                            public void onClick(
+                                                    DialogInterface secondDialog,
+                                                    int secondWhich) {
+                                                applyRandomPoolSelection(effect, true, true,
+                                                        includedInRandom, card, titleView);
+                                            }
+                                        })
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private View randomEffectOption() {
+        final boolean selected = OverlayPrefs.randomUnlockEffectEnabled(this);
+        if (!selected) {
+            randomPoolEditMode = false;
+        }
+        int selectedCount = OverlayPrefs.randomUnlockEffectPool(this).size();
+        LinearLayout card = verticalGroup();
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(11), dp(12), dp(11));
+        header.setMinimumHeight(dp(82));
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+                persistPendingUnlockEffect(false);
+                if (!selected) {
+                    OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, true);
+                    randomPoolEditMode = false;
+                } else {
+                    randomPoolEditMode = !randomPoolEditMode;
+                }
+                showTab(selectedTab, false, 0);
+            }
+        });
+
+        card.setBackground(optionBackground(selected));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(selected ? dp(4) : dp(1));
+        }
+
+        View marker = new RandomEffectIconView(selected);
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        markerParams.setMargins(0, 0, dp(14), 0);
+        header.addView(marker, markerParams);
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        header.addView(copy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        LinearLayout titleLine = new LinearLayout(this);
+        titleLine.setOrientation(LinearLayout.HORIZONTAL);
+        titleLine.setGravity(Gravity.TOP | Gravity.LEFT);
+        copy.addView(titleLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView titleView = new TextView(this);
+        titleView.setText("Random");
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        titleLine.addView(titleView, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (selected) {
+            TextView editPool = randomPoolEditButton(randomPoolEditMode ? "DONE" : "EDIT POOL");
+            editPool.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    randomPoolEditMode = !randomPoolEditMode;
+                    showTab(selectedTab, false, 0);
+                }
+            });
+            LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
+            editParams.setMargins(dp(8), 0, 0, 0);
+            titleLine.addView(editPool, editParams);
+        }
+
+        TextView subtitleView = new TextView(this);
+        randomPoolSummaryView = subtitleView;
+        subtitleView.setText(selected
+                ? randomPoolEditMode
+                        ? selectedCount + " selected. Tap whole cards; teal means enabled."
+                        : selectedCount + " effects selected. Tap EDIT POOL to change them."
+                : "Cycle through compatible effects. Heavy renderers require two confirmations.");
+        subtitleView.setTextColor(COLOR_MUTED);
+        subtitleView.setTextSize(13f);
+        subtitleView.setSingleLine(false);
+        subtitleView.setLineSpacing(dp(1), 1.0f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.setMargins(0, dp(2), 0, 0);
+        copy.addView(subtitleView, subtitleParams);
+
+        card.addView(header, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, dp(4), 0, dp(8));
+        card.setLayoutParams(rowParams);
+        return card;
+    }
+
+    private TextView randomPoolEditButton(String text) {
+        TextView button = new TextView(this);
+        button.setText(text);
+        button.setTextSize(10.5f);
+        button.setTextColor(randomPoolEditMode ? Color.WHITE : COLOR_ACCENT_DEEP);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setMinWidth(dp(68));
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setBackground(randomPoolEditMode
+                ? solidDrawable(COLOR_ACCENT_DEEP, dp(15), Color.TRANSPARENT, 0)
+                : solidDrawable(Color.argb(125, 239, 250, 250), dp(15),
+                        Color.argb(145, 33, 158, 166), dp(1)));
+        return button;
+    }
+
+    private void updateRandomPoolSummary() {
+        if (randomPoolSummaryView == null) {
+            return;
+        }
+        int selectedCount = OverlayPrefs.randomUnlockEffectPool(this).size();
+        randomPoolSummaryView.setText(randomPoolEditMode
+                ? selectedCount + " selected. Tap whole cards; teal means enabled."
+                : selectedCount + " effects selected. Tap EDIT POOL to change them.");
+    }
+
+    private View abstractTilesVariantControls(boolean lineEnabled) {
+        final Switch lines = compactEffectVariantSwitch("Lines", lineEnabled);
+        lines.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(
+                        OverlayPrefs.ABSTRACT_TILES_LINE_ENABLED, isChecked).apply();
+                if (pendingUnlockEffect == OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
+                    pendingAbstractTilesLineMode = isChecked ? 1 : 0;
+                }
+                showTab(selectedTab);
+            }
+        });
+        return effectVariantControls(lines);
+    }
+
+    private View colourDropletEffectOption(int current) {
+        boolean gyroEnabled;
+        if (pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
+                || pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP) {
+            gyroEnabled = OverlayPrefs.isColourDropletGyroEffect(pendingUnlockEffect);
+        } else {
+            gyroEnabled = OverlayPrefs.colourDropletGyroEnabled(this);
+        }
+        final int effect = gyroEnabled
+                ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
+        return effectOption(
+                "N5 Colored Droplet",
+                "Colorful liquid droplets rolling across screen.",
+                effect,
+                OverlayPrefs.isColourDropletEffect(current),
+                -1,
+                colourDropletVariantControls(gyroEnabled, effect));
+    }
+
+    private View colourDropletVariantControls(boolean gyroEnabled, final int sourceEffect) {
+        final Switch gyro = compactEffectVariantSwitch("Gyro", gyroEnabled);
+        gyro.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                int targetEffect = isChecked
+                        ? OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP
+                        : OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP;
+                SharedPreferences.Editor editor = prefs.edit()
+                        .putBoolean(OverlayPrefs.N5_COLOUR_DROPLET_GYRO_ENABLED, isChecked)
+                        .putBoolean(
+                                OverlayPrefs.experimentalNativeRefreshPhysicsKey(targetEffect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(
+                                        ControlActivity.this, sourceEffect))
+                        .putInt(
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenthsKey(
+                                        targetEffect),
+                                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenths(
+                                        ControlActivity.this, sourceEffect));
+                int currentEffect = OverlayPrefs.unlockEffect(ControlActivity.this);
+                if (pendingUnlockEffect == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_WIP
+                        || pendingUnlockEffect
+                        == OverlayPrefs.EFFECT_N5_COLOUR_DROPLET_GYRO_WIP) {
+                    pendingUnlockEffect = targetEffect;
+                } else if (OverlayPrefs.isColourDropletEffect(currentEffect)
+                        && pendingUnlockEffect < 0) {
+                    editor.putInt(OverlayPrefs.UNLOCK_EFFECT, targetEffect);
+                }
+                editor.apply();
+                showTab(selectedTab);
+            }
+        });
+        return effectVariantControls(gyro);
+    }
+
+    private View lensFlareEffectOption(int current) {
+        return effectOption(
+                "S4 Lens Flare",
+                "A bright flare blooms under your touch in four selectable light styles.",
+                OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                current == OverlayPrefs.EFFECT_S4_LENS_FLARE,
+                -1,
+                lensFlareVariantControls());
+    }
+
+    private View lensFlareVariantControls() {
+        final String selectedMode = OverlayPrefs.lensFlareMode(this);
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(8));
+
+        TextView label = new TextView(this);
+        label.setText("Flare style");
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        final String[] modes = {
+                OverlayPrefs.LENS_FLARE_MODE_FLARE,
+                OverlayPrefs.LENS_FLARE_MODE_BLUE_RING,
+                OverlayPrefs.LENS_FLARE_MODE_BLOOD,
+                OverlayPrefs.LENS_FLARE_MODE_LIGHTNING
+        };
+        final String[] names = {"Original", "Blue Ring", "Blood", "Lightning"};
+        for (int index = 0; index < modes.length; index++) {
+            final String mode = modes[index];
+            LensFlareModeSwatchView swatch = new LensFlareModeSwatchView(
+                    lensFlareModePreviewDrawable(mode), names[index],
+                    mode.equals(selectedMode));
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putString(OverlayPrefs.LENS_FLARE_MODE, mode).apply();
+                    showTab(selectedTab);
+                }
+            });
+            LinearLayout.LayoutParams swatchParams = new LinearLayout.LayoutParams(
+                    0, dp(40), 1f);
+            if (index > 0) {
+                swatchParams.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, swatchParams);
+        }
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        return controls;
+    }
+
+    private int lensFlareModePreviewDrawable(String mode) {
+        if (OverlayPrefs.LENS_FLARE_MODE_BLUE_RING.equals(mode)) {
+            return R.drawable.keyguard_bluering_light_00040;
+        }
+        if (OverlayPrefs.LENS_FLARE_MODE_BLOOD.equals(mode)) {
+            return R.drawable.keyguard_blood_light_00040;
+        }
+        if (OverlayPrefs.LENS_FLARE_MODE_LIGHTNING.equals(mode)) {
+            return R.drawable.keyguard_lightning_light_00040;
+        }
+        return R.drawable.keyguard_flare_light_00040;
+    }
+
+    /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
+    private View rippleInkEffectOption(int current) {
+        return effectOption(
+                "N3 Ripple Ink",
+                "Ink ripples with a selectable colour palette.",
+                OverlayPrefs.EFFECT_RIPPLE_INK,
+                current == OverlayPrefs.EFFECT_RIPPLE_INK,
+                -1,
+                rippleInkPaletteControls());
+    }
+
+    private View rippleInkPaletteControls() {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(10));
+
+        TextView label = new TextView(this);
+        label.setText("Ink palette");
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        final int selectedSlot = OverlayPrefs.rippleInkPalette(this);
+        for (int index = 0; index < RippleInkPortEngine.paletteCount(); index++) {
+            final int slot = index + 1;
+            RippleInkPaletteSwatchView swatch = new RippleInkPaletteSwatchView(
+                    slot, rippleInkPreviewColor(slot), RIPPLE_INK_PALETTE_NAMES[index],
+                    slot == selectedSlot);
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putInt(OverlayPrefs.RIPPLE_INK_PALETTE, slot).apply();
+                    showTab(selectedTab);
+                }
+            });
+            // Share the available row between all eight slots.  The previous fixed 44dp
+            // swatches plus 8dp gaps made the last two colours look missing on 360dp layouts.
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1.0f);
+            if (index > 0) {
+                params.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, params);
+        }
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return controls;
+    }
+
+    private Switch compactEffectVariantSwitch(String label, boolean checked) {
+        Switch value = new Switch(this);
+        value.setText(label);
+        value.setTextColor(COLOR_ACCENT_DEEP);
+        value.setTextSize(11f);
+        value.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        value.setIncludeFontPadding(false);
+        value.setGravity(Gravity.CENTER_VERTICAL);
+        value.setChecked(checked);
+        tintSwitch(value);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            value.setShowText(false);
+            value.setSplitTrack(false);
+            value.setSwitchMinWidth(dp(34));
+        }
+        value.setScaleX(COMPACT_EFFECT_SWITCH_SCALE);
+        value.setScaleY(COMPACT_EFFECT_SWITCH_SCALE);
+        return value;
+    }
+
+    private View effectVariantControls(Switch value) {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        controls.setPadding(dp(12), 0, dp(8), dp(3));
+        controls.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)));
+        return controls;
+    }
+
+    private boolean supportsPerEffectHighFrameRate(int effect) {
+        return OverlayPrefs.supportsExperimentalNativeRefreshPhysics(effect);
+    }
+
+    /**
+     * Use the panel capabilities rather than its currently selected refresh rate: power saver
+     * may temporarily run a 120/144 Hz phone at 60 Hz, and a Fold's inactive panel may be the
+     * one the user unlocks on next.
+     */
+    private boolean hasInternalHighRefreshDisplay() {
+        DisplayManager displayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+        if (displayManager == null) {
+            return false;
+        }
+        HashSet<Integer> inspectedDisplayIds = new HashSet<Integer>();
+        Display[] displays = displayManager.getDisplays(DISPLAY_CATEGORY_ALL_INCLUDING_DISABLED);
+        if (displays == null || displays.length == 0) {
+            displays = displayManager.getDisplays();
+        }
+        Display defaultDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
+        String builtInName = defaultDisplay == null ? null : defaultDisplay.getName();
+        for (Display display : displays) {
+            boolean builtInPanel = display != null
+                    && (display.getDisplayId() == Display.DEFAULT_DISPLAY
+                    || (builtInName != null && builtInName.equals(display.getName())));
+            if (!builtInPanel
+                    || !inspectedDisplayIds.add(Integer.valueOf(display.getDisplayId()))) {
+                continue;
+            }
+            for (Display.Mode mode : display.getSupportedModes()) {
+                if (mode != null && mode.getRefreshRate() > 60.5f) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private View perEffectHighFrameRateControls(final int effect) {
+        final boolean supportsSpeed =
+                OverlayPrefs.supportsExperimentalNativeRefreshPhysicsSpeed(effect);
+        final LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL);
+        controls.setPadding(dp(12), 0, dp(8), dp(4));
+
+        final Switch highFrameRate = new Switch(this);
+        highFrameRate.setText("HFR");
+        highFrameRate.setContentDescription("High frame rate");
+        highFrameRate.setTextColor(COLOR_ACCENT_DEEP);
+        highFrameRate.setTextSize(11f);
+        highFrameRate.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        highFrameRate.setIncludeFontPadding(false);
+        highFrameRate.setGravity(Gravity.CENTER_VERTICAL);
+        highFrameRate.setPadding(0, 0, 0, 0);
+        highFrameRate.setChecked(OverlayPrefs.experimentalNativeRefreshPhysicsEnabled(this,
+                effect));
+        tintSwitch(highFrameRate);
+        registerHighFrameRateSwitch(effect, highFrameRate);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            highFrameRate.setShowText(false);
+            highFrameRate.setSplitTrack(false);
+            highFrameRate.setSwitchMinWidth(dp(34));
+        }
+        highFrameRate.setScaleX(COMPACT_EFFECT_SWITCH_SCALE);
+        highFrameRate.setScaleY(COMPACT_EFFECT_SWITCH_SCALE);
+
+        if (supportsSpeed) {
+            LinearLayout speed = verticalGroup();
+            speed.setPadding(0, 0, dp(10), 0);
+
+            final TextView speedValue = new TextView(this);
+            speedValue.setTextColor(COLOR_MUTED);
+            speedValue.setTextSize(11f);
+            speedValue.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            speedValue.setIncludeFontPadding(false);
+            int initialTenths = OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenths(this,
+                    effect);
+            speedValue.setText("Speed " + (initialTenths / 10.0f) + "x");
+            speed.addView(speedValue);
+
+            final SeekBar slider = new SeekBar(this);
+            final boolean[] trackingTouch = new boolean[] {false};
+            slider.setMax(10);
+            slider.setProgress(initialTenths - 10);
+            slider.setContentDescription("High frame rate speed, 1.0x to 2.0x");
+            tintSeekBar(slider);
+            slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress,
+                        boolean fromUser) {
+                    int tenths = Math.max(10, Math.min(20, 10 + progress));
+                    speedValue.setText("Speed " + (tenths / 10.0f) + "x");
+                    if (fromUser && !trackingTouch[0]) {
+                        persistExperimentalNativeRefreshSpeed(effect, tenths);
+                    }
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+                    trackingTouch[0] = true;
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                    trackingTouch[0] = false;
+                    int tenths = Math.max(10, Math.min(20, 10 + seekBar.getProgress()));
+                    // Commit only when the user releases the thumb, so an active renderer is
+                    // never recreated repeatedly while the speed is being scrubbed.
+                    persistExperimentalNativeRefreshSpeed(effect, tenths);
+                }
+            });
+            LinearLayout.LayoutParams sliderParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(26));
+            speed.addView(slider, sliderParams);
+            controls.addView(speed, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            highFrameRate.setOnCheckedChangeListener(
+                    new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (syncingHighFrameRateSwitches) {
+                        return;
+                    }
+                    syncHighFrameRateSwitches(effect, highFrameRate, isChecked);
+                    prefs.edit().putBoolean(
+                            OverlayPrefs.experimentalNativeRefreshPhysicsKey(effect),
+                            isChecked).apply();
+                    slider.setEnabled(isChecked);
+                    slider.setAlpha(isChecked ? 1f : 0.42f);
+                    speedValue.setAlpha(isChecked ? 1f : 0.42f);
+                }
+            });
+            boolean enabled = highFrameRate.isChecked();
+            slider.setEnabled(enabled);
+            slider.setAlpha(enabled ? 1f : 0.42f);
+            speedValue.setAlpha(enabled ? 1f : 0.42f);
+        } else {
+            highFrameRate.setOnCheckedChangeListener(
+                    new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (syncingHighFrameRateSwitches) {
+                        return;
+                    }
+                    syncHighFrameRateSwitches(effect, highFrameRate, isChecked);
+                    prefs.edit().putBoolean(OverlayPrefs.experimentalNativeRefreshPhysicsKey(effect),
+                            isChecked).apply();
+                }
+            });
+        }
+
+        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
+        controls.addView(highFrameRate, switchParams);
+        return controls;
+    }
+
+    private void persistExperimentalNativeRefreshSpeed(int effect, int tenths) {
+        prefs.edit().putInt(
+                OverlayPrefs.experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
+                Math.max(10, Math.min(20, tenths))).apply();
+    }
+
+    private void registerHighFrameRateSwitch(int effect, Switch value) {
+        Integer key = Integer.valueOf(effect);
+        ArrayList<Switch> switches = highFrameRateSwitches.get(key);
+        if (switches == null) {
+            switches = new ArrayList<Switch>();
+            highFrameRateSwitches.put(key, switches);
+        }
+        switches.add(value);
+    }
+
+    private void syncHighFrameRateSwitches(int effect, Switch source, boolean checked) {
+        ArrayList<Switch> switches = highFrameRateSwitches.get(Integer.valueOf(effect));
+        if (switches == null || switches.size() < 2) {
+            return;
+        }
+        syncingHighFrameRateSwitches = true;
+        try {
+            for (Switch candidate : switches) {
+                if (candidate != source && candidate.isChecked() != checked) {
+                    candidate.setChecked(checked);
+                }
+            }
+        } finally {
+            syncingHighFrameRateSwitches = false;
+        }
     }
 
     private View seasonalEffectOption(final String title, String subtitle,
@@ -4643,7 +5889,12 @@ public class ControlActivity extends Activity {
         }
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
-        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
+        section.addView(toggle("Three-finger emergency bypass",
+                OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED, true));
+        section.addView(infoText("When enabled, swipe three fingers together inside the touch "
+                + "box to remove L.L.E for the current lock cycle and expose the stock "
+                + "lockscreen. It rearms after the next screen-off/on cycle."));
+        section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
                 ? "Dual touch box wizard"
                 : "Touch box screenshot wizard", new View.OnClickListener() {
             @Override
@@ -4653,8 +5904,8 @@ public class ControlActivity extends Activity {
                 startActivity(intent);
             }
         }));
-        section.addView(outlineButton(OverlayPrefs.foldModeEnabled(this)
-                ? "Reset active panel touch box"
+        section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
+                ? "Reset active profile touch box"
                 : "Reset touch box", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -4709,16 +5960,22 @@ public class ControlActivity extends Activity {
         }));
         if (lockscreenDebugExpanded) {
             section.addView(setupWizardControls());
-            section.addView(toggle("FOLD MODE (dual panels)", OverlayPrefs.FOLD_MODE,
-                    FoldDisplayTarget.isFoldDevice(this)));
-            if (FoldDisplayTarget.isFoldDevice(this) && OverlayPrefs.foldModeEnabled(this)) {
+            section.addView(exclusiveDisplayModeToggle(
+                    "FOLD MODE (Cover + Main)", OverlayPrefs.FOLD_MODE,
+                    FoldDisplayTarget.isFoldDevice(this), OverlayPrefs.TABLET_MODE));
+            section.addView(exclusiveDisplayModeToggle(
+                    "TABLET MODE (portrait + landscape)", OverlayPrefs.TABLET_MODE,
+                    FoldDisplayTarget.isTabletDevice(this)
+                            && !FoldDisplayTarget.isFoldDevice(this),
+                    OverlayPrefs.FOLD_MODE));
+            section.addView(infoText("Display profile: "
+                    + FoldDisplayTarget.cacheProfileForContext(this)
+                    + ". Enabling either mode disables the other."));
+            if (FoldDisplayTarget.usesFoldProfiles(this)) {
                 section.addView(foldPanelRoutingControls());
             }
             int current = pendingUnlockEffect >= 0
                     ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
-            if (effectUsesColormapCache(current)) {
-                section.addView(screenshotServiceDebugControls());
-            }
             section.addView(effectProfilerControls());
             section.addView(customAppBlacklistControls());
             section.addView(batteryDebugControls());
@@ -4727,6 +5984,20 @@ public class ControlActivity extends Activity {
             section.addView(infoText("Routes every L.L.E. effect and lock sound through "
                     + "media volume instead of System sounds. This also bypasses the phone's "
                     + "Screen lock/unlock sound switch."));
+            section.addView(toggle("Conservative unlock handoff (slow devices)",
+                    OverlayPrefs.DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false));
+            section.addView(infoText("Adds extra settling time before opening the PIN screen. "
+                    + "Try this only if Android reports delayed or unrecognized touches, or "
+                    + "unlocking sometimes needs a second swipe. The PIN screen may appear "
+                    + "slightly later."));
+            section.addView(toggle("Legacy quick-panel detection (1.0.5.3)",
+                    OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION, false));
+            TextView legacyQuickPanelWarning = infoText("Compatibility fallback only. "
+                    + "Restores the exact 1.0.5.3 quick-panel event and tree detector. "
+                    + "On recent or localized SystemUI versions it may leave L.L.E. active "
+                    + "over Quick Settings; keep it off unless the default detector fails.");
+            legacyQuickPanelWarning.setTextColor(COLOR_ERROR);
+            section.addView(legacyQuickPanelWarning);
             section.addView(bootSafetyBypassToggle());
             TextView bootSafetyWarning = infoText("⚠ DANGER — THIS REMOVES YOUR RECOVERY "
                     + "WINDOW. Enable only after L.L.E. has proven stable on this exact device. "
@@ -4780,6 +6051,23 @@ public class ControlActivity extends Activity {
                             }
                         })
                         .show();
+            }
+        });
+        return toggle;
+    }
+
+    private Switch exclusiveDisplayModeToggle(String label, final String key,
+            boolean defaultValue, final String otherKey) {
+        Switch toggle = styledToggle(label, prefs.getBoolean(key, defaultValue));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                SharedPreferences.Editor editor = prefs.edit().putBoolean(key, isChecked);
+                if (isChecked) {
+                    editor.putBoolean(otherKey, false);
+                }
+                editor.apply();
+                showTab(selectedTab, false, 0);
             }
         });
         return toggle;
@@ -4981,13 +6269,14 @@ public class ControlActivity extends Activity {
         if (touchBoxSummary == null) {
             return;
         }
-        if (OverlayPrefs.foldModeEnabled(this)) {
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        if (profiles.length > 1) {
             String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
-            touchBoxSummary.setText(touchBoxProfileSummary("Cover",
-                    FoldDisplayTarget.PROFILE_COVER)
-                    + "\n" + touchBoxProfileSummary("Main",
-                    FoldDisplayTarget.PROFILE_MAIN)
-                    + "\nActive panel: " + activeProfile);
+            touchBoxSummary.setText(touchBoxProfileSummary(
+                            FoldDisplayTarget.profileLabel(profiles[0]), profiles[0])
+                    + "\n" + touchBoxProfileSummary(
+                            FoldDisplayTarget.profileLabel(profiles[1]), profiles[1])
+                    + "\nActive profile: " + activeProfile);
             return;
         }
         boolean configured = OverlayPrefs.touchBoxConfigured(this);
@@ -5209,6 +6498,12 @@ public class ControlActivity extends Activity {
                 return Color.rgb(53, 53, 133);
             case OverlayPrefs.EFFECT_S5_POPPING_COLOURS:
                 return Color.rgb(123, 206, 92);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                return Color.rgb(255, 119, 99);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                return Color.rgb(243, 184, 73);
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return Color.rgb(80, 189, 226);
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 return Color.rgb(244, 190, 77);
             case OverlayPrefs.EFFECT_BRILLIANT_CUT:
@@ -5670,6 +6965,155 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private final class RandomEffectIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean selected;
+
+        RandomEffectIconView(boolean selected) {
+            super(ControlActivity.this);
+            this.selected = selected;
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = dp(1.5f);
+            RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            float radius = Math.min(getWidth(), getHeight()) * 0.27f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new LinearGradient(bounds.left, bounds.top,
+                    bounds.right, bounds.bottom,
+                    new int[] {Color.rgb(111, 214, 202), Color.rgb(87, 129, 205),
+                            Color.rgb(119, 76, 177)},
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setShader(null);
+            paint.setColor(Color.WHITE);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2.5f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float left = bounds.left + dp(11);
+            float right = bounds.right - dp(10);
+            float top = bounds.top + dp(15);
+            float bottom = bounds.bottom - dp(15);
+            Path path = new Path();
+            path.moveTo(left, top);
+            path.lineTo(left + dp(7), top);
+            path.cubicTo(bounds.centerX(), top, bounds.centerX(), bottom,
+                    right - dp(4), bottom);
+            canvas.drawPath(path, paint);
+            canvas.drawLine(right - dp(4), bottom, right, bottom - dp(4), paint);
+            canvas.drawLine(right - dp(4), bottom, right, bottom + dp(4), paint);
+            path.reset();
+            path.moveTo(left, bottom);
+            path.lineTo(left + dp(7), bottom);
+            path.cubicTo(bounds.centerX(), bottom, bounds.centerX(), top,
+                    right - dp(4), top);
+            canvas.drawPath(path, paint);
+            canvas.drawLine(right - dp(4), top, right, top - dp(4), paint);
+            canvas.drawLine(right - dp(4), top, right, top + dp(4), paint);
+            paint.setStrokeWidth(dp(selected ? 2f : 1f));
+            paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class RippleInkPaletteSwatchView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int color;
+
+        RippleInkPaletteSwatchView(int slot, int color, String name, boolean selected) {
+            super(ControlActivity.this);
+            this.color = color;
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("N3 Ripple Ink palette " + slot + ", " + name
+                    + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(color);
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(isSelected() ? 3f : 1f));
+            paint.setColor(isSelected() ? Color.WHITE : Color.argb(115, 22, 42, 66));
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (isSelected()) {
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeWidth(dp(2.4f));
+                paint.setColor(Color.WHITE);
+                canvas.drawLine(cx - radius * 0.34f, cy, cx - radius * 0.08f,
+                        cy + radius * 0.28f, paint);
+                canvas.drawLine(cx - radius * 0.08f, cy + radius * 0.28f,
+                        cx + radius * 0.40f, cy - radius * 0.27f, paint);
+                paint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class LensFlareModeSwatchView extends View {
+        private final Paint swatchPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Drawable preview;
+
+        LensFlareModeSwatchView(int drawableResId, String name, boolean selected) {
+            super(ControlActivity.this);
+            preview = getResources().getDrawable(drawableResId);
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("Lens Flare style " + name
+                    + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float centerX = getWidth() * 0.5f;
+            float centerY = getHeight() * 0.5f;
+            swatchPaint.setStyle(Paint.Style.FILL);
+            swatchPaint.setColor(isSelected() ? Color.rgb(19, 91, 108) : Color.TRANSPARENT);
+            canvas.drawCircle(centerX, centerY, radius, swatchPaint);
+            if (preview != null) {
+                canvas.save();
+                Path clip = new Path();
+                clip.addCircle(centerX, centerY, radius, Path.Direction.CW);
+                canvas.clipPath(clip);
+                preview.setBounds(Math.round(centerX - radius), Math.round(centerY - radius),
+                        Math.round(centerX + radius), Math.round(centerY + radius));
+                preview.draw(canvas);
+                canvas.restore();
+            }
+            swatchPaint.setStyle(Paint.Style.STROKE);
+            swatchPaint.setStrokeWidth(dp(isSelected() ? 3f : 1.5f));
+            swatchPaint.setColor(isSelected()
+                    ? Color.WHITE : Color.argb(180, 22, 42, 66));
+            canvas.drawCircle(centerX, centerY, radius, swatchPaint);
+            if (isSelected()) {
+                swatchPaint.setStrokeCap(Paint.Cap.ROUND);
+                swatchPaint.setStrokeWidth(dp(2.4f));
+                swatchPaint.setColor(Color.WHITE);
+                canvas.drawLine(centerX - radius * 0.34f, centerY,
+                        centerX - radius * 0.08f, centerY + radius * 0.28f, swatchPaint);
+                canvas.drawLine(centerX - radius * 0.08f, centerY + radius * 0.28f,
+                        centerX + radius * 0.40f, centerY - radius * 0.27f, swatchPaint);
+                swatchPaint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            swatchPaint.setStyle(Paint.Style.FILL);
+        }
+    }
+
     private void drawEffectMotif(Canvas canvas, Paint paint, int effect, RectF rect,
             int color, float alpha) {
         int resolvedAlpha = Math.max(0, Math.min(255, Math.round(255f * alpha)));
@@ -5706,6 +7150,28 @@ public class ControlActivity extends Activity {
                 canvas.drawCircle(cx - unit * 0.18f, cy + unit * 0.12f, unit * 0.19f, paint);
                 canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.15f, unit * 0.16f, paint);
                 canvas.drawCircle(cx + unit * 0.19f, cy + unit * 0.23f, unit * 0.10f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx - unit * 0.20f, cy + unit * 0.13f, unit * 0.14f, paint);
+                canvas.drawCircle(cx + unit * 0.14f, cy - unit * 0.16f, unit * 0.10f, paint);
+                canvas.drawCircle(cx + unit * 0.22f, cy + unit * 0.22f, unit * 0.07f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.055f));
+                canvas.drawRect(cx - unit * 0.33f, cy - unit * 0.20f,
+                        cx - unit * 0.04f, cy + unit * 0.13f, paint);
+                canvas.drawRect(cx + unit * 0.05f, cy - unit * 0.12f,
+                        cx + unit * 0.31f, cy + unit * 0.19f, paint);
+                break;
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(dp(1), unit * 0.05f));
+                canvas.drawCircle(cx - unit * 0.20f, cy + unit * 0.14f, unit * 0.13f, paint);
+                canvas.drawCircle(cx + unit * 0.17f, cy - unit * 0.13f, unit * 0.11f, paint);
+                canvas.drawLine(cx - unit * 0.35f, cy + unit * 0.34f,
+                        cx + unit * 0.35f, cy + unit * 0.34f, paint);
                 break;
             case OverlayPrefs.EFFECT_BRILLIANT_RING:
                 paint.setStyle(Paint.Style.STROKE);

@@ -44,7 +44,8 @@ final class BrilliantRingEffectView extends GLSurfaceView
     private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
     private static final float DRAG_SOUND_UNLOCK_FADE_STEP = 0.059f;
 
-    private final RingRenderer ringRenderer = new RingRenderer();
+    private final boolean adaptiveRefresh;
+    private final RingRenderer ringRenderer;
     private final FrameLayout windowHost;
     private final Object bitmapLock = new Object();
     private final Object readinessLock = new Object();
@@ -95,7 +96,17 @@ final class BrilliantRingEffectView extends GLSurfaceView
     };
 
     BrilliantRingEffectView(Context context) {
+        this(context, false);
+    }
+
+    /**
+     * Creates Brilliant Ring with the stock 60 Hz simulation, or an opt-in
+     * display-vsync simulation whose logical time remains measured in stock ticks.
+     */
+    BrilliantRingEffectView(Context context, boolean adaptiveRefresh) {
         super(context);
+        this.adaptiveRefresh = adaptiveRefresh;
+        ringRenderer = new RingRenderer(adaptiveRefresh);
 
         setEGLContextClientVersion(2);
         setEGLConfigChooser(8, 8, 8, 8, 0, 0);
@@ -232,7 +243,11 @@ final class BrilliantRingEffectView extends GLSurfaceView
                 public void run() {
                     ringRenderer.pipeline.touch(MotionEvent.ACTION_UP, local[0], local[1]);
                     if (completed) {
-                        ringRenderer.pipeline.unlock();
+                        if (adaptiveRefresh) {
+                            ringRenderer.pipeline.unlockAdaptive();
+                        } else {
+                            ringRenderer.pipeline.unlock();
+                        }
                     }
                     ringRenderer.idle = false;
                 }
@@ -777,6 +792,9 @@ final class BrilliantRingEffectView extends GLSurfaceView
 
     private final class RingRenderer implements GLSurfaceView.Renderer {
         final BrilliantRingGlesPipeline pipeline = new BrilliantRingGlesPipeline();
+        private final boolean adaptiveRefresh;
+        private final BrilliantRingGlesPipeline.AdaptiveSimulationClock
+                adaptiveSimulationClock = new BrilliantRingGlesPipeline.AdaptiveSimulationClock();
         volatile Bitmap activeBackground;
         volatile boolean initializationFailed;
         volatile boolean idle = true;
@@ -791,6 +809,10 @@ final class BrilliantRingEffectView extends GLSurfaceView
         private int height = 1;
         private long lastDrawNs;
         private long simulationAccumulatorNs;
+
+        RingRenderer(boolean adaptiveRefresh) {
+            this.adaptiveRefresh = adaptiveRefresh;
+        }
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -860,7 +882,9 @@ final class BrilliantRingEffectView extends GLSurfaceView
                 return;
             }
             try {
-                boolean needsMoreFrames = pipeline.renderFrame(consumeSimulationTick());
+                boolean needsMoreFrames = adaptiveRefresh
+                        ? pipeline.renderFrame(adaptiveSimulationClock.advance(System.nanoTime()))
+                        : pipeline.renderFrame(consumeSimulationTick());
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent GLES frame");
                 idle = !needsMoreFrames;
@@ -906,6 +930,7 @@ final class BrilliantRingEffectView extends GLSurfaceView
         private void resetSimulationClock() {
             lastDrawNs = 0L;
             simulationAccumulatorNs = 0L;
+            adaptiveSimulationClock.reset();
         }
 
         void installBackground(Bitmap bitmap, long serial, String sourceName) {

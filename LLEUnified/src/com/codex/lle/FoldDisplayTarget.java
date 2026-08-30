@@ -2,6 +2,7 @@ package com.codex.lle;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.hardware.display.DisplayManager;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -25,6 +26,8 @@ final class FoldDisplayTarget {
     static final String PROFILE_SINGLE = "single";
     static final String PROFILE_COVER = "cover";
     static final String PROFILE_MAIN = "main";
+    static final String PROFILE_TABLET_PORTRAIT = "tablet_portrait";
+    static final String PROFILE_TABLET_LANDSCAPE = "tablet_landscape";
     private static volatile int cachedFoldDevice = -1;
 
     final Display display;
@@ -100,7 +103,12 @@ final class FoldDisplayTarget {
         }
         boolean multiPanel = (internalCount > 1 || hingeFold)
                 && OverlayPrefs.foldModeEnabled(service);
-        String profile = multiPanel ? profileForSize(size[0], size[1]) : PROFILE_SINGLE;
+        boolean tabletProfiles = !multiPanel && OverlayPrefs.tabletModeEnabled(service);
+        String profile = multiPanel
+                ? profileForSize(size[0], size[1])
+                : tabletProfiles
+                        ? tabletProfileForSize(size[0], size[1])
+                        : PROFILE_SINGLE;
         return new FoldDisplayTarget(best, size[0], size[1], profile, multiPanel);
     }
 
@@ -125,18 +133,76 @@ final class FoldDisplayTarget {
     }
 
     static String normalizeProfile(String profile) {
-        if (PROFILE_COVER.equals(profile) || PROFILE_MAIN.equals(profile)) {
+        if (PROFILE_COVER.equals(profile) || PROFILE_MAIN.equals(profile)
+                || PROFILE_TABLET_PORTRAIT.equals(profile)
+                || PROFILE_TABLET_LANDSCAPE.equals(profile)) {
             return profile;
         }
         return PROFILE_SINGLE;
     }
 
     static String cacheProfileForContext(Context context) {
-        if (context == null || !OverlayPrefs.foldModeEnabled(context)) {
+        if (context == null) {
             return PROFILE_SINGLE;
         }
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        return profileForSize(metrics.widthPixels, metrics.heightPixels);
+        if (isFoldDevice(context) && OverlayPrefs.foldModeEnabled(context)) {
+            return profileForSize(metrics.widthPixels, metrics.heightPixels);
+        }
+        if (OverlayPrefs.tabletModeEnabled(context)) {
+            return tabletProfileForSize(metrics.widthPixels, metrics.heightPixels);
+        }
+        return PROFILE_SINGLE;
+    }
+
+    static String touchBoxProfileForContext(Context context) {
+        return cacheProfileForContext(context);
+    }
+
+    static boolean usesFoldProfiles(Context context) {
+        return context != null && isFoldDevice(context) && OverlayPrefs.foldModeEnabled(context);
+    }
+
+    static boolean usesTabletProfiles(Context context) {
+        return context != null && !usesFoldProfiles(context)
+                && OverlayPrefs.tabletModeEnabled(context);
+    }
+
+    static String[] backgroundProfiles(Context context) {
+        if (usesFoldProfiles(context)) {
+            return new String[] {PROFILE_COVER, PROFILE_MAIN};
+        }
+        if (usesTabletProfiles(context)) {
+            return new String[] {PROFILE_TABLET_PORTRAIT, PROFILE_TABLET_LANDSCAPE};
+        }
+        return new String[] {PROFILE_SINGLE};
+    }
+
+    static String modeLabel(Context context) {
+        if (usesFoldProfiles(context)) {
+            return "fold";
+        }
+        if (usesTabletProfiles(context)) {
+            return "tablet";
+        }
+        return "single";
+    }
+
+    static String profileLabel(String requestedProfile) {
+        String profile = normalizeProfile(requestedProfile);
+        if (PROFILE_COVER.equals(profile)) {
+            return "Cover";
+        }
+        if (PROFILE_MAIN.equals(profile)) {
+            return "Main";
+        }
+        if (PROFILE_TABLET_PORTRAIT.equals(profile)) {
+            return "Portrait";
+        }
+        if (PROFILE_TABLET_LANDSCAPE.equals(profile)) {
+            return "Landscape";
+        }
+        return "Display";
     }
 
     static int[] displaySizeForProfile(Context context, String requestedProfile) {
@@ -147,6 +213,31 @@ final class FoldDisplayTarget {
         int fallbackHeight = Math.max(1, active.heightPixels);
         int[] fallback = new int[] {Math.min(fallbackWidth, fallbackHeight),
                 Math.max(fallbackWidth, fallbackHeight)};
+        int tabletPhysicalWidth = fallbackWidth;
+        int tabletPhysicalHeight = fallbackHeight;
+        if (context != null && (PROFILE_TABLET_PORTRAIT.equals(profile)
+                || PROFILE_TABLET_LANDSCAPE.equals(profile))) {
+            try {
+                DisplayManager manager = (DisplayManager) context.getSystemService(
+                        Context.DISPLAY_SERVICE);
+                Display display = manager == null
+                        ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+                int[] physical = realSize(display);
+                if (physical[0] > 1 && physical[1] > 1) {
+                    tabletPhysicalWidth = physical[0];
+                    tabletPhysicalHeight = physical[1];
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        if (PROFILE_TABLET_PORTRAIT.equals(profile)) {
+            return new int[] {Math.min(tabletPhysicalWidth, tabletPhysicalHeight),
+                    Math.max(tabletPhysicalWidth, tabletPhysicalHeight)};
+        }
+        if (PROFILE_TABLET_LANDSCAPE.equals(profile)) {
+            return new int[] {Math.max(tabletPhysicalWidth, tabletPhysicalHeight),
+                    Math.min(tabletPhysicalWidth, tabletPhysicalHeight)};
+        }
         if (context == null || PROFILE_SINGLE.equals(profile)) {
             return fallback;
         }
@@ -220,6 +311,16 @@ final class FoldDisplayTarget {
         }
         cachedFoldDevice = detected ? 1 : 0;
         return detected;
+    }
+
+    static boolean isTabletDevice(Context context) {
+        if (context == null) {
+            return false;
+        }
+        Configuration configuration = context.getResources().getConfiguration();
+        int smallestWidthDp = configuration.smallestScreenWidthDp;
+        return smallestWidthDp != Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED
+                && smallestWidthDp >= 600;
     }
 
     private static int focusedDisplayId(AccessibilityService service) {
@@ -306,5 +407,9 @@ final class FoldDisplayTarget {
     static String profileForSize(int width, int height) {
         float ratio = Math.max(width, height) / (float) Math.max(1, Math.min(width, height));
         return ratio >= 1.55f ? PROFILE_COVER : PROFILE_MAIN;
+    }
+
+    static String tabletProfileForSize(int width, int height) {
+        return width > height ? PROFILE_TABLET_LANDSCAPE : PROFILE_TABLET_PORTRAIT;
     }
 }

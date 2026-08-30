@@ -69,6 +69,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsRenderer;
+    /* Presentation cadence for the display-refresh opt-in. */
+    private final boolean highRefreshPresentation;
     private final SoundPool soundPool;
     private final AudioManager audioManager;
     private final int tapSound;
@@ -110,12 +112,22 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
                 return;
             }
             requestRender();
-            postDelayed(this, FRAME_INTERVAL_MS);
+            if (highRefreshPresentation) {
+                postOnAnimation(this);
+            } else {
+                // Preserve the measured stock request cadence exactly.
+                postDelayed(this, FRAME_INTERVAL_MS);
+            }
         }
     };
 
     public GeometricMosaicArm64EffectView(Context context) {
+        this(context, false);
+    }
+
+    public GeometricMosaicArm64EffectView(Context context, boolean highRefreshPresentation) {
         super(context);
+        this.highRefreshPresentation = highRefreshPresentation;
         ownsRenderer = OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -618,7 +630,11 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         if (!animationScheduled) {
             animationScheduled = true;
             removeCallbacks(animationRunnable);
-            post(animationRunnable);
+            if (highRefreshPresentation) {
+                postOnAnimation(animationRunnable);
+            } else {
+                post(animationRunnable);
+            }
         }
     }
 
@@ -887,6 +903,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         private float lastX = 0.5f;
         private float lastY = 0.5f;
         private long previousFrameNs = Long.MIN_VALUE;
+        private final VisualTimeline visualTimeline = new VisualTimeline();
+        private final UnlockFramePacing unlockFramePacing = new UnlockFramePacing();
 
         MosaicRenderer() {
             float[] quad = {
@@ -911,6 +929,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             initializationFailed = false;
             backgroundReady = false;
             previousFrameNs = Long.MIN_VALUE;
+            visualTimeline.reset();
+            unlockFramePacing.reset();
             exactPipeline.abandon();
             clearTransparent();
             setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
@@ -969,11 +989,16 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             long now = System.nanoTime();
             previousFrameNs = now;
             try {
-                boolean needsMoreFrames = exactPipeline.render(now);
+                boolean needsMoreFrames = exactPipeline.render(visualTimeline.sample(now));
+                unlockFramePacing.recordFrame(now, System.nanoTime());
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent frame");
                 idle = !needsMoreFrames;
                 if (idle) {
+                    String unlockMetrics = unlockFramePacing.finishIfActive();
+                    if (unlockMetrics != null) {
+                        Log.i(TAG, unlockMetrics);
+                    }
                     requestStopAnimation(animationGeneration);
                 }
             } catch (RuntimeException error) {
@@ -989,7 +1014,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         void touch(int action, float pixelX, float pixelY) {
             float x = clamp(pixelX / Math.max(1.0f, width), 0.0f, 1.0f);
             float y = clamp(pixelY / Math.max(1.0f, height), 0.0f, 1.0f);
-            long now = System.nanoTime();
+            long now = visualTimeline.sample(System.nanoTime());
             if (action == ACTION_DOWN) {
                 held = true;
                 lastX = x;
@@ -999,13 +1024,17 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             } else if (action == ACTION_MOVE && held) {
                 float dx = x - lastX;
                 float dy = y - lastY;
+                // Keep the terminal coordinate even when this MOVE is correctly filtered from
+                // the native trail by its 0.0085 normalized minimum distance.
+                lastX = x;
+                lastY = y;
                 if (dx * dx + dy * dy >= TOUCH_SAMPLE_DISTANCE * TOUCH_SAMPLE_DISTANCE) {
-                    lastX = x;
-                    lastY = y;
                     exactPipeline.addTouch(x, y, now);
                 }
             } else if (action == ACTION_UP || action == ACTION_CANCEL) {
                 held = false;
+                lastX = x;
+                lastY = y;
                 exactPipeline.endTouch();
             }
             idle = false;
@@ -1020,14 +1049,17 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         void unlock() {
             held = false;
             exactPipeline.endTouch();
-            exactPipeline.unlock(System.nanoTime());
+            unlockFramePacing.begin();
+            if (!exactPipeline.unlockAt(lastX, lastY, visualTimeline.sample(System.nanoTime()))) {
+                Log.w(TAG, "Geometric Mosaic terminal unlock could not be armed");
+            }
             idle = false;
         }
 
         void affordance(float pixelX, float pixelY) {
             float x = clamp(pixelX / Math.max(1.0f, width), 0.0f, 1.0f);
             float y = clamp(pixelY / Math.max(1.0f, height), 0.0f, 1.0f);
-            exactPipeline.addAffordance(x, y, System.nanoTime());
+            exactPipeline.addAffordance(x, y, visualTimeline.sample(System.nanoTime()));
             idle = false;
         }
 
@@ -1039,6 +1071,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             unlockStart = -100.0f;
             randomSeed = 1.0f + (System.nanoTime() & 0xffffL) / 65535.0f * 97.0f;
             previousFrameNs = Long.MIN_VALUE;
+            visualTimeline.reset();
+            unlockFramePacing.reset();
             exactPipeline.reset();
             idle = true;
             clearTransparent();
@@ -1129,6 +1163,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
             initializedWidth = 0;
             initializedHeight = 0;
             previousFrameNs = Long.MIN_VALUE;
+            visualTimeline.reset();
+            unlockFramePacing.reset();
             markReadinessDetached(finalDestroy ? "destroyed" : "context released");
             if (finalDestroy) {
                 releaseBitmapReferences();
@@ -1417,6 +1453,92 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
 
         private float mix(float from, float to, float amount) {
             return from + (to - from) * amount;
+        }
+    }
+
+    /**
+     * Monotonic scene clock. It deliberately has no Handler, gesture, sound or lifecycle
+     * dependency: it only protects timestamps passed to the GLES pipeline from replay.
+     */
+    static final class VisualTimeline {
+        private long previousWallNanos = Long.MIN_VALUE;
+        private long visualNanos;
+
+        long sample(long wallNanos) {
+            if (previousWallNanos == Long.MIN_VALUE) {
+                previousWallNanos = wallNanos;
+                visualNanos = wallNanos;
+                return visualNanos;
+            }
+            if (wallNanos <= previousWallNanos) {
+                return visualNanos;
+            }
+            previousWallNanos = wallNanos;
+            visualNanos = wallNanos;
+            return visualNanos;
+        }
+
+        void reset() {
+            previousWallNanos = Long.MIN_VALUE;
+            visualNanos = 0L;
+        }
+    }
+
+    /**
+     * Unlock-only render pacing evidence. Frame gaps include compositor/GPU scheduling delay;
+     * draw duration captures CPU-side GLES submission time. Neither value feeds animation state.
+     */
+    static final class UnlockFramePacing {
+        private static final long JANK_THRESHOLD_NANOS = 33_333_334L;
+        private boolean active;
+        private long previousFrameNanos;
+        private long maxFrameGapNanos;
+        private long maxDrawNanos;
+        private int frameCount;
+        private int jankCount;
+
+        void begin() {
+            active = true;
+            previousFrameNanos = Long.MIN_VALUE;
+            maxFrameGapNanos = 0L;
+            maxDrawNanos = 0L;
+            frameCount = 0;
+            jankCount = 0;
+        }
+
+        void recordFrame(long frameStartedNanos, long drawFinishedNanos) {
+            if (!active) {
+                return;
+            }
+            long drawNanos = Math.max(0L, drawFinishedNanos - frameStartedNanos);
+            maxDrawNanos = Math.max(maxDrawNanos, drawNanos);
+            boolean jank = drawNanos > JANK_THRESHOLD_NANOS;
+            if (previousFrameNanos != Long.MIN_VALUE) {
+                long frameGapNanos = Math.max(0L, frameStartedNanos - previousFrameNanos);
+                maxFrameGapNanos = Math.max(maxFrameGapNanos, frameGapNanos);
+                jank |= frameGapNanos > JANK_THRESHOLD_NANOS;
+            }
+            previousFrameNanos = frameStartedNanos;
+            ++frameCount;
+            if (jank) {
+                ++jankCount;
+            }
+        }
+
+        String finishIfActive() {
+            if (!active) {
+                return null;
+            }
+            active = false;
+            return "geometric unlock render metrics frames=" + frameCount
+                    + " jank=" + jankCount
+                    + " maxGapMs=" + (maxFrameGapNanos / 1_000_000L)
+                    + " maxDrawMs=" + (maxDrawNanos / 1_000_000L);
+        }
+
+        void reset() {
+            active = false;
+            previousFrameNanos = Long.MIN_VALUE;
         }
     }
 

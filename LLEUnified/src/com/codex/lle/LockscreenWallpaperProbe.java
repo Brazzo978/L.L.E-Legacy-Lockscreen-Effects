@@ -78,10 +78,7 @@ final class LockscreenWallpaperProbe {
     static Result read(Context context) throws IOException {
         int width = Math.max(1, context.getResources().getDisplayMetrics().widthPixels);
         int height = Math.max(1, context.getResources().getDisplayMetrics().heightPixels);
-        String profile = FoldDisplayTarget.isFoldDevice(context)
-                && OverlayPrefs.foldModeEnabled(context)
-                ? FoldDisplayTarget.cacheProfileForContext(context)
-                : FoldDisplayTarget.PROFILE_SINGLE;
+        String profile = FoldDisplayTarget.cacheProfileForContext(context);
         return read(context, profile, width, height);
     }
 

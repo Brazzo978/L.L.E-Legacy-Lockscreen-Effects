@@ -67,6 +67,8 @@ struct LleSparkSim {
     float last_emission_x;
     float last_emission_y;
     uint32_t frames_since_emission;
+    float adaptive_frames_since_emission;
+    float adaptive_stochastic_credit;
     bool touching;
     uint32_t rng_state[LLE_SPARK_VENDOR_RNG_DEGREE];
     uint8_t rng_front;
@@ -452,6 +454,43 @@ static void apply_edge_bounce(
     }
 }
 
+static void apply_edge_bounce_adaptive(
+        const LleSparkSim *sim,
+        LleSparkParticle *particle,
+        float frame_delta) {
+    const float candidate_x = particle->x + particle->velocity_x *
+            LLE_SPARK_FIXED_DT * frame_delta;
+
+    if (particle->edge_direction == LLE_SPARK_EDGE_LEFT) {
+        if (candidate_x <= 0.0f) {
+            particle->acceleration_x = 0.0f;
+            if (particle->boundary_count < 1.0f) {
+                particle->velocity_x *= 0.35f;
+            }
+            particle->velocity_x = -particle->velocity_x;
+            particle->boundary_count += 1.0f;
+        }
+        if (particle->boundary_count > 0.0f &&
+                candidate_x >= particle->edge_band_ratio * sim->width) {
+            particle->velocity_x = -particle->velocity_x;
+        }
+    } else if (particle->edge_direction == LLE_SPARK_EDGE_RIGHT) {
+        if (candidate_x >= sim->width) {
+            particle->acceleration_x = 0.0f;
+            if (particle->boundary_count < 1.0f) {
+                particle->velocity_x *= 0.35f;
+            }
+            particle->velocity_x = -particle->velocity_x;
+            particle->boundary_count += 1.0f;
+        }
+        if (particle->boundary_count > 0.0f &&
+                candidate_x <=
+                        (1.0f - particle->edge_band_ratio) * sim->width) {
+            particle->velocity_x = -particle->velocity_x;
+        }
+    }
+}
+
 static void move_particle(
         LleSparkSim *sim,
         LleSparkParticle *particle) {
@@ -525,6 +564,101 @@ static void move_particle(
     particle->y += LLE_SPARK_FIXED_DT * particle->velocity_y;
 }
 
+static void move_particle_adaptive(
+        LleSparkSim *sim,
+        LleSparkParticle *particle,
+        float frame_delta) {
+    float acceleration_scale = 1.0f;
+
+    if (!particle->active || frame_delta <= 0.0f) {
+        return;
+    }
+
+    particle->lifetime += frame_delta;
+    if (particle->lifetime > particle->max_lifetime ||
+            (particle->fast_hide && particle->alpha < 0.05f)) {
+        deactivate_particle(particle);
+        return;
+    }
+
+    if (particle->lifetime <= particle->size_control_seconds *
+            (float)LLE_SPARK_TICK_HZ) {
+        particle->size += particle->size_increment * frame_delta;
+    }
+
+    if (particle->animation_type == LLE_SPARK_ANIMATION_AFFORDANCE) {
+        if (particle->lifetime >= particle->max_lifetime * 0.15f) {
+            particle->y += LLE_SPARK_FIXED_DT * frame_delta *
+                    particle->affordance_y_factor * particle->initial_velocity_y;
+            if (particle->lifetime < particle->max_lifetime * 0.9f) {
+                if (particle->boundary_count < 1.0f) {
+                    particle->affordance_y_factor *= powf(1.05f, frame_delta);
+                } else {
+                    particle->affordance_y_factor = 2.0f;
+                }
+            } else {
+                particle->affordance_y_factor *= powf(0.95f, frame_delta);
+            }
+        }
+    } else {
+        acceleration_scale = 1.0f + particle->size * 0.012f;
+    }
+
+    if (particle->twinkle) {
+        particle->twinkle_clock += 0.1f * frame_delta;
+    }
+
+    if (particle->lifetime >= particle->alpha_start_tick) {
+        if (particle->animation_type == LLE_SPARK_ANIMATION_AFFORDANCE) {
+            particle->alpha *= powf(0.945f, frame_delta);
+        } else if (!particle->fast_hide) {
+            particle->alpha *= powf(0.985f, frame_delta);
+        }
+    }
+
+    apply_edge_bounce_adaptive(sim, particle, frame_delta);
+
+    particle->velocity_x += LLE_SPARK_FIXED_DT * frame_delta *
+            acceleration_scale * particle->acceleration_x;
+    particle->velocity_y += LLE_SPARK_FIXED_DT * frame_delta *
+            acceleration_scale * particle->acceleration_y;
+    particle->x += LLE_SPARK_FIXED_DT * frame_delta * particle->velocity_x;
+    particle->y += LLE_SPARK_FIXED_DT * frame_delta * particle->velocity_y;
+}
+
+/*
+ * Keep stochastic decisions on the original 60 Hz logical boundary.  The
+ * adaptive path may render twice for one stock tick at 120 Hz, but must not
+ * consume two random values or make fast-hide fade twice as quickly.
+ */
+static void apply_adaptive_stochastic_events(LleSparkSim *sim) {
+    size_t order_index;
+    for (order_index = 0;
+            order_index < sim->active_order_count;
+            ++order_index) {
+        LleSparkGroup *group = &sim->groups[sim->active_order[order_index]];
+        size_t particle_index;
+        for (particle_index = 0;
+                particle_index < LLE_SPARK_PARTICLES_PER_GROUP;
+                ++particle_index) {
+            LleSparkParticle *particle = &group->particles[particle_index];
+            if (!particle->active) {
+                continue;
+            }
+            if (particle->twinkle &&
+                    particle->twinkle_clock >= particle->next_twinkle) {
+                particle->alpha = rng_range(sim, 0.0f, 0.7f);
+                particle->twinkle_clock = 0.0f;
+                particle->next_twinkle = rng_range(sim, 0.3f, 0.7f);
+            }
+            if (particle->fast_hide &&
+                    particle->lifetime >= particle->alpha_start_tick) {
+                particle->alpha *= rng_range(sim, 0.75f, 0.90f);
+            }
+        }
+    }
+}
+
 static void compact_active_order(LleSparkSim *sim) {
     size_t read_index;
     size_t write_index = 0;
@@ -588,7 +722,46 @@ bool lle_spark_sim_touch_begin(
     sim->last_emission_x = x;
     sim->last_emission_y = y;
     sim->frames_since_emission = 0;
+    sim->adaptive_frames_since_emission = 0.0f;
     emitted = emit_group(sim, LLE_SPARK_BURST_PRESS, x, y);
+    return emitted;
+}
+
+bool lle_spark_sim_touch_move_adaptive(
+        LleSparkSim *sim,
+        float x,
+        float y) {
+    float delta_x;
+    float delta_y;
+    float distance;
+    float threshold;
+    size_t active;
+    bool emitted;
+
+    if (sim == NULL || !sim->touching) {
+        return false;
+    }
+
+    active = sim->active_order_count;
+    threshold = 120.0f;
+    if (active > 13u) {
+        threshold += (float)(active - 13u) * 6.0f;
+    }
+    threshold *= sim->scale;
+
+    delta_x = sim->last_emission_x - x;
+    delta_y = sim->last_emission_y - y;
+    distance = sqrtf(delta_x * delta_x + delta_y * delta_y);
+    if (distance <= threshold ||
+            (active > 13u && sim->adaptive_frames_since_emission < 4.0f)) {
+        return false;
+    }
+
+    emitted = emit_group(sim, LLE_SPARK_BURST_PRESS, x, y);
+    sim->last_emission_x = x;
+    sim->last_emission_y = y;
+    sim->frames_since_emission = 0;
+    sim->adaptive_frames_since_emission = 0.0f;
     return emitted;
 }
 
@@ -686,6 +859,45 @@ void lle_spark_sim_tick(LleSparkSim *sim) {
         group->active = any_active;
     }
     compact_active_order(sim);
+}
+
+void lle_spark_sim_advance_adaptive(LleSparkSim *sim, float frame_delta) {
+    size_t order_index;
+    float remaining;
+    if (sim == NULL || !isfinite(frame_delta) || frame_delta <= 0.0f) {
+        return;
+    }
+    if (sim->touching) {
+        sim->adaptive_frames_since_emission += frame_delta;
+    }
+    remaining = frame_delta;
+    while (remaining > 0.00001f) {
+        const float until_event = 1.0f - sim->adaptive_stochastic_credit;
+        const float segment = fminf(remaining, until_event);
+        for (order_index = 0;
+                order_index < sim->active_order_count;
+                ++order_index) {
+            const uint8_t group_index = sim->active_order[order_index];
+            LleSparkGroup *group = &sim->groups[group_index];
+            size_t particle_index;
+            bool any_active = false;
+            for (particle_index = 0;
+                    particle_index < LLE_SPARK_PARTICLES_PER_GROUP;
+                    ++particle_index) {
+                move_particle_adaptive(
+                        sim, &group->particles[particle_index], segment);
+                any_active |= group->particles[particle_index].active;
+            }
+            group->active = any_active;
+        }
+        compact_active_order(sim);
+        remaining -= segment;
+        sim->adaptive_stochastic_credit += segment;
+        if (sim->adaptive_stochastic_credit >= 0.99999f) {
+            apply_adaptive_stochastic_events(sim);
+            sim->adaptive_stochastic_credit = 0.0f;
+        }
+    }
 }
 
 void lle_spark_sim_unlock(LleSparkSim *sim) {
@@ -861,6 +1073,7 @@ bool lle_spark_sim_get_particle(
 
 size_t lle_spark_sim_export_draw_data(
         const LleSparkSim *sim,
+        float presentation_fraction,
         float *positions_xy,
         float *initial_positions_xy,
         float *sizes,
@@ -876,6 +1089,11 @@ size_t lle_spark_sim_export_draw_data(
     if (sim == NULL) {
         return 0;
     }
+    const float presentation_step =
+            isfinite(presentation_fraction)
+                    ? fmaxf(0.0f, fminf(1.0f, presentation_fraction)) *
+                            LLE_SPARK_FIXED_DT
+                    : 0.0f;
     required_points =
             sim->active_order_count * LLE_SPARK_PARTICLES_PER_GROUP;
 
@@ -912,8 +1130,10 @@ size_t lle_spark_sim_export_draw_data(
                 ++particle_index, ++output_index) {
             const LleSparkParticle *particle =
                     &group->particles[particle_index];
-            positions_xy[output_index * 2u] = particle->x;
-            positions_xy[output_index * 2u + 1u] = particle->y;
+            positions_xy[output_index * 2u] =
+                    particle->x + particle->velocity_x * presentation_step;
+            positions_xy[output_index * 2u + 1u] =
+                    particle->y + particle->velocity_y * presentation_step;
             initial_positions_xy[output_index * 2u] =
                     particle->initial_x;
             initial_positions_xy[output_index * 2u + 1u] =

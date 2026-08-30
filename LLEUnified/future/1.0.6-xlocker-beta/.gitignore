@@ -1,0 +1,3 @@
+# Local validation/decompilation scratch output; only hand-authored future source and tests belong here.
+compile-check/
+decode-xperia-blinds/

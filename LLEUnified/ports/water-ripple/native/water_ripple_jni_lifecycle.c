@@ -1,3 +1,4 @@
+#include "ripple_core.h"
 #include "ripple_gles_pipeline.h"
 #include "ripple_gles_overlay.h"
 
@@ -70,6 +71,7 @@ typedef struct InkStockPreset {
 } InkStockPreset;
 
 static void set_last_error(const char *message);
+static bool upload_ink_velocity(void);
 
 static void free_ink_fluid(void) {
     free(g_ink_flow_x);
@@ -799,8 +801,8 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeInjectInk(
 
     if (mode == 1) {
         g_ink_finger_down = false;
-        if (g_ink_touch_state == 2
-                && !(g_ink_press_step < 12 && g_ink_motion_count < 10)) {
+        const bool short_motion = g_ink_press_step < 12 && g_ink_motion_count < 10;
+        if (g_ink_touch_state == 2 && !short_motion) {
             g_ink_press_step = 20;
         }
         if (g_ink_touch_state != 0) g_ink_touch_state = 1;
@@ -810,7 +812,8 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeInjectInk(
     const float dx = current_x - g_ink_anchor_x;
     const float dy = flipped_current_y - g_ink_anchor_y;
     const float distance = sqrtf(dx * dx + dy * dy);
-    if (g_ink_touch_state == 1 && g_ink_press_step < 12 && distance <= 2.0f) {
+    const bool press_before_transition = g_ink_press_step < 12;
+    if (g_ink_touch_state == 1 && press_before_transition && distance <= 2.0f) {
         g_ink_anchor_x = current_x;
         g_ink_anchor_y = flipped_current_y;
         return JNI_TRUE;

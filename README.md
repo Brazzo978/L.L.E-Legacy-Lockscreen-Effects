@@ -2,13 +2,13 @@
 
 Bring classic Android lockscreen effects back to modern devices—without root.
 
-**Current stable release:** `1.0.5.3` · **Recommended build:** ARM64
+**Current stable release:** `1.0.6.2` · **Recommended build:** ARM64
 
 [Download the latest release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/latest)
 · [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
-· [Read the XDA thread](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
-· [Join the Telegram support group](https://t.me/legacylockscreeneffect)
-· [Join the L.L.E Companion closed test](https://play.google.com/apps/testing/com.codex.lle.companion)
+· [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
+· [Telegram support group](https://t.me/legacylockscreeneffect)
+· [L.L.E Companion](https://github.com/Brazzo978/LLE-Companion)
 
 > **Open source and local by design.** L.L.E's source code is published so its
 > permission and data handling can be inspected. The app does not request the
@@ -25,56 +25,16 @@ from the official GitHub release and verify the supplied SHA-256 checksum.
 
 Choose the installation method:
 
-- **Recommended:** [install the APK manually](LLEUnified/docs/INSTALL_APK.md) —
+- **Recommended:** [install the APK manually](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_APK.md) —
   complete illustrated Samsung setup, Play Protect, Accessibility, and
   Restricted Settings flow.
-- **Computer/advanced:** [install or update with ADB](LLEUnified/docs/INSTALL_ADB.md).
-- **More details:** [complete setup and troubleshooting](LLEUnified/README.md).
-- **Problems or questions:** [read the L.L.E. FAQ](LLEUnified/docs/FAQ.md).
-- **XDA thread:** [project discussion and support](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/).
+- **Computer/advanced:** [install or update with ADB](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_ADB.md).
+- **More details:** [complete setup and troubleshooting](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/README.md).
+- **Problems or questions:** [read the L.L.E. FAQ](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/FAQ.md).
+- **XDA Thread:**[XDA](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
 
 The first-launch wizard configures Accessibility, battery optimization,
 wallpaper dimming, lockscreen capture, enabled features, and the touch region.
-
-## Maintenance update 1.0.5.3
-
-The releases after `1.0.5` focus on bug fixes, compatibility, recovery, and
-closer stock fidelity rather than adding new effect engines. The current stable
-release includes:
-
-- more accurate movement and sound cadence for S3 Water Ripple and Popping Colours;
-- restored lock sounds for Ink in Water, Stone Skipping, Blind, and Brilliant Cut;
-- corrected Mass Tension behaviour and audio based on the Galaxy Trend 2 implementation;
-- fixes for held Geometric Mosaic gestures and Seasonal touch-sprite drift/flicker;
-- adaptive Lens Flare visibility on very bright lockscreen backgrounds;
-- a safe 120-second cold-boot recovery window with an explicit advanced bypass;
-- Samsung Notes and Screen Off Memo protection through the runtime blacklist.
-
-See the [complete 1.0.5.3 release notes](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.5.3)
-for validation details and the official APK checksum.
-
-## Stay updated with L.L.E Companion
-
-[L.L.E Companion](https://github.com/Brazzo978/LLE-Companion) is an optional
-companion app that checks the installed public L.L.E version and helps users
-reach new official GitHub releases. Tester builds are intentionally ignored.
-An optional battery-aware background check can notify users approximately once
-a day. Android still keeps the user in control: Companion never downloads or
-installs an APK and opens the official GitHub release only after confirmation.
-
-The first Google Play release is currently in closed testing. We need at least
-12 genuine testers who can install the app, try its version check and guided
-download/setup tutorials, report problems, and remain opted in for at least
-14 consecutive days.
-
-1. [Join the L.L.E Companion Google Group](https://groups.google.com/g/lle-companion-testers).
-2. [Opt in to the Google Play closed test](https://play.google.com/apps/testing/com.codex.lle.companion).
-3. [Install L.L.E Companion from Google Play](https://play.google.com/store/apps/details?id=com.codex.lle.companion).
-4. [Report a problem or suggestion](https://github.com/Brazzo978/LLE-Companion/issues).
-
-Use the same Google account for the Group, the opt-in page, and the Play Store
-on the Android device. Testers must explicitly opt in; joining the Group alone
-does not count toward the closed-test requirement.
 
 ### Samsung Restricted Settings
 
@@ -89,7 +49,7 @@ first time:
 
 The **Allow restricted settings** menu item may not appear until after the first
 blocked activation attempt. The
-[illustrated APK guide](LLEUnified/docs/INSTALL_APK.md) shows every screen.
+[illustrated APK guide](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_APK.md) shows every screen.
 
 ## Current builds
 
@@ -120,14 +80,19 @@ the user.
 
 ## Included effects
 
+- S3 None
 - S3 Water Ripple
 - S4 Lens Flare
 - S5 Popping Colours, Stone Skipping, and Brilliant Ring
 - N2 Ink in Water / Indigo
-- N3 Watercolor
+- N3 Watercolor and Ripple Ink
 - N4 Abstract Tiles and Geometric Mosaic
 - N5 Colored Droplet, Gyro Droplet, and Sparkling Bubbles
 - Tab S Blind and Brilliant Cut
+- Good Lock Popping Color, Rectangle Traveller, and Bouncing Color
+- LG G1 White Hole and Dewdrop
+- LG G2 Soda, Particle, Light Particle, Pixelate, and Crystal
+- Sony Xperia Z1 Blinds and Revolving Glass
 - Seasonal Spring, Summer, Autumn, and Winter effects
 - Charging doodles and seasonal companion effects
 
@@ -175,7 +140,7 @@ sent anywhere automatically.
 - Samsung nighttime wallpaper dimming can make captured and displayed
   brightness differ; disabling that option is strongly recommended.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
-- Beta effects can show small timing or rendering differences across GPUs.
+- Some very HEAVY effect will not show properly on low end smartphones.
 
 
 <p align="center"><sub><a href="https://support.legacylockscreeneffects.app">L.L.E will always be free - but if you insist... ♡</a></sub></p>
@@ -183,9 +148,4 @@ sent anywhere automatically.
 ## License
 
 Project-authored source code is available under the
-[PolyForm Noncommercial License 1.0.0](LICENSE.md).
-
-Some builds contain legacy proprietary compatibility components extracted from
-historical firmware. Rights in those components remain with their respective
-owners; they are not relicensed by this project. L.L.E is not affiliated with
-or endorsed by those owners.
+[PolyForm Noncommercial License 1.0.0](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LICENSE.md).

@@ -57,6 +57,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
     private final Display sensorDisplay;
 
     private Bitmap portraitBackground;
+    private boolean ownsPortraitBackground;
     private Bitmap backgroundSourceIdentity;
     private String backgroundSourceName = "none";
     private boolean externalColorSource;
@@ -104,6 +105,28 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
     };
 
     public S6WaterDropletAppOwnedEffectView(Context context) {
+        this(context, false, 1.0f);
+    }
+
+    /**
+     * Creates a renderer whose simulation clock is fixed for its lifetime.
+     * The normal production entry point delegates with {@code false}; callers
+     * that expose the experimental native-refresh preference must recreate the
+     * effect when its value changes.
+     */
+    public S6WaterDropletAppOwnedEffectView(
+            Context context, boolean nativeRefreshPhysics) {
+        this(context, nativeRefreshPhysics, 1.0f);
+    }
+
+    /**
+     * Experimental speed multiplier for the native-refresh branch. It is
+     * intentionally ignored by the fixed recovered 60 Hz renderer.
+     */
+    public S6WaterDropletAppOwnedEffectView(
+            Context context,
+            boolean nativeRefreshPhysics,
+            float nativeRefreshSpeedMultiplier) {
         super(context);
         appContext = context.getApplicationContext();
         setClipChildren(false);
@@ -164,7 +187,9 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
                 projectKind,
                 Math.min(width, height),
                 Math.max(width, height),
-                this);
+                this,
+                nativeRefreshPhysics,
+                nativeRefreshSpeedMultiplier);
         addView(
                 glView,
                 new LayoutParams(
@@ -383,8 +408,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
         if (destroyed) {
             return;
         }
-        recycle(portraitBackground);
-        portraitBackground = null;
+        releasePortraitBackground();
         backgroundSourceIdentity = null;
         backgroundSourceName = "none";
         externalColorSource = false;
@@ -410,8 +434,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
         soundPool.release();
         glView.destroyRenderer();
         removeAllViews();
-        recycle(portraitBackground);
-        portraitBackground = null;
+        releasePortraitBackground();
         backgroundSourceIdentity = null;
         externalColorSource = false;
         transition(STATE_FAILED, "destroyed");
@@ -575,19 +598,25 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
          * original source. Deriving landscape from the portrait crop loses
          * the source's side content and changes refraction sampling.
          */
-        Bitmap portrait = centerCrop(source, width, height);
+        boolean borrowedPortrait = BackgroundSourceRenderer.canBorrowSharedCache(
+                source, sourceName, width, height);
+        Bitmap portrait = borrowedPortrait
+                ? source : centerCrop(source, width, height);
         Bitmap landscape = centerCrop(source, height, width);
         Bitmap rendererPortrait =
                 portrait.copy(Bitmap.Config.ARGB_8888, false);
         if (rendererPortrait == null) {
-            recycle(portrait);
+            if (!borrowedPortrait) {
+                recycle(portrait);
+            }
             recycle(landscape);
             return;
         }
         rendererPortrait.prepareToDraw();
 
-        recycle(portraitBackground);
+        releasePortraitBackground();
         portraitBackground = portrait;
+        ownsPortraitBackground = !borrowedPortrait;
         backgroundSourceIdentity = sourceIdentity;
         backgroundSourceName =
                 sourceName == null ? "external" : sourceName;
@@ -603,9 +632,45 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
                         + "x" + portrait.getHeight()
                         + " landscape=" + landscape.getWidth()
                         + "x" + landscape.getHeight()
+                        + " portraitOwnership="
+                        + (borrowedPortrait ? "shared_cache_borrow" : "private")
                         + " center=#"
                         + String.format("%08X", centerColor));
         glView.setBackgroundBitmaps(rendererPortrait, landscape);
+    }
+
+    String backgroundMemoryDebugSnapshot() {
+        return "s6_view_portrait_dimensions=" + dimensions(portraitBackground) + '\n'
+                + "s6_view_portrait_ownership="
+                + (portraitBackground == null ? "none"
+                        : ownsPortraitBackground ? "private" : "shared_cache_borrow") + '\n'
+                + "s6_view_portrait_allocation_bytes="
+                + allocationBytes(portraitBackground) + '\n'
+                + glView.backgroundMemoryDebugSnapshot();
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
+    }
+
+    private void releasePortraitBackground() {
+        if (ownsPortraitBackground) {
+            recycle(portraitBackground);
+        }
+        portraitBackground = null;
+        ownsPortraitBackground = false;
     }
 
     private Bitmap decodeTexture(int resourceId, String label) {

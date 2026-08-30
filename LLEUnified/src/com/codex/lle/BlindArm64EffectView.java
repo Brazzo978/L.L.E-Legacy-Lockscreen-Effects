@@ -17,6 +17,7 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 
@@ -41,6 +42,7 @@ public final class BlindArm64EffectView extends View
     private static final long UP_DURATION_MS = 1_000L;
     private static final long MOVE_DURATION_MS = 3_600_000L;
     private static final long AFFORDANCE_HOLD_MS = 100L;
+    private static final long STOCK_FRAME_INTERVAL_NS = 16_666_667L;
 
     private static final float DOWN_INITIAL_VALUE = 0.30f;
     private static final float MOVE_FOLLOW = 0.17f;
@@ -94,6 +96,7 @@ public final class BlindArm64EffectView extends View
     private float point2Y;
     private float lightX;
     private float lightY;
+    private long lastMoveFrameNs;
 
     private final Runnable affordanceDown = new Runnable() {
         @Override
@@ -499,15 +502,20 @@ public final class BlindArm64EffectView extends View
     }
 
     private void startMoveAnimator() {
+        lastMoveFrameNs = 0L;
         moveAnimator = ValueAnimator.ofFloat(0f, 1f);
         moveAnimator.setDuration(MOVE_DURATION_MS);
         moveAnimator.setRepeatCount(ValueAnimator.INFINITE);
         moveAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
-                pointX += (currentX - pointX) * MOVE_FOLLOW;
-                point2Y += (currentY - point2Y) * MOVE_FOLLOW;
-                point2X += (currentX - point2X) * MOVE_FOLLOW;
+                long nowNs = SystemClock.elapsedRealtimeNanos();
+                long elapsedNs = lastMoveFrameNs == 0L ? 0L : nowNs - lastMoveFrameNs;
+                lastMoveFrameNs = nowNs;
+                float moveFollow = moveFollowForElapsedNanos(elapsedNs);
+                pointX += (currentX - pointX) * moveFollow;
+                point2Y += (currentY - point2Y) * moveFollow;
+                point2X += (currentX - point2X) * moveFollow;
                 if (upAnimator == null || !upAnimator.isRunning()) {
                     lightX = pointX;
                     lightY = currentY;
@@ -525,11 +533,29 @@ public final class BlindArm64EffectView extends View
         downAnimator = null;
         upAnimator = null;
         moveAnimator = null;
+        lastMoveFrameNs = 0L;
     }
 
     private void stopMoveAnimator() {
         cancelAnimator(moveAnimator);
         moveAnimator = null;
+        lastMoveFrameNs = 0L;
+    }
+
+    /**
+     * Returns the follower fraction for an elapsed display interval. The stock renderer used
+     * {@link #MOVE_FOLLOW} once per 60 Hz frame; exponentiating its remaining distance preserves
+     * that response at all refresh rates, including fractional virtual 60 Hz ticks after jitter.
+     */
+    static float moveFollowForElapsedNanos(long elapsedNs) {
+        if (elapsedNs <= 0L) {
+            return 0f;
+        }
+        if (elapsedNs == STOCK_FRAME_INTERVAL_NS) {
+            return MOVE_FOLLOW;
+        }
+        double ticks = elapsedNs / (double) STOCK_FRAME_INTERVAL_NS;
+        return (float) (1.0d - Math.pow(1.0d - MOVE_FOLLOW, ticks));
     }
 
     private void cancelAnimator(ValueAnimator animator) {

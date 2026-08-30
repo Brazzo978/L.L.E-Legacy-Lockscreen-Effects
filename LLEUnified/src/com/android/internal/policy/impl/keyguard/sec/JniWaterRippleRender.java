@@ -20,6 +20,14 @@ public final class JniWaterRippleRender {
             int xBegin, int yBegin, int xEnd, int yEnd,
             int detailWidth, int detailHeight, boolean checkEmpty,
             float damping, float waveCoefficient);
+    /**
+     * Display-refresh solver path. {@code stockTicks} is elapsed wall time in
+     * recovered 60 Hz ticks; exactly 1.0 preserves the legacy move oracle.
+     */
+    public static native int moveAdaptive(float[] velocity, float[] height,
+            int xBegin, int yBegin, int xEnd, int yEnd,
+            int detailWidth, int detailHeight, boolean checkEmpty,
+            float damping, float waveCoefficient, float stockTicks);
     public static native void onDraw(float[] vertices, float[] heights, short[] indices,
             int vertexFloatCount, int heightFloatCount, int indexCount, float[] matrix,
             int meshWidth, int meshHeight, int detailWidth, int detailHeight,

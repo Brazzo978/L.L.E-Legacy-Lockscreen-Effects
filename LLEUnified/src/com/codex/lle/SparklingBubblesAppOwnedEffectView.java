@@ -43,9 +43,11 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
     private final int unlockSound;
 
     private Bitmap backgroundBitmap;
+    private boolean ownsBackgroundBitmap;
     private Bitmap backgroundSourceIdentity;
     private String backgroundSourceName = "fallback";
     private boolean externalColorSource;
+    private boolean lightweightColorSource;
     private boolean constructed;
     private boolean destroyed;
     private boolean gestureActive;
@@ -96,6 +98,26 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
     };
 
     public SparklingBubblesAppOwnedEffectView(Context context) {
+        this(context, false, 1.0f);
+    }
+
+    /**
+     * Experimental constructor used only when a fresh renderer is requested.
+     * The default constructor keeps the recovered 60 Hz state machine.
+     */
+    SparklingBubblesAppOwnedEffectView(
+            Context context, boolean nativeRefreshPhysicsEnabled) {
+        this(context, nativeRefreshPhysicsEnabled, 1.0f);
+    }
+
+    /**
+     * The multiplier belongs only to the experimental display-refresh path.
+     * Keeping it at 1 preserves the recovered stock physics variant exactly.
+     */
+    SparklingBubblesAppOwnedEffectView(
+            Context context,
+            boolean nativeRefreshPhysicsEnabled,
+            float speedMultiplier) {
         super(context);
         appContext = context.getApplicationContext();
         setClipChildren(false);
@@ -112,7 +134,8 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
         unlockSound = soundPool.load(context, R.raw.ve_sparklingbubbles_unlock, 1);
 
         Bitmap blurMask = decodeMask();
-        glView = new SparklingBubblesAppOwnedGlView(context, blurMask, this);
+        glView = new SparklingBubblesAppOwnedGlView(
+                context, blurMask, nativeRefreshPhysicsEnabled, speedMultiplier, this);
         addView(glView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
@@ -272,21 +295,30 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
         if (destroyed || source == null || source.isRecycled()) {
             return;
         }
+        boolean lightweight = BackgroundSourceRenderer.isTesterSyntheticSource(sourceName);
+        boolean borrowed = !lightweight
+                && BackgroundSourceRenderer.canBorrowSharedCache(
+                        source, sourceName, renderWidth(), renderHeight());
         submitBackground(
-                centerCrop(source, renderWidth(), renderHeight()),
+                lightweight
+                        ? source.copy(Bitmap.Config.ARGB_8888, false)
+                        : borrowed
+                                ? source
+                                : centerCrop(source, renderWidth(), renderHeight()),
+                !borrowed,
                 true,
-                source,
+                lightweight ? null : source,
                 sourceName);
     }
 
     @Override
     public void clearBackgroundSourceBitmap() {
         if (!destroyed) {
-            recycle(backgroundBitmap);
-            backgroundBitmap = null;
+            releaseBackgroundBitmap();
             backgroundSourceIdentity = null;
             backgroundSourceName = "none";
             externalColorSource = false;
+            lightweightColorSource = false;
             glView.clearBackgroundBitmap();
         }
     }
@@ -304,10 +336,10 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
         soundPool.release();
         glView.destroyRenderer();
         removeAllViews();
-        recycle(backgroundBitmap);
-        backgroundBitmap = null;
+        releaseBackgroundBitmap();
         backgroundSourceIdentity = null;
         externalColorSource = false;
+        lightweightColorSource = false;
         transition(STATE_FAILED, "destroyed");
         readinessListener = null;
     }
@@ -343,12 +375,17 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         if (destroyed || width <= 0 || height <= 0
                 || backgroundBitmap == null || backgroundBitmap.isRecycled()
+                || lightweightColorSource
                 || backgroundBitmap.getWidth() == width
                 && backgroundBitmap.getHeight() == height) {
             return;
         }
+        Bitmap source = backgroundSourceIdentity != null
+                && !backgroundSourceIdentity.isRecycled()
+                ? backgroundSourceIdentity : backgroundBitmap;
         submitBackground(
-                centerCrop(backgroundBitmap, width, height),
+                centerCrop(source, width, height),
+                true,
                 externalColorSource,
                 backgroundSourceIdentity,
                 backgroundSourceName);
@@ -379,26 +416,66 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
     }
 
     private void submitBackground(Bitmap mapped, boolean external) {
-        submitBackground(mapped, external, null, external ? "external" : "fallback");
+        submitBackground(
+                mapped, true, external, null,
+                external ? "external" : "fallback");
     }
 
-    private void submitBackground(Bitmap mapped, boolean external,
+    private void submitBackground(Bitmap mapped, boolean ownsMapped, boolean external,
             Bitmap sourceIdentity, String sourceName) {
         if (mapped == null) {
             return;
         }
-        recycle(backgroundBitmap);
+        releaseBackgroundBitmap();
         backgroundBitmap = mapped;
+        ownsBackgroundBitmap = ownsMapped;
         backgroundSourceIdentity = sourceIdentity;
         backgroundSourceName = sourceName == null ? "external" : sourceName;
         externalColorSource = external;
+        lightweightColorSource = BackgroundSourceRenderer.isTesterSyntheticSource(
+                backgroundSourceName);
         int centerColor = mapped.getPixel(
                 Math.max(0, mapped.getWidth() / 2),
                 Math.max(0, mapped.getHeight() / 2));
         Log.i(TAG, "colour map source=" + backgroundSourceName
                 + " size=" + mapped.getWidth() + "x" + mapped.getHeight()
+                + " ownership=" + (ownsMapped ? "private" : "shared_cache_borrow")
                 + " center=#" + String.format("%08X", centerColor));
         glView.setBackgroundBitmap(mapped.copy(Bitmap.Config.ARGB_8888, false));
+    }
+
+    String backgroundMemoryDebugSnapshot() {
+        return "spark_view_background_dimensions=" + dimensions(backgroundBitmap) + '\n'
+                + "spark_view_background_ownership="
+                + (backgroundBitmap == null ? "none"
+                        : ownsBackgroundBitmap ? "private" : "shared_cache_borrow") + '\n'
+                + "spark_view_background_allocation_bytes="
+                + allocationBytes(backgroundBitmap) + '\n'
+                + glView.backgroundMemoryDebugSnapshot();
+    }
+
+    private static String dimensions(Bitmap bitmap) {
+        return bitmap == null || bitmap.isRecycled()
+                ? "unavailable" : bitmap.getWidth() + "x" + bitmap.getHeight();
+    }
+
+    private static long allocationBytes(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0L;
+        }
+        try {
+            return bitmap.getAllocationByteCount();
+        } catch (RuntimeException ignored) {
+            return (long) bitmap.getRowBytes() * bitmap.getHeight();
+        }
+    }
+
+    private void releaseBackgroundBitmap() {
+        if (ownsBackgroundBitmap) {
+            recycle(backgroundBitmap);
+        }
+        backgroundBitmap = null;
+        ownsBackgroundBitmap = false;
     }
 
     private Bitmap decodeMask() {
@@ -445,8 +522,9 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
 
     private boolean validBackground() {
         return backgroundBitmap != null && !backgroundBitmap.isRecycled()
-                && backgroundBitmap.getWidth() == renderWidth()
-                && backgroundBitmap.getHeight() == renderHeight();
+                && (lightweightColorSource
+                || backgroundBitmap.getWidth() == renderWidth()
+                && backgroundBitmap.getHeight() == renderHeight());
     }
 
     private int renderWidth() {

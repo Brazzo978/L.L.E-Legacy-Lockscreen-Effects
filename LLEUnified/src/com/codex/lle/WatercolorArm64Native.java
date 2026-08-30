@@ -36,6 +36,9 @@ final class WatercolorArm64Native {
 
     native boolean draw();
 
+    /** Draws one display-refresh frame, advancing feedback by the supplied elapsed time. */
+    native boolean drawAdaptive(float elapsedSeconds);
+
     native void onTouch(int x, int y, int action);
 
     native void showUnlock();

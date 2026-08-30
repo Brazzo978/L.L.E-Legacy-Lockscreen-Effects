@@ -39,11 +39,17 @@ final class BrilliantCutEffectView extends GLSurfaceView
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     private static final long STOCK_SIMULATION_INTERVAL_NS = 16_666_667L;
     private static final long SIMULATION_TICK_TOLERANCE_NS = 500_000L;
+    /* Four 60 Hz intervals: discard a resumed/stalled-frame delta, never replay it. */
+    private static final long ADAPTIVE_MAX_FRAME_DELTA_NS = STOCK_SIMULATION_INTERVAL_NS * 4L;
+    /* The recovered renderer advances 16 ms for each nominal 60 Hz (16.666667 ms) tick. */
+    private static final float ADAPTIVE_SECONDS_PER_NS = 0.016f
+            / (float) STOCK_SIMULATION_INTERVAL_NS;
     private static final long DRAG_SOUND_LONG_PRESS_MS = 411L;
     private static final long DRAG_SOUND_FADE_STEP_MS = 10L;
     private static final float DRAG_SOUND_RELEASE_FADE_STEP = 0.039f;
     private static final float DRAG_SOUND_UNLOCK_FADE_STEP = 0.059f;
 
+    private final boolean adaptiveRefresh;
     private final CutRenderer cutRenderer = new CutRenderer();
     private final FrameLayout windowHost;
     private final Object bitmapLock = new Object();
@@ -95,7 +101,18 @@ final class BrilliantCutEffectView extends GLSurfaceView
     };
 
     BrilliantCutEffectView(Context context) {
+        this(context, false);
+    }
+
+    /**
+     * Creates Brilliant Cut with the recovered stock 60 Hz simulation by default.
+     *
+     * <p>The adaptive path is deliberately opt-in while its high-refresh timing is validated.
+     * It changes only simulation time; presentation remains display-vsync driven in both modes.</p>
+     */
+    BrilliantCutEffectView(Context context, boolean adaptiveRefresh) {
         super(context);
+        this.adaptiveRefresh = adaptiveRefresh;
 
         setEGLContextClientVersion(2);
         setEGLConfigChooser(8, 8, 8, 8, 0, 0);
@@ -130,6 +147,31 @@ final class BrilliantCutEffectView extends GLSurfaceView
         tapSound = soundPool.load(context, R.raw.brilliantcut_tap, 1);
         dragSound = soundPool.load(context, R.raw.brilliantcut_drag, 1);
         unlockSound = soundPool.load(context, R.raw.brilliantcut_unlock, 1);
+    }
+
+    /** Pure timing seam for deterministic 60/90/120/144 Hz and stall regression tests. */
+    static final class AdaptiveSimulationClock {
+        private long lastFrameNs;
+        private boolean hasFrame;
+
+        float consume(long nowNs) {
+            if (!hasFrame) {
+                lastFrameNs = nowNs;
+                hasFrame = true;
+                return 0.0f;
+            }
+            long elapsedNs = nowNs - lastFrameNs;
+            lastFrameNs = nowNs;
+            if (elapsedNs <= 0L || elapsedNs > ADAPTIVE_MAX_FRAME_DELTA_NS) {
+                return 0.0f;
+            }
+            return elapsedNs * ADAPTIVE_SECONDS_PER_NS;
+        }
+
+        void reset() {
+            lastFrameNs = 0L;
+            hasFrame = false;
+        }
     }
 
     @Override
@@ -791,6 +833,8 @@ final class BrilliantCutEffectView extends GLSurfaceView
         private int height = 1;
         private long lastDrawNs;
         private long simulationAccumulatorNs;
+        private final AdaptiveSimulationClock adaptiveSimulationClock =
+                new AdaptiveSimulationClock();
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -860,7 +904,9 @@ final class BrilliantCutEffectView extends GLSurfaceView
                 return;
             }
             try {
-                boolean needsMoreFrames = pipeline.renderFrame(consumeSimulationTick());
+                boolean needsMoreFrames = adaptiveRefresh
+                        ? pipeline.renderFrame(adaptiveSimulationClock.consume(System.nanoTime()))
+                        : pipeline.renderFrame(consumeSimulationTick());
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent GLES frame");
                 idle = !needsMoreFrames;
@@ -906,6 +952,7 @@ final class BrilliantCutEffectView extends GLSurfaceView
         private void resetSimulationClock() {
             lastDrawNs = 0L;
             simulationAccumulatorNs = 0L;
+            adaptiveSimulationClock.reset();
         }
 
         void installBackground(Bitmap bitmap, long serial, String sourceName) {

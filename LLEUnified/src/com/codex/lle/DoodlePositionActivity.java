@@ -3,7 +3,6 @@ package com.codex.lle;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -511,6 +510,11 @@ public final class DoodlePositionActivity extends Activity {
         if (bitmap != null) {
             return new BackgroundResult(bitmap, "captured lockscreen background");
         }
+        File legacyCaptured = OverlayPrefs.legacyPngEffectBackgroundFile(this, profile);
+        bitmap = decodePreviewFile(legacyCaptured, width, height);
+        if (bitmap != null) {
+            return new BackgroundResult(bitmap, "legacy captured lockscreen background");
+        }
         return null;
     }
 
@@ -518,22 +522,17 @@ public final class DoodlePositionActivity extends Activity {
         if (file == null || !file.isFile() || file.length() <= 0L) {
             return null;
         }
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(file);
+        if (bounds == null) {
             return null;
         }
         int sample = 1;
-        while (bounds.outWidth / (sample * 2) >= width
-                && bounds.outHeight / (sample * 2) >= height) {
+        while (bounds.width / (sample * 2) >= width
+                && bounds.height / (sample * 2) >= height) {
             sample *= 2;
         }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        options.inSampleSize = Math.max(1, sample);
         try {
-            return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+            return Argb8888BitmapStore.decode(file, Math.max(1, sample));
         } catch (OutOfMemoryError ignored) {
             return null;
         }

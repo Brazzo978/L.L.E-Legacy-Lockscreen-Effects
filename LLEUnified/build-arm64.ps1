@@ -17,8 +17,43 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Some stripped-down Windows PowerShell installations do not auto-load
+# Microsoft.PowerShell.Utility, so Get-FileHash may be unavailable. Keep the
+# release integrity checks self-contained instead of weakening or skipping them.
+if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
+    function Get-FileHash {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string] $LiteralPath,
+            [ValidateSet("SHA256")]
+            [string] $Algorithm = "SHA256"
+        )
+        $resolvedPath = [IO.Path]::GetFullPath($LiteralPath)
+        $stream = [IO.File]::Open($resolvedPath, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $sha256 = [Security.Cryptography.SHA256]::Create()
+            try {
+                $digest = $sha256.ComputeHash($stream)
+            } finally {
+                $sha256.Dispose()
+            }
+        } finally {
+            $stream.Dispose()
+        }
+        [pscustomobject]@{
+            Algorithm = $Algorithm
+            Hash = [BitConverter]::ToString($digest).Replace("-", "")
+            Path = $resolvedPath
+        }
+    }
+}
+
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
 $launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
+$testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 44 } else { 0 }
+$testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.6.2" } else { "" }
 if ($LegacyVendorEffects) {
     $launcherLabel += " Legacy"
 }
@@ -52,6 +87,29 @@ if ($ReleaseSigning -and ($Companion -or $IncludeNote5Probe -or
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$lensFlareVariantAssets = @(
+    "keyguard_bluering_light_00040.png", "keyguard_bluering_ring.png",
+    "keyguard_bluering_particle.png", "keyguard_bluering_long.png",
+    "keyguard_bluering_rainbow.png", "keyguard_bluering_hoverlight.png",
+    "keyguard_bluering_hexagon_blue.png", "keyguard_bluering_hexagon_orange.png",
+    "keyguard_bluering_hexagon_green.png",
+    "keyguard_blood_light_00040.png", "keyguard_blood_ring.png",
+    "keyguard_blood_particle.png", "keyguard_blood_long.png",
+    "keyguard_blood_rainbow.png", "keyguard_blood_hoverlight.png",
+    "keyguard_blood_hexagon_blue.png", "keyguard_blood_hexagon_orange.png",
+    "keyguard_blood_hexagon_green.png",
+    "keyguard_lightning_light_00040.png", "keyguard_lightning_ring.png",
+    "keyguard_lightning_particle.png", "keyguard_lightning_long.png",
+    "keyguard_lightning_rainbow.png", "keyguard_lightning_hoverlight.png",
+    "keyguard_lightning_hexagon_blue.png", "keyguard_lightning_hexagon_orange.png",
+    "keyguard_lightning_hexagon_green.png"
+)
+foreach ($lensFlareVariantAsset in $lensFlareVariantAssets) {
+    $lensFlareVariantPath = Join-Path $root "res\drawable-nodpi\$lensFlareVariantAsset"
+    if (-not (Test-Path -LiteralPath $lensFlareVariantPath -PathType Leaf)) {
+        throw "Missing Lens Flare variant asset: $lensFlareVariantAsset"
+    }
+}
 $sdk = if ($env:ANDROID_HOME) {
     $env:ANDROID_HOME
 } elseif ($env:ANDROID_SDK_ROOT) {
@@ -59,10 +117,14 @@ $sdk = if ($env:ANDROID_HOME) {
 } else {
     Join-Path $env:LOCALAPPDATA "Android\Sdk"
 }
+$cachedNdk = Join-Path (Split-Path -Parent $root) "tools-cache\android-ndk-r27d"
+$legacyNdk = Join-Path $root "..\unlock-effects-test\tools\android-ndk-r27d"
 $ndk = if ($env:ANDROID_NDK_HOME) {
     $env:ANDROID_NDK_HOME
+} elseif (Test-Path -LiteralPath $cachedNdk) {
+    $cachedNdk
 } else {
-    Join-Path $root "..\unlock-effects-test\tools\android-ndk-r27d"
+    $legacyNdk
 }
 $buildTools = Join-Path $sdk "build-tools\35.0.1"
 $platform = Join-Path $sdk "platforms\android-35\android.jar"
@@ -142,11 +204,22 @@ function Run($exe, $arguments) {
     if (-not (Test-Path -LiteralPath $exe) -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) {
         throw "Missing build tool: $exe"
     }
-    & $exe @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$exe failed with exit code $LASTEXITCODE"
+    # Native tool warnings (notably JDK 21's source-8 notice) are written to stderr with a
+    # successful exit code. Preserve the explicit exit-code contract below rather than letting
+    # the caller's ErrorActionPreference turn those warnings into terminating PowerShell errors.
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $exe @arguments
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$exe failed with exit code $exitCode"
     }
 }
+$testerLiteral = if ($Tester) { "true" } else { "false" }
 
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out, $classes, $dex, $resStage, $arm64Stage | Out-Null
@@ -182,27 +255,48 @@ if ($generatedManifestText -eq $manifestText -or
         $generatedManifestText -match 'android:name="\.') {
     throw "ARM64 LLE64 manifest patch failed"
 }
-if ($ValidationVersionCode -gt 0) {
+if ($ValidationVersionCode -gt 0 -or $testerVersionCode -gt 0) {
     $versionCodePattern = 'android:versionCode="\d+"'
     if ([regex]::Matches($generatedManifestText, $versionCodePattern).Count -ne 1) {
         throw "Validation manifest versionCode patch point not found"
     }
+    $stagedVersionCode = if ($ValidationVersionCode -gt 0) {
+        $ValidationVersionCode
+    } else {
+        $testerVersionCode
+    }
     $generatedManifestText = [regex]::Replace(
             $generatedManifestText,
             $versionCodePattern,
-            "android:versionCode=`"$ValidationVersionCode`"",
+            "android:versionCode=`"$stagedVersionCode`"",
             1)
     if ($generatedManifestText -notmatch
-            "android:versionCode=`"$ValidationVersionCode`"") {
-        throw "Validation manifest versionCode override failed"
+            "android:versionCode=`"$stagedVersionCode`"") {
+        throw "Staged manifest versionCode override failed"
     }
     $canonicalVersionName = [regex]::Match(
             $manifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    if ($testerVersionName) {
+        $versionNamePattern = 'android:versionName="[^"]+"'
+        if ([regex]::Matches($generatedManifestText, $versionNamePattern).Count -ne 1) {
+            throw "Tester manifest versionName patch point not found"
+        }
+        $generatedManifestText = [regex]::Replace(
+                $generatedManifestText,
+                $versionNamePattern,
+                "android:versionName=`"$testerVersionName`"",
+                1)
+    }
     $generatedVersionName = [regex]::Match(
             $generatedManifestText, 'android:versionName="([^"]+)"').Groups[1].Value
+    $expectedVersionName = if ($testerVersionName) {
+        $testerVersionName
+    } else {
+        $canonicalVersionName
+    }
     if ([string]::IsNullOrWhiteSpace($canonicalVersionName) -or
-            $generatedVersionName -ne $canonicalVersionName) {
-        throw "Validation build must preserve the canonical versionName"
+            $generatedVersionName -ne $expectedVersionName) {
+        throw "Staged manifest versionName override failed"
     }
 }
 if ($includeNativeProbeActivity) {
@@ -255,6 +349,7 @@ package com.codex.lle;
 /** Generated by build-arm64.ps1. */
 final class BuildFlavor {
     static final boolean LEGACY_VENDOR_EFFECTS = $legacyVendorLiteral;
+    static final boolean TESTER = $testerLiteral;
     static final String NAME = "$buildFlavorName";
 
     private BuildFlavor() {
@@ -479,7 +574,9 @@ $expectedSparklingAppOwnedExports = @(
     "Java_com_codex_lle_SparklingBubblesNative_nativeTouch",
     "Java_com_codex_lle_SparklingBubblesNative_nativeAffordance",
     "Java_com_codex_lle_SparklingBubblesNative_nativeUnlock",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeSetAdaptivePhysics",
     "Java_com_codex_lle_SparklingBubblesNative_nativeStep",
+    "Java_com_codex_lle_SparklingBubblesNative_nativeStepAdaptive",
     "Java_com_codex_lle_SparklingBubblesNative_nativeDraw",
     "Java_com_codex_lle_SparklingBubblesNative_nativeIsIdle",
     "Java_com_codex_lle_SparklingBubblesNative_nativeGetLastError"
@@ -568,6 +665,7 @@ $expectedColourDropletAppOwnedExports = @(
     "Java_com_codex_lle_ColourDropletNative_nativeUnlock",
     "Java_com_codex_lle_ColourDropletNative_nativeResetBackgroundScale",
     "Java_com_codex_lle_ColourDropletNative_nativeStep",
+    "Java_com_codex_lle_ColourDropletNative_nativeStepAtRefresh",
     "Java_com_codex_lle_ColourDropletNative_nativeDraw",
     "Java_com_codex_lle_ColourDropletNative_nativeIsIdle",
     "Java_com_codex_lle_ColourDropletNative_nativeGetLastError"
@@ -656,6 +754,7 @@ $expectedS6WaterDropletAppOwnedExports = @(
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeUnlock",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeResetBackgroundScale",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStep",
+    "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeStepNativeRefresh",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeDraw",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeIsIdle",
     "Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeGetLastError"
@@ -675,6 +774,76 @@ $s6WaterDropletAppOwnedStageHash = (Get-FileHash `
         -LiteralPath $s6WaterDropletAppOwnedLibrary -Algorithm SHA256).Hash
 if ($s6WaterDropletAppOwnedStageHash -ne $s6WaterDropletAppOwnedBuiltHash) {
     throw "App-owned S6 Water Droplet staged library hash mismatch"
+}
+
+# ENB4 Note 3 Ripple Ink's app-owned, velocity-only worker. It is staged into
+# the APK and loaded lazily by the production Android Ripple Ink pipeline.
+$n3RippleInkNative = Join-Path $root "ports\ripple-ink\n3-native"
+$n3RippleInkBuiltLibrary = Join-Path $out "liblleN3RippleInk-built.so"
+$n3RippleInkLibrary = Join-Path $arm64Stage "liblleN3RippleInk.so"
+$n3RippleInkSources = @(
+    "lle_n3_ink_worker.c",
+    "lle_n3_ink_jni.c"
+) | ForEach-Object {
+    Join-Path $n3RippleInkNative $_
+}
+foreach ($n3RippleInkSource in $n3RippleInkSources) {
+    if (-not (Test-Path -LiteralPath $n3RippleInkSource -PathType Leaf)) {
+        throw "Missing N3 Ripple Ink native source: $n3RippleInkSource"
+    }
+}
+$n3RippleInkClangArgs = @(
+    "-std=c11", "-O2", "-fno-fast-math", "-ffp-contract=off",
+    "-fPIC", "-pthread", "-Wall", "-Wextra", "-Werror",
+    "-shared", "-Wl,--no-undefined",
+    "-Wl,-soname,liblleN3RippleInk.so",
+    "-I", $n3RippleInkNative
+) + $n3RippleInkSources + @(
+    "-Wl,--no-as-needed", "-lm",
+    "-o", $n3RippleInkBuiltLibrary
+)
+Run $clang $n3RippleInkClangArgs
+$n3RippleInkHeader = (& $readelf -h $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $n3RippleInkHeader -notmatch "Class:\s+ELF64" `
+        -or $n3RippleInkHeader -notmatch "Machine:\s+AArch64") {
+    throw "N3 Ripple Ink worker is not an ELF64 AArch64 binary"
+}
+$n3RippleInkDynamic = (& $readelf -d $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0 `
+        -or $n3RippleInkDynamic -notmatch "SONAME.*\[liblleN3RippleInk\.so\]") {
+    throw "N3 Ripple Ink worker has an unexpected SONAME"
+}
+if ($n3RippleInkDynamic -match
+        "NEEDED.*\[(libstlport|libstdc\+\+|libc\+\+|libColourDropletEffect|" +
+        "libSparklingBubblesEffect|libWaterDropletEffect|libsecve[^]]*)\.so\]") {
+    throw "N3 Ripple Ink worker unexpectedly depends on a legacy Samsung runtime"
+}
+$n3RippleInkSymbols = (& $readelf -Ws $n3RippleInkBuiltLibrary) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "N3 Ripple Ink worker dynamic symbol inspection failed"
+}
+$expectedN3RippleInkExports = @(
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeBridgeVersion",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeCreate",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeReset",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeStep",
+    "Java_com_codex_lle_N3RippleInkWorkerNative_nativeDestroy"
+)
+foreach ($export in $expectedN3RippleInkExports) {
+    $definedExportPattern = "(?m)^\s*\d+:\s+\S+\s+\d+\s+FUNC\s+GLOBAL\s+DEFAULT\s+\d+\s+" `
+            + [regex]::Escape($export) + "\s*$"
+    if ($n3RippleInkSymbols -notmatch $definedExportPattern) {
+        throw "Missing N3 Ripple Ink JNI export: $export"
+    }
+}
+$n3RippleInkBuiltHash = (Get-FileHash -LiteralPath $n3RippleInkBuiltLibrary `
+        -Algorithm SHA256).Hash
+Copy-Item -LiteralPath $n3RippleInkBuiltLibrary -Destination $n3RippleInkLibrary -Force
+$n3RippleInkStageHash = (Get-FileHash -LiteralPath $n3RippleInkLibrary `
+        -Algorithm SHA256).Hash
+if ($n3RippleInkStageHash -ne $n3RippleInkBuiltHash) {
+    throw "N3 Ripple Ink worker staged library hash mismatch"
 }
 if ($LegacyVendorEffects) {
 $s6WaterDropletSource = Join-Path $root `
@@ -753,6 +922,7 @@ if ($LASTEXITCODE -ne 0) {
 $expectedRippleExports = @(
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_initWaters",
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_move",
+    "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_moveAdaptive",
     "Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_ripple",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeBridgeVersion",
     "Java_com_codex_lle_S3RippleLifecycleNative_nativeInitGpu",
@@ -852,10 +1022,14 @@ if ($abstractTilesStageHash -notmatch "^[0-9A-F]{64}$") {
 
 $watercolorNative = Join-Path $root "ports\watercolor\native"
 $watercolorCommonSource = Join-Path $watercolorNative "watercolor_arm64.c"
+$watercolorRefreshSource = Join-Path $watercolorNative "watercolor_refresh.c"
 $watercolorEffectSource = Join-Path $watercolorNative "watercolor_effect_stub.c"
 $watercolorCommonLibrary = Join-Path $arm64Stage "libsecveSrkCommon.so"
 $watercolorEffectLibrary = Join-Path $arm64Stage "libsecveWaterColor.so"
-foreach ($watercolorSource in @($watercolorCommonSource, $watercolorEffectSource)) {
+foreach ($watercolorSource in @(
+        $watercolorCommonSource,
+        $watercolorRefreshSource,
+        $watercolorEffectSource)) {
     if (-not (Test-Path -LiteralPath $watercolorSource)) {
         throw "Missing Watercolor native source: $watercolorSource"
     }
@@ -870,6 +1044,7 @@ if ($WatercolorFeedbackMode -eq "StockFeedback") {
 }
 $watercolorCommonArgs += @(
     $watercolorCommonSource,
+    $watercolorRefreshSource,
     "-lGLESv2", "-llog", "-lm",
     "-o", $watercolorCommonLibrary
 )
@@ -906,6 +1081,7 @@ $expectedWatercolorExports = @(
     "Java_com_samsung_android_visualeffect_lock_common_Native_loadTexture",
     "Java_com_samsung_android_visualeffect_lock_common_Native_init",
     "Java_com_samsung_android_visualeffect_lock_common_Native_draw",
+    "Java_com_codex_lle_WatercolorArm64Native_drawAdaptive",
     "Java_com_samsung_android_visualeffect_lock_common_Native_onTouch",
     "Java_com_samsung_android_visualeffect_lock_common_Native_showUnlock",
     "Java_com_samsung_android_visualeffect_lock_common_Native_showAffordance",
@@ -1007,10 +1183,10 @@ if ($badging -notmatch "package: name='$([regex]::Escape($expectedPackage))'") {
 if ($badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'") {
     throw "ARM64 launcher label verification failed"
 }
-if ($ValidationVersionCode -gt 0 -and
+if (($ValidationVersionCode -gt 0 -or $testerVersionCode -gt 0) -and
         $badging -notmatch
-        "versionCode='$ValidationVersionCode'.*versionName='$([regex]::Escape($canonicalVersionName))'") {
-    throw "Validation APK version metadata verification failed"
+        "versionCode='$stagedVersionCode'.*versionName='$([regex]::Escape($expectedVersionName))'") {
+    throw "Staged APK version metadata verification failed"
 }
 
 $entries = @(& "jar.exe" tf $signed)
@@ -1024,6 +1200,7 @@ $expectedNativeEntries = @(
     "lib/arm64-v8a/liblleSparklingBubbles.so",
     "lib/arm64-v8a/liblleColourDroplet.so",
     "lib/arm64-v8a/liblleS6WaterDroplet.so",
+    "lib/arm64-v8a/liblleN3RippleInk.so",
     "lib/arm64-v8a/libWaterRipple.so",
     "lib/arm64-v8a/libsecveAbstractTile.so",
     "lib/arm64-v8a/libsecveSrkCommon.so",
@@ -1191,6 +1368,27 @@ if ($s6WaterDropletAppOwnedApkHash -ne $s6WaterDropletAppOwnedStageHash) {
 }
 Remove-Item -Recurse -Force $s6WaterDropletAppOwnedApkVerify
 
+$n3RippleInkApkVerify = Join-Path $out "verify-n3-ripple-ink-entry"
+New-Item -ItemType Directory -Force -Path $n3RippleInkApkVerify | Out-Null
+Push-Location $n3RippleInkApkVerify
+try {
+    Run "jar.exe" @("xf", $signed,
+            "lib/arm64-v8a/liblleN3RippleInk.so")
+} finally {
+    Pop-Location
+}
+$n3RippleInkApkLibrary = Join-Path $n3RippleInkApkVerify `
+        "lib\arm64-v8a\liblleN3RippleInk.so"
+if (-not (Test-Path -LiteralPath $n3RippleInkApkLibrary)) {
+    throw "N3 Ripple Ink worker APK entry is missing"
+}
+$n3RippleInkApkHash = (Get-FileHash -LiteralPath $n3RippleInkApkLibrary `
+        -Algorithm SHA256).Hash
+if ($n3RippleInkApkHash -ne $n3RippleInkStageHash) {
+    throw "N3 Ripple Ink worker APK entry hash mismatch"
+}
+Remove-Item -Recurse -Force $n3RippleInkApkVerify
+
 $canonicalManifestHashAfter = (Get-FileHash -LiteralPath $canonicalManifest `
         -Algorithm SHA256).Hash
 if ($canonicalManifestHashAfter -ne $canonicalManifestHashBefore) {
@@ -1202,6 +1400,9 @@ Write-Host "Application ID: $expectedPackage"
 Write-Host "Build flavor: $buildFlavorName"
 if ($ValidationVersionCode -gt 0) {
     Write-Host "Validation-only versionCode override: $ValidationVersionCode"
+    Write-Host "Canonical manifest SHA-256: $canonicalManifestHashAfter"
+} elseif ($testerVersionCode -gt 0) {
+    Write-Host "Tester-only version override: $testerVersionName (versionCode $testerVersionCode)"
     Write-Host "Canonical manifest SHA-256: $canonicalManifestHashAfter"
 }
 if ($LegacyVendorEffects) {
@@ -1216,6 +1417,7 @@ Write-Host "Native entries: $($nativeEntries -join ', ')"
 Write-Host "App-owned Sparkling Bubbles SHA-256: $sparklingAppOwnedStageHash"
 Write-Host "App-owned Coloured Droplet SHA-256: $colourDropletAppOwnedStageHash"
 Write-Host "App-owned S6 Water Droplet SHA-256: $s6WaterDropletAppOwnedStageHash"
+Write-Host "N3 Ripple Ink worker SHA-256: $n3RippleInkStageHash"
 if ($LegacyVendorEffects) {
     Write-Host "S6 Water Droplet SHA-256: $s6WaterDropletStageHash"
 }

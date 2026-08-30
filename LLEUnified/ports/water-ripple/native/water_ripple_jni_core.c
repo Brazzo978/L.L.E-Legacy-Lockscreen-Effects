@@ -85,6 +85,54 @@ Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_move(
     return empty;
 }
 
+JNIEXPORT jint JNICALL
+Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_moveAdaptive(
+        JNIEnv *env,
+        jclass clazz,
+        jfloatArray velocity_array,
+        jfloatArray height_array,
+        jint x_begin,
+        jint y_begin,
+        jint x_end,
+        jint y_end,
+        jint detail_width,
+        jint detail_height,
+        jboolean check_empty,
+        jfloat damping,
+        jfloat wave_coefficient,
+        jfloat stock_ticks) {
+    (void) clazz;
+    if (velocity_array == NULL || height_array == NULL) {
+        return JNI_TRUE;
+    }
+
+    jfloat *velocity = (*env)->GetFloatArrayElements(env, velocity_array, NULL);
+    jfloat *height = (*env)->GetFloatArrayElements(env, height_array, NULL);
+    jboolean empty = JNI_TRUE;
+    if (velocity != NULL && height != NULL) {
+        empty = lle_ripple_move_adaptive(
+                velocity,
+                height,
+                x_begin,
+                y_begin,
+                x_end,
+                y_end,
+                detail_width,
+                detail_height,
+                check_empty == JNI_TRUE,
+                damping,
+                wave_coefficient,
+                stock_ticks) ? JNI_TRUE : JNI_FALSE;
+    }
+    if (velocity != NULL) {
+        (*env)->ReleaseFloatArrayElements(env, velocity_array, velocity, 0);
+    }
+    if (height != NULL) {
+        (*env)->ReleaseFloatArrayElements(env, height_array, height, 0);
+    }
+    return empty;
+}
+
 JNIEXPORT void JNICALL
 Java_com_android_internal_policy_impl_keyguard_sec_JniWaterRippleRender_ripple(
         JNIEnv *env,

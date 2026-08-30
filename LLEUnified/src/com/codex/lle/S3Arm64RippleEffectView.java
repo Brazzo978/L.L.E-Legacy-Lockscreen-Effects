@@ -54,11 +54,15 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final int SIMULATION_HZ = 60;
     private static final int MAX_SIMULATION_STEPS_PER_FRAME = 4;
     private static final long NANOS_PER_SECOND = 1_000_000_000L;
+    /* A compositor/pause gap is discarded rather than replaying several old
+     * wave frames after unlock.  66.667 ms is four recovered 60 Hz ticks. */
+    private static final long MAX_ADAPTIVE_FRAME_DELTA_NS = 66_666_667L;
 
     private static final AtomicReference<S3Arm64RippleEffectView> NATIVE_OWNER =
             new AtomicReference<>();
 
     private final boolean inkMode;
+    private final boolean adaptiveRefresh;
     private final RippleRenderer rippleRenderer = new RippleRenderer();
     private final Object bitmapLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
@@ -75,6 +79,17 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private float lastScreenX;
     private float lastScreenY;
     private long backgroundSerial;
+    private volatile int backgroundDebugSourceWidth;
+    private volatile int backgroundDebugSourceHeight;
+    private volatile int backgroundDebugInitialTargetWidth;
+    private volatile int backgroundDebugInitialTargetHeight;
+    private volatile int backgroundDebugSurfaceWidth;
+    private volatile int backgroundDebugSurfaceHeight;
+    private volatile int backgroundDebugActiveWidth;
+    private volatile int backgroundDebugActiveHeight;
+    private volatile int backgroundDebugMapPasses;
+    private volatile boolean backgroundDebugDeferredUntilSurface;
+    private volatile String backgroundDebugStatus = "not_set";
     private Runnable affordanceRunnable;
     private volatile int affordanceGeneration;
     private SoundPool touchSoundPool;
@@ -87,12 +102,17 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private UnlockEffectReadiness.ReadinessListener readinessListener;
 
     public S3Arm64RippleEffectView(Context context) {
-        this(context, false);
+        this(context, false, false);
     }
 
     S3Arm64RippleEffectView(Context context, boolean inkMode) {
+        this(context, inkMode, false);
+    }
+
+    S3Arm64RippleEffectView(Context context, boolean inkMode, boolean adaptiveRefresh) {
         super(context);
         this.inkMode = inkMode;
+        this.adaptiveRefresh = adaptiveRefresh;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -297,15 +317,49 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             return;
         }
 
-        final int targetWidth = Math.max(1, getWidth() > 0
-                ? getWidth() : getResources().getDisplayMetrics().widthPixels);
-        final int targetHeight = Math.max(1, getHeight() > 0
-                ? getHeight() : getResources().getDisplayMetrics().heightPixels);
-        final Bitmap candidate = createMappedBackground(source, targetWidth, targetHeight);
+        final int viewWidth = getWidth();
+        final int viewHeight = getHeight();
+        final int resourceWidth = getResources().getDisplayMetrics().widthPixels;
+        final int resourceHeight = getResources().getDisplayMetrics().heightPixels;
+        final boolean deferUntilSurface = viewWidth <= 0 || viewHeight <= 0;
+        // The service cache is captured at the physical display size. Resource metrics can
+        // exclude navigation/system-bar insets (for example 1920x1128 on a 1920x1200 tablet).
+        // Mapping to those usable-area metrics here and then mapping again to the real GLES
+        // surface zooms/crops the bitmap twice. Preserve the source until the surface exists.
+        final int targetWidth = Math.max(1,
+                deferUntilSurface ? source.getWidth() : viewWidth);
+        final int targetHeight = Math.max(1,
+                deferUntilSurface ? source.getHeight() : viewHeight);
+        backgroundDebugSourceWidth = source.getWidth();
+        backgroundDebugSourceHeight = source.getHeight();
+        backgroundDebugInitialTargetWidth = targetWidth;
+        backgroundDebugInitialTargetHeight = targetHeight;
+        backgroundDebugSurfaceWidth = 0;
+        backgroundDebugSurfaceHeight = 0;
+        backgroundDebugActiveWidth = 0;
+        backgroundDebugActiveHeight = 0;
+        backgroundDebugMapPasses = 0;
+        backgroundDebugDeferredUntilSurface = deferUntilSurface;
+        backgroundDebugStatus = deferUntilSurface ? "awaiting_surface" : "initial_mapping";
+        Log.i(TAG, "background plan mode=" + backgroundDebugMode()
+                + " sourceKind=" + safeBackgroundSourceKind(sourceName)
+                + " source=" + dimensions(source.getWidth(), source.getHeight())
+                + " view=" + dimensions(viewWidth, viewHeight)
+                + " resources=" + dimensions(resourceWidth, resourceHeight)
+                + " initialTarget=" + dimensions(targetWidth, targetHeight)
+                + " deferred=" + deferUntilSurface);
+        final Bitmap candidate = createMappedBackground(
+                source, targetWidth, targetHeight, "initial");
         if (candidate == null) {
-            Log.e(TAG, "Could not normalize background source=" + sourceName);
+            backgroundDebugStatus = "initial_mapping_failed";
+            Log.e(TAG, "background normalization failed mode=" + backgroundDebugMode()
+                    + " sourceKind=" + safeBackgroundSourceKind(sourceName));
             return;
         }
+        backgroundDebugActiveWidth = candidate.getWidth();
+        backgroundDebugActiveHeight = candidate.getHeight();
+        backgroundDebugStatus = deferUntilSurface
+                ? "preserved_until_surface" : "initial_mapping_ready";
 
         final long serial;
         synchronized (bitmapLock) {
@@ -339,6 +393,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             serial = ++backgroundSerial;
         }
         externalBackground = false;
+        backgroundDebugStatus = "cleared";
         invalidateResourceReadiness("background cleared");
         if (!canAcceptCommands()) {
             if (paused && !destroyed) {
@@ -660,6 +715,52 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
     }
 
+    /** The opt-in path advances Water Ripple from elapsed display time. */
+    private boolean usesAdaptivePhysics() {
+        return !inkMode && adaptiveRefresh;
+    }
+
+    /**
+     * Display-refresh clock for the opt-in physics path.  It intentionally has
+     * no accumulator: a stalled compositor frame is forgotten, so the next
+     * fresh vsync cannot replay an unlock/ink backlog.
+     */
+    static final class AdaptiveFrameClock {
+        private long previousFrameNs = Long.MIN_VALUE;
+
+        /** Returns a usable elapsed duration, or zero for first/duplicate/stalled frames. */
+        long advance(long frameTimeNs) {
+            if (previousFrameNs == Long.MIN_VALUE) {
+                previousFrameNs = frameTimeNs;
+                return 0L;
+            }
+            long elapsedNs = frameTimeNs - previousFrameNs;
+            previousFrameNs = frameTimeNs;
+            if (elapsedNs <= 0L || elapsedNs > MAX_ADAPTIVE_FRAME_DELTA_NS) {
+                return 0L;
+            }
+            return elapsedNs;
+        }
+
+        void reset() {
+            previousFrameNs = Long.MIN_VALUE;
+        }
+    }
+
+    private static float adaptivePhysicsTicks(long elapsedNs) {
+        if (elapsedNs <= 0L) {
+            return 0.0f;
+        }
+        double stockTicks = elapsedNs * (double) SIMULATION_HZ / NANOS_PER_SECOND;
+        /* Nanoseconds cannot exactly express 1/60.  Snap only the sub-microsecond
+         * rational rounding band so an intended 60 Hz frame remains the exact
+         * recovered oracle; real frame jitter continues to use measured time. */
+        if (Math.abs(stockTicks - 1.0d) <= 0.0001d) {
+            return 1.0f;
+        }
+        return (float) Math.min((double) MAX_SIMULATION_STEPS_PER_FRAME, stockTicks);
+    }
+
     private void activateContinuousRendering() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             if (canAcceptCommands()) {
@@ -731,43 +832,97 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
     }
 
-    private Bitmap createMappedBackground(Bitmap source, int width, int height) {
-        Bitmap normalized;
-        try {
-            normalized = source.copy(Bitmap.Config.ARGB_8888, false);
-        } catch (RuntimeException exception) {
-            Log.e(TAG, "ARGB_8888 background copy failed", exception);
-            return null;
+    String backgroundMappingDebugSnapshot() {
+        return "s3_background_mode=" + backgroundDebugMode() + '\n'
+                + "s3_background_source_dimensions="
+                + dimensions(backgroundDebugSourceWidth, backgroundDebugSourceHeight) + '\n'
+                + "s3_background_initial_target_dimensions="
+                + dimensions(backgroundDebugInitialTargetWidth,
+                        backgroundDebugInitialTargetHeight) + '\n'
+                + "s3_background_surface_dimensions="
+                + dimensions(backgroundDebugSurfaceWidth, backgroundDebugSurfaceHeight) + '\n'
+                + "s3_background_active_dimensions="
+                + dimensions(backgroundDebugActiveWidth, backgroundDebugActiveHeight) + '\n'
+                + "s3_background_map_passes=" + backgroundDebugMapPasses + '\n'
+                + "s3_background_deferred_until_surface="
+                + backgroundDebugDeferredUntilSurface + '\n'
+                + "s3_background_mapping_status=" + backgroundDebugStatus + '\n';
+    }
+
+    private String backgroundDebugMode() {
+        return inkMode ? "ink" : "ripple";
+    }
+
+    private static String safeBackgroundSourceKind(String sourceName) {
+        if (BackgroundSourceRenderer.SHARED_CACHE_SOURCE.equals(sourceName)) {
+            return "shared_cache";
         }
-        if (normalized == null) {
-            return null;
-        }
-        if (normalized.getWidth() == width && normalized.getHeight() == height) {
+        return sourceName == null || sourceName.length() == 0
+                ? "unspecified" : "external";
+    }
+
+    private static String dimensions(int width, int height) {
+        return Math.max(0, width) + "x" + Math.max(0, height);
+    }
+
+    private Bitmap createMappedBackground(
+            Bitmap source, int width, int height, String stage) {
+        if (source.getWidth() == width && source.getHeight() == height) {
+            Bitmap normalized;
+            try {
+                normalized = source.copy(Bitmap.Config.ARGB_8888, false);
+            } catch (RuntimeException exception) {
+                Log.e(TAG, "ARGB_8888 background copy failed", exception);
+                return null;
+            }
+            if (normalized == null) {
+                return null;
+            }
+            Log.i(TAG, "background mapping stage=" + stage
+                    + " mode=" + backgroundDebugMode()
+                    + " transform=none dimensions=" + dimensions(width, height));
             return normalized;
         }
 
-        float sourceRatio = normalized.getWidth() / (float) normalized.getHeight();
+        /*
+         * A mismatched source is synchronously rasterized into the owned target.
+         * Drawing straight from the service-owned ARGB cache avoids holding an
+         * otherwise redundant full-size normalized copy during rotation/tablet
+         * remapping; the resulting target pixels and ownership remain unchanged.
+         */
+        float sourceRatio = source.getWidth() / (float) source.getHeight();
         float targetRatio = width / (float) height;
         Rect sourceRect;
         if (sourceRatio > targetRatio) {
-            int cropWidth = Math.max(1, Math.round(normalized.getHeight() * targetRatio));
-            int left = Math.max(0, (normalized.getWidth() - cropWidth) / 2);
+            int cropWidth = Math.max(1, Math.round(source.getHeight() * targetRatio));
+            int left = Math.max(0, (source.getWidth() - cropWidth) / 2);
             sourceRect = new Rect(left, 0,
-                    Math.min(normalized.getWidth(), left + cropWidth),
-                    normalized.getHeight());
+                    Math.min(source.getWidth(), left + cropWidth),
+                    source.getHeight());
         } else {
-            int cropHeight = Math.max(1, Math.round(normalized.getWidth() / targetRatio));
-            int top = Math.max(0, (normalized.getHeight() - cropHeight) / 2);
-            sourceRect = new Rect(0, top, normalized.getWidth(),
-                    Math.min(normalized.getHeight(), top + cropHeight));
+            int cropHeight = Math.max(1, Math.round(source.getWidth() / targetRatio));
+            int top = Math.max(0, (source.getHeight() - cropHeight) / 2);
+            sourceRect = new Rect(0, top, source.getWidth(),
+                    Math.min(source.getHeight(), top + cropHeight));
         }
+
+        backgroundDebugMapPasses++;
+        Log.i(TAG, "background mapping stage=" + stage
+                + " mode=" + backgroundDebugMode()
+                + " transform=center_crop source="
+                + dimensions(source.getWidth(), source.getHeight())
+                + " target=" + dimensions(width, height)
+                + " crop=" + dimensions(sourceRect.width(), sourceRect.height())
+                + " offset=" + sourceRect.left + "," + sourceRect.top
+                + " sourceRatio=" + sourceRatio + " targetRatio=" + targetRatio
+                + " pass=" + backgroundDebugMapPasses);
 
         Bitmap mapped = null;
         try {
             mapped = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
             Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
             new Canvas(mapped).drawBitmap(
-                    normalized, sourceRect, new Rect(0, 0, width, height), paint);
+                    source, sourceRect, new Rect(0, 0, width, height), paint);
             return mapped;
         } catch (RuntimeException exception) {
             if (mapped != null && !mapped.isRecycled()) {
@@ -775,8 +930,6 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             Log.e(TAG, "Background crop failed", exception);
             return null;
-        } finally {
-            normalized.recycle();
         }
     }
 
@@ -855,6 +1008,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         private final float[] worldViewMatrix = new float[16];
         private final float[] mvpMatrix = new float[16];
         private final SimulationClock simulationClock = new SimulationClock();
+        private final AdaptiveFrameClock adaptiveFrameClock = new AdaptiveFrameClock();
 
         private Thread glThread;
         private Bitmap activeBackground;
@@ -941,6 +1095,15 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         public void onSurfaceChanged(GL10 gl, int width, int height) {
             surfaceWidth = width;
             surfaceHeight = height;
+            backgroundDebugSurfaceWidth = Math.max(0, width);
+            backgroundDebugSurfaceHeight = Math.max(0, height);
+            Log.i(TAG, "background surface mode=" + backgroundDebugMode()
+                    + " generation=" + contextGeneration
+                    + " surface=" + dimensions(width, height)
+                    + " active=" + dimensions(
+                            activeBackground == null ? 0 : activeBackground.getWidth(),
+                            activeBackground == null ? 0 : activeBackground.getHeight())
+                    + " gpuReady=" + gpuReady);
             buildMvp(width, height);
             if (!surfaceReady || !nativeBridgeAvailable || !meshInitialized
                     || width <= 0 || height <= 0) {
@@ -988,6 +1151,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 waterTextureLoaded = uploadWaterTexture();
                 backgroundTextureLoaded = uploadActiveBackground();
                 externalBackground = backgroundTextureLoaded;
+                backgroundDebugStatus = backgroundTextureLoaded
+                        ? "uploaded_after_surface" : "surface_upload_pending";
                 if (!waterTextureLoaded) {
                     initializationFailed = true;
                     failReadiness("reflection texture upload failed");
@@ -1001,6 +1166,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 publishResourcesReadyIfComplete();
                 drawCount = 0;
                 simulationClock.reset();
+                adaptiveFrameClock.reset();
                 Log.i(TAG, "surface initialized generation=" + contextGeneration
                         + " size=" + width + "x" + height
                         + " dragThreshold=" + dragRippleThresholdPx());
@@ -1063,14 +1229,24 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 advanceReadiness(UnlockEffectReadiness.STATE_FIRST_FRAME_READY,
                         "first transparent frame");
 
-                // Preserve the original 60 Hz solver cadence while presentation follows the panel.
-                int simulationSteps = simulationClock.advance(System.nanoTime());
-                if (drawCount > 0 && !simulationIdle) {
-                    for (int step = 0; step < simulationSteps; ++step) {
-                        stepSimulation();
+                if (usesAdaptivePhysics()) {
+                    long elapsedNs = adaptiveFrameClock.advance(System.nanoTime());
+                    if (drawCount > 0 && !simulationIdle && elapsedNs > 0L) {
+                        stepAdaptiveSimulation(elapsedNs);
                         if (simulationIdle) {
-                            simulationClock.reset();
-                            break;
+                            adaptiveFrameClock.reset();
+                        }
+                    }
+                } else {
+                    // Preserve the original recovered 60 Hz solver cadence verbatim.
+                    int simulationSteps = simulationClock.advance(System.nanoTime());
+                    if (drawCount > 0 && !simulationIdle) {
+                        for (int step = 0; step < simulationSteps; ++step) {
+                            stepSimulation();
+                            if (simulationIdle) {
+                                simulationClock.reset();
+                                break;
+                            }
                         }
                     }
                 }
@@ -1087,6 +1263,9 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
         void installBackground(Bitmap candidate, long serial, String sourceName) {
             if (destroyed || serial != currentBackgroundSerial()) {
+                Log.i(TAG, "background install discarded mode=" + backgroundDebugMode()
+                        + " reason=" + (destroyed ? "destroyed" : "stale_serial")
+                        + " serial=" + serial + " current=" + currentBackgroundSerial());
                 recycleOwnedBitmap(candidate);
                 return;
             }
@@ -1096,6 +1275,13 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 activeBackground = candidate;
                 backgroundTextureLoaded = false;
                 externalBackground = false;
+                backgroundDebugActiveWidth = candidate.getWidth();
+                backgroundDebugActiveHeight = candidate.getHeight();
+                backgroundDebugStatus = "queued_until_surface";
+                Log.i(TAG, "background install queued mode=" + backgroundDebugMode()
+                        + " sourceKind=" + safeBackgroundSourceKind(sourceName)
+                        + " serial=" + serial + " candidate="
+                        + dimensions(candidate.getWidth(), candidate.getHeight()));
                 if (previous != null && previous != candidate) {
                     recycleOwnedBitmap(previous);
                 }
@@ -1114,18 +1300,26 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                 activeBackground = candidate;
                 backgroundTextureLoaded = true;
                 externalBackground = true;
+                backgroundDebugActiveWidth = candidate.getWidth();
+                backgroundDebugActiveHeight = candidate.getHeight();
+                backgroundDebugStatus = "uploaded_direct";
                 publishResourcesReadyIfComplete();
                 if (previous != null && previous != candidate) {
                     recycleOwnedBitmap(previous);
                 }
-                Log.i(TAG, "background uploaded source=" + sourceName + " size="
-                        + candidate.getWidth() + "x" + candidate.getHeight());
+                Log.i(TAG, "background uploaded mode=" + backgroundDebugMode()
+                        + " sourceKind=" + safeBackgroundSourceKind(sourceName)
+                        + " serial=" + serial + " size="
+                        + dimensions(candidate.getWidth(), candidate.getHeight())
+                        + " surface=" + dimensions(surfaceWidth, surfaceHeight)
+                        + " mapPasses=" + backgroundDebugMapPasses);
             } else {
                 recycleOwnedBitmap(candidate);
                 backgroundTextureLoaded = previous != null
                         && S3RippleLifecycleNative.nativeUploadBitmap(
                         S3RippleLifecycleNative.TEXTURE_BACKGROUND, previous);
                 externalBackground = backgroundTextureLoaded;
+                backgroundDebugStatus = "upload_failed";
                 failReadiness("background upload failed");
                 logNativeError("background upload failed");
             }
@@ -1168,7 +1362,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             lastTouchEventTimeMs = eventTimeMs;
             if (simulationIdle) {
-                simulationClock.reset();
+                if (usesAdaptivePhysics()) {
+                    adaptiveFrameClock.reset();
+                } else {
+                    simulationClock.reset();
+                }
             }
             simulationIdle = false;
 
@@ -1251,7 +1449,11 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
             lastTouchEventTimeMs = eventTimeMs;
             if (simulationIdle) {
-                simulationClock.reset();
+                if (usesAdaptivePhysics()) {
+                    adaptiveFrameClock.reset();
+                } else {
+                    simulationClock.reset();
+                }
             }
             simulationIdle = false;
             injectInk(localX, localY, localX, localY, 0);
@@ -1371,6 +1573,37 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
             }
         }
 
+        /** Advances the Water Ripple opt-in path once per presented display frame. */
+        private void stepAdaptiveSimulation(long elapsedNs) {
+            final float stockTicks = adaptivePhysicsTicks(elapsedNs);
+            if (stockTicks <= 0.0f) {
+                return;
+            }
+            boolean landscape = surfaceWidth > surfaceHeight;
+            int xBegin = landscape ? S3_LANDSCAPE_X_BEGIN : S3_PORTRAIT_X_BEGIN;
+            int yBegin = landscape ? S3_LANDSCAPE_Y_BEGIN : S3_PORTRAIT_Y_BEGIN;
+            int xEnd = landscape ? S3_LANDSCAPE_X_END : S3_PORTRAIT_X_END;
+            int yEnd = landscape ? S3_LANDSCAPE_Y_END : S3_PORTRAIT_Y_END;
+            int empty = JniWaterRippleRender.moveAdaptive(
+                    velocity,
+                    heights,
+                    xBegin,
+                    yBegin,
+                    xEnd,
+                    yEnd,
+                    DETAIL_WIDTH,
+                    DETAIL_HEIGHT,
+                    true,
+                    REDUCTION_RATE,
+                    WAVE_COEFFICIENT,
+                    stockTicks);
+            fillGpuHeights();
+            simulationIdle = empty != 0 && !glTouched;
+            if (simulationIdle && drawCount >= 2) {
+                requestIdleRenderMode(contextGeneration);
+            }
+        }
+
         private void fillGpuHeights() {
             // Exact original transposed packing and three-neighbor height tuple.
             for (int i = 0; i < SURFACE_HEIGHT; ++i) {
@@ -1448,17 +1681,36 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
 
         private void remapActiveBackgroundForSurface(int width, int height) {
-            if (activeBackground == null || activeBackground.isRecycled()
-                    || (activeBackground.getWidth() == width
-                    && activeBackground.getHeight() == height)) {
+            if (activeBackground == null || activeBackground.isRecycled()) {
+                backgroundDebugStatus = "surface_without_background";
                 return;
             }
-            Bitmap remapped = createMappedBackground(activeBackground, width, height);
+            if (activeBackground.getWidth() == width
+                    && activeBackground.getHeight() == height) {
+                backgroundDebugActiveWidth = activeBackground.getWidth();
+                backgroundDebugActiveHeight = activeBackground.getHeight();
+                backgroundDebugStatus = "surface_exact_no_remap";
+                Log.i(TAG, "background surface mapping mode=" + backgroundDebugMode()
+                        + " transform=none dimensions=" + dimensions(width, height)
+                        + " mapPasses=" + backgroundDebugMapPasses);
+                return;
+            }
+            Log.w(TAG, "background surface remap mode=" + backgroundDebugMode()
+                    + " from=" + dimensions(
+                            activeBackground.getWidth(), activeBackground.getHeight())
+                    + " to=" + dimensions(width, height)
+                    + " priorPasses=" + backgroundDebugMapPasses);
+            Bitmap remapped = createMappedBackground(
+                    activeBackground, width, height, "surface");
             if (remapped == null) {
+                backgroundDebugStatus = "surface_remap_failed";
                 return;
             }
             Bitmap previous = activeBackground;
             activeBackground = remapped;
+            backgroundDebugActiveWidth = remapped.getWidth();
+            backgroundDebugActiveHeight = remapped.getHeight();
+            backgroundDebugStatus = "surface_remapped";
             ownBitmap(remapped);
             recycleOwnedBitmap(previous);
         }
