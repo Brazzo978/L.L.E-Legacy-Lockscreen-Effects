@@ -5,7 +5,9 @@ final class LgPixelateScene {
     static final long CANCEL_RETRACT_MS = 300L;
     static final long CANCEL_FADE_MS = 350L;
     static final long UNLOCK_MS = 400L;
-    static final long UNLOCK_HOLD_MS = 550L;
+    // Keep the last-screen underlay over the slower SystemUI transition without delaying
+    // the unlock dispatch itself (which starts independently at UNLOCK_MS).
+    static final long UNLOCK_HOLD_MS = 1000L;
     static final long AFFORDANCE_MS = 520L;
 
     static final class Frame {

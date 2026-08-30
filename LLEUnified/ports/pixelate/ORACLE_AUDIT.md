@@ -90,8 +90,8 @@ Only `LgPixelateScene.java` and its host test were updated in the release worktr
    to both UV streams.
 3. Confirm on device that Last screen is fully fixed beneath the effect and no unpixelated
    lock cache appears full-screen at down/cancel fade.
-4. Add/import the authorized `mosaic_touchdown` and `mosaic_unlock` only with the separate
-   sound mapping decision; donor also contains `mosaic_lock`.
+4. Completed: the authorized `mosaic_touchdown`, `mosaic_unlock`, and `mosaic_lock` are
+   imported byte-for-byte and mapped to Pixelate touch, unlock, and lock events.
 5. Capture an ordinary-touch donor/device comparison for final geometric orientation and
    model-space mask alignment; static shader/source evidence fixes the formulas but not a
    modern S23 coordinate-orientation capture.

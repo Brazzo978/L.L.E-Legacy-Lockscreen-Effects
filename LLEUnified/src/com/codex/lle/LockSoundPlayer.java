@@ -149,6 +149,8 @@ final class LockSoundPlayer {
                     load(R.raw.lg_lightparticle_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_CRYSTAL] =
                     load(R.raw.lg_crystal_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G2_PIXELATE] =
+                    load(R.raw.lg_pixelate_lock);
             effectSounds[OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS] =
                     load(R.raw.xperia_z1_blinds_lock);
             effectSounds[OverlayPrefs.EFFECT_REVOLVING_GLASS] =

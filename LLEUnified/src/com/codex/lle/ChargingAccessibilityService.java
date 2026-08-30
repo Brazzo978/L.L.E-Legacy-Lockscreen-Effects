@@ -102,8 +102,10 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_BRILLIANT_RING_TAIL_MS = 930L;
     private static final long PIN_ENTRY_DELAY_LENS_FLARE_TAIL_MS = 600L;
     private static final long PIN_ENTRY_DELAY_S3_NONE_TAIL_MS = 375L;
+    // Pixelate reaches full coverage at 400 ms. Start the SystemUI handoff there while
+    // its scene independently keeps the captured underlay alive through 1000 ms.
     private static final long PIN_ENTRY_DELAY_LG_G2_PIXELATE_TAIL_MS =
-            LgPixelateScene.UNLOCK_HOLD_MS;
+            LgPixelateScene.UNLOCK_MS;
     private static final long PIN_ENTRY_DELAY_LG_G2_PARTICLE_TAIL_MS = 440L;
     private static final long PIN_ENTRY_DELAY_LG_G2_CRYSTAL_TAIL_MS = 500L;
     private static final long PIN_ENTRY_DELAY_LG_G1_WHITE_HOLE_TAIL_MS =
@@ -164,6 +166,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long LOCKSCREEN_EXIT_FOLLOWUP_ARM_WINDOW_MS = 700L;
     private static final long LOCK_SOUND_THROTTLE_MS = 1200L;
     private static final long LOCK_SOUND_UNLOCK_CONFIRM_MS = 600L;
+    private static final long RANDOM_UNLOCK_NEXT_PRELOAD_DELAY_MS = 1300L;
     private static final long SCREEN_OFF_PREARM_FAST_MS = 80L;
     private static final long SCREEN_OFF_PREARM_SETTLE_MS = 180L;
     private static final long SCREEN_OFF_PREARM_LATE_MS = 420L;
@@ -630,6 +633,22 @@ public class ChargingAccessibilityService extends AccessibilityService
             scheduleCandidateWakeRefreshes("display_changed");
         }
     };
+    private final Runnable randomUnlockAdvanceRunnable = new Runnable() {
+        @Override
+        public void run() {
+            randomUnlockAdvancePending = false;
+            String reason = randomUnlockAdvanceReason;
+            randomUnlockAdvanceReason = "";
+            advanceAndPreloadRandomUnlockEffect(
+                    reason.isEmpty() ? "confirmed_unlock" : reason);
+        }
+    };
+    private final Runnable randomUnlockPrefsRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refreshRandomUnlockEffectAfterPreferenceChange();
+        }
+    };
     private final Runnable testerUnderlayProbeRunnable = new Runnable() {
         @Override
         public void run() {
@@ -704,6 +723,8 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean unlockAffordanceDispatchQueued;
     private boolean lastInteractive;
     private boolean interactiveSessionWasUnlocked;
+    private boolean randomUnlockAdvancePending;
+    private String randomUnlockAdvanceReason = "";
     private boolean unlockFxVisible;
     private boolean unlockEffectGestureActive;
     private boolean lockCycleSafetyBypassActive;
@@ -906,6 +927,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 refreshChargingState();
                 scheduleCandidateWakeRefreshes("broadcast:" + action);
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                advancePendingRandomUnlockEffectForScreenOff();
                 if (!captureLgPreLockUnderlayIfNeeded()) {
                     captureTesterPreLockFrame();
                 }
@@ -967,6 +989,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                                 false)
                         .apply();
                 scheduleEffectBackgroundRefreshAlarm("user_present");
+                scheduleRandomUnlockAdvance("user_present");
             } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
                 screenOffTransitionPending = false;
                 clearGlobalActionsSuppression("screen_on", false);
@@ -2341,6 +2364,18 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (holdRuntimeForBootSafety("prefs:" + key)) {
             return;
         }
+        if (OverlayPrefs.UNLOCK_EFFECT_RANDOM_ENABLED.equals(key)
+                || OverlayPrefs.UNLOCK_EFFECT_RANDOM_POOL.equals(key)) {
+            handler.removeCallbacks(randomUnlockPrefsRefreshRunnable);
+            handler.postDelayed(randomUnlockPrefsRefreshRunnable, 32L);
+            return;
+        }
+        if (OverlayPrefs.UNLOCK_EFFECT_RANDOM_CURRENT.equals(key)
+                || OverlayPrefs.UNLOCK_EFFECT_RANDOM_REMAINING.equals(key)) {
+            // Candidate changes are owned by the coalesced preference refresh or the
+            // post-unlock advance path; avoid rebuilding twice for one shuffle draw.
+            return;
+        }
         if (OverlayPrefs.TESTER_NO_COLORMAP_MODE.equals(key)) {
             boolean enabled = OverlayPrefs.testerNoColormapModeEnabled(this);
             int selectedEffect = OverlayPrefs.rawUnlockEffect(this);
@@ -2992,6 +3027,27 @@ public class ChargingAccessibilityService extends AccessibilityService
         } finally {
             suppressUnlockEffectPreferenceCallback = wasSuppressed;
         }
+    }
+
+    private int setUnlockEffectFallbackInternally(int failedEffect, String reason) {
+        if (OverlayPrefs.randomUnlockEffectEnabled(this)) {
+            OverlayPrefs.useRandomUnlockEffectFallback(this);
+            Log.e(TAG, "random renderer failed; using S3 None for this cycle"
+                    + " failedType=" + failedEffect
+                    + " reason=" + reason);
+            return OverlayPrefs.EFFECT_S3_NONE;
+        }
+        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        Log.e(TAG, "renderer failed; using Lens Flare"
+                + " failedType=" + failedEffect
+                + " reason=" + reason);
+        return OverlayPrefs.EFFECT_S4_LENS_FLARE;
+    }
+
+    private UnlockEffectRenderer createUnlockEffectFallbackRenderer(int effect) {
+        return effect == OverlayPrefs.EFFECT_S3_NONE
+                ? new NoneCircleUnlockEffectView(rendererContext())
+                : new LensFlareEffectView(rendererContext());
     }
 
     private boolean writeTextFile(File file, String text) {
@@ -3704,6 +3760,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             interactiveSessionWasUnlocked = true;
             Log.i(TAG, "lock sound armed reason=stable_unlocked_session"
                     + " sinceScreenOnMs=" + sinceScreenOnMs);
+            scheduleRandomUnlockAdvance("stable_unlocked_session");
         }
         boolean home = interactive && !locked && isHomePackage(lastWindowPackage);
         boolean blockedPackageSurface = isRuntimeSurfaceBlocked();
@@ -4333,6 +4390,94 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " effect=" + unlockEffectRendererType);
     }
 
+    private void refreshRandomUnlockEffectAfterPreferenceChange() {
+        if (!serviceAlive || !runtimeStartedAfterBootSafety) {
+            return;
+        }
+        if (!OverlayPrefs.randomUnlockEffectEnabled(this)) {
+            handler.removeCallbacks(randomUnlockAdvanceRunnable);
+            randomUnlockAdvancePending = false;
+            randomUnlockAdvanceReason = "";
+        }
+        int resolvedEffect = OverlayPrefs.unlockEffect(this);
+        cancelUnlockAffordanceDispatch(false, "random_preferences");
+        unlockAffordanceShownThisWake = false;
+        unlockAffordancePending = isLockscreenLocked(false)
+                && (powerManager == null || powerManager.isInteractive());
+        cancelBufferedReadinessGesture("random_preferences", false);
+        if (unlockEffectRenderer != null && unlockEffectRendererType != resolvedEffect) {
+            destroyUnlockEffectOverlay();
+        }
+        preloadAndAttachSelectedUnlockEffectParked("random_preferences");
+        evaluateVisibility("prefs:random_unlock", false);
+        Log.i(TAG, "random preferences applied enabled="
+                + OverlayPrefs.randomUnlockEffectEnabled(this)
+                + " resolved=" + resolvedEffect
+                + " pool=" + OverlayPrefs.randomUnlockEffectPool(this).size());
+    }
+
+    private void scheduleRandomUnlockAdvance(String reason) {
+        if (!OverlayPrefs.randomUnlockEffectEnabled(this)
+                || randomUnlockAdvancePending) {
+            return;
+        }
+        randomUnlockAdvancePending = true;
+        randomUnlockAdvanceReason = reason == null ? "confirmed_unlock" : reason;
+        handler.postDelayed(randomUnlockAdvanceRunnable,
+                RANDOM_UNLOCK_NEXT_PRELOAD_DELAY_MS);
+        Log.i(TAG, "random advance scheduled reason=" + randomUnlockAdvanceReason
+                + " delayMs=" + RANDOM_UNLOCK_NEXT_PRELOAD_DELAY_MS
+                + " current=" + OverlayPrefs.unlockEffect(this));
+    }
+
+    private void advancePendingRandomUnlockEffectForScreenOff() {
+        if (!randomUnlockAdvancePending) {
+            return;
+        }
+        handler.removeCallbacks(randomUnlockAdvanceRunnable);
+        randomUnlockAdvancePending = false;
+        String scheduledReason = randomUnlockAdvanceReason;
+        randomUnlockAdvanceReason = "";
+        if (!OverlayPrefs.randomUnlockEffectEnabled(this)) {
+            return;
+        }
+        int previous = OverlayPrefs.unlockEffect(this);
+        int next = OverlayPrefs.advanceRandomUnlockEffect(this);
+        if (unlockEffectRenderer != null && unlockEffectRendererType != next) {
+            destroyUnlockEffectOverlay();
+        }
+        scheduleEffectBackgroundRefreshAlarm("random_next:rapid_relock");
+        Log.i(TAG, "random effect advanced reason=rapid_relock"
+                + " scheduledFrom=" + scheduledReason
+                + " previous=" + previous
+                + " next=" + next
+                + " pool=" + OverlayPrefs.randomUnlockEffectPool(this).size());
+    }
+
+    private void advanceAndPreloadRandomUnlockEffect(String reason) {
+        if (!serviceAlive || !OverlayPrefs.randomUnlockEffectEnabled(this)) {
+            return;
+        }
+        boolean interactive = powerManager == null || powerManager.isInteractive();
+        if (!interactive || isLockscreenLocked(false)) {
+            Log.i(TAG, "random advance skipped reason=" + reason
+                    + " interactive=" + interactive
+                    + " locked=" + isLockscreenLocked(false));
+            return;
+        }
+        int previous = OverlayPrefs.unlockEffect(this);
+        int next = OverlayPrefs.advanceRandomUnlockEffect(this);
+        if (unlockEffectRenderer != null && unlockEffectRendererType != next) {
+            destroyUnlockEffectOverlay();
+        }
+        preloadAndAttachSelectedUnlockEffectParked("random_next:" + reason);
+        scheduleEffectBackgroundRefreshAlarm("random_next:" + reason);
+        Log.i(TAG, "random effect advanced reason=" + reason
+                + " previous=" + previous
+                + " next=" + next
+                + " pool=" + OverlayPrefs.randomUnlockEffectPool(this).size());
+    }
+
     private void preloadAndAttachSelectedUnlockEffectParked(String reason) {
         if (!OverlayPrefs.masterEnabled(this)
                 || !isUnlockEffectEnabledForActivePanel()) {
@@ -4453,10 +4598,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         int failedEffect = unlockEffectRendererType;
-        Log.e(TAG, "renderer readiness failed; falling back to Lens Flare type="
+        Log.e(TAG, "renderer readiness failed type="
                 + failedEffect + " detail=" + unlockEffectReadinessDetail);
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(failedEffect, "readiness_failed");
         preloadAndAttachSelectedUnlockEffectParked("readiness_failed");
         evaluateVisibility("renderer_readiness_failed", false);
     }
@@ -4480,9 +4625,8 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (!EffectAvailability.isAvailable(this, effect)) {
             Log.e(TAG, "selected effect is unavailable in build flavor "
                     + EffectAvailability.buildFlavorLabel()
-                    + "; forcing Lens Flare type=" + effect);
-            effect = OverlayPrefs.EFFECT_S4_LENS_FLARE;
-            setUnlockEffectPreferenceInternally(effect);
+                    + "; applying safe fallback type=" + effect);
+            effect = setUnlockEffectFallbackInternally(effect, "unavailable_in_build");
         }
         if (unlockEffectRenderer != null && unlockEffectRendererType == effect) {
             if (!unlockEffectRendererNeedsRecreate || !isRecreatableNativeEffect(effect)) {
@@ -4834,15 +4978,14 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
             int failedEffect = effect;
-            effect = OverlayPrefs.EFFECT_S4_LENS_FLARE;
-            setUnlockEffectPreferenceInternally(effect);
+            effect = setUnlockEffectFallbackInternally(failedEffect, "renderer_preload");
             unlockEffectRendererType = effect;
             try {
-                unlockEffectRenderer = new LensFlareEffectView(rendererContext());
-                Log.w(TAG, "native renderer fell back to Lens Flare failedType="
-                        + failedEffect);
+                unlockEffectRenderer = createUnlockEffectFallbackRenderer(effect);
+                Log.w(TAG, "native renderer fallback ready failedType="
+                        + failedEffect + " fallbackType=" + effect);
             } catch (Throwable fallbackError) {
-                Log.e(TAG, "Lens Flare fallback failed", fallbackError);
+                Log.e(TAG, "unlock effect fallback failed", fallbackError);
                 unlockEffectRenderer = null;
                 unlockEffectRendererType = -1;
                 return;
@@ -4873,16 +5016,15 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
             int failedEffect = effect;
-            effect = OverlayPrefs.EFFECT_S4_LENS_FLARE;
-            setUnlockEffectPreferenceInternally(effect);
+            effect = setUnlockEffectFallbackInternally(failedEffect, "renderer_view");
             unlockEffectRendererType = effect;
             try {
-                unlockEffectRenderer = new LensFlareEffectView(rendererContext());
+                unlockEffectRenderer = createUnlockEffectFallbackRenderer(effect);
                 unlockEffectView = unlockEffectRenderer.asView();
-                Log.w(TAG, "renderer view fell back to Lens Flare failedType="
-                        + failedEffect);
+                Log.w(TAG, "renderer view fallback ready failedType="
+                        + failedEffect + " fallbackType=" + effect);
             } catch (Throwable fallbackError) {
-                Log.e(TAG, "Lens Flare view fallback failed", fallbackError);
+                Log.e(TAG, "unlock effect view fallback failed", fallbackError);
                 if (unlockEffectRenderer != null) {
                     try {
                         unlockEffectRenderer.destroy();
@@ -4958,10 +5100,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         Log.e(TAG, OverlayPrefs.effectLabel(unlockEffectRendererType)
-                + " failed; falling back to Lens Flare reason=" + reason);
+                + " failed; applying safe fallback reason=" + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
+        int failedEffect = unlockEffectRendererType;
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(failedEffect, reason);
         preloadUnlockEffectRenderer();
         evaluateVisibility("ripple_renderer_failed", false);
     }
@@ -4970,11 +5113,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRendererType != OverlayPrefs.EFFECT_S4_ABSTRACT_TILES) {
             return;
         }
-        Log.e(TAG, "Abstract Tiles ARM64 failed; falling back to Lens Flare reason="
+        Log.e(TAG, "Abstract Tiles ARM64 failed; applying safe fallback reason="
                 + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(OverlayPrefs.EFFECT_S4_ABSTRACT_TILES, reason);
         preloadUnlockEffectRenderer();
         evaluateVisibility("abstract_tiles_renderer_failed", false);
     }
@@ -4983,11 +5126,11 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRendererType != OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC) {
             return;
         }
-        Log.e(TAG, "Geometric Mosaic ARM64 failed; falling back to Lens Flare reason="
+        Log.e(TAG, "Geometric Mosaic ARM64 failed; applying safe fallback reason="
                 + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(OverlayPrefs.EFFECT_S4_GEOMETRIC_MOSAIC, reason);
         preloadUnlockEffectRenderer();
         evaluateVisibility("geometric_mosaic_renderer_failed", false);
     }
@@ -4997,11 +5140,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || !(unlockEffectRenderer instanceof BrilliantRingEffectView)) {
             return;
         }
-        Log.e(TAG, "Brilliant Ring ARM64 failed; falling back to Lens Flare reason="
+        Log.e(TAG, "Brilliant Ring ARM64 failed; applying safe fallback reason="
                 + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(OverlayPrefs.EFFECT_BRILLIANT_RING, reason);
         preloadUnlockEffectRenderer();
         evaluateVisibility("brilliant_ring_renderer_failed", false);
     }
@@ -5011,11 +5154,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || !(unlockEffectRenderer instanceof BrilliantCutEffectView)) {
             return;
         }
-        Log.e(TAG, "Brilliant Cut ARM64 failed; falling back to Lens Flare reason="
+        Log.e(TAG, "Brilliant Cut ARM64 failed; applying safe fallback reason="
                 + reason);
         handler.removeCallbacks(rippleRendererReadinessRunnable);
         destroyUnlockEffectOverlay();
-        setUnlockEffectPreferenceInternally(OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        setUnlockEffectFallbackInternally(OverlayPrefs.EFFECT_BRILLIANT_CUT, reason);
         preloadUnlockEffectRenderer();
         evaluateVisibility("brilliant_cut_renderer_failed", false);
     }
@@ -7894,6 +8037,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G1_DEWDROP
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PARTICLE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PIXELATE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 

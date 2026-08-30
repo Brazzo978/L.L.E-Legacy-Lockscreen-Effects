@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 final class OverlayPrefs {
@@ -124,6 +125,17 @@ final class OverlayPrefs {
     static final String UNLOCK_EFFECT_ENABLED = "unlock_effect_enabled";
     static final String LOCK_SOUND_ENABLED = "lock_sound_enabled";
     static final String UNLOCK_EFFECT = "unlock_effect";
+    /** Random is a selection mode, never a renderer id. */
+    static final String UNLOCK_EFFECT_RANDOM_ENABLED = "unlock_effect_random_enabled";
+    /** String-set of decimal effect ids selected for the Random shuffle bag. */
+    static final String UNLOCK_EFFECT_RANDOM_POOL = "unlock_effect_random_pool";
+    /** Stable renderer selected for the current lock/unlock cycle. */
+    static final String UNLOCK_EFFECT_RANDOM_CURRENT = "unlock_effect_random_current";
+    /** Pool members not yet drawn in the current shuffle-bag pass. */
+    static final String UNLOCK_EFFECT_RANDOM_REMAINING = "unlock_effect_random_remaining";
+    /** Emergency None renderer remains active until the next completed unlock. */
+    private static final String UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE =
+            "unlock_effect_random_fallback_active";
     /** Reserved until the Ripple Ink reverse path has a production-ready ABI. */
     static final String RIPPLE_INK_PALETTE = "ripple_ink_palette";
     static final int RIPPLE_INK_PALETTE_DEFAULT = 4;
@@ -642,6 +654,244 @@ final class OverlayPrefs {
         return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
     }
 
+    static boolean randomUnlockEffectEnabled(Context context) {
+        return get(context).getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false);
+    }
+
+    static synchronized void setRandomUnlockEffectEnabled(Context context, boolean enabled) {
+        SharedPreferences preferences = get(context);
+        boolean wasEnabled = preferences.getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false);
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, enabled);
+        if (enabled && !preferences.contains(UNLOCK_EFFECT_RANDOM_POOL)) {
+            editor.putStringSet(UNLOCK_EFFECT_RANDOM_POOL,
+                    encodeRandomUnlockEffectPool(defaultRandomUnlockEffectPool(context)));
+        }
+        if (enabled && !wasEnabled) {
+            editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false);
+        }
+        editor.apply();
+    }
+
+    static Set<Integer> randomUnlockEffectPool(Context context) {
+        SharedPreferences preferences = get(context);
+        if (!preferences.contains(UNLOCK_EFFECT_RANDOM_POOL)) {
+            return defaultRandomUnlockEffectPool(context);
+        }
+        HashSet<Integer> result = new HashSet<Integer>();
+        Set<String> encoded;
+        try {
+            encoded = preferences.getStringSet(
+                    UNLOCK_EFFECT_RANDOM_POOL, new HashSet<String>());
+        } catch (ClassCastException malformedPreference) {
+            encoded = new HashSet<String>();
+        }
+        if (encoded != null) {
+            for (String value : encoded) {
+                try {
+                    int effect = Integer.parseInt(value);
+                    if (isRandomUnlockEffectEligible(context, effect)) {
+                        result.add(effect);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Ignore corrupt or future non-numeric members without losing the pool.
+                }
+            }
+        }
+        return result;
+    }
+
+    static boolean randomUnlockEffectSelected(Context context, int effect) {
+        return randomUnlockEffectPool(context).contains(effect);
+    }
+
+    static synchronized void setRandomUnlockEffectSelected(Context context, int effect,
+            boolean selected) {
+        if (!isRandomUnlockEffectEligible(context, effect)) {
+            return;
+        }
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (selected) {
+            pool.add(effect);
+        } else {
+            pool.remove(effect);
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putStringSet(UNLOCK_EFFECT_RANDOM_POOL, encodeRandomUnlockEffectPool(pool))
+                .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false);
+        if (!selected
+                && preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1) == effect) {
+            editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT);
+        }
+        editor.apply();
+    }
+
+    static synchronized int currentRandomUnlockEffect(Context context) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (pool.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        if (preferences.getBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)) {
+            return EFFECT_S3_NONE;
+        }
+        int current = preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1);
+        if (pool.contains(current) && isRandomUnlockEffectEligible(context, current)) {
+            return current;
+        }
+        return drawRandomUnlockEffect(context, pool, current);
+    }
+
+    static synchronized int advanceRandomUnlockEffect(Context context) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> pool = randomUnlockEffectPool(context);
+        if (pool.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        int previous = preferences.getBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                ? EFFECT_S3_NONE
+                : preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1);
+        preferences.edit()
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                .apply();
+        return drawRandomUnlockEffect(context, pool, previous);
+    }
+
+    static synchronized void useRandomUnlockEffectFallback(Context context) {
+        get(context).edit()
+                .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                .apply();
+    }
+
+    private static int drawRandomUnlockEffect(Context context, Set<Integer> pool,
+            int previous) {
+        SharedPreferences preferences = get(context);
+        Set<Integer> remaining = decodeRandomUnlockEffectSet(
+                preferences.getStringSet(
+                        UNLOCK_EFFECT_RANDOM_REMAINING, new HashSet<String>()));
+        remaining.retainAll(pool);
+        remaining.remove(previous);
+        if (remaining.isEmpty()) {
+            remaining.addAll(pool);
+            if (remaining.size() > 1) {
+                remaining.remove(previous);
+            }
+        }
+        if (remaining.isEmpty()) {
+            preferences.edit()
+                    .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, EFFECT_S3_NONE)
+                    .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, true)
+                    .apply();
+            return EFFECT_S3_NONE;
+        }
+        ArrayList<Integer> candidates = new ArrayList<Integer>(remaining);
+        int seed = (int) (System.nanoTime() ^ System.currentTimeMillis());
+        int next = candidates.get(new Random(seed).nextInt(candidates.size()));
+        remaining.remove(next);
+        preferences.edit()
+                .putInt(UNLOCK_EFFECT_RANDOM_CURRENT, next)
+                .putStringSet(UNLOCK_EFFECT_RANDOM_REMAINING,
+                        encodeRandomUnlockEffectPool(remaining))
+                .putBoolean(UNLOCK_EFFECT_RANDOM_FALLBACK_ACTIVE, false)
+                .apply();
+        Log.i(TAG, "random effect draw previous=" + previous
+                + " next=" + next
+                + " remaining=" + remaining.size()
+                + " pool=" + pool.size());
+        return next;
+    }
+
+    private static Set<Integer> decodeRandomUnlockEffectSet(Set<String> encoded) {
+        HashSet<Integer> result = new HashSet<Integer>();
+        if (encoded == null) {
+            return result;
+        }
+        for (String value : encoded) {
+            try {
+                result.add(Integer.parseInt(value));
+            } catch (NumberFormatException ignored) {
+                // Ignore corrupt or future non-numeric members.
+            }
+        }
+        return result;
+    }
+
+    static boolean isRandomUnlockEffectEligible(Context context, int effect) {
+        if (!EffectAvailability.isAvailable(context, effect)) {
+            return false;
+        }
+        return !testerNoColormapModeEnabled(context)
+                || supportsTesterNoColormapMode(effect);
+    }
+
+    /**
+     * Conservative first-release pool. These engines either retain several full-screen
+     * surfaces/textures, have costly native simulations, or have visibly slow cold starts.
+     */
+    static boolean isRandomUnlockEffectExcludedForCost(int effect) {
+        switch (effect) {
+            case EFFECT_S3_RIPPLE_NATIVE:
+            case EFFECT_N4_INK_IN_WATER:
+            case EFFECT_N5_COLOUR_DROPLET:
+            case EFFECT_N5_COLOUR_DROPLET_GYRO:
+            case EFFECT_N5_COLOUR_DROPLET_WIP:
+            case EFFECT_N5_COLOUR_DROPLET_GYRO_WIP:
+            case EFFECT_N5_SPARKLING_BUBBLES:
+            case EFFECT_N5_SPARKLING_BUBBLES_WIP:
+            case EFFECT_S6_WATER_DROPLET:
+            case EFFECT_S6_WATER_DROPLET_APP_OWNED:
+            case EFFECT_RIPPLE_INK:
+            case EFFECT_GOOD_LOCK_POPPING:
+            case EFFECT_GOOD_LOCK_RECTANGLE:
+            case EFFECT_GOOD_LOCK_BOUNCING:
+            case EFFECT_LG_G2_PARTICLE:
+            case EFFECT_REVOLVING_GLASS:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static Set<Integer> defaultRandomUnlockEffectPool(Context context) {
+        HashSet<Integer> result = new HashSet<Integer>();
+        for (int effect = 0; effect < EFFECT_COUNT; effect++) {
+            // Resource-heavy effects remain opt-in so every first inclusion passes through
+            // ControlActivity's explicit two-step warning.
+            if (isRandomUnlockEffectEligible(context, effect)
+                    && !isRandomUnlockEffectExcludedForCost(effect)) {
+                result.add(effect);
+            }
+        }
+        return result;
+    }
+
+    private static Set<String> encodeRandomUnlockEffectPool(Set<Integer> pool) {
+        HashSet<String> encoded = new HashSet<String>();
+        if (pool != null) {
+            for (Integer effect : pool) {
+                if (effect != null) {
+                    encoded.add(Integer.toString(effect));
+                }
+            }
+        }
+        return encoded;
+    }
+
     static boolean testerNoColormapModeEnabled(Context context) {
         return BuildFlavor.TESTER
                 && get(context).getBoolean(TESTER_NO_COLORMAP_MODE, false);
@@ -686,6 +936,9 @@ final class OverlayPrefs {
 
     static int unlockEffect(Context context) {
         SharedPreferences preferences = get(context);
+        if (preferences.getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false)) {
+            return currentRandomUnlockEffect(context);
+        }
         int effect = preferences.getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE);
         // Values 1 and 6 belonged to superseded ripple experiments in early builds.
         if (effect == 1 || effect == 6) {
@@ -918,7 +1171,7 @@ final class OverlayPrefs {
 
     static boolean experimentalNativeRefreshPhysicsEnabled(Context context, int effect) {
         return supportsExperimentalNativeRefreshPhysics(effect)
-                && get(context).getBoolean(experimentalNativeRefreshPhysicsKey(effect), false);
+                && get(context).getBoolean(experimentalNativeRefreshPhysicsKey(effect), true);
     }
 
     static int experimentalNativeRefreshPhysicsSpeedTenths(Context context, int effect) {

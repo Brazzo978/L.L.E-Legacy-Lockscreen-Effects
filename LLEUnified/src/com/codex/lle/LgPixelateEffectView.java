@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.media.SoundPool;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
@@ -19,6 +20,8 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.HashSet;
+import java.util.Set;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -43,8 +46,14 @@ public final class LgPixelateEffectView extends FrameLayout
     private static final String TAG = "LLELgPixelate";
 
     private final Object sceneLock = new Object();
+    private final Object soundLock = new Object();
     private final LgPixelateScene scene = new LgPixelateScene();
     private final PixelateGlSurface glSurface;
+    private final SoundPool soundPool;
+    private final int touchdownSound;
+    private final int unlockSound;
+    private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
+    private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
     private volatile int readinessState = STATE_CONSTRUCTED;
     private volatile String readinessDetail = "constructed";
     private volatile ReadinessListener readinessListener;
@@ -76,6 +85,17 @@ public final class LgPixelateEffectView extends FrameLayout
         glSurface = new PixelateGlSurface(context, sceneLock, scene, this);
         addView(glSurface, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        soundPool = new SoundPool.Builder()
+                .setMaxStreams(2)
+                .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
+                .build();
+        soundPool.setOnLoadCompleteListener(new SoundPool.OnLoadCompleteListener() {
+            @Override public void onLoadComplete(SoundPool pool, int sampleId, int status) {
+                handleSoundLoadComplete(pool, sampleId, status);
+            }
+        });
+        touchdownSound = soundPool.load(context, R.raw.lg_pixelate_touchdown, 1);
+        unlockSound = soundPool.load(context, R.raw.lg_pixelate_unlock, 1);
     }
 
     @Override public View asView() { return this; }
@@ -102,6 +122,7 @@ public final class LgPixelateEffectView extends FrameLayout
         removeCallbacks(affordanceRunnable);
         gestureActive = true;
         synchronized (sceneLock) { scene.begin(x, y, SystemClock.uptimeMillis()); }
+        playSound(touchdownSound);
         glSurface.showAndActivate();
     }
 
@@ -119,6 +140,7 @@ public final class LgPixelateEffectView extends FrameLayout
         if (destroyed || !gestureActive) return;
         gestureActive = false;
         synchronized (sceneLock) { scene.finish(completed, SystemClock.uptimeMillis()); }
+        if (completed) playSound(unlockSound);
         glSurface.showAndActivate();
     }
 
@@ -217,6 +239,12 @@ public final class LgPixelateEffectView extends FrameLayout
         rawBackgroundFile = null;
         rawBackgroundLength = rawBackgroundModified = 0L;
         glSurface.destroyRenderer();
+        synchronized (soundLock) {
+            pendingSoundIds.clear();
+            loadedSoundIds.clear();
+            soundPool.setOnLoadCompleteListener(null);
+            soundPool.release();
+        }
         transition(STATE_FAILED, "destroyed");
         readinessListener = null;
     }
@@ -279,6 +307,35 @@ public final class LgPixelateEffectView extends FrameLayout
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         return new Rect(0, 0, Math.max(1, metrics.widthPixels),
                 Math.max(1, metrics.heightPixels));
+    }
+
+    private void playSound(int soundId) {
+        if (soundId == 0 || destroyed
+                || !OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) return;
+        synchronized (soundLock) {
+            if (destroyed) return;
+            if (!loadedSoundIds.contains(soundId)) {
+                pendingSoundIds.add(soundId);
+                return;
+            }
+            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+        }
+    }
+
+    private void handleSoundLoadComplete(SoundPool completedPool, int sampleId, int status) {
+        synchronized (soundLock) {
+            if (completedPool != soundPool || destroyed) return;
+            if (status != 0) {
+                pendingSoundIds.remove(sampleId);
+                Log.w(TAG, "sound load failed id=" + sampleId + " status=" + status);
+                return;
+            }
+            loadedSoundIds.add(sampleId);
+            if (pendingSoundIds.remove(sampleId)
+                    && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
+                soundPool.play(sampleId, 1f, 1f, 1, 0, 1f);
+            }
+        }
     }
 
     private void transition(int state, String detail) {

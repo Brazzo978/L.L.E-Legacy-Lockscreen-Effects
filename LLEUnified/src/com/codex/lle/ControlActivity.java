@@ -188,6 +188,8 @@ public class ControlActivity extends Activity {
     private boolean lockscreenDebugExpanded;
     private boolean rendererWallpaperExpanded;
     private boolean touchBoxExpanded;
+    private boolean randomPoolEditMode;
+    private TextView randomPoolSummaryView;
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
@@ -2094,6 +2096,7 @@ public class ControlActivity extends Activity {
             effects.addView(lightweightMode);
         }
         effects.addView(effectPreviewHint());
+        effects.addView(randomEffectOption());
         effects.addView(sectionLabel("Samsung"));
         addEffectOptionIfAvailable(effects,
                 "S3 None",
@@ -4878,6 +4881,15 @@ public class ControlActivity extends Activity {
     private View effectOption(String title, String subtitle, final int value,
             final boolean selected, final int abstractTilesLineMode,
             View variantControls) {
+        final boolean randomMode = OverlayPrefs.randomUnlockEffectEnabled(this);
+        final boolean randomPoolEditing = randomMode && randomPoolEditMode;
+        final boolean randomEligible = OverlayPrefs.isRandomUnlockEffectEligible(this, value);
+        final boolean randomHighCost = randomEligible
+                && OverlayPrefs.isRandomUnlockEffectExcludedForCost(value);
+        final boolean[] includedInRandom = new boolean[] {
+                randomEligible && OverlayPrefs.randomUnlockEffectSelected(this, value)
+        };
+        final boolean fixedSelected = selected && !randomMode;
         final boolean blockedByNoColormap =
                 OverlayPrefs.testerNoColormapModeEnabled(this)
                 && !OverlayPrefs.supportsTesterNoColormapMode(value);
@@ -4892,7 +4904,8 @@ public class ControlActivity extends Activity {
         final Runnable previewRunnable = new Runnable() {
             @Override
             public void run() {
-                if (blockedByNoColormap || tabSwipeDragging || tabAnimationRunning) {
+                if (randomPoolEditing || blockedByNoColormap
+                        || tabSwipeDragging || tabAnimationRunning) {
                     return;
                 }
                 previewOpened[0] = true;
@@ -4930,6 +4943,63 @@ public class ControlActivity extends Activity {
                 return false;
             }
         });
+        card.setBackground(optionBackground(
+                randomPoolEditing ? includedInRandom[0] : fixedSelected));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation((randomPoolEditing && includedInRandom[0]) || fixedSelected
+                    ? dp(4) : dp(1));
+        }
+
+        FrameLayout marker = new FrameLayout(this);
+        marker.addView(new GraceEffectIconView(value, fixedSelected),
+                new FrameLayout.LayoutParams(dp(54), dp(54)));
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        markerParams.setMargins(0, 0, dp(14), 0);
+        header.addView(marker, markerParams);
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        header.addView(copy, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        LinearLayout titleLine = new LinearLayout(this);
+        titleLine.setOrientation(LinearLayout.HORIZONTAL);
+        titleLine.setGravity(Gravity.TOP | Gravity.LEFT);
+        copy.addView(titleLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setTypeface(Typeface.DEFAULT,
+                fixedSelected || (randomPoolEditing && includedInRandom[0])
+                        ? Typeface.BOLD : Typeface.NORMAL);
+        titleView.setSingleLine(false);
+        titleLine.addView(titleView, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView subtitleView = new TextView(this);
+        String displayedSubtitle = blockedByNoColormap
+                ? subtitle + "\nRequires a lockscreen colormap."
+                : subtitle;
+        if (randomPoolEditing && randomHighCost) {
+            displayedSubtitle += "\nHigh resource use - double confirmation required.";
+        }
+        subtitleView.setText(displayedSubtitle);
+        subtitleView.setTextColor(COLOR_MUTED);
+        subtitleView.setTextSize(13f);
+        subtitleView.setSingleLine(false);
+        subtitleView.setLineSpacing(dp(1), 1.0f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.setMargins(0, dp(2), 0, 0);
+        copy.addView(subtitleView, subtitleParams);
+
         header.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -4944,6 +5014,28 @@ public class ControlActivity extends Activity {
                     previewOpened[0] = false;
                     return;
                 }
+                if (randomPoolEditing) {
+                    if (!randomEligible) {
+                        Toast.makeText(ControlActivity.this,
+                                "This effect is not compatible with the current build or "
+                                        + "wallpaper mode.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (includedInRandom[0]) {
+                        applyRandomPoolSelection(value, false, randomHighCost,
+                                includedInRandom, card, titleView);
+                    } else if (randomHighCost) {
+                        confirmHighCostRandomEffect(title, value, includedInRandom,
+                                card, titleView);
+                    } else {
+                        applyRandomPoolSelection(value, true, false,
+                                includedInRandom, card, titleView);
+                    }
+                    return;
+                }
+                randomPoolEditMode = false;
+                OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, false);
                 if (abstractTilesLineMode >= 0) {
                     queueAbstractTilesSelection(abstractTilesLineMode == 1);
                 } else {
@@ -4953,12 +5045,111 @@ public class ControlActivity extends Activity {
             }
         });
 
+        card.addView(header, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (variantControls != null && !blockedByNoColormap && !randomPoolEditing) {
+            card.addView(variantControls);
+        }
+        if (!blockedByNoColormap
+                && !randomPoolEditing
+                && supportsPerEffectHighFrameRate(value)
+                && hasInternalHighRefreshDisplay()) {
+            card.addView(perEffectHighFrameRateControls(value));
+        }
+        if (blockedByNoColormap || (randomPoolEditing && !randomEligible)) {
+            card.setAlpha(0.42f);
+        } else if (randomPoolEditing && randomHighCost && !includedInRandom[0]) {
+            card.setAlpha(0.68f);
+        }
+
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, dp(4), 0, dp(4));
+        card.setLayoutParams(rowParams);
+        return card;
+    }
+
+    private void applyRandomPoolSelection(int effect, boolean selected, boolean highCost,
+            boolean[] includedInRandom, LinearLayout card, TextView titleView) {
+        includedInRandom[0] = selected;
+        OverlayPrefs.setRandomUnlockEffectSelected(this, effect, selected);
+        card.setBackground(optionBackground(selected));
+        card.setAlpha(!selected && highCost ? 0.68f : 1f);
+        titleView.setTypeface(Typeface.DEFAULT,
+                selected ? Typeface.BOLD : Typeface.NORMAL);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            card.setElevation(selected ? dp(4) : dp(1));
+        }
+        updateRandomPoolSummary();
+    }
+
+    private void confirmHighCostRandomEffect(final String title, final int effect,
+            final boolean[] includedInRandom, final LinearLayout card,
+            final TextView titleView) {
+        new AlertDialog.Builder(this)
+                .setTitle("Are you sure?")
+                .setMessage(title + " is a resource-heavy effect and may increase loading "
+                        + "time, memory use, and unlock lag when selected by Random.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        new AlertDialog.Builder(ControlActivity.this)
+                                .setTitle("Are you sure sure?")
+                                .setMessage("This uses a lot of resources! Enable " + title
+                                        + " in the Random pool anyway?")
+                                .setNegativeButton("Cancel", null)
+                                .setPositiveButton("Add anyway",
+                                        new DialogInterface.OnClickListener() {
+                                            @Override
+                                            public void onClick(
+                                                    DialogInterface secondDialog,
+                                                    int secondWhich) {
+                                                applyRandomPoolSelection(effect, true, true,
+                                                        includedInRandom, card, titleView);
+                                            }
+                                        })
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private View randomEffectOption() {
+        final boolean selected = OverlayPrefs.randomUnlockEffectEnabled(this);
+        if (!selected) {
+            randomPoolEditMode = false;
+        }
+        int selectedCount = OverlayPrefs.randomUnlockEffectPool(this).size();
+        LinearLayout card = verticalGroup();
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(11), dp(12), dp(11));
+        header.setMinimumHeight(dp(82));
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+                persistPendingUnlockEffect(false);
+                if (!selected) {
+                    OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, true);
+                    randomPoolEditMode = false;
+                } else {
+                    randomPoolEditMode = !randomPoolEditMode;
+                }
+                showTab(selectedTab, false, 0);
+            }
+        });
+
         card.setBackground(optionBackground(selected));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(selected ? dp(4) : dp(1));
         }
 
-        View marker = new GraceEffectIconView(value, selected);
+        View marker = new RandomEffectIconView(selected);
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(54), dp(54));
         markerParams.setMargins(0, 0, dp(14), 0);
         header.addView(marker, markerParams);
@@ -4966,22 +5157,45 @@ public class ControlActivity extends Activity {
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
         header.addView(copy, new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f));
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        LinearLayout titleLine = new LinearLayout(this);
+        titleLine.setOrientation(LinearLayout.HORIZONTAL);
+        titleLine.setGravity(Gravity.TOP | Gravity.LEFT);
+        copy.addView(titleLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView titleView = new TextView(this);
-        titleView.setText(title);
+        titleView.setText("Random");
         titleView.setTextColor(COLOR_TEXT);
         titleView.setTextSize(16f);
         titleView.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
-        titleView.setSingleLine(false);
-        copy.addView(titleView);
+        titleLine.addView(titleView, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (selected) {
+            TextView editPool = randomPoolEditButton(randomPoolEditMode ? "DONE" : "EDIT POOL");
+            editPool.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    randomPoolEditMode = !randomPoolEditMode;
+                    showTab(selectedTab, false, 0);
+                }
+            });
+            LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
+            editParams.setMargins(dp(8), 0, 0, 0);
+            titleLine.addView(editPool, editParams);
+        }
 
         TextView subtitleView = new TextView(this);
-        subtitleView.setText(blockedByNoColormap
-                ? subtitle + "\nRequires a lockscreen colormap."
-                : subtitle);
+        randomPoolSummaryView = subtitleView;
+        subtitleView.setText(selected
+                ? randomPoolEditMode
+                        ? selectedCount + " selected. Tap whole cards; teal means enabled."
+                        : selectedCount + " effects selected. Tap EDIT POOL to change them."
+                : "Cycle through compatible effects. Heavy renderers require two confirmations.");
         subtitleView.setTextColor(COLOR_MUTED);
         subtitleView.setTextSize(13f);
         subtitleView.setSingleLine(false);
@@ -4995,24 +5209,41 @@ public class ControlActivity extends Activity {
         card.addView(header, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        if (variantControls != null && !blockedByNoColormap) {
-            card.addView(variantControls);
-        }
-        if (!blockedByNoColormap
-                && supportsPerEffectHighFrameRate(value)
-                && hasInternalHighRefreshDisplay()) {
-            card.addView(perEffectHighFrameRateControls(value));
-        }
-        if (blockedByNoColormap) {
-            card.setAlpha(0.42f);
-        }
-
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.setMargins(0, dp(4), 0, dp(4));
+        rowParams.setMargins(0, dp(4), 0, dp(8));
         card.setLayoutParams(rowParams);
         return card;
+    }
+
+    private TextView randomPoolEditButton(String text) {
+        TextView button = new TextView(this);
+        button.setText(text);
+        button.setTextSize(10.5f);
+        button.setTextColor(randomPoolEditMode ? Color.WHITE : COLOR_ACCENT_DEEP);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setMinWidth(dp(68));
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setBackground(randomPoolEditMode
+                ? solidDrawable(COLOR_ACCENT_DEEP, dp(15), Color.TRANSPARENT, 0)
+                : solidDrawable(Color.argb(125, 239, 250, 250), dp(15),
+                        Color.argb(145, 33, 158, 166), dp(1)));
+        return button;
+    }
+
+    private void updateRandomPoolSummary() {
+        if (randomPoolSummaryView == null) {
+            return;
+        }
+        int selectedCount = OverlayPrefs.randomUnlockEffectPool(this).size();
+        randomPoolSummaryView.setText(randomPoolEditMode
+                ? selectedCount + " selected. Tap whole cards; teal means enabled."
+                : selectedCount + " effects selected. Tap EDIT POOL to change them.");
     }
 
     private View abstractTilesVariantControls(boolean lineEnabled) {
@@ -6717,6 +6948,62 @@ public class ControlActivity extends Activity {
             paint.setStrokeWidth(dp(selected ? 2f : 1f));
             paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
             canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class RandomEffectIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean selected;
+
+        RandomEffectIconView(boolean selected) {
+            super(ControlActivity.this);
+            this.selected = selected;
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = dp(1.5f);
+            RectF bounds = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            float radius = Math.min(getWidth(), getHeight()) * 0.27f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new LinearGradient(bounds.left, bounds.top,
+                    bounds.right, bounds.bottom,
+                    new int[] {Color.rgb(111, 214, 202), Color.rgb(87, 129, 205),
+                            Color.rgb(119, 76, 177)},
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setShader(null);
+            paint.setColor(Color.WHITE);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2.5f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float left = bounds.left + dp(11);
+            float right = bounds.right - dp(10);
+            float top = bounds.top + dp(15);
+            float bottom = bounds.bottom - dp(15);
+            Path path = new Path();
+            path.moveTo(left, top);
+            path.lineTo(left + dp(7), top);
+            path.cubicTo(bounds.centerX(), top, bounds.centerX(), bottom,
+                    right - dp(4), bottom);
+            canvas.drawPath(path, paint);
+            canvas.drawLine(right - dp(4), bottom, right, bottom - dp(4), paint);
+            canvas.drawLine(right - dp(4), bottom, right, bottom + dp(4), paint);
+            path.reset();
+            path.moveTo(left, bottom);
+            path.lineTo(left + dp(7), bottom);
+            path.cubicTo(bounds.centerX(), bottom, bounds.centerX(), top,
+                    right - dp(4), top);
+            canvas.drawPath(path, paint);
+            canvas.drawLine(right - dp(4), top, right, top - dp(4), paint);
+            canvas.drawLine(right - dp(4), top, right, top + dp(4), paint);
+            paint.setStrokeWidth(dp(selected ? 2f : 1f));
+            paint.setColor(selected ? Color.WHITE : Color.argb(105, 255, 255, 255));
+            canvas.drawRoundRect(bounds, radius, radius, paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
             paint.setStyle(Paint.Style.FILL);
         }
     }
