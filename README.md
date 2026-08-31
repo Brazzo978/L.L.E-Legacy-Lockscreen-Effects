@@ -2,7 +2,7 @@
 
 Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern devices without root or other complicated methods.
 
-Every lockscreen effect is recreated 1:1 with using original resources.
+Every lockscreen effect is recreated 1:1 using the original sources.
 
 **Current stable release:** `1.0.6.2` · **Recommended build:** ARM64
 
