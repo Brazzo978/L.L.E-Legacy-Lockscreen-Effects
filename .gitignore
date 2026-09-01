@@ -1,5 +1,4 @@
 /*
-**/__pycache__/
 !/.gitignore
 !/AGENTS.md
 !/README.md
@@ -8,6 +7,7 @@
 !/assets/
 !/assets/star-history.svg
 !/assets/star-history-dark.svg
+**/__pycache__/
 !/LLE64/
 !/LLE64/**
 !/LLEUnified/
