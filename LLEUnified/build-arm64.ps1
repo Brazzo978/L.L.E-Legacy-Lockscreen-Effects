@@ -51,7 +51,7 @@ if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
 }
 
 $applicationId = if ($Tester) { "com.codex.lle64.test" } else { "com.codex.lle64" }
-$launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E 64" }
+$launcherLabel = if ($Tester) { "L.L.E Tester" } else { "L.L.E" }
 $testerVersionCode = if ($Tester -and $ValidationVersionCode -eq 0) { 44 } else { 0 }
 $testerVersionName = if ($Tester -and $ValidationVersionCode -eq 0) { "1.0.6.2" } else { "" }
 if ($LegacyVendorEffects) {

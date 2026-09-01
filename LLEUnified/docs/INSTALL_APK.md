@@ -1,11 +1,11 @@
-# Install L.L.E 64 from the APK
+# Install L.L.E from the APK
 
 This is the tested first-start flow for installing the official ARM64 release
 from GitHub without a computer.
 
 > **Draft screenshot set:** the captures below use the co-installable
 > **L.L.E Tester** build. Before publishing the final guide, replace them with
-> captures of the signed **L.L.E 64** release. The navigation and prompts are
+> captures of the signed **L.L.E** release. The navigation and prompts are
 > otherwise the same.
 
 ## Before you start
@@ -52,7 +52,7 @@ Samsung does not allow L.L.E to deep-link directly to its service page. In
 Android Settings, open:
 
 ```text
-Accessibility → Installed apps → L.L.E 64
+Accessibility → Installed apps → L.L.E
 ```
 
 On Android 13 and newer, the first attempt may say that the setting is
@@ -95,7 +95,7 @@ Open **Installed apps**.
 
 <img src="images/install-s23/11-installed-services.jpg" width="320" alt="Installed Accessibility services">
 
-Select **L.L.E 64** and turn the service on.
+Select **L.L.E** and turn the service on.
 
 <img src="images/install-s23/12-lle-service-toggle.jpg" width="320" alt="L.L.E Accessibility service toggle">
 

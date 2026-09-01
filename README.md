@@ -46,10 +46,10 @@ On recent Samsung firmware, a sideloaded Accessibility app may be blocked the
 first time:
 
 1. In the L.L.E wizard, open Accessibility.
-2. Open **Installed apps → L.L.E 64** and try to enable the service once.
+2. Open **Installed apps → L.L.E** and try to enable the service once.
 3. If Samsung blocks it, return to L.L.E.
 4. Follow **Open App info → ⋮ → Allow restricted settings**.
-5. Return to Accessibility and enable L.L.E 64.
+5. Return to Accessibility and enable L.L.E.
 
 The **Allow restricted settings** menu item may not appear until after the first
 blocked activation attempt. The
@@ -59,8 +59,8 @@ blocked activation attempt. The
 
 | Build | ABI | Status |
 |---|---|---|
-| **L.L.E 64** | `arm64-v8a` | Recommended and actively developed |
-| **L.L.E** | `armeabi-v7a` | Historical continuity; critical fixes only |
+| **L.L.E** | `arm64-v8a` | Recommended and actively developed |
+| **L.L.E 32** | `armeabi-v7a` | Historical continuity; critical fixes only |
 
 New features and effects target ARM64. The 32-bit edition remains available for
 older compatible devices but is no longer developed in parallel.
@@ -68,7 +68,7 @@ older compatible devices but is no longer developed in parallel.
 ## General compatibility
 
 L.L.E. is not limited to Samsung phones. It is designed for Android 6.0 or
-newer and does not require root. The current **L.L.E 64** build is recommended
+newer and does not require root. The current **L.L.E** build is recommended
 for modern `arm64-v8a` devices; the frozen 32-bit build is retained only for
 older `armeabi-v7a` devices and does not receive the full set of new effects or
 diagnostic features.
@@ -84,7 +84,7 @@ Main display setup.
 
 ### If an effect does not work: send a debug report
 
-On **L.L.E 64**:
+On **L.L.E**:
 
 1. Update to the latest official release and complete the setup wizard.
 2. Reproduce the problem once: lock the phone, try the affected effect, and

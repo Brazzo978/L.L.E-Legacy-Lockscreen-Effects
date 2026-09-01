@@ -1,4 +1,4 @@
-# Install L.L.E 64 with ADB
+# Install L.L.E with ADB
 
 This guide installs or updates the official ARM64 APK from a Windows, macOS, or
 Linux computer. ADB is useful for testing and troubleshooting, but the device
@@ -61,7 +61,7 @@ adb shell getprop ro.product.cpu.abilist
 The device must be listed as `device` and support `arm64-v8a`. If it says
 `unauthorized`, unlock the phone and accept the USB-debugging prompt.
 
-## 5. Install or update L.L.E 64
+## 5. Install or update L.L.E
 
 Open the terminal in the directory containing the APK:
 
@@ -108,13 +108,13 @@ Accessibility step.
 
 If Accessibility is blocked, use the tested recovery flow:
 
-1. In Accessibility, open **Installed apps → L.L.E 64**.
+1. In Accessibility, open **Installed apps → L.L.E**.
 2. Make the first enable attempt and let Android block it.
 3. Return to L.L.E.
 4. On the recovery page, open **L.L.E App info**.
 5. Open the three-dot menu and tap **Allow restricted settings**.
 6. Return to L.L.E and open Accessibility again.
-7. Open **Installed apps → L.L.E 64**, enable the service, and confirm.
+7. Open **Installed apps → L.L.E**, enable the service, and confirm.
 
 The first blocked attempt matters: Samsung may not display **Allow restricted
 settings** before it. See the complete
@@ -139,7 +139,7 @@ adb shell am start -a android.settings.ACCESSIBILITY_SETTINGS
 
 Samsung protects the service-details activity with a privileged permission, so
 L.L.E and ADB may only be able to open the general Accessibility page. Continue
-manually through **Installed apps → L.L.E 64**.
+manually through **Installed apps → L.L.E**.
 
 Read recent L.L.E logs on Windows:
 

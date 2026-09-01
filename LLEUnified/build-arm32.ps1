@@ -68,6 +68,7 @@ $indigoPatchedLib = Join-Path $out "patched-indigo\libsecveIndigoDiffusion.so"
 $brilliantCutSoundSource = Join-Path $root "res\raw"
 $stockWatercolorTap = Join-Path $root "res\raw\ve_watercolour_tap.ogg"
 $releaseCertificateSha256 = "5397D6ACE3E9D2F14D8FFD2285E26E9F1B26635589CAC3A3DC95C0DEFF76B8EE"
+$launcherLabel = "L.L.E 32"
 
 function Run($exe, $arguments) {
     & $exe @arguments
@@ -89,6 +90,18 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $samsungVisualEffectDex)) {
 # uses the Brilliant Cut interaction trio on stock S4/Note4; Watercolor uses
 # the S5-era 24,881-byte tap shared by S4/Note3/Note4/S5, not the Tab variant.
 Copy-Item -Path (Join-Path $root "res\*") -Destination $resStage -Recurse -Force
+$stringsStage = Join-Path $resStage "values\strings.xml"
+$stringsText = [IO.File]::ReadAllText($stringsStage)
+$appNamePattern = '<string name="app_name">[^<]*</string>'
+if ([regex]::Matches($stringsText, $appNamePattern).Count -ne 1) {
+    throw "ARM32 launcher label patch point not found"
+}
+$stringsText = [regex]::Replace(
+        $stringsText,
+        $appNamePattern,
+        "<string name=`"app_name`">$launcherLabel</string>",
+        1)
+[IO.File]::WriteAllText($stringsStage, $stringsText, [Text.UTF8Encoding]::new($false))
 foreach ($soundName in @("brilliantcut_tap.ogg", "brilliantcut_drag.ogg", "brilliantcut_unlock.ogg")) {
     $source = Join-Path $brilliantCutSoundSource $soundName
     if (-not (Test-Path $source)) {
@@ -438,8 +451,8 @@ if ($ReleaseSigning) {
 $badging = (& (Join-Path $buildTools "aapt.exe") dump badging $signed) -join "`n"
 if ($LASTEXITCODE -ne 0 -or
         $badging -notmatch "package: name='com\.codex\.lle'" -or
-        $badging -notmatch "application-label:'L\.L\.E'") {
-    throw "ARM32 identity verification failed; expected L.L.E / com.codex.lle"
+        $badging -notmatch "application-label:'$([regex]::Escape($launcherLabel))'") {
+    throw "ARM32 identity verification failed; expected $launcherLabel / com.codex.lle"
 }
 
 $entries = @(& "jar.exe" tf $signed)

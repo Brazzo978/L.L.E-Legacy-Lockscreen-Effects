@@ -1,9 +1,9 @@
-# L.L.E / L.L.E 64
+# L.L.E / L.L.E 32
 
 LLE restores a collection of legacy lockscreen effects on modern Android.
 The ARM32 and ARM64 applications share one project and can be installed
-together. ARM32 is permanently named **L.L.E** (`com.codex.lle`); ARM64 is
-permanently named **L.L.E 64** (`com.codex.lle64`).
+together. ARM64 is named **L.L.E** (`com.codex.lle64`); the compatibility-only
+ARM32 build is named **L.L.E 32** (`com.codex.lle`).
 
 ## ⚠️ DANGER: DO NOT DISABLE BOOT SAFETY UNLESS THIS DEVICE IS PROVEN STABLE
 
@@ -96,11 +96,11 @@ The tested Samsung first-start sequence is:
 
 1. Install the verified APK and let Play Protect scan it.
 2. Open L.L.E's Accessibility step.
-3. In **Accessibility → Installed apps → L.L.E 64**, make the first enable
+3. In **Accessibility → Installed apps → L.L.E**, make the first enable
    attempt.
 4. If Android blocks it, return to L.L.E and use the recovery page.
 5. Open **L.L.E App info → three-dot menu → Allow restricted settings**.
-6. Return to Accessibility and enable L.L.E 64.
+6. Return to Accessibility and enable L.L.E.
 7. Complete battery, wallpaper, feature, capture, and touch-box setup.
 
 On tested Samsung firmware, **Allow restricted settings** may not appear until
