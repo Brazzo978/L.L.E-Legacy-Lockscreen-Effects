@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 460" role="img">
+  <title>Brazzo978/L.L.E-Legacy-Lockscreen-Effects star history — 115 stars</title>
+  <desc>Cumulative timeline of current GitHub stargazers from Jun 2026 – Sep 2026.</desc>
+  <defs>
+    <linearGradient id="star-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd33d" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#ffd33d" stop-opacity="0.02"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .tick { fill: #59636e; font-size: 12px; }
+  </style>
+  <rect x="0.5" y="0.5" width="899" height="459" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+  <polygon points="42,29 46,39 57,39 48,46 51,57 42,50 33,57 36,46 27,39 38,39"
+           fill="#ffd33d"/>
+  <text x="70" y="48" font-size="22" font-weight="700" fill="#1f2328">L.L.E. star history</text>
+  <text x="70" y="72" font-size="13" fill="#59636e">Jun 2026 – Sep 2026</text>
+  <text x="864" y="48" text-anchor="end" font-size="31" font-weight="750" fill="#1f2328">115</text>
+  <text x="864" y="70" text-anchor="end" font-size="12" fill="#59636e">GitHub stars</text>
+  <line x1="76" y1="374.0" x2="864" y2="374.0" stroke="#d0d7de" stroke-width="1"/><text x="62" y="378.0" text-anchor="end" class="tick">0</text><line x1="76" y1="286.7" x2="864" y2="286.7" stroke="#eaeef2" stroke-width="1"/><text x="62" y="290.7" text-anchor="end" class="tick">50</text><line x1="76" y1="199.3" x2="864" y2="199.3" stroke="#eaeef2" stroke-width="1"/><text x="62" y="203.3" text-anchor="end" class="tick">100</text><line x1="76" y1="112.0" x2="864" y2="112.0" stroke="#eaeef2" stroke-width="1"/><text x="62" y="116.0" text-anchor="end" class="tick">150</text>
+  <text x="76.0" y="402" text-anchor="middle" class="tick">30 Jun</text><text x="233.6" y="402" text-anchor="middle" class="tick">13 Jul</text><text x="391.2" y="402" text-anchor="middle" class="tick">25 Jul</text><text x="548.8" y="402" text-anchor="middle" class="tick">07 Aug</text><text x="706.4" y="402" text-anchor="middle" class="tick">20 Aug</text><text x="864.0" y="402" text-anchor="middle" class="tick">01 Sep</text>
+  <path d="M 76.0 374.0 H 316.7 V 372.3 H 366.3 V 370.5 H 384.5 V 368.8 H 389.6 V 367.0 H 390.8 V 365.3 H 391.6 V 363.5 H 396.2 V 361.8 H 396.9 V 360.0 H 397.6 V 358.3 H 398.7 V 356.5 H 398.8 V 354.8 H 400.1 V 353.0 H 401.6 V 351.3 H 401.7 V 349.5 H 403.5 V 347.8 H 404.4 V 346.1 H 404.5 V 344.3 H 405.4 V 342.6 H 405.7 V 340.8 H 409.3 V 339.1 H 410.5 V 337.3 H 410.6 V 335.6 H 410.7 V 333.8 H 411.2 V 332.1 H 412.0 V 330.3 H 412.1 V 328.6 H 412.1 V 326.8 H 412.5 V 325.1 H 413.2 V 323.3 H 414.5 V 321.6 H 414.7 V 319.9 H 414.9 V 318.1 H 415.8 V 316.4 H 416.0 V 314.6 H 417.8 V 312.9 H 418.9 V 311.1 H 419.1 V 309.4 H 420.3 V 307.6 H 420.9 V 305.9 H 421.6 V 304.1 H 422.4 V 302.4 H 422.4 V 300.6 H 423.4 V 298.9 H 424.5 V 297.1 H 425.5 V 295.4 H 426.7 V 293.7 H 427.2 V 291.9 H 428.3 V 290.2 H 429.1 V 288.4 H 432.6 V 286.7 H 435.7 V 284.9 H 436.5 V 283.2 H 437.3 V 281.4 H 437.7 V 279.7 H 438.0 V 277.9 H 438.8 V 276.2 H 439.2 V 274.4 H 439.5 V 272.7 H 441.0 V 270.9 H 441.9 V 269.2 H 445.9 V 267.5 H 454.4 V 265.7 H 465.2 V 264.0 H 468.2 V 262.2 H 479.3 V 260.5 H 479.5 V 258.7 H 482.7 V 257.0 H 491.4 V 255.2 H 493.0 V 253.5 H 497.0 V 251.7 H 500.8 V 250.0 H 518.5 V 248.2 H 536.8 V 246.5 H 541.2 V 244.7 H 559.0 V 243.0 H 565.0 V 241.3 H 596.3 V 239.5 H 598.8 V 237.8 H 599.5 V 236.0 H 604.2 V 234.3 H 625.0 V 232.5 H 645.3 V 230.8 H 661.2 V 229.0 H 698.7 V 227.3 H 714.4 V 225.5 H 717.5 V 223.8 H 737.5 V 222.0 H 758.0 V 220.3 H 758.0 V 218.5 H 758.6 V 216.8 H 760.1 V 215.1 H 764.6 V 213.3 H 771.0 V 211.6 H 774.8 V 209.8 H 774.8 V 208.1 H 774.9 V 206.3 H 775.2 V 204.6 H 775.6 V 202.8 H 776.3 V 201.1 H 776.8 V 199.3 H 787.1 V 197.6 H 794.8 V 195.8 H 816.9 V 194.1 H 830.3 V 192.3 H 839.6 V 190.6 H 840.8 V 188.9 H 841.7 V 187.1 H 841.7 V 185.4 H 860.9 V 183.6 H 861.9 V 181.9 H 862.3 V 180.1 H 862.4 V 178.4 H 862.8 V 176.6 H 863.0 V 174.9 H 863.9 V 173.1 H 864.0 V 374 H 76.0 Z" fill="url(#star-fill)"/>
+  <path d="M 76.0 374.0 H 316.7 V 372.3 H 366.3 V 370.5 H 384.5 V 368.8 H 389.6 V 367.0 H 390.8 V 365.3 H 391.6 V 363.5 H 396.2 V 361.8 H 396.9 V 360.0 H 397.6 V 358.3 H 398.7 V 356.5 H 398.8 V 354.8 H 400.1 V 353.0 H 401.6 V 351.3 H 401.7 V 349.5 H 403.5 V 347.8 H 404.4 V 346.1 H 404.5 V 344.3 H 405.4 V 342.6 H 405.7 V 340.8 H 409.3 V 339.1 H 410.5 V 337.3 H 410.6 V 335.6 H 410.7 V 333.8 H 411.2 V 332.1 H 412.0 V 330.3 H 412.1 V 328.6 H 412.1 V 326.8 H 412.5 V 325.1 H 413.2 V 323.3 H 414.5 V 321.6 H 414.7 V 319.9 H 414.9 V 318.1 H 415.8 V 316.4 H 416.0 V 314.6 H 417.8 V 312.9 H 418.9 V 311.1 H 419.1 V 309.4 H 420.3 V 307.6 H 420.9 V 305.9 H 421.6 V 304.1 H 422.4 V 302.4 H 422.4 V 300.6 H 423.4 V 298.9 H 424.5 V 297.1 H 425.5 V 295.4 H 426.7 V 293.7 H 427.2 V 291.9 H 428.3 V 290.2 H 429.1 V 288.4 H 432.6 V 286.7 H 435.7 V 284.9 H 436.5 V 283.2 H 437.3 V 281.4 H 437.7 V 279.7 H 438.0 V 277.9 H 438.8 V 276.2 H 439.2 V 274.4 H 439.5 V 272.7 H 441.0 V 270.9 H 441.9 V 269.2 H 445.9 V 267.5 H 454.4 V 265.7 H 465.2 V 264.0 H 468.2 V 262.2 H 479.3 V 260.5 H 479.5 V 258.7 H 482.7 V 257.0 H 491.4 V 255.2 H 493.0 V 253.5 H 497.0 V 251.7 H 500.8 V 250.0 H 518.5 V 248.2 H 536.8 V 246.5 H 541.2 V 244.7 H 559.0 V 243.0 H 565.0 V 241.3 H 596.3 V 239.5 H 598.8 V 237.8 H 599.5 V 236.0 H 604.2 V 234.3 H 625.0 V 232.5 H 645.3 V 230.8 H 661.2 V 229.0 H 698.7 V 227.3 H 714.4 V 225.5 H 717.5 V 223.8 H 737.5 V 222.0 H 758.0 V 220.3 H 758.0 V 218.5 H 758.6 V 216.8 H 760.1 V 215.1 H 764.6 V 213.3 H 771.0 V 211.6 H 774.8 V 209.8 H 774.8 V 208.1 H 774.9 V 206.3 H 775.2 V 204.6 H 775.6 V 202.8 H 776.3 V 201.1 H 776.8 V 199.3 H 787.1 V 197.6 H 794.8 V 195.8 H 816.9 V 194.1 H 830.3 V 192.3 H 839.6 V 190.6 H 840.8 V 188.9 H 841.7 V 187.1 H 841.7 V 185.4 H 860.9 V 183.6 H 861.9 V 181.9 H 862.3 V 180.1 H 862.4 V 178.4 H 862.8 V 176.6 H 863.0 V 174.9 H 863.9 V 173.1 H 864.0" fill="none" stroke="#c69000" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="864.0" cy="173.1" r="5" fill="#c69000"
+          stroke="#ffffff" stroke-width="2" filter="url(#glow)"/>
+  <text x="76" y="438" font-size="11" fill="#818b98">Updated 01 Sep 2026</text>
+  <text x="864" y="438" text-anchor="end" font-size="11" fill="#818b98">Generated in GitHub Actions</text>
+</svg>
