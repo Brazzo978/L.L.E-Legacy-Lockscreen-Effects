@@ -2,6 +2,11 @@
 !/.gitignore
 !/AGENTS.md
 !/README.md
+!/.github/
+!/.github/**
+!/assets/
+!/assets/star-history.svg
+!/assets/star-history-dark.svg
 !/LLE64/
 !/LLE64/**
 !/LLEUnified/

@@ -4,6 +4,8 @@ Bring classic Android lockscreen effects back to modern devices—without root.
 
 **Current stable release:** `1.0.6.2` · **Recommended build:** ARM64
 
+[![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
+
 [Download the latest release](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/latest)
 · [Watch the effect showcase](https://youtu.be/RO4WV7Z48Sk)
 · [Read the XDA thread](https://xdaforums.com/t/app-beta-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
@@ -141,6 +143,20 @@ sent anywhere automatically.
   brightness differ; disabling that option is strongly recommended.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
 - Some very HEAVY effect will not show properly on low end smartphones.
+
+## Star history
+
+<p align="center">
+  <a href="https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/star-history-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="assets/star-history.svg">
+      <img alt="L.L.E. GitHub star history" src="assets/star-history.svg" width="900">
+    </picture>
+  </a>
+</p>
+
+Thank you to everyone who has starred and supported L.L.E.
 
 
 <p align="center"><sub><a href="https://support.legacylockscreeneffects.app">L.L.E will always be free - but if you insist... ♡</a></sub></p>

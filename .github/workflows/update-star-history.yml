@@ -1,0 +1,63 @@
+name: Update star history
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/star-history-graph
+    paths:
+      - .github/scripts/update_star_history.py
+      - .github/workflows/update-star-history.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Generate light and dark charts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python .github/scripts/update_star_history.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --light assets/star-history.svg \
+            --dark assets/star-history-dark.svg
+
+      - name: Validate generated SVGs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          for name in ("assets/star-history.svg", "assets/star-history-dark.svg"):
+              path = Path(name)
+              if path.stat().st_size < 1_000:
+                  raise SystemExit(f"{name} is unexpectedly small")
+              root = ElementTree.parse(path).getroot()
+              if not root.tag.endswith("svg"):
+                  raise SystemExit(f"{name} is not an SVG document")
+          PY
+
+      - name: Commit chart changes
+        run: |
+          git add -- assets/star-history.svg assets/star-history-dark.svg
+          if git diff --cached --quiet; then
+            echo "Star-history charts are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: update star history chart [skip ci]"
+          git push
