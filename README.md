@@ -65,9 +65,49 @@ blocked activation attempt. The
 New features and effects target ARM64. The 32-bit edition remains available for
 older compatible devices but is no longer developed in parallel.
 
-## Compatibility
+## General compatibility
 
-WIP WIP 
+L.L.E. is not limited to Samsung phones. It is designed for Android 6.0 or
+newer and does not require root. The current **L.L.E 64** build is recommended
+for modern `arm64-v8a` devices; the frozen 32-bit build is retained only for
+older `armeabi-v7a` devices and does not receive the full set of new effects or
+diagnostic features.
+
+Exact behaviour can still vary between manufacturers, Android and vendor
+updates, GPUs, lockscreen implementations, and battery-management policies.
+Protected or dynamic wallpapers may require a manually supplied background,
+while aggressive battery restrictions can prevent the effect service from
+remaining ready. Complete the setup wizard, allow Accessibility, select a
+matching lockscreen source, configure the touch area, and allow unrestricted
+battery use before testing. Fold devices must complete the separate Cover and
+Main display setup.
+
+### If an effect does not work: send a debug report
+
+On **L.L.E 64**:
+
+1. Update to the latest official release and complete the setup wizard.
+2. Reproduce the problem once: lock the phone, try the affected effect, and
+   remember exactly what failed.
+3. Open L.L.E and scroll to **Setup & permissions**.
+4. Tap **Create debug report** and wait for Android's share sheet to open.
+5. Send the generated `.txt` file through the
+   [Telegram support group](https://t.me/legacylockscreeneffect), the
+   [XDA thread](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/),
+   or an existing relevant GitHub issue.
+
+Along with the report, include the device model, Android/vendor software
+version, selected effect, what you expected, what actually happened, and
+whether the problem occurs every time. Attach a separate screenshot or short
+video when the problem is visual, because the debug report never includes
+wallpapers or images.
+
+The standard report is text-only and intended for support, but it can contain
+recent diagnostic log text: review the file before posting it publicly. Never
+post **Create advanced log (unredacted)** publicly. That advanced report can
+contain notification or Accessibility text, app names, filenames, paths, and
+exact touch coordinates; create it only when a trusted maintainer specifically
+requests it for private troubleshooting.
 
 ## Included effects
 
