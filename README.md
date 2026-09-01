@@ -1,6 +1,8 @@
 # L.L.E. — Legacy Lockscreen Effects
 
-Bring classic Android lockscreen effects back to modern devices—without root.
+Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern devices without root.
+
+Every lockscreen effect is recreated 1:1 using the original sources.
 
 **Current stable release:** `1.0.6.2` · **Recommended build:** ARM64
 
@@ -65,20 +67,7 @@ older compatible devices but is no longer developed in parallel.
 
 ## Compatibility
 
-This table is based on completed tests and user debug reports. “Working” means
-the service and effects have been reported operational; it is not a guarantee
-for every device, GPU, lockscreen theme, or vendor update.
-
-| Manufacturer | Tested software/device | Android | Result | Notes |
-|---|---|:---:|---|---|
-| Samsung | Galaxy phones and foldables, **One UI 6–9** | Varies | **Working** | Fold devices use separate Cover/Main setup; wallpaper layers can vary |
-| Xiaomi / POCO | **POCO X8 Pro Global** (`2511FPC34G`, `klee`) on HyperOS | 16 | **Working** | Confirmed by an ARM64 L.L.E 1.0.4.2 debug report |
-| LG | **LG Velvet** (`LM-G910`, `caymanslm`) | 11 | **Working** | Effects and lock/unlock runtime confirmed; 1.0.4.4 improves intermittent Colored Droplet audio and Android 11 diagnostics |
-
-To add a device to this table, use **Create debug report** in L.L.E and include
-whether the effect, screenshot capture, doodle, sound, and lock/unlock cycle
-worked. Reports redact saved wallpaper paths and remain local until shared by
-the user.
+WIP WIP 
 
 ## Included effects
 
