@@ -18,7 +18,7 @@
   <rect x="0.5" y="0.5" width="899" height="459" rx="14" fill="#ffffff" stroke="#d0d7de"/>
   <polygon points="42,29 46,39 57,39 48,46 51,57 42,50 33,57 36,46 27,39 38,39"
            fill="#ffd33d"/>
-  <text x="70" y="48" font-size="22" font-weight="700" fill="#1f2328">L.L.E. star history</text>
+  <text x="70" y="48" font-size="22" font-weight="700" fill="#1f2328">Stargazer</text>
   <text x="70" y="72" font-size="13" fill="#59636e">Jun 2026 – Sep 2026</text>
   <text x="864" y="48" text-anchor="end" font-size="31" font-weight="750" fill="#1f2328">123</text>
   <text x="864" y="70" text-anchor="end" font-size="12" fill="#59636e">GitHub stars</text>

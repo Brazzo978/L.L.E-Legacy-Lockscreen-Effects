@@ -257,7 +257,7 @@ def render_svg(
   <rect x="0.5" y="0.5" width="899" height="459" rx="14" fill="{theme.background}" stroke="{theme.border}"/>
   <polygon points="42,29 46,39 57,39 48,46 51,57 42,50 33,57 36,46 27,39 38,39"
            fill="{theme.fill}"/>
-  <text x="70" y="48" font-size="22" font-weight="700" fill="{theme.primary}">L.L.E. star history</text>
+  <text x="70" y="48" font-size="22" font-weight="700" fill="{theme.primary}">Stargazer</text>
   <text x="70" y="72" font-size="13" fill="{theme.secondary}">{date_range}</text>
   <text x="{right}" y="48" text-anchor="end" font-size="31" font-weight="750" fill="{theme.primary}">{format_count(total)}</text>
   <text x="{right}" y="70" text-anchor="end" font-size="12" fill="{theme.secondary}">GitHub stars</text>
