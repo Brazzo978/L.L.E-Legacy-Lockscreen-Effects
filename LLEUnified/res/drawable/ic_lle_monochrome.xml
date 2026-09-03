@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="432"
+    android:viewportHeight="432">
+    <!-- The existing LLE mark, traced without its colored tile or white frame.
+         One alpha-only foreground lets the launcher apply the user's palette.
+         The 0.9 scale keeps the lettering and ripples within the safe zone. -->
+    <group android:translateY="-8" android:pivotX="216" android:pivotY="216"
+        android:scaleX="0.9" android:scaleY="0.9">
+        <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="9" android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M143,104 L143,140 L165,140 M205,104 L205,140 L227,140 M290,104 L267,104 L267,140 L290,140 M268,121 L287,121" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M183,134 A5.5,5.5 0,1 1,183,145 A5.5,5.5 0,1 1,183,134 M245,134 A5.5,5.5 0,1 1,245,145 A5.5,5.5 0,1 1,245,134" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M216,153 C210,197 204,208 162,216 C202,223 210,237 216,285 C223,240 230,223 267,216 C228,209 222,194 216,153 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M260,194 C303,189 337,196 327,216 C314,243 264,268 218,284 C173,300 128,299 117,285 C103,266 141,239 177,226 C140,246 119,267 134,278 C158,294 232,269 281,241 C308,225 324,210 310,202 C300,195 278,193 260,194 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M146,182 A6,6 0,1 1,146,194 A6,6 0,1 1,146,182 M184,187 A2.8,2.8 0,1 1,184,192.6 A2.8,2.8 0,1 1,184,187 M282,171 A5,5 0,1 1,282,181 A5,5 0,1 1,282,171 M156,226 A3,3 0,1 1,156,232 A3,3 0,1 1,156,226 M254,239 A5,5 0,1 1,254,249 A5,5 0,1 1,254,239 M281,228 A2.8,2.8 0,1 1,281,233.6 A2.8,2.8 0,1 1,281,228 M162,265 A5,5 0,1 1,162,275 A5,5 0,1 1,162,265 M116,294 A3,3 0,1 1,116,300 A3,3 0,1 1,116,294 M216,295 A4.5,4.5 0,1 1,216,304 A4.5,4.5 0,1 1,216,295 M295,304 A4.5,4.5 0,1 1,295,313 A4.5,4.5 0,1 1,295,304" />
+        <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.5"
+            android:pathData="M120,329 A96,20 0,1 0,312,329 A96,20 0,1 0,120,329 M146,329 A70,14 0,1 0,286,329 A70,14 0,1 0,146,329 M168,328 A48,9 0,1 0,264,328 A48,9 0,1 0,168,328" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M216,306 C218,317 219,321 224,325 C229,331 203,331 208,325 C213,321 214,315 216,306 Z" />
+    </group>
+</vector>

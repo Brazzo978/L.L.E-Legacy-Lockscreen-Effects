@@ -2267,6 +2267,11 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
                 current);
         addEffectOptionIfAvailable(effects,
+                "G2 Vector",
+                "Colorful rings, tiny bubbles and white rays expand from your touch to reveal the screen beneath.",
+                OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                current);
+        addEffectOptionIfAvailable(effects,
                 "G2 Pixelate",
                 "Triangular pixels grow larger with your drag, breaking the image into a shifting mosaic.",
                 OverlayPrefs.EFFECT_LG_G2_PIXELATE,
@@ -3090,6 +3095,9 @@ public class ControlActivity extends Activity {
     }
 
     private boolean effectUsesColormapCache(int effect) {
+        if (effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
+            return true;
+        }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
             return false;
         }
@@ -3847,6 +3855,9 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
                 drawable = R.drawable.effect_preview_lg_crystal;
                 break;
+            case OverlayPrefs.EFFECT_LG_G2_VECTOR:
+                drawable = R.drawable.icon_effect_g2_vector_lle;
+                break;
             case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
                 drawable = R.drawable.effect_preview_xperia_z1_blinds;
                 break;
@@ -4258,6 +4269,8 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_g2_pixelate_lle;
             case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
                 return R.drawable.icon_effect_g2_crystal_lle;
+            case OverlayPrefs.EFFECT_LG_G2_VECTOR:
+                return R.drawable.icon_effect_g2_vector_lle;
             case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
                 return R.drawable.icon_effect_xperia_z1_blinds_lle;
             case OverlayPrefs.EFFECT_REVOLVING_GLASS:
@@ -4813,6 +4826,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_LG_G2_PIXELATE,
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_LG_G2_VECTOR,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
