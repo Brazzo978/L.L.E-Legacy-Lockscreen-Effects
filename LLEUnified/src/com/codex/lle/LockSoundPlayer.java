@@ -147,6 +147,8 @@ final class LockSoundPlayer {
                     load(R.raw.lg_particle_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE] =
                     load(R.raw.lg_lightparticle_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G2_VECTOR] =
+                    load(R.raw.lg_vector_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_CRYSTAL] =
                     load(R.raw.lg_crystal_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_PIXELATE] =

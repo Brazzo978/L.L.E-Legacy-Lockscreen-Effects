@@ -115,6 +115,8 @@ public class ChargingAccessibilityService extends AccessibilityService
             LgDewdropEffectView.COMPLETE_MS;
     // The shared swipe stage adds 60 ms, matching the donor's 500 ms unlock clock.
     private static final long PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS = 440L;
+    // Vector opens for 400 ms, then its renderer holds Last Screen for another 550 ms.
+    private static final long PIN_ENTRY_DELAY_LG_G2_VECTOR_TAIL_MS = LgVectorScene.UNLOCK_MS;
     private static final long PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS = 340L;
     private static final long PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS = 660L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
@@ -4789,6 +4791,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new LgDewdropEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
                 unlockEffectRenderer = new LgLightParticleEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
+                unlockEffectRenderer = new LgVectorEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
                 unlockEffectRenderer = new RippleInkPortEffectView(
                         rendererContext(),
@@ -6554,6 +6558,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PIXELATE,
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_LG_G2_VECTOR,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -6604,6 +6609,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PIXELATE,
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_LG_G2_VECTOR,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -7272,6 +7278,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PIXELATE,
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
+                OverlayPrefs.EFFECT_LG_G2_VECTOR,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -7301,9 +7308,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (effectUsesLgPreLockUnderlay(effect)) {
             return true;
         }
-        // Pixelate always needs both its regular lockscreen capture and the independent
-        // Last-screen underlay, even when the tester's generic no-colormap switch is enabled.
-        if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE) {
+        // These scenes need both their regular lockscreen capture and independent Last Screen
+        // underlay, even when the tester's generic no-colormap switch is enabled.
+        if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE
+                || effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
             return true;
         }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
@@ -8087,6 +8095,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PARTICLE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PIXELATE
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_VECTOR
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
@@ -9333,6 +9342,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return PIN_ENTRY_DELAY_LG_G1_DEWDROP_TAIL_MS;
             case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
                 return PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G2_VECTOR:
+                return PIN_ENTRY_DELAY_LG_G2_VECTOR_TAIL_MS;
             default:
                 return -1L;
         }
@@ -10068,7 +10079,9 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         long now = SystemClock.uptimeMillis();
-        if (isActiveRuntimeBlockWindowPresent()) {
+        RuntimeSurfaceBlockState.ActiveWindowState windowState =
+                activeRuntimeBlockWindowState();
+        if (windowState != RuntimeSurfaceBlockState.ActiveWindowState.ABSENT) {
             activeRuntimeBlockLastSeenAt = now;
             handler.postDelayed(
                     runtimeBlockWindowValidationRunnable, RUNTIME_BLOCK_WINDOW_RECHECK_MS);
@@ -10080,20 +10093,20 @@ public class ChargingAccessibilityService extends AccessibilityService
                     RUNTIME_BLOCK_WINDOW_CLEAR_GRACE_MS - missingForMs);
             return;
         }
-        clearActiveRuntimeBlock("window_gone");
+        clearActiveRuntimeBlock("window_gone", windowState);
         evaluateVisibility("runtime_block:window_gone", true);
     }
 
-    private boolean isActiveRuntimeBlockWindowPresent() {
+    private RuntimeSurfaceBlockState.ActiveWindowState activeRuntimeBlockWindowState() {
         List<AccessibilityWindowInfo> windows;
         try {
             windows = getWindows();
         } catch (RuntimeException e) {
             Log.w(TAG, "runtime block window scan failed", e);
-            return true;
+            return RuntimeSurfaceBlockState.ActiveWindowState.UNKNOWN;
         }
         if (windows == null) {
-            return true;
+            return RuntimeSurfaceBlockState.ActiveWindowState.UNKNOWN;
         }
         for (int i = 0; i < windows.size(); i++) {
             AccessibilityWindowInfo window = windows.get(i);
@@ -10111,25 +10124,30 @@ public class ChargingAccessibilityService extends AccessibilityService
                                 root.getPackageName().toString());
                 if (activeRuntimeBlockPackage.equals(packageName)
                         || (sameWindow && isRuntimeSurfaceBlockPackage(packageName))) {
-                    return true;
+                    return RuntimeSurfaceBlockState.ActiveWindowState.PRESENT;
                 }
-                if (sameWindow && root == null) {
-                    return true;
+                if (root == null) {
+                    // A root-less active/focused window cannot disprove that an OEM
+                    // transient is still present, even when its previous ID vanished.
+                    return RuntimeSurfaceBlockState.ActiveWindowState.UNKNOWN;
                 }
             } catch (RuntimeException e) {
-                if (sameWindow) {
-                    return true;
-                }
+                return RuntimeSurfaceBlockState.ActiveWindowState.UNKNOWN;
             } finally {
                 if (root != null) {
                     root.recycle();
                 }
             }
         }
-        return false;
+        return RuntimeSurfaceBlockState.ActiveWindowState.ABSENT;
     }
 
     private void clearActiveRuntimeBlock(String reason) {
+        clearActiveRuntimeBlock(reason, RuntimeSurfaceBlockState.ActiveWindowState.UNKNOWN);
+    }
+
+    private void clearActiveRuntimeBlock(String reason,
+            RuntimeSurfaceBlockState.ActiveWindowState windowState) {
         handler.removeCallbacks(runtimeBlockWindowValidationRunnable);
         if (activeRuntimeBlockPackage == null) {
             activeRuntimeBlockWindowId = -1;
@@ -10139,9 +10157,17 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "runtime block cleared reason=" + reason
                 + " pkg=" + activeRuntimeBlockPackage
                 + " windowId=" + activeRuntimeBlockWindowId);
+        String clearedPackage = activeRuntimeBlockPackage;
         activeRuntimeBlockPackage = null;
         activeRuntimeBlockWindowId = -1;
         activeRuntimeBlockLastSeenAt = 0L;
+        String normalizedLastWindowPackage = lastWindowPackage == null
+                ? null : OverlayPrefs.normalizePackageName(lastWindowPackage);
+        if (RuntimeSurfaceBlockState.shouldClearStaleLastWindowPackage(
+                clearedPackage, normalizedLastWindowPackage, windowState)) {
+            lastWindowPackage = null;
+            Log.i(TAG, "runtime block retired stale event package pkg=" + clearedPackage);
+        }
     }
 
     private boolean isRuntimeSurfaceBlocked() {

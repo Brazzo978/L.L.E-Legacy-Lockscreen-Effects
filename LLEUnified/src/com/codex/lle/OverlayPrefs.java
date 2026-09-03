@@ -270,7 +270,9 @@ final class OverlayPrefs {
     static final int EFFECT_LG_G1_DEWDROP = 39;
     /** Tester-only restoration of LG G2 Light Particle from the authorized XLocker archive. */
     static final int EFFECT_LG_G2_LIGHT_PARTICLE = 40;
-    static final int EFFECT_COUNT = 41;
+    /** Canvas restoration of the LG G2 Vector lockscreen scene. */
+    static final int EFFECT_LG_G2_VECTOR = 41;
+    static final int EFFECT_COUNT = 42;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -1071,6 +1073,8 @@ final class OverlayPrefs {
                 return "G1 Dewdrop";
             case EFFECT_LG_G2_LIGHT_PARTICLE:
                 return "G2 Light Particle";
+            case EFFECT_LG_G2_VECTOR:
+                return "G2 Vector";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -1952,7 +1956,9 @@ final class OverlayPrefs {
     }
 
     static boolean usesLgPreLockUnderlayAsSecondary(int effect) {
-        return effect == EFFECT_LG_G2_PIXELATE || effect == EFFECT_REVOLVING_GLASS;
+        return effect == EFFECT_LG_G2_PIXELATE
+                || effect == EFFECT_REVOLVING_GLASS
+                || effect == EFFECT_LG_G2_VECTOR;
     }
 
     static boolean needsLgPreLockUnderlay(int effect) {
