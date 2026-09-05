@@ -881,12 +881,18 @@ public class ChargingAccessibilityService extends AccessibilityService
     private boolean pinEntryHandoffLastDeviceLocked;
     private float bufferedReadinessDownX;
     private float bufferedReadinessDownY;
+    private float bufferedReadinessDownPressure = 1.0f;
+    private int bufferedReadinessDownToolType = MotionEvent.TOOL_TYPE_FINGER;
     private float bufferedReadinessMoveX;
     private float bufferedReadinessMoveY;
     private float bufferedReadinessMoveDistance;
+    private float bufferedReadinessMovePressure = 1.0f;
+    private int bufferedReadinessMoveToolType = MotionEvent.TOOL_TYPE_FINGER;
     private float bufferedReadinessTerminalX;
     private float bufferedReadinessTerminalY;
     private float bufferedReadinessTerminalDistance;
+    private float bufferedReadinessTerminalPressure = 1.0f;
+    private int bufferedReadinessTerminalToolType = MotionEvent.TOOL_TYPE_FINGER;
     private StringBuilder unlockEffectBenchmarkCsv;
 
     private final DisplayManager.DisplayListener displayListener =
@@ -7495,6 +7501,15 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
 
             @Override
+            public boolean onTouchStarted(float screenX, float screenY, float pressure,
+                    int toolType) {
+                if (isSeasonalUnlockPartnerModeEnabled()) {
+                    return beginSeasonalUnlockPartnerGesture(screenX, screenY);
+                }
+                return beginUnlockEffectGesture(screenX, screenY, pressure, toolType);
+            }
+
+            @Override
             public void onTouchMoved(float screenX, float screenY,
                     float deltaX, float deltaY, float distance) {
                 if (seasonalUnlockPartnerGestureActive) {
@@ -7502,6 +7517,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                     return;
                 }
                 updateUnlockEffectGesture(screenX, screenY, distance);
+            }
+
+            @Override
+            public void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY,
+                    float distance, float pressure, int toolType) {
+                if (seasonalUnlockPartnerGestureActive) {
+                    updateSeasonalUnlockPartnerGesture(screenX, screenY);
+                    return;
+                }
+                updateUnlockEffectGesture(screenX, screenY, distance, pressure, toolType);
             }
 
             @Override
@@ -7544,6 +7569,16 @@ public class ChargingAccessibilityService extends AccessibilityService
                     return;
                 }
                 finishUnlockEffectGesture(screenX, screenY, distance);
+            }
+
+            @Override
+            public void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY,
+                    float distance, float pressure, int toolType) {
+                if (seasonalUnlockPartnerGestureActive) {
+                    finishSeasonalUnlockPartnerGesture(screenX, screenY, distance);
+                    return;
+                }
+                finishUnlockEffectGesture(screenX, screenY, distance, pressure, toolType);
             }
 
             @Override
@@ -8881,6 +8916,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private boolean beginUnlockEffectGesture(float screenX, float screenY) {
+        return beginUnlockEffectGesture(screenX, screenY, 1.0f, MotionEvent.TOOL_TYPE_FINGER);
+    }
+
+    private boolean beginUnlockEffectGesture(float screenX, float screenY, float pressure,
+            int toolType) {
         long startedAt = SystemClock.uptimeMillis();
         int effect = OverlayPrefs.unlockEffect(this);
         if (lockCycleSafetyBypassActive) {
@@ -8918,13 +8958,20 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         refreshUnlockEffectReadiness("gesture_down");
         if (!isUnlockEffectFirstFrameReady()) {
-            return bufferUnlockEffectGestureDown(screenX, screenY, effect);
+            return bufferUnlockEffectGestureDown(screenX, screenY, effect, pressure, toolType);
         }
-        return beginReadyUnlockEffectGesture(screenX, screenY, effect, startedAt);
+        return beginReadyUnlockEffectGesture(screenX, screenY, effect, startedAt, pressure,
+                toolType);
     }
 
     private boolean beginReadyUnlockEffectGesture(float screenX, float screenY,
             int effect, long startedAt) {
+        return beginReadyUnlockEffectGesture(screenX, screenY, effect, startedAt, 1.0f,
+                MotionEvent.TOOL_TYPE_FINGER);
+    }
+
+    private boolean beginReadyUnlockEffectGesture(float screenX, float screenY,
+            int effect, long startedAt, float pressure, int toolType) {
         cancelUnlockAffordanceDispatch(false, "gesture_down");
         armActiveUnlockEffectProfile(effect, startedAt);
         handler.removeCallbacks(pinEntryRunnable);
@@ -8938,7 +8985,15 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectAnchorY = screenY;
         syncUnlockEffectOverlay(true);
         long syncedAt = SystemClock.uptimeMillis();
-        if (unlockEffectRenderer != null) {
+        if (unlockEffectRenderer instanceof RippleInkPortEffectView
+                && OverlayPrefs.sPenRippleInkEnabled(this)) {
+            RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
+                rippleInk.beginStylusGesture(unlockEffectAnchorX, unlockEffectAnchorY, pressure);
+            } else {
+                rippleInk.beginWaterOnlyGesture(unlockEffectAnchorX, unlockEffectAnchorY);
+            }
+        } else if (unlockEffectRenderer != null) {
             unlockEffectRenderer.beginGesture(unlockEffectAnchorX, unlockEffectAnchorY);
         }
         activeEffectProfileSyncMs = syncedAt - startedAt;
@@ -8963,13 +9018,16 @@ public class ChargingAccessibilityService extends AccessibilityService
         return displayState == Display.STATE_UNKNOWN || displayState == Display.STATE_ON;
     }
 
-    private boolean bufferUnlockEffectGestureDown(float screenX, float screenY, int effect) {
+        private boolean bufferUnlockEffectGestureDown(float screenX, float screenY, int effect,
+            float pressure, int toolType) {
         cancelBufferedReadinessGesture("superseded_down", false);
         bufferedReadinessGestureActive = true;
         readinessFallbackGestureActive = false;
         bufferedReadinessEffect = effect;
         bufferedReadinessDownX = screenX;
         bufferedReadinessDownY = screenY;
+        bufferedReadinessDownPressure = pressure;
+        bufferedReadinessDownToolType = toolType;
         bufferedReadinessHasMove = false;
         bufferedReadinessHasTerminal = false;
         bufferedReadinessTerminalCancel = false;
@@ -8997,11 +9055,17 @@ public class ChargingAccessibilityService extends AccessibilityService
         boolean hasMove = bufferedReadinessHasMove;
         float moveX = bufferedReadinessMoveX;
         float moveY = bufferedReadinessMoveY;
+        float movePressure = bufferedReadinessMovePressure;
+        int moveToolType = bufferedReadinessMoveToolType;
         boolean hasTerminal = bufferedReadinessHasTerminal;
         boolean cancel = bufferedReadinessTerminalCancel;
         float terminalX = bufferedReadinessTerminalX;
         float terminalY = bufferedReadinessTerminalY;
         float terminalDistance = bufferedReadinessTerminalDistance;
+        float downPressure = bufferedReadinessDownPressure;
+        int downToolType = bufferedReadinessDownToolType;
+        float terminalPressure = bufferedReadinessTerminalPressure;
+        int terminalToolType = bufferedReadinessTerminalToolType;
         clearBufferedReadinessGestureState();
         if (effect != OverlayPrefs.unlockEffect(this) || !isUnlockEffectGestureReady()) {
             Log.i(TAG, "buffered unlock gesture dropped before replay type=" + effect
@@ -9010,17 +9074,19 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         long startedAt = SystemClock.uptimeMillis();
-        if (!beginReadyUnlockEffectGesture(downX, downY, effect, startedAt)) {
+        if (!beginReadyUnlockEffectGesture(downX, downY, effect, startedAt, downPressure,
+                downToolType)) {
             return;
         }
         if (hasMove) {
-            updateUnlockEffectGesture(moveX, moveY);
+            updateUnlockEffectGesture(moveX, moveY, 0.0f, movePressure, moveToolType);
         }
         if (hasTerminal) {
             if (cancel) {
                 cancelUnlockEffectGesture();
             } else {
-                finishUnlockEffectGesture(terminalX, terminalY, terminalDistance);
+                finishUnlockEffectGesture(terminalX, terminalY, terminalDistance,
+                    terminalPressure, terminalToolType);
             }
         }
         Log.i(TAG, "buffered unlock gesture replayed type=" + effect
@@ -9092,6 +9158,12 @@ public class ChargingAccessibilityService extends AccessibilityService
         bufferedReadinessHasMove = false;
         bufferedReadinessHasTerminal = false;
         bufferedReadinessTerminalCancel = false;
+        bufferedReadinessDownPressure = 1.0f;
+        bufferedReadinessDownToolType = MotionEvent.TOOL_TYPE_FINGER;
+        bufferedReadinessMovePressure = 1.0f;
+        bufferedReadinessMoveToolType = MotionEvent.TOOL_TYPE_FINGER;
+        bufferedReadinessTerminalPressure = 1.0f;
+        bufferedReadinessTerminalToolType = MotionEvent.TOOL_TYPE_FINGER;
     }
 
     private boolean beginSeasonalUnlockPartnerGesture(float screenX, float screenY) {
@@ -9174,28 +9246,52 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     private void updateUnlockEffectGesture(float screenX, float screenY, float distance) {
+        updateUnlockEffectGesture(screenX, screenY, distance, 1.0f,
+                MotionEvent.TOOL_TYPE_FINGER);
+    }
+
+    private void updateUnlockEffectGesture(float screenX, float screenY, float distance,
+            float pressure, int toolType) {
         if (bufferedReadinessGestureActive) {
             bufferedReadinessHasMove = true;
             bufferedReadinessMoveX = screenX;
             bufferedReadinessMoveY = screenY;
             bufferedReadinessMoveDistance = distance;
+                bufferedReadinessMovePressure = pressure;
+                bufferedReadinessMoveToolType = toolType;
             return;
         }
         if (readinessFallbackGestureActive) {
             return;
         }
-        if (unlockEffectRenderer != null) {
+        if (unlockEffectRenderer instanceof RippleInkPortEffectView
+                && OverlayPrefs.sPenRippleInkEnabled(this)) {
+            RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
+                rippleInk.updateStylusGesture(screenX, screenY, pressure);
+            } else {
+                rippleInk.updateWaterOnlyGesture(screenX, screenY);
+            }
+        } else if (unlockEffectRenderer != null) {
             unlockEffectRenderer.updateGesture(screenX, screenY);
         }
     }
 
     private void finishUnlockEffectGesture(float screenX, float screenY, float distance) {
+        finishUnlockEffectGesture(screenX, screenY, distance, 1.0f,
+                MotionEvent.TOOL_TYPE_FINGER);
+    }
+
+    private void finishUnlockEffectGesture(float screenX, float screenY, float distance,
+            float pressure, int toolType) {
         if (bufferedReadinessGestureActive) {
             bufferedReadinessHasTerminal = true;
             bufferedReadinessTerminalCancel = false;
             bufferedReadinessTerminalX = screenX;
             bufferedReadinessTerminalY = screenY;
             bufferedReadinessTerminalDistance = distance;
+            bufferedReadinessTerminalPressure = pressure;
+            bufferedReadinessTerminalToolType = toolType;
             return;
         }
         if (readinessFallbackGestureActive) {
@@ -9204,7 +9300,15 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         boolean unlockTriggered = distance >= dp(UNLOCK_TRIGGER_DISTANCE_DP);
-        if (unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
+        if (unlockEffectRenderer instanceof RippleInkPortEffectView
+                && OverlayPrefs.sPenRippleInkEnabled(this)) {
+            RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
+                rippleInk.finishStylusGesture();
+            } else {
+                rippleInk.finishWaterOnlyGesture();
+            }
+        } else if (unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
             ((S3Arm64RippleEffectView) unlockEffectRenderer).finishGestureAt(
                     screenX, screenY, unlockTriggered);
         } else if (unlockEffectRendererType == OverlayPrefs.EFFECT_BRILLIANT_RING
