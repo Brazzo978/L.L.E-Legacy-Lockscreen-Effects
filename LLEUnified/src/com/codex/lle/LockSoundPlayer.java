@@ -30,6 +30,7 @@ final class LockSoundPlayer {
             new HashMap<Integer, String>();
 
     private SoundPool soundPool;
+    private int hulaHoopV2LockSound;
 
     LockSoundPlayer(Context context) {
         this.context = context.getApplicationContext();
@@ -44,9 +45,16 @@ final class LockSoundPlayer {
         if (soundPool == null || effect < 0 || effect >= effectSounds.length) {
             return;
         }
-        int soundId = effect == OverlayPrefs.EFFECT_SEASONAL_AUTO
-                ? seasonalSounds[resolveSeason(SeasonalDoodleView.SEASON_AUTO)]
-                : effectSounds[effect];
+        int soundId;
+        if (effect == OverlayPrefs.EFFECT_SEASONAL_AUTO) {
+            soundId = seasonalSounds[resolveSeason(SeasonalDoodleView.SEASON_AUTO)];
+        } else if (effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP
+                && OverlayPrefs.hulaHoopVariant(context)
+                == OverlayPrefs.HULA_HOOP_VARIANT_V2) {
+            soundId = hulaHoopV2LockSound;
+        } else {
+            soundId = effectSounds[effect];
+        }
         play(soundId, "effect:" + effect);
     }
 
@@ -77,6 +85,7 @@ final class LockSoundPlayer {
             for (int i = 0; i < seasonalSounds.length; i++) {
                 seasonalSounds[i] = 0;
             }
+            hulaHoopV2LockSound = 0;
         }
     }
 
@@ -149,6 +158,11 @@ final class LockSoundPlayer {
                     load(R.raw.lg_lightparticle_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_VECTOR] =
                     load(R.raw.lg_vector_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G1_HULA_HOOP] =
+                    load(R.raw.lg_hula_lock);
+            hulaHoopV2LockSound = load(R.raw.lg_hula_v2_lock);
+            effectSounds[OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC] =
+                    load(R.raw.lg_circlemosaic_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_CRYSTAL] =
                     load(R.raw.lg_crystal_lock);
             effectSounds[OverlayPrefs.EFFECT_LG_G2_PIXELATE] =

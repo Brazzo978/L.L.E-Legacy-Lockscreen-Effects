@@ -77,6 +77,8 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
             case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
             case OverlayPrefs.EFFECT_LG_G2_VECTOR:
+            case OverlayPrefs.EFFECT_LG_G1_HULA_HOOP:
+            case OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC:
                 return ARM64_PROCESS;
             case OverlayPrefs.EFFECT_RIPPLE_INK:
                 return ARM64_PROCESS;

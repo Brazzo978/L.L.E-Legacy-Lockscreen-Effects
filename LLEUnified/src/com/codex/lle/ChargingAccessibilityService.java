@@ -117,6 +117,11 @@ public class ChargingAccessibilityService extends AccessibilityService
     private static final long PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS = 440L;
     // Vector opens for 400 ms, then its renderer holds Last Screen for another 550 ms.
     private static final long PIN_ENTRY_DELAY_LG_G2_VECTOR_TAIL_MS = LgVectorScene.UNLOCK_MS;
+    // Color Layered uses LG's original 600 ms linear unlock clock.
+    private static final long PIN_ENTRY_DELAY_LG_G1_HULA_HOOP_TAIL_MS =
+            LgHulaHoopScene.UNLOCK_MS;
+    private static final long PIN_ENTRY_DELAY_LG_G4_CIRCLE_MOSAIC_TAIL_MS =
+            LgCircleMosaicScene.UNLOCK_MS;
     private static final long PIN_ENTRY_DELAY_XPERIA_Z1_BLINDS_TAIL_MS = 340L;
     private static final long PIN_ENTRY_DELAY_REVOLVING_GLASS_TAIL_MS = 660L;
     // Samsung exposes a 400 ms unlock delay. The shared dispatch stage below adds 60 ms.
@@ -2423,6 +2428,14 @@ public class ChargingAccessibilityService extends AccessibilityService
             applyRippleInkPalettePreference();
             return;
         }
+        if (OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT.equals(key)) {
+            applyG2LightParticleVariantPreference();
+            return;
+        }
+        if (OverlayPrefs.HULA_HOOP_VARIANT.equals(key)) {
+            applyHulaHoopVariantPreference();
+            return;
+        }
         if (OverlayPrefs.LENS_FLARE_GLES_RENDERER.equals(key)) {
             boolean staleEnabled = OverlayPrefs.get(this).getBoolean(key, false);
             if (staleEnabled) {
@@ -2668,6 +2681,37 @@ public class ChargingAccessibilityService extends AccessibilityService
             preloadAndAttachSelectedUnlockEffectParked("prefs:ripple_ink_palette");
         }
         evaluateVisibility("prefs:ripple_ink_palette", false);
+    }
+
+    /** Applies archived Light Particle texture variants without disturbing the gesture state. */
+    private void applyG2LightParticleVariantPreference() {
+        if (!EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE)
+                || OverlayPrefs.unlockEffect(this)
+                != OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
+            return;
+        }
+        if (unlockEffectRenderer instanceof LgLightParticleEffectView) {
+            ((LgLightParticleEffectView) unlockEffectRenderer).setParticleVariant(
+                    OverlayPrefs.g2LightParticleVariant(this));
+        } else if (unlockEffectRenderer != null) {
+            destroyUnlockEffectOverlay();
+            preloadAndAttachSelectedUnlockEffectParked("prefs:g2_light_particle_variant");
+        }
+        evaluateVisibility("prefs:g2_light_particle_variant", false);
+    }
+
+    /** Rebuilds Hula between the separately preserved V1 and V2 render paths. */
+    private void applyHulaHoopVariantPreference() {
+        if (!EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_LG_G1_HULA_HOOP)
+                || OverlayPrefs.unlockEffect(this) != OverlayPrefs.EFFECT_LG_G1_HULA_HOOP) {
+            return;
+        }
+        cancelUnlockAffordanceDispatch(false, "prefs:hula_hoop_variant");
+        if (unlockEffectRenderer != null) {
+            destroyUnlockEffectOverlay();
+        }
+        preloadAndAttachSelectedUnlockEffectParked("prefs:hula_hoop_variant");
+        evaluateVisibility("prefs:hula_hoop_variant", false);
     }
 
     private void scheduleTimeWindowRefresh() {
@@ -4793,6 +4837,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 unlockEffectRenderer = new LgLightParticleEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
                 unlockEffectRenderer = new LgVectorEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP) {
+                unlockEffectRenderer = new LgHulaHoopEffectView(
+                        rendererContext(), OverlayPrefs.hulaHoopVariant(this));
+            } else if (effect == OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC) {
+                unlockEffectRenderer = new LgCircleMosaicEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
                 unlockEffectRenderer = new RippleInkPortEffectView(
                         rendererContext(),
@@ -6559,6 +6608,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
                 OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -6610,6 +6661,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
                 OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -7279,6 +7332,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
                 OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -7311,7 +7366,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         // These scenes need both their regular lockscreen capture and independent Last Screen
         // underlay, even when the tester's generic no-colormap switch is enabled.
         if (effect == OverlayPrefs.EFFECT_LG_G2_PIXELATE
-                || effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
+                || effect == OverlayPrefs.EFFECT_LG_G2_VECTOR
+                || effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP
+                || effect == OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC
+                || effect == OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE) {
             return true;
         }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
@@ -8096,6 +8154,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_PIXELATE
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G2_VECTOR
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP
+                || unlockEffectRendererType == OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC
                 || unlockEffectRendererType == OverlayPrefs.EFFECT_REVOLVING_GLASS;
     }
 
@@ -9344,6 +9404,10 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return PIN_ENTRY_DELAY_LG_G2_LIGHT_PARTICLE_TAIL_MS;
             case OverlayPrefs.EFFECT_LG_G2_VECTOR:
                 return PIN_ENTRY_DELAY_LG_G2_VECTOR_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G1_HULA_HOOP:
+                return PIN_ENTRY_DELAY_LG_G1_HULA_HOOP_TAIL_MS;
+            case OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC:
+                return PIN_ENTRY_DELAY_LG_G4_CIRCLE_MOSAIC_TAIL_MS;
             default:
                 return -1L;
         }

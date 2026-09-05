@@ -76,6 +76,8 @@ public final class LgLightParticleEffectView extends View
     private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
     private final float assetDensityScale;
 
+    private int particleVariant;
+    private Bitmap variantTexture;
     private Bitmap underlay;
     private BitmapShader underlayShader;
     private RuntimeShader revealShader;
@@ -103,6 +105,10 @@ public final class LgLightParticleEffectView extends View
     };
 
     public LgLightParticleEffectView(Context context) {
+        this(context, OverlayPrefs.g2LightParticleVariant(context));
+    }
+
+    LgLightParticleEffectView(Context context, int variant) {
         super(context);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
@@ -110,7 +116,9 @@ public final class LgLightParticleEffectView extends View
         float density = getResources().getDisplayMetrics().density;
         scene.setDensity(density);
         assetDensityScale = density / ARCHIVE_DENSITY;
+        particleVariant = OverlayPrefs.normalizeG2LightParticleVariant(variant);
         loadTextures();
+        loadVariantTexture();
         if (Build.VERSION.SDK_INT >= 33) {
             try {
                 revealShader = new RuntimeShader(REVEAL_SHADER);
@@ -184,7 +192,28 @@ public final class LgLightParticleEffectView extends View
         for (Bitmap texture : textures) {
             if (texture != null && !texture.isRecycled()) texture.prepareToDraw();
         }
+        if (variantTexture != null && !variantTexture.isRecycled()) {
+            variantTexture.prepareToDraw();
+        }
         invalidate();
+    }
+
+    /** Applies one of the six archived texture styles without rebuilding the effect view. */
+    public void setParticleVariant(int variant) {
+        if (destroyed) return;
+        int normalized = OverlayPrefs.normalizeG2LightParticleVariant(variant);
+        if (normalized == particleVariant
+                && (normalized == OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT_DEFAULT
+                || (variantTexture != null && !variantTexture.isRecycled()))) {
+            return;
+        }
+        particleVariant = normalized;
+        loadVariantTexture();
+        invalidate();
+    }
+
+    int getParticleVariant() {
+        return particleVariant;
     }
 
     @Override public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
@@ -255,6 +284,7 @@ public final class LgLightParticleEffectView extends View
         removeCallbacks(affordanceRelease);
         scene.reset();
         releaseUnderlay();
+        releaseVariantTexture();
         for (int index = 0; index < textures.length; index++) {
             Bitmap texture = textures[index];
             if (texture != null && !texture.isRecycled()) texture.recycle();
@@ -364,7 +394,7 @@ public final class LgLightParticleEffectView extends View
         for (int index = 0; index < current.spriteCount; index++) {
             LgLightParticleScene.ParticleSprite sprite = current.sprites[index];
             if (sprite.texture < 0 || sprite.texture >= textures.length) continue;
-            Bitmap texture = textures[sprite.texture];
+            Bitmap texture = textureForSprite(sprite.texture);
             if (texture == null || texture.isRecycled()) continue;
             float size = texture.getWidth() * assetDensityScale * sprite.sizeScale
                     + sprite.sizeExtraPx;
@@ -376,6 +406,17 @@ public final class LgLightParticleEffectView extends View
             canvas.drawBitmap(texture, null, particleRect, particlePaint);
         }
         particlePaint.setAlpha(255);
+    }
+
+    private Bitmap textureForSprite(int textureIndex) {
+        if (particleVariant > OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT_DEFAULT
+                && (textureIndex == LgLightParticleScene.TEXTURE_A_1
+                || textureIndex == LgLightParticleScene.TEXTURE_A_2)
+                && variantTexture != null && !variantTexture.isRecycled()) {
+            // LG's alternate modes replace both leading bokeh families with the same motif.
+            return variantTexture;
+        }
+        return textures[textureIndex];
     }
 
     private void loadTextures() {
@@ -399,6 +440,36 @@ public final class LgLightParticleEffectView extends View
                 decodeTexture(R.drawable.lg_lightparticle_d_2);
         textures[LgLightParticleScene.TEXTURE_D_3] =
                 decodeTexture(R.drawable.lg_lightparticle_d_3);
+    }
+
+    private void loadVariantTexture() {
+        releaseVariantTexture();
+        int drawable = particleVariantDrawable(particleVariant);
+        if (drawable != 0) variantTexture = decodeTexture(drawable);
+    }
+
+    private static int particleVariantDrawable(int variant) {
+        switch (variant) {
+            case 2:
+                return R.drawable.lg_lightparticle_variant_2;
+            case 3:
+                return R.drawable.lg_lightparticle_variant_3;
+            case 4:
+                return R.drawable.lg_lightparticle_variant_4;
+            case 5:
+                return R.drawable.lg_lightparticle_variant_5;
+            case 6:
+                return R.drawable.lg_lightparticle_variant_6;
+            default:
+                return 0;
+        }
+    }
+
+    private void releaseVariantTexture() {
+        if (variantTexture != null && !variantTexture.isRecycled()) {
+            variantTexture.recycle();
+        }
+        variantTexture = null;
     }
 
     private Bitmap decodeTexture(int resourceId) {

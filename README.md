@@ -4,12 +4,12 @@ Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern d
 
 Every lockscreen effect is recreated 1:1 using the original sources.
 
-**Current stable release:** `1.0.6.3` · **Recommended build:** ARM64
+**Current stable release:** `1.0.6.4` · **Recommended build:** ARM64
 
-New in [1.0.6.3](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.3):
-**G2 Vector**, Android 13+ themed launcher icons, and a **possible Samsung Cocktail
-Bar fix** related to [issue #35](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/issues/35).
-Confirmation on the reporting Galaxy A51 is still pending.
+New in [1.0.6.4](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.4):
+**Hula Hoop V1 and V2**, **Circle Mosaic**, the recovered Light Particle
+variants, refined White Hole distortion, matching effect icons, and the
+refreshed effect-family and Random-pool interface.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
 
@@ -126,8 +126,9 @@ requests it for private troubleshooting.
 - N5 Colored Droplet, Gyro Droplet, and Sparkling Bubbles
 - Tab S Blind and Brilliant Cut
 - Good Lock Popping Color, Rectangle Traveller, and Bouncing Color
-- LG G1 White Hole and Dewdrop
+- LG G1 White Hole, Dewdrop, and Hula Hoop V1/V2
 - LG G2 Soda, Particle, Light Particle, Pixelate, Crystal, and Vector
+- LG G4 Circle Mosaic
 - Sony Xperia Z1 Blinds and Revolving Glass
 - Seasonal Spring, Summer, Autumn, and Winter effects
 - Charging doodles and seasonal companion effects

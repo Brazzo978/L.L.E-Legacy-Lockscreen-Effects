@@ -141,6 +141,15 @@ final class OverlayPrefs {
     static final int RIPPLE_INK_PALETTE_DEFAULT = 4;
     static final int RIPPLE_INK_PALETTE_MIN = 1;
     static final int RIPPLE_INK_PALETTE_MAX = 8;
+    static final String G2_LIGHT_PARTICLE_VARIANT = "g2_light_particle_variant";
+    static final int G2_LIGHT_PARTICLE_VARIANT_DEFAULT = 1;
+    static final int G2_LIGHT_PARTICLE_VARIANT_MIN = 1;
+    static final int G2_LIGHT_PARTICLE_VARIANT_MAX = 6;
+    /** Hula Hoop keeps both LG revisions behind one effect card. */
+    static final String HULA_HOOP_VARIANT = "hula_hoop_variant";
+    static final int HULA_HOOP_VARIANT_V1 = 1;
+    static final int HULA_HOOP_VARIANT_V2 = 2;
+    static final int HULA_HOOP_VARIANT_DEFAULT = HULA_HOOP_VARIANT_V1;
     static final String ABSTRACT_TILES_LINE_ENABLED = "abstract_tiles_line_enabled";
     static final String N5_COLOUR_DROPLET_GYRO_ENABLED =
             "n5_colour_droplet_gyro_enabled";
@@ -272,7 +281,11 @@ final class OverlayPrefs {
     static final int EFFECT_LG_G2_LIGHT_PARTICLE = 40;
     /** Canvas restoration of the LG G2 Vector lockscreen scene. */
     static final int EFFECT_LG_G2_VECTOR = 41;
-    static final int EFFECT_COUNT = 42;
+    /** Stock-compatible Canvas restoration of LG's Hula Hoop V1/V2 family. */
+    static final int EFFECT_LG_G1_HULA_HOOP = 42;
+    /** Stock-compatible Canvas restoration of LG G4 Circle Mosaic. */
+    static final int EFFECT_LG_G4_CIRCLE_MOSAIC = 43;
+    static final int EFFECT_COUNT = 44;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -923,6 +936,27 @@ final class OverlayPrefs {
         return Math.max(RIPPLE_INK_PALETTE_MIN, Math.min(RIPPLE_INK_PALETTE_MAX, palette));
     }
 
+    static int g2LightParticleVariant(Context context) {
+        int variant = get(context).getInt(
+                G2_LIGHT_PARTICLE_VARIANT, G2_LIGHT_PARTICLE_VARIANT_DEFAULT);
+        return normalizeG2LightParticleVariant(variant);
+    }
+
+    static int normalizeG2LightParticleVariant(int variant) {
+        return Math.max(G2_LIGHT_PARTICLE_VARIANT_MIN,
+                Math.min(G2_LIGHT_PARTICLE_VARIANT_MAX, variant));
+    }
+
+    static int hulaHoopVariant(Context context) {
+        return normalizeHulaHoopVariant(get(context).getInt(
+                HULA_HOOP_VARIANT, HULA_HOOP_VARIANT_DEFAULT));
+    }
+
+    static int normalizeHulaHoopVariant(int variant) {
+        return variant == HULA_HOOP_VARIANT_V2
+                ? HULA_HOOP_VARIANT_V2 : HULA_HOOP_VARIANT_V1;
+    }
+
     static boolean abstractTilesLineEnabled(Context context) {
         return get(context).getBoolean(ABSTRACT_TILES_LINE_ENABLED, true);
     }
@@ -1075,6 +1109,10 @@ final class OverlayPrefs {
                 return "G2 Light Particle";
             case EFFECT_LG_G2_VECTOR:
                 return "G2 Vector";
+            case EFFECT_LG_G1_HULA_HOOP:
+                return "Hula Hoop";
+            case EFFECT_LG_G4_CIRCLE_MOSAIC:
+                return "Circle Mosaic";
             case EFFECT_BRILLIANT_RING:
                 return "S5 Brilliant Ring";
             case EFFECT_BRILLIANT_CUT:
@@ -1949,7 +1987,6 @@ final class OverlayPrefs {
 
     static boolean usesLgPreLockUnderlay(int effect) {
         return effect == EFFECT_LG_G2_PARTICLE
-                || effect == EFFECT_LG_G1_WHITE_HOLE
                 || effect == EFFECT_LG_SODA
                 || effect == EFFECT_LG_G1_DEWDROP
                 || effect == EFFECT_LG_G2_LIGHT_PARTICLE;
@@ -1958,7 +1995,10 @@ final class OverlayPrefs {
     static boolean usesLgPreLockUnderlayAsSecondary(int effect) {
         return effect == EFFECT_LG_G2_PIXELATE
                 || effect == EFFECT_REVOLVING_GLASS
-                || effect == EFFECT_LG_G2_VECTOR;
+                || effect == EFFECT_LG_G2_VECTOR
+                || effect == EFFECT_LG_G1_HULA_HOOP
+                || effect == EFFECT_LG_G4_CIRCLE_MOSAIC
+                || effect == EFFECT_LG_G1_WHITE_HOLE;
     }
 
     static boolean needsLgPreLockUnderlay(int effect) {

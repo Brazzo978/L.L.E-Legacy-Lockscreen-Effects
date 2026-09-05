@@ -2,6 +2,8 @@ package com.codex.lle;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.LayoutTransition;
+import android.animation.ValueAnimator;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -96,6 +98,7 @@ public class ControlActivity extends Activity {
             "pending_imported_background_height";
     private static final String STATE_PENDING_LOCK_WALLPAPER_PREVIEW =
             "pending_lock_wallpaper_preview";
+    private static final String STATE_EFFECT_FILTER = "effect_filter";
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND = 4917;
     private static final int REQUEST_SETUP_WIZARD = 4918;
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
@@ -131,6 +134,13 @@ public class ControlActivity extends Activity {
     private static final float TAB_SWIPE_AXIS_RATIO = 1.35f;
     private static final float TAB_DRAG_AXIS_RATIO = 1.18f;
     private static final long EFFECT_SELECTION_APPLY_DELAY_MS = 2000L;
+    private static final long UI_TRANSITION_DURATION_MS = 300L;
+    private static final int EFFECT_FILTER_ALL = 0;
+    private static final int EFFECT_FILTER_SAMSUNG = 1;
+    private static final int EFFECT_FILTER_GOOD_LOCK = 2;
+    private static final int EFFECT_FILTER_LG = 3;
+    private static final int EFFECT_FILTER_SONY = 4;
+    private static final int EFFECT_FILTER_SEASONAL = 5;
 
     /**
      * Preview one fully developed stock Samsung ink layer over white.  At w=1,
@@ -192,6 +202,9 @@ public class ControlActivity extends Activity {
     private TextView randomPoolSummaryView;
     private boolean pendingLockWallpaperPreview;
     private boolean loadingLockWallpaperPreview;
+    private int effectFilter = EFFECT_FILTER_ALL;
+    private final java.util.WeakHashMap<View, Integer> revealAnimationGenerations =
+            new java.util.WeakHashMap<View, Integer>();
     private final HashSet<String> expandedTimingSections = new HashSet<String>();
     private final HashMap<Integer, ArrayList<Switch>> highFrameRateSwitches =
             new HashMap<Integer, ArrayList<Switch>>();
@@ -225,6 +238,8 @@ public class ControlActivity extends Activity {
                     STATE_PENDING_IMPORTED_HEIGHT, 0);
             pendingLockWallpaperPreview = savedInstanceState.getBoolean(
                     STATE_PENDING_LOCK_WALLPAPER_PREVIEW, false);
+            effectFilter = normalizeEffectFilter(savedInstanceState.getInt(
+                    STATE_EFFECT_FILTER, EFFECT_FILTER_ALL));
         }
 
         FrameLayout scene = new FrameLayout(this);
@@ -294,6 +309,7 @@ public class ControlActivity extends Activity {
         outState.putInt(STATE_PENDING_IMPORTED_HEIGHT, pendingImportedBackgroundHeight);
         outState.putBoolean(STATE_PENDING_LOCK_WALLPAPER_PREVIEW,
                 pendingLockWallpaperPreview);
+        outState.putInt(STATE_EFFECT_FILTER, effectFilter);
         super.onSaveInstanceState(outState);
     }
 
@@ -441,6 +457,17 @@ public class ControlActivity extends Activity {
         if (header == null || tabs == null || content == null) {
             return;
         }
+        if (!uiAnimationsEnabled()) {
+            header.setAlpha(1f);
+            header.setTranslationY(0f);
+            tabs.setAlpha(1f);
+            tabs.setTranslationY(0f);
+            content.setAlpha(1f);
+            content.setTranslationY(0f);
+            content.setScaleX(1f);
+            content.setScaleY(1f);
+            return;
+        }
         header.setAlpha(0f);
         header.setTranslationY(-dp(18));
         tabs.setAlpha(0f);
@@ -453,12 +480,12 @@ public class ControlActivity extends Activity {
             @Override
             public void run() {
                 header.animate().alpha(1f).translationY(0f)
-                        .setDuration(420L).setInterpolator(tabEnterInterpolator()).start();
+                        .setDuration(280L).setInterpolator(tabEnterInterpolator()).start();
                 tabs.animate().alpha(1f).translationY(0f)
-                        .setStartDelay(80L).setDuration(420L)
+                        .setStartDelay(20L).setDuration(280L)
                         .setInterpolator(tabEnterInterpolator()).start();
                 content.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
-                        .setStartDelay(150L).setDuration(520L)
+                        .setStartDelay(50L).setDuration(300L)
                         .setInterpolator(tabEnterInterpolator()).start();
             }
         });
@@ -558,7 +585,7 @@ public class ControlActivity extends Activity {
 
         accessibilityStatus = new TextView(this);
         accessibilityStatus.setGravity(Gravity.CENTER);
-        accessibilityStatus.setTextSize(18f);
+        accessibilityStatus.setTextSize(11.5f);
         accessibilityStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         accessibilityStatus.setBackground(statusBadgeBackground(
                 Color.argb(120, 72, 89, 115), Color.argb(45, 255, 255, 255)));
@@ -571,7 +598,7 @@ public class ControlActivity extends Activity {
             }
         });
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
-                dp(36),
+                dp(76),
                 dp(36));
         statusParams.setMargins(dp(7), 0, 0, 0);
         row.addView(accessibilityStatus, statusParams);
@@ -883,7 +910,12 @@ public class ControlActivity extends Activity {
                             getWindow().getDecorView(),
                             tabSwipeDownX,
                             tabSwipeDownY,
-                            Switch.class);
+                            Switch.class)
+                    || isPointInsideViewType(
+                            getWindow().getDecorView(),
+                            tabSwipeDownX,
+                            tabSwipeDownY,
+                            HorizontalScrollView.class);
             return false;
         }
         if (action == MotionEvent.ACTION_MOVE) {
@@ -1165,6 +1197,9 @@ public class ControlActivity extends Activity {
         button.setBackground(states);
         button.setTextColor(selected ? COLOR_ACCENT_DEEP : COLOR_MUTED);
         button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        button.setSelected(selected);
+        button.setContentDescription(button.getText() + " tab"
+                + (selected ? ", selected" : ""));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(selected ? dp(3) : 0f);
             button.setLetterSpacing(0.08f);
@@ -1256,11 +1291,21 @@ public class ControlActivity extends Activity {
     }
 
     private void setRevealState(final View content, boolean visible, boolean animate) {
+        Integer previousGeneration = revealAnimationGenerations.get(content);
+        final int generation = previousGeneration == null ? 1 : previousGeneration + 1;
+        revealAnimationGenerations.put(content, Integer.valueOf(generation));
         content.animate().setListener(null).cancel();
-        if (!animate) {
+        boolean shouldAnimate = animate && uiAnimationsEnabled();
+        ViewGroup parent = content.getParent() instanceof ViewGroup
+                ? (ViewGroup) content.getParent() : null;
+        if (shouldAnimate && parent != null) {
+            enableLayoutTransitions(parent);
+        }
+        if (!shouldAnimate) {
             content.setVisibility(visible ? View.VISIBLE : View.GONE);
             content.setAlpha(1f);
             content.setTranslationY(0f);
+            revealAnimationGenerations.remove(content);
             return;
         }
         if (visible) {
@@ -1270,27 +1315,71 @@ public class ControlActivity extends Activity {
             content.animate()
                     .alpha(1f)
                     .translationY(0f)
-                    .setDuration(220L)
+                    .setDuration(UI_TRANSITION_DURATION_MS)
                     .setInterpolator(tabEnterInterpolator())
+                    .setListener(new AnimatorListenerAdapter() {
+                        @Override
+                        public void onAnimationEnd(Animator animation) {
+                            if (isCurrentRevealGeneration(content, generation)) {
+                                revealAnimationGenerations.remove(content);
+                            }
+                        }
+                    })
                     .start();
             return;
         }
         content.animate()
                 .alpha(0f)
                 .translationY(-dp(8))
-                .setDuration(170L)
+                .setDuration(220L)
                 .setInterpolator(tabExitInterpolator())
-                .withEndAction(new Runnable() {
+                .setListener(new AnimatorListenerAdapter() {
                     @Override
-                    public void run() {
-                        if (content.getAlpha() <= 0.01f) {
+                    public void onAnimationEnd(Animator animation) {
+                        if (isCurrentRevealGeneration(content, generation)
+                                && content.getAlpha() <= 0.01f) {
                             content.setVisibility(View.GONE);
                             content.setAlpha(1f);
                             content.setTranslationY(0f);
+                            revealAnimationGenerations.remove(content);
                         }
                     }
                 })
                 .start();
+    }
+
+    private boolean isCurrentRevealGeneration(View content, int generation) {
+        Integer current = revealAnimationGenerations.get(content);
+        return current != null && current.intValue() == generation;
+    }
+
+    private boolean uiAnimationsEnabled() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return ValueAnimator.areAnimatorsEnabled();
+        }
+        try {
+            return Settings.Global.getFloat(getContentResolver(),
+                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f;
+        } catch (RuntimeException ignored) {
+            return true;
+        }
+    }
+
+    private void enableLayoutTransitions(ViewGroup group) {
+        if (group == null || !uiAnimationsEnabled()) {
+            return;
+        }
+        LayoutTransition transition = group.getLayoutTransition();
+        if (transition == null) {
+            transition = new LayoutTransition();
+            group.setLayoutTransition(transition);
+        }
+        transition.enableTransitionType(LayoutTransition.CHANGING);
+        transition.enableTransitionType(LayoutTransition.CHANGE_APPEARING);
+        transition.enableTransitionType(LayoutTransition.CHANGE_DISAPPEARING);
+        transition.disableTransitionType(LayoutTransition.APPEARING);
+        transition.disableTransitionType(LayoutTransition.DISAPPEARING);
+        transition.setDuration(UI_TRANSITION_DURATION_MS);
     }
 
     private View toggleWithAutomation(String label, final String key, boolean defaultValue,
@@ -2096,6 +2185,7 @@ public class ControlActivity extends Activity {
             effects.addView(lightweightMode);
         }
         effects.addView(effectPreviewHint());
+        effects.addView(effectFilterBar(effects));
         effects.addView(randomEffectOption());
         effects.addView(sectionLabel("Samsung"));
         addEffectOptionIfAvailable(effects,
@@ -2261,15 +2351,21 @@ public class ControlActivity extends Activity {
                 "A halo of bright particles gathers at your touch and sweeps outward with the drag.",
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 current);
-        addEffectOptionIfAvailable(effects,
-                "G2 Light Particle",
-                "Soft bokeh lights and glittering particles bloom around your touch.",
-                OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
-                current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE)) {
+            effects.addView(g2LightParticleEffectOption(current));
+        }
         addEffectOptionIfAvailable(effects,
                 "G2 Vector",
                 "Colorful rings, tiny bubbles and white rays expand from your touch to reveal the screen beneath.",
                 OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_LG_G1_HULA_HOOP)) {
+            effects.addView(hulaHoopEffectOption(current));
+        }
+        addEffectOptionIfAvailable(effects,
+                "Circle Mosaic",
+                "A circular wave blurs the lockscreen into square cells and reveals the screen beneath.",
+                OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC,
                 current);
         addEffectOptionIfAvailable(effects,
                 "G2 Pixelate",
@@ -2318,6 +2414,7 @@ public class ControlActivity extends Activity {
                 "Snowflakes sparkling around your touch.",
                 OverlayPrefs.EFFECT_SEASONAL_WINTER,
                 current);
+        applyEffectFilter(effects, false);
         root.addView(effects);
         root.addView(infoFooter());
         if (effectUsesColormapCache(current)
@@ -2502,6 +2599,168 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(10));
         hint.setLayoutParams(params);
         return hint;
+    }
+
+    private View effectFilterBar(final LinearLayout effects) {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(false);
+        scroller.setPadding(0, 0, 0, dp(7));
+        LinearLayout chips = new LinearLayout(this);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setGravity(Gravity.CENTER_VERTICAL);
+        addEffectFilterChip(chips, effects, "All", EFFECT_FILTER_ALL);
+        addEffectFilterChip(chips, effects, "Samsung", EFFECT_FILTER_SAMSUNG);
+        addEffectFilterChip(chips, effects, "Good Lock", EFFECT_FILTER_GOOD_LOCK);
+        addEffectFilterChip(chips, effects, "LG", EFFECT_FILTER_LG);
+        addEffectFilterChip(chips, effects, "Sony", EFFECT_FILTER_SONY);
+        addEffectFilterChip(chips, effects, "Seasonal", EFFECT_FILTER_SEASONAL);
+        scroller.addView(chips, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        scroller.setContentDescription("Effect family filters");
+        return scroller;
+    }
+
+    private void addEffectFilterChip(LinearLayout chips, final LinearLayout effects,
+            String label, final int filter) {
+        final TextView chip = new TextView(this);
+        chip.setText(label);
+        chip.setTextSize(12f);
+        chip.setGravity(Gravity.CENTER);
+        chip.setIncludeFontPadding(false);
+        chip.setPadding(dp(12), 0, dp(12), 0);
+        styleEffectFilterChip(chip, filter == effectFilter);
+        chip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (effectFilter == filter) {
+                    return;
+                }
+                effectFilter = filter;
+                applyEffectFilter(effects, true);
+                for (int i = 0; i < chips.getChildCount(); i++) {
+                    View candidate = chips.getChildAt(i);
+                    Object tag = candidate.getTag();
+                    if (candidate instanceof TextView && tag instanceof Integer) {
+                        styleEffectFilterChip((TextView) candidate,
+                                ((Integer) tag).intValue() == effectFilter);
+                    }
+                }
+            }
+        });
+        chip.setTag(Integer.valueOf(filter));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(48));
+        if (chips.getChildCount() > 0) {
+            params.setMargins(dp(6), 0, 0, 0);
+        }
+        chips.addView(chip, params);
+    }
+
+    private void styleEffectFilterChip(TextView chip, boolean selected) {
+        chip.setTextColor(selected ? Color.WHITE : COLOR_ACCENT_DEEP);
+        chip.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        chip.setSelected(selected);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed},
+                solidDrawable(selected ? Color.rgb(0, 112, 122) : Color.rgb(212, 239, 240),
+                        dp(17), Color.argb(130, 64, 152, 160), dp(1)));
+        states.addState(new int[] {android.R.attr.state_focused},
+                solidDrawable(selected ? COLOR_ACCENT_DEEP : COLOR_ACCENT_SOFT,
+                        dp(17), Color.rgb(0, 132, 142), dp(2)));
+        states.addState(new int[] {},
+                solidDrawable(selected ? COLOR_ACCENT_DEEP : COLOR_ACCENT_SOFT,
+                        dp(17), Color.argb(selected ? 0 : 100, 64, 152, 160), dp(1)));
+        chip.setBackground(states);
+        chip.setContentDescription(chip.getText() + " effect filter"
+                + (selected ? ", selected" : ""));
+    }
+
+    private void applyEffectFilter(LinearLayout effects, boolean animate) {
+        if (effects == null) {
+            return;
+        }
+        if (animate && uiAnimationsEnabled()) {
+            enableLayoutTransitions(effects);
+        }
+        for (int i = 0; i < effects.getChildCount(); i++) {
+            View child = effects.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof Integer) {
+                child.setVisibility(effectMatchesFilter(((Integer) tag).intValue())
+                        ? View.VISIBLE : View.GONE);
+            } else if (child instanceof TextView) {
+                CharSequence text = ((TextView) child).getText();
+                int sectionFilter = sectionFilter(text == null ? "" : text.toString());
+                if (sectionFilter >= EFFECT_FILTER_ALL) {
+                    child.setVisibility(effectFilter == EFFECT_FILTER_ALL
+                            || effectFilter == sectionFilter ? View.VISIBLE : View.GONE);
+                }
+            }
+        }
+    }
+
+    private int normalizeEffectFilter(int filter) {
+        return filter >= EFFECT_FILTER_ALL && filter <= EFFECT_FILTER_SEASONAL
+                ? filter : EFFECT_FILTER_ALL;
+    }
+
+    private int sectionFilter(String label) {
+        if ("Samsung".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_SAMSUNG;
+        }
+        if ("Good Lock".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_GOOD_LOCK;
+        }
+        if ("LG effects".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_LG;
+        }
+        if ("Sony".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_SONY;
+        }
+        if ("Seasonal".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_SEASONAL;
+        }
+        return -1;
+    }
+
+    private boolean effectMatchesFilter(int effect) {
+        if (effectFilter == EFFECT_FILTER_ALL) {
+            return true;
+        }
+        return effectFamily(effect) == effectFilter;
+    }
+
+    private int effectFamily(int effect) {
+        switch (effect) {
+            case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
+            case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+                return EFFECT_FILTER_GOOD_LOCK;
+            case OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE:
+            case OverlayPrefs.EFFECT_LG_SODA:
+            case OverlayPrefs.EFFECT_LG_G1_DEWDROP:
+            case OverlayPrefs.EFFECT_LG_G2_PARTICLE:
+            case OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE:
+            case OverlayPrefs.EFFECT_LG_G2_VECTOR:
+            case OverlayPrefs.EFFECT_LG_G1_HULA_HOOP:
+            case OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC:
+            case OverlayPrefs.EFFECT_LG_G2_PIXELATE:
+            case OverlayPrefs.EFFECT_LG_G2_CRYSTAL:
+                return EFFECT_FILTER_LG;
+            case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
+            case OverlayPrefs.EFFECT_REVOLVING_GLASS:
+                return EFFECT_FILTER_SONY;
+            case OverlayPrefs.EFFECT_SEASONAL_AUTO:
+            case OverlayPrefs.EFFECT_SEASONAL_SPRING:
+            case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
+            case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
+            case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+                return EFFECT_FILTER_SEASONAL;
+            default:
+                return EFFECT_FILTER_SAMSUNG;
+        }
     }
 
     private View screenshotServiceControls(final int currentEffect) {
@@ -3004,8 +3263,8 @@ public class ControlActivity extends Activity {
                     abstractTilesLineMode == 1);
         }
         editor.apply();
-        if (refreshUi) {
-            showTab(TAB_LOCKSCREEN_EFFECT);
+        if (refreshUi && selectedTab == TAB_LOCKSCREEN_EFFECT) {
+            showTab(selectedTab, false, 0);
         }
     }
 
@@ -3095,7 +3354,9 @@ public class ControlActivity extends Activity {
     }
 
     private boolean effectUsesColormapCache(int effect) {
-        if (effect == OverlayPrefs.EFFECT_LG_G2_VECTOR) {
+        if (effect == OverlayPrefs.EFFECT_LG_G2_VECTOR
+                || effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP
+                || effect == OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC) {
             return true;
         }
         if (OverlayPrefs.testerNoColormapModeEnabled(this)) {
@@ -3858,6 +4119,12 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_LG_G2_VECTOR:
                 drawable = R.drawable.icon_effect_g2_vector_lle;
                 break;
+            case OverlayPrefs.EFFECT_LG_G1_HULA_HOOP:
+                drawable = R.drawable.icon_effect_g1_hula_hoop_lle;
+                break;
+            case OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC:
+                drawable = R.drawable.icon_effect_lg_circle_mosaic_lle;
+                break;
             case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
                 drawable = R.drawable.effect_preview_xperia_z1_blinds;
                 break;
@@ -4271,6 +4538,10 @@ public class ControlActivity extends Activity {
                 return R.drawable.icon_effect_g2_crystal_lle;
             case OverlayPrefs.EFFECT_LG_G2_VECTOR:
                 return R.drawable.icon_effect_g2_vector_lle;
+            case OverlayPrefs.EFFECT_LG_G1_HULA_HOOP:
+                return R.drawable.icon_effect_g1_hula_hoop_lle;
+            case OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC:
+                return R.drawable.icon_effect_lg_circle_mosaic_lle;
             case OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS:
                 return R.drawable.icon_effect_xperia_z1_blinds_lle;
             case OverlayPrefs.EFFECT_REVOLVING_GLASS:
@@ -4827,6 +5098,8 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.EFFECT_LG_G2_PARTICLE,
                 OverlayPrefs.EFFECT_LG_G2_CRYSTAL,
                 OverlayPrefs.EFFECT_LG_G2_VECTOR,
+                OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC,
                 OverlayPrefs.EFFECT_XPERIA_Z1_BLINDS,
                 OverlayPrefs.EFFECT_REVOLVING_GLASS
         };
@@ -4921,6 +5194,7 @@ public class ControlActivity extends Activity {
                 OverlayPrefs.testerNoColormapModeEnabled(this)
                 && !OverlayPrefs.supportsTesterNoColormapMode(value);
         final LinearLayout card = verticalGroup();
+        card.setTag(Integer.valueOf(value));
         final LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -5159,14 +5433,13 @@ public class ControlActivity extends Activity {
         header.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if (selected) {
+                    return;
+                }
                 uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
                 persistPendingUnlockEffect(false);
-                if (!selected) {
-                    OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, true);
-                    randomPoolEditMode = false;
-                } else {
-                    randomPoolEditMode = !randomPoolEditMode;
-                }
+                OverlayPrefs.setRandomUnlockEffectEnabled(ControlActivity.this, true);
+                randomPoolEditMode = false;
                 showTab(selectedTab, false, 0);
             }
         });
@@ -5421,6 +5694,139 @@ public class ControlActivity extends Activity {
             return R.drawable.keyguard_lightning_light_00040;
         }
         return R.drawable.keyguard_flare_light_00040;
+    }
+
+    private View g2LightParticleEffectOption(int current) {
+        return effectOption(
+                "G2 Light Particle",
+                "Soft bokeh lights and glittering particles bloom around your touch.",
+                OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
+                current == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
+                -1,
+                g2LightParticleVariantControls());
+    }
+
+    private View g2LightParticleVariantControls() {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), 0, dp(12), dp(10));
+
+        final int selectedVariant = OverlayPrefs.g2LightParticleVariant(this);
+        TextView label = new TextView(this);
+        label.setText("Variant " + selectedVariant);
+        label.setTextColor(COLOR_ACCENT_DEEP);
+        label.setTextSize(12f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setIncludeFontPadding(false);
+        controls.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setOrientation(LinearLayout.HORIZONTAL);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        for (int index = OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT_MIN;
+                index <= OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT_MAX; index++) {
+            final int variant = index;
+            LightParticleVariantSwatchView swatch = new LightParticleVariantSwatchView(
+                    g2LightParticleVariantPreviewDrawable(variant), variant,
+                    variant == selectedVariant);
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    prefs.edit().putInt(
+                            OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT, variant).apply();
+                    showTab(selectedTab);
+                }
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            if (index > OverlayPrefs.G2_LIGHT_PARTICLE_VARIANT_MIN) {
+                params.setMargins(dp(2), 0, 0, 0);
+            }
+            swatches.addView(swatch, params);
+        }
+        scroller.addView(swatches, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.MATCH_PARENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        controls.addView(scroller, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return controls;
+    }
+
+    private int g2LightParticleVariantPreviewDrawable(int variant) {
+        switch (variant) {
+            case 2:
+                return R.drawable.lg_lightparticle_variant_2;
+            case 3:
+                return R.drawable.lg_lightparticle_variant_3;
+            case 4:
+                return R.drawable.lg_lightparticle_variant_4;
+            case 5:
+                return R.drawable.lg_lightparticle_variant_5;
+            case 6:
+                return R.drawable.lg_lightparticle_variant_6;
+            default:
+                return R.drawable.lg_lightparticle_a_1;
+        }
+    }
+
+    /** One catalog entry for LG's two distinct Hula Hoop revisions. */
+    private View hulaHoopEffectOption(int current) {
+        return effectOption(
+                "Hula Hoop",
+                "Translucent colour hoops orbit an expanding circular window in two LG revisions.",
+                OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                current == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP,
+                -1,
+                hulaHoopVariantControls());
+    }
+
+    private View hulaHoopVariantControls() {
+        final RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.HORIZONTAL);
+        group.setPadding(dp(12), 0, dp(12), dp(8));
+        int selected = OverlayPrefs.hulaHoopVariant(this);
+        addHulaHoopVariantOption(group, "V1", OverlayPrefs.HULA_HOOP_VARIANT_V1, selected);
+        addHulaHoopVariantOption(group, "V2", OverlayPrefs.HULA_HOOP_VARIANT_V2, selected);
+        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
+                View checked = radioGroup.findViewById(checkedId);
+                Object tag = checked == null ? null : checked.getTag();
+                if (tag instanceof Integer) {
+                    prefs.edit().putInt(OverlayPrefs.HULA_HOOP_VARIANT,
+                            ((Integer) tag).intValue()).apply();
+                }
+                for (int i = 0; i < radioGroup.getChildCount(); i++) {
+                    View child = radioGroup.getChildAt(i);
+                    if (child instanceof RadioButton) {
+                        child.setBackground(controlRowBackground(
+                                ((RadioButton) child).isChecked()));
+                    }
+                }
+            }
+        });
+        return group;
+    }
+
+    private void addHulaHoopVariantOption(RadioGroup group, String label,
+            int variant, int selected) {
+        RadioButton button = new RadioButton(this);
+        button.setId(View.generateViewId());
+        button.setTag(Integer.valueOf(variant));
+        button.setText(label);
+        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(14f);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setChecked(variant == selected);
+        button.setBackground(controlRowBackground(variant == selected));
+        tintRadio(button);
+        RadioGroup.LayoutParams params = new RadioGroup.LayoutParams(0, dp(40), 1f);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        group.addView(button, params);
     }
 
     /** Note 3 Ripple Ink card, available on the production ARM64 renderer path. */
@@ -6392,19 +6798,31 @@ public class ControlActivity extends Activity {
         serviceSwitch.setChecked(accessibilityEnabled && masterEnabled);
         serviceSwitch.setEnabled(true);
         serviceSwitch.setText("");
+        serviceSwitch.setContentDescription("L.L.E master switch. "
+                + (masterEnabled ? "Enabled" : "Paused") + ". Accessibility "
+                + (accessibilityEnabled ? "available" : "needs setup") + ".");
         updatingServiceSwitch = false;
-        if (accessibilityEnabled) {
-            accessibilityStatus.setText("\u2713");
+        if (accessibilityEnabled && masterEnabled) {
+            accessibilityStatus.setText("Active");
             accessibilityStatus.setTextColor(COLOR_OK);
             accessibilityStatus.setBackground(statusBadgeBackground(
                     Color.argb(185, 22, 160, 98), Color.argb(42, 255, 255, 255)));
-            accessibilityStatus.setContentDescription("Accessibility enabled. Tap to open settings.");
+            accessibilityStatus.setContentDescription(
+                    "L.L.E is active. Accessibility is enabled. Tap to open settings.");
+        } else if (accessibilityEnabled) {
+            accessibilityStatus.setText("Paused");
+            accessibilityStatus.setTextColor(Color.rgb(185, 112, 23));
+            accessibilityStatus.setBackground(statusBadgeBackground(
+                    Color.argb(185, 218, 145, 51), Color.argb(42, 255, 255, 255)));
+            accessibilityStatus.setContentDescription(
+                    "Accessibility is enabled, but L.L.E is paused. Tap to open settings.");
         } else {
-            accessibilityStatus.setText("\u00d7");
+            accessibilityStatus.setText("Setup\nneeded");
             accessibilityStatus.setTextColor(COLOR_ERROR);
             accessibilityStatus.setBackground(statusBadgeBackground(
                     Color.argb(185, 207, 67, 72), Color.argb(42, 255, 255, 255)));
-            accessibilityStatus.setContentDescription("Accessibility disabled. Tap to enable.");
+            accessibilityStatus.setContentDescription(
+                    "Accessibility setup is needed. Tap to open settings.");
         }
     }
 
@@ -7068,6 +7486,59 @@ public class ControlActivity extends Activity {
                 paint.setColor(Color.WHITE);
                 canvas.drawLine(cx - radius * 0.34f, cy, cx - radius * 0.08f,
                         cy + radius * 0.28f, paint);
+                canvas.drawLine(cx - radius * 0.08f, cy + radius * 0.28f,
+                        cx + radius * 0.40f, cy - radius * 0.27f, paint);
+                paint.setStrokeCap(Paint.Cap.BUTT);
+            }
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private final class LightParticleVariantSwatchView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Drawable preview;
+
+        LightParticleVariantSwatchView(int drawableResId, int variant, boolean selected) {
+            super(ControlActivity.this);
+            preview = getResources().getDrawable(drawableResId);
+            setSelected(selected);
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("G2 Light Particle Variant " + variant
+                    + (selected ? ", selected" : ""));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float radius = Math.max(0f, Math.min(getWidth(), getHeight()) * 0.5f - dp(5));
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(isSelected()
+                    ? Color.rgb(19, 91, 108) : Color.rgb(37, 47, 64));
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (preview != null) {
+                int save = canvas.save();
+                Path clip = new Path();
+                clip.addCircle(cx, cy, radius, Path.Direction.CW);
+                canvas.clipPath(clip);
+                preview.setBounds(Math.round(cx - radius), Math.round(cy - radius),
+                        Math.round(cx + radius), Math.round(cy + radius));
+                preview.draw(canvas);
+                canvas.restoreToCount(save);
+            }
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(isSelected() ? 3f : 1.5f));
+            paint.setColor(isSelected()
+                    ? Color.WHITE : Color.argb(180, 22, 42, 66));
+            canvas.drawCircle(cx, cy, radius, paint);
+            if (isSelected()) {
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeWidth(dp(2.4f));
+                paint.setColor(Color.WHITE);
+                canvas.drawLine(cx - radius * 0.34f, cy,
+                        cx - radius * 0.08f, cy + radius * 0.28f, paint);
                 canvas.drawLine(cx - radius * 0.08f, cy + radius * 0.28f,
                         cx + radius * 0.40f, cy - radius * 0.27f, paint);
                 paint.setStrokeCap(Paint.Cap.BUTT);
