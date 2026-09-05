@@ -81,6 +81,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Set;
 
+import android.content.Context;
+
 public class ControlActivity extends Activity {
     private static final float COMPACT_EFFECT_SWITCH_SCALE = 0.765f;
     // Hidden framework constant intentionally used by value: getDisplays(String) is public
@@ -614,6 +616,17 @@ public class ControlActivity extends Activity {
         } catch (PackageManager.NameNotFoundException error) {
             Log.w("LLEControl", "Unable to resolve app version", error);
             return "unknown";
+        }
+    }
+
+    private static boolean supportSPen(Context context) {
+        PackageManager pm = context.getPackageManager();
+
+        try {
+            pm.getPackageInfo("com.samsung.android.service.aircommand", 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
         }
     }
 
@@ -5886,7 +5899,22 @@ public class ControlActivity extends Activity {
                 HorizontalScrollView.LayoutParams.WRAP_CONTENT));
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        if (supportSPen(this)) {
+            controls.addView(addSPenRippleInkOption());
+        }
         return controls;
+    }
+
+    private View addSPenRippleInkOption() {
+        Switch sPen = compactEffectVariantSwitch(
+                "S Pen mode", OverlayPrefs.sPenRippleInkEnabled(this));
+        sPen.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton button, boolean checked) {
+                prefs.edit().putBoolean(OverlayPrefs.RIPPLE_INK_SPEN_ENABLED, checked).apply();
+            }
+        });
+        return effectVariantControls(sPen);
     }
 
     private Switch compactEffectVariantSwitch(String label, boolean checked) {

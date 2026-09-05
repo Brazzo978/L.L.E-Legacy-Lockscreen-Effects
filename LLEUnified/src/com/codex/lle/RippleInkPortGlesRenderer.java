@@ -192,12 +192,21 @@ final class RippleInkPortGlesRenderer
 
     /** UI-thread latest-value input mailbox; no MotionEvent history reaches the source worker. */
     void publishFinger(int action, float x, float y, float pressure) {
+        publishFinger(action, x, y, pressure, true);
+    }
+
+    void publishFinger(int action, float x, float y, float pressure, boolean inkEnabled) {
         fluidPipeline.onTouch(action, (int) x, (int) y,
-                Math.max(0.0f, Math.min(1.0f, pressure)));
+                Math.max(0.0f, Math.min(1.0f, pressure)), inkEnabled);
     }
 
     /** GL-thread water/ripple command. Ink was already published to its independent mailbox. */
     void handleFinger(int action, float x, float y, float pressure, long eventTimeMs) {
+        handleFinger(action, x, y, pressure, eventTimeMs, true);
+    }
+
+    void handleFinger(int action, float x, float y, float pressure, long eventTimeMs,
+            boolean inkEnabled) {
         // The view has already switched to continuous mode for this queued event. Rearm the
         // one-shot idle signal even if Engine rejects a stale event, so the next quiet frame can
         // always park rendering again.
@@ -208,7 +217,11 @@ final class RippleInkPortGlesRenderer
         int stockX = (int) x;
         int stockY = (int) y;
         float stockPressure = Math.max(0.0f, Math.min(1.0f, pressure));
-        engine.handleFinger(action, stockX, stockY, stockPressure, eventTimeMs);
+        if (inkEnabled) {
+            engine.handleFinger(action, stockX, stockY, stockPressure, eventTimeMs);
+        } else {
+            engine.handleWaterOnly(action, stockX, stockY, eventTimeMs);
+        }
     }
 
     void reset() {

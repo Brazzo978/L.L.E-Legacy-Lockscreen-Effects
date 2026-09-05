@@ -230,11 +230,29 @@ public final class RippleInkPortEngine {
             float localY,
             float pressure,
             long eventTimeMs) {
+        return handlePointer(action, localX, localY, pressure, eventTimeMs, true);
+        }
+
+        public boolean handleWaterOnly(
+            int action,
+            float localX,
+            float localY,
+            long eventTimeMs) {
+        return handlePointer(action, localX, localY, 0.0f, eventTimeMs, false);
+        }
+
+        private boolean handlePointer(
+            int action,
+            float localX,
+            float localY,
+            float pressure,
+            long eventTimeMs,
+            boolean inkEnabled) {
         if (surfaceWidth <= 0 || surfaceHeight <= 0 || eventTimeMs < lastEventTimeMs) {
             return false;
         }
         lastEventTimeMs = eventTimeMs;
-        lastAdjustedPressure = pressure > 0.0f ? 0.2f + pressure * pressure : 0.0f;
+        lastAdjustedPressure = Math.max(0.0f, Math.min(1.0f, pressure));
 
         switch (action) {
             case ACTION_DOWN:
@@ -244,8 +262,10 @@ public final class RippleInkPortEngine {
                 previousTouchY = localY;
                 densityPressStep = 0;
                 rippleDistance = 0;
-                recordInkAction(ACTION_DOWN);
-                depositPoint(localX, localY);
+                if (inkEnabled) {
+                    recordInkAction(ACTION_DOWN);
+                    depositPoint(localX, localY);
+                }
                 injectWater(localX, localY, 4.0f * currentIntensity());
                 return true;
             case ACTION_MOVE:
@@ -259,8 +279,10 @@ public final class RippleInkPortEngine {
                 rippleDistance += (int) Math.sqrt(dx * dx + dy * dy);
                 previousTouchX = localX;
                 previousTouchY = localY;
-                recordInkAction(ACTION_MOVE);
-                depositSegment(oldX, oldY, localX, localY);
+                if (inkEnabled) {
+                    recordInkAction(ACTION_MOVE);
+                    depositSegment(oldX, oldY, localX, localY);
+                }
                 injectFluidVelocity(oldX, oldY, localX, localY);
                 if (rippleDistance > dragRippleThresholdPx()) {
                     rippleDistance = 0;
@@ -271,7 +293,9 @@ public final class RippleInkPortEngine {
                 if (!touched) {
                     return false;
                 }
-                recordInkAction(ACTION_UP);
+                if (inkEnabled) {
+                    recordInkAction(ACTION_UP);
+                }
                 if (eventTimeMs - downTimeMs > LONG_PRESS_RIPPLE_MS) {
                     injectWater(localX, localY, 4.0f * currentIntensity());
                 }
@@ -281,7 +305,9 @@ public final class RippleInkPortEngine {
                 if (!touched) {
                     return false;
                 }
-                recordInkAction(ACTION_CANCEL);
+                if (inkEnabled) {
+                    recordInkAction(ACTION_CANCEL);
+                }
                 endTouch();
                 return true;
             default:
@@ -575,11 +601,12 @@ public final class RippleInkPortEngine {
                     continue;
                 }
                 int index = y * densityWidth + x;
-                float addition = segment
+                float baseAddition = segment
                         ? INK_IMPULSE_DENSITY * (float) Math.exp(
                                 -distance * distance
                                         / (0.8f * INK_RADIUS * INK_RADIUS))
                         : INK_IMPULSE_DENSITY / (1.0f + distance);
+                float addition = baseAddition * lastAdjustedPressure;
                 density[index] = Math.min(127.0f, density[index] + addition);
                 changed = true;
             }

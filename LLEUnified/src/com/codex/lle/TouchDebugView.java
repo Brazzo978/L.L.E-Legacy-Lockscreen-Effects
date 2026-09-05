@@ -20,11 +20,19 @@ public class TouchDebugView extends View {
     interface TouchTriggerListener {
         boolean onTouchStarted(float screenX, float screenY);
 
+        boolean onTouchStarted(float screenX, float screenY, float pressure, int toolType);
+
         void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY, float distance);
+
+        void onTouchMoved(float screenX, float screenY, float deltaX, float deltaY,
+            float distance, float pressure, int toolType);
 
         void onTouchRealigned(float screenX, float screenY);
 
         void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY, float distance);
+
+        void onTouchEnded(float screenX, float screenY, float deltaX, float deltaY,
+            float distance, float pressure, int toolType);
 
         void onTouchCancelled();
 
@@ -58,6 +66,8 @@ public class TouchDebugView extends View {
     private int windowLeft;
     private int windowTop;
     private long lastMoveLogAt;
+    private float lastPressure = 1.0f;
+    private int lastToolType = MotionEvent.TOOL_TYPE_FINGER;
 
     public TouchDebugView(Context context) {
         super(context);
@@ -121,7 +131,9 @@ public class TouchDebugView extends View {
             Log.i(TAG, "action=" + lastAction
                     + " pointers=" + pointerCount
                     + " gestureActive=" + gestureActive
-                    + " listening=" + listeningEnabled);
+                    + " listening=" + listeningEnabled
+                    + " toolType=" + lastToolType
+                    + " pressure=" + lastPressure);
         }
 
         if (handleSafetyBypassGesture(event, action)) {
@@ -268,6 +280,8 @@ public class TouchDebugView extends View {
         int safeIndex = Math.max(0, Math.min(pointerIndex, event.getPointerCount() - 1));
         lastX = event.getX(safeIndex);
         lastY = event.getY(safeIndex);
+        lastPressure = event.getPressure(safeIndex);
+        lastToolType = event.getToolType(safeIndex);
         lastRawX = event.getRawX() + lastX - event.getX(0);
         lastRawY = event.getRawY() + lastY - event.getY(0);
         lastScreenX = windowLeft + lastX;
@@ -278,7 +292,8 @@ public class TouchDebugView extends View {
         gestureStartScreenX = lastScreenX;
         gestureStartScreenY = lastScreenY;
         boolean accepted = touchTriggerListener == null
-                || touchTriggerListener.onTouchStarted(lastScreenX, lastScreenY);
+            || touchTriggerListener.onTouchStarted(
+                lastScreenX, lastScreenY, lastPressure, lastToolType);
         gestureActive = accepted;
         return accepted;
     }
@@ -363,7 +378,8 @@ public class TouchDebugView extends View {
         float deltaX = lastScreenX - gestureStartScreenX;
         float deltaY = lastScreenY - gestureStartScreenY;
         float distance = (float) Math.hypot(deltaX, deltaY);
-        touchTriggerListener.onTouchMoved(lastScreenX, lastScreenY, deltaX, deltaY, distance);
+        touchTriggerListener.onTouchMoved(lastScreenX, lastScreenY, deltaX, deltaY, distance,
+            lastPressure, lastToolType);
     }
 
     private void notifyEnd() {
@@ -377,7 +393,8 @@ public class TouchDebugView extends View {
         float deltaX = lastScreenX - gestureStartScreenX;
         float deltaY = lastScreenY - gestureStartScreenY;
         float distance = (float) Math.hypot(deltaX, deltaY);
-        touchTriggerListener.onTouchEnded(lastScreenX, lastScreenY, deltaX, deltaY, distance);
+        touchTriggerListener.onTouchEnded(lastScreenX, lastScreenY, deltaX, deltaY, distance,
+            lastPressure, lastToolType);
     }
 
     private String point(float x, float y) {

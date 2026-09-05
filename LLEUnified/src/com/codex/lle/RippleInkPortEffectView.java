@@ -48,6 +48,7 @@ public final class RippleInkPortEffectView extends GLSurfaceView
     private float lastSoundX;
     private float lastSoundY;
     private float dragSoundDistance;
+    private float lastStylusPressure = 1.0f;
     private long gestureDownAtMs;
     private volatile int animationGeneration;
     private Runnable affordanceRunnable;
@@ -178,6 +179,24 @@ public final class RippleInkPortEffectView extends GLSurfaceView
 
     @Override
     public void beginGesture(float screenX, float screenY) {
+        beginGestureWithPressure(screenX, screenY, 1.0f);
+    }
+
+    public void beginStylusGesture(float screenX, float screenY, float pressure) {
+        lastStylusPressure = normalizePressure(pressure);
+        beginGestureWithPressure(screenX, screenY, lastStylusPressure, true);
+    }
+
+    public void beginWaterOnlyGesture(float screenX, float screenY) {
+        beginGestureWithPressure(screenX, screenY, 0.0f, false);
+    }
+
+    private void beginGestureWithPressure(float screenX, float screenY, float pressure) {
+        beginGestureWithPressure(screenX, screenY, pressure, true);
+        }
+
+        private void beginGestureWithPressure(float screenX, float screenY, float pressure,
+            boolean inkEnabled) {
         cancelAffordance();
         float[] local = toLocal(screenX, screenY);
         gestureDownAtMs = SystemClock.uptimeMillis();
@@ -185,12 +204,30 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         lastSoundY = local[1];
         dragSoundDistance = 0.0f;
         play(downSound);
-        routeTouch(RippleInkPortEngine.ACTION_DOWN, local[0], local[1],
-                1.0f, SystemClock.uptimeMillis());
+        routeTouch(RippleInkPortEngine.ACTION_DOWN, local[0], local[1], pressure,
+            SystemClock.uptimeMillis(), inkEnabled);
     }
 
     @Override
     public void updateGesture(float screenX, float screenY) {
+        updateGestureWithPressure(screenX, screenY, 1.0f);
+    }
+
+    public void updateStylusGesture(float screenX, float screenY, float pressure) {
+        lastStylusPressure = normalizePressure(pressure);
+        updateGestureWithPressure(screenX, screenY, lastStylusPressure, true);
+    }
+
+    public void updateWaterOnlyGesture(float screenX, float screenY) {
+        updateGestureWithPressure(screenX, screenY, 0.0f, false);
+    }
+
+    private void updateGestureWithPressure(float screenX, float screenY, float pressure) {
+        updateGestureWithPressure(screenX, screenY, pressure, true);
+        }
+
+        private void updateGestureWithPressure(float screenX, float screenY, float pressure,
+            boolean inkEnabled) {
         float[] local = toLocal(screenX, screenY);
         float soundDx = local[0] - lastSoundX;
         float soundDy = local[1] - lastSoundY;
@@ -201,21 +238,42 @@ public final class RippleInkPortEffectView extends GLSurfaceView
             play(downSound);
             dragSoundDistance = 0.0f;
         }
-        routeTouch(RippleInkPortEngine.ACTION_MOVE, local[0], local[1],
-                1.0f, SystemClock.uptimeMillis());
+        routeTouch(RippleInkPortEngine.ACTION_MOVE, local[0], local[1], pressure,
+            SystemClock.uptimeMillis(), inkEnabled);
     }
 
     @Override
     public void finishGesture(boolean completed) {
+        finishGestureWithPressure(completed, 1.0f);
+    }
+
+    public void finishStylusGesture() {
+        finishGestureWithPressure(false, lastStylusPressure, true);
+    }
+
+    public void finishWaterOnlyGesture() {
+        finishGestureWithPressure(false, 0.0f, false);
+    }
+
+    private void finishGestureWithPressure(boolean completed, float pressure) {
+        finishGestureWithPressure(completed, pressure, true);
+        }
+
+        private void finishGestureWithPressure(boolean completed, float pressure,
+            boolean inkEnabled) {
         long heldForMs = SystemClock.uptimeMillis() - gestureDownAtMs;
-        routeTouch(RippleInkPortEngine.ACTION_UP, lastLocalX, lastLocalY,
-                1.0f, SystemClock.uptimeMillis());
+        routeTouch(RippleInkPortEngine.ACTION_UP, lastLocalX, lastLocalY, pressure,
+            SystemClock.uptimeMillis(), inkEnabled);
         dragSoundDistance = 0.0f;
         if (completed) {
             play(upSound);
         } else if (heldForMs > 600L) {
             play(downSound);
         }
+    }
+
+    private static float normalizePressure(float pressure) {
+        return Math.max(0.0f, Math.min(1.0f, pressure));
     }
 
     @Override
@@ -473,6 +531,11 @@ public final class RippleInkPortEffectView extends GLSurfaceView
 
     private void routeTouch(final int action, final float localX, final float localY,
             final float pressure, final long eventTimeMs) {
+        routeTouch(action, localX, localY, pressure, eventTimeMs, true);
+    }
+
+    private void routeTouch(final int action, final float localX, final float localY,
+            final float pressure, final long eventTimeMs, final boolean inkEnabled) {
         if (!canAcceptCommands()) {
             return;
         }
@@ -482,11 +545,12 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         activateContinuousRendering();
         // N3's Java wrapper calls JNI from the UI callback with only its current sample.  Keep
         // that temporal boundary with a latest-value mailbox; the queued GL work below is water.
-        rippleRenderer.publishFinger(action, localX, localY, pressure);
+        rippleRenderer.publishFinger(action, localX, localY, pressure, inkEnabled);
         queueEvent(new Runnable() {
             @Override
             public void run() {
-                rippleRenderer.handleFinger(action, localX, localY, pressure, eventTimeMs);
+                rippleRenderer.handleFinger(action, localX, localY, pressure, eventTimeMs,
+                        inkEnabled);
             }
         });
         requestRender();
