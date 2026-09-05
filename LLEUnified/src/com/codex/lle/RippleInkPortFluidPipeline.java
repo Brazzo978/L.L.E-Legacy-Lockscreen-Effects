@@ -82,12 +82,14 @@ final class RippleInkPortFluidPipeline {
         final float x;
         final float y;
         final float pressure;
+        final boolean inkEnabled;
 
-        InputSample(int action, float x, float y, float pressure) {
+        InputSample(int action, float x, float y, float pressure, boolean inkEnabled) {
             this.action = action;
             this.x = x;
             this.y = y;
             this.pressure = pressure;
+            this.inkEnabled = inkEnabled;
         }
     }
 
@@ -397,6 +399,7 @@ final class RippleInkPortFluidPipeline {
     private float pressLastEventX;
     private float pressLastEventY;
     private boolean pressCycleCompleted;
+    private boolean inkEnabled = true;
     private int lastInputAction = RippleInkPortEngine.ACTION_UP;
     private long executedSubsteps;
     private int workerRandomSeed;
@@ -602,14 +605,15 @@ final class RippleInkPortFluidPipeline {
     }
 
     /** UI-thread entry point. It stores exactly one current callback sample; no history exists. */
-    void onTouch(int action, float localX, float localY, float pressureValue) {
+    void onTouch(int action, float localX, float localY, float pressureValue,
+            boolean inkEnabledValue) {
         int nativeAction = action == RippleInkPortEngine.ACTION_CANCEL
                 ? RippleInkPortEngine.ACTION_UP : action;
         float x = (int) localX;
         float y = (int) localY;
         float pressure = Math.max(0.0f, Math.min(1.0f, pressureValue));
         synchronized (inputLock) {
-            InputSample input = new InputSample(nativeAction, x, y, pressure);
+            InputSample input = new InputSample(nativeAction, x, y, pressure, inkEnabledValue);
             // The stock JNI call mutates its globals synchronously on every UI callback.  The
             // mailbox records that already-applied state for the GL worker; it must not coalesce
             // DOWN->MOVE transitions that happen before the first frame.
@@ -617,6 +621,10 @@ final class RippleInkPortFluidPipeline {
             latestInput = input;
             ++inputGeneration;
         }
+    }
+
+    void onTouch(int action, float localX, float localY, float pressureValue) {
+        onTouch(action, localX, localY, pressureValue, true);
     }
 
     /** Compatibility overload: firmware does not pass timestamp data over this boundary. */
@@ -769,7 +777,7 @@ final class RippleInkPortFluidPipeline {
         if (emission.pressTick >= 0) {
             int tick = emission.pressTick;
             preset.mode = -1;
-            preset.addInk = tick < PRESS_INK_TICK_COUNT;
+            preset.addInk = inkEnabled && tick < PRESS_INK_TICK_COUNT;
             preset.addRadius = PRESS_RADIUS_INCREMENT * tick;
             preset.addImpulse = PRESS_IMPULSE;
             preset.velocityDissipation = PRESS_VELOCITY_DISSIPATION;
@@ -779,7 +787,7 @@ final class RippleInkPortFluidPipeline {
             preset.nextDensityDissipation = DENSITY_DISSIPATION_PRESS;
             return preset;
         }
-        preset.addInk = true;
+        preset.addInk = inkEnabled;
         if (!emission.tap) {
             float dx = emission.currentX - emission.previousX;
             float dy = emission.currentY - emission.previousY;
@@ -789,7 +797,7 @@ final class RippleInkPortFluidPipeline {
                 preset.mode = 2;
                 // Native mode-2's strict capsule is empty at zero length. State-2 still ticks
                 // and advances drag_step in that case; only its density write is skipped.
-                preset.addInk = distanceSquared > 0.0f;
+                preset.addInk = inkEnabled && distanceSquared > 0.0f;
                 preset.addRadius = SOURCE_SEGMENT_RADIUS;
                 preset.addImpulse = SOURCE_SEGMENT_IMPULSE;
                 preset.velocityDissipation = 0.96f;
@@ -958,6 +966,7 @@ final class RippleInkPortFluidPipeline {
     private void applyInputLocked(InputSample input) {
         float flippedY = viewportHeight - input.y;
         lastInputAction = input.action;
+        inkEnabled = input.inkEnabled;
         if (input.action == RippleInkPortEngine.ACTION_DOWN) {
             adjustedPressure = nativeAdjustedPressure(input.pressure);
             fingerDown = true;

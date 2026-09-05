@@ -253,6 +253,9 @@ final class OverlayPrefs {
     static final int EFFECT_S6_WATER_DROPLET_APP_OWNED = 26;
     /** Reserved: hidden until Ripple Ink has a verified app-owned ABI path. */
     static final int EFFECT_RIPPLE_INK = 27;
+    /** App-owned S-Pen variant of Ripple Ink. */
+    static final int EFFECT_RIPPLE_INK_SPEN = 28;
+    static final String RIPPLE_INK_SPEN_ENABLED = "ripple_ink_spen_enabled";
     /** App-owned Good Lock particle renderer: popping-color variant. */
     static final int EFFECT_GOOD_LOCK_POPPING = 28;
     /** App-owned Good Lock particle renderer: rectangle-traveller variant. */
@@ -318,6 +321,10 @@ final class OverlayPrefs {
 
     static SharedPreferences get(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    static boolean sPenRippleInkEnabled(Context context) {
+        return get(context).getBoolean(RIPPLE_INK_SPEN_ENABLED, false);
     }
 
     static boolean masterEnabled(Context context) {
