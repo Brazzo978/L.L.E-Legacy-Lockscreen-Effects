@@ -785,7 +785,7 @@ final class RippleInkPortFluidPipeline {
             preset.divergenceRadius = PRESS_DIVERGENCE_RADIUS;
             preset.divergenceStrength = tick < 5 ? 12.0f * tick : 0.0f;
             preset.nextDensityDissipation = DENSITY_DISSIPATION_PRESS;
-            return preset;
+            return pressureScaledInkPreset(preset, emission.pressure);
         }
         preset.addInk = inkEnabled;
         if (!emission.tap) {
@@ -828,6 +828,16 @@ final class RippleInkPortFluidPipeline {
             preset.addImpulse = SOURCE_TAP_IMPULSE;
             preset.velocityDissipation = 0.80f;
             preset.nextDensityDissipation = DENSITY_DISSIPATION_MODE_0;
+        }
+        return pressureScaledInkPreset(preset, emission.pressure);
+    }
+
+    private static Preset pressureScaledInkPreset(Preset preset, float pressure) {
+        if (preset.addInk) {
+            // Pressure one must remain byte-for-byte equivalent to the recovered N3 path
+            // (nativeAdjustedPressure(1) == 1.2). Lower S Pen pressure scales only ink mass;
+            // the water/ripple simulation remains responsive at every pressure.
+            preset.addImpulse *= inkPressureScale(pressure);
         }
         return preset;
     }
@@ -1456,6 +1466,10 @@ final class RippleInkPortFluidPipeline {
             return 0.0f;
         }
         return finiteOrZero(0.2f + pressureValue * pressureValue);
+    }
+
+    private static float inkPressureScale(float pressureValue) {
+        return clamp(nativeAdjustedPressure(pressureValue) / 1.2f, 0.0f, 1.0f);
     }
 
     private static float sanitizeVelocity(float value) {

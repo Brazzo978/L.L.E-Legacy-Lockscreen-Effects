@@ -21,6 +21,7 @@ public final class RippleInkPortFluidPipelineTest {
         verifyConcurrentDownWinsOverPriorTickCommit();
         verifyStationaryPressDoesNotRestart();
         verifyWaterOnlyInputSuppressesInkButKeepsFluidTick();
+        verifyStylusPressureScalesInkMassWithoutChangingStockMaximum();
         verifyCancelUsesNativeUpAction();
         verifyShortDragUpRetainsStateOneButLongDragReleases();
         verifyHybridHfrUsesOnlyFixedInkTicks();
@@ -95,6 +96,27 @@ public final class RippleInkPortFluidPipelineTest {
         pipeline.executeFixedTick(sink);
         require("water-only callback emits no ink pass", sink.inks.isEmpty());
         require("water-only callback still advances fluid", !sink.advects.isEmpty());
+    }
+
+    private static void verifyStylusPressureScalesInkMassWithoutChangingStockMaximum() {
+        RippleInkPortFluidPipeline halfPressure = configuredPipeline();
+        RecordingSink halfSink = new RecordingSink();
+        halfPressure.onTouch(RippleInkPortEngine.ACTION_DOWN,
+                540.0f, 960.0f, 0.5f, true);
+        halfPressure.executeFixedTick(halfSink);
+
+        RippleInkPortFluidPipeline fullPressure = configuredPipeline();
+        RecordingSink fullSink = new RecordingSink();
+        fullPressure.onTouch(RippleInkPortEngine.ACTION_DOWN,
+                540.0f, 960.0f, 1.0f, true);
+        fullPressure.executeFixedTick(fullSink);
+
+        require("pressure test emits both ink passes",
+                halfSink.inks.size() == 1 && fullSink.inks.size() == 1);
+        require("full S Pen pressure preserves stock impulse",
+                Math.abs(fullSink.inks.get(0).impulseDensity - 200.0f) < EPSILON);
+        require("half S Pen pressure scales ink impulse",
+                Math.abs(halfSink.inks.get(0).impulseDensity - 75.0f) < EPSILON);
     }
 
     private static void verifyHeldMoveModeTicksWithoutCallbacks() {
