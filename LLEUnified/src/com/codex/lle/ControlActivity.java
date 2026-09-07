@@ -6046,13 +6046,7 @@ public class ControlActivity extends Activity {
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER_VERTICAL);
         controls.setPadding(dp(12), 0, dp(8), dp(4));
-
-        if (showSPenMode) {
-            controls.addView(createSPenRippleInkSwitch(), new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)));
-            controls.addView(new View(this), new LinearLayout.LayoutParams(
-                    0, 1, 1f));
-        }
+        final Switch sPenMode = showSPenMode ? createSPenRippleInkSwitch() : null;
 
         final Switch highFrameRate = new Switch(this);
         highFrameRate.setText("HFR");
@@ -6161,7 +6155,24 @@ public class ControlActivity extends Activity {
             });
         }
 
-        if (showHighFrameRate) {
+        if (showSPenMode) {
+            // These are physical screen positions by design, independent of inherited locale
+            // direction: S Pen belongs on the left and HFR on the right.
+            FrameLayout endpoints = new FrameLayout(this);
+            endpoints.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+            FrameLayout.LayoutParams sPenParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, dp(30),
+                    Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            endpoints.addView(sPenMode, sPenParams);
+            if (showHighFrameRate) {
+                FrameLayout.LayoutParams hfrParams = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT, dp(30),
+                        Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                endpoints.addView(highFrameRate, hfrParams);
+            }
+            controls.addView(endpoints, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
+        } else if (showHighFrameRate) {
             LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
             controls.addView(highFrameRate, switchParams);
