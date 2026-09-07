@@ -91,10 +91,10 @@ final class OverlayPrefs {
     /** 1.0x–2.0x, stored as integer tenths to avoid preference float drift. */
     static final String DEBUG_EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS =
             "debug_experimental_native_refresh_physics_speed_tenths";
-    /** One-shot migration marker for the per-effect native-refresh preferences. */
+    /** Migration marker for per-effect native-refresh defaults. */
     private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA =
             "experimental_native_refresh_physics_per_effect_schema";
-    private static final int EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION = 1;
+    private static final int EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION = 2;
     private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_EFFECT_PREFIX =
             "experimental_native_refresh_physics_effect_";
     private static final String EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_SPEED_TENTHS_EFFECT_PREFIX =
@@ -585,8 +585,9 @@ final class OverlayPrefs {
     }
 
     /**
-     * Copies the former global native-refresh controls into every renderer that supports
-     * them. Keep the legacy keys intact so a tester can safely roll back to an older build.
+     * Initializes every compatible renderer with HFR enabled. Schema 2 intentionally changes
+     * the product default from opt-in to default-on; after this one-time migration, each
+     * per-effect switch remains independently user-controlled.
      */
     static void migrateExperimentalNativeRefreshPrefsIfNeeded(Context context) {
         SharedPreferences preferences = get(context);
@@ -594,14 +595,13 @@ final class OverlayPrefs {
                 >= EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION) {
             return;
         }
-        boolean legacyEnabled = debugExperimentalNativeRefreshPhysics(context);
         int legacySpeedTenths = debugExperimentalNativeRefreshPhysicsSpeedTenths(context);
         SharedPreferences.Editor editor = preferences.edit();
         for (int effect = 0; effect < EFFECT_COUNT; effect++) {
             if (!supportsExperimentalNativeRefreshPhysics(effect)) {
                 continue;
             }
-            editor.putBoolean(experimentalNativeRefreshPhysicsKey(effect), legacyEnabled);
+            editor.putBoolean(experimentalNativeRefreshPhysicsKey(effect), true);
             if (supportsExperimentalNativeRefreshPhysicsSpeed(effect)) {
                 editor.putInt(experimentalNativeRefreshPhysicsSpeedTenthsKey(effect),
                         legacySpeedTenths);
@@ -613,7 +613,7 @@ final class OverlayPrefs {
                 EXPERIMENTAL_NATIVE_REFRESH_PHYSICS_PER_EFFECT_SCHEMA_VERSION).commit();
         if (committed) {
             Log.i(TAG, "migrated native refresh preferences to per-effect schema"
-                    + " enabled=" + legacyEnabled + " speedTenths=" + legacySpeedTenths);
+                    + " enabled=true speedTenths=" + legacySpeedTenths);
         } else {
             Log.w(TAG, "native refresh per-effect preference migration failed; will retry");
         }

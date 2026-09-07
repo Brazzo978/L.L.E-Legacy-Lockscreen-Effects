@@ -182,7 +182,9 @@ sent anywhere automatically.
 ## Contributors
 
 - [Eridion Kiorai (@erikiorai)](https://github.com/erikiorai) — contributed
-  [S Pen mode for N3 Ripple Ink](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/44).
+  [S Pen mode for N3 Ripple Ink](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/44)
+  and helped the restoration work through his earlier
+  [SamsungEffectTester project](https://github.com/erikiorai/SamsungEffectTester).
 - [Curtis (@SparklingWaterBurns)](https://github.com/SparklingWaterBurns) — contributed the
   [Material You icon and interface proposal](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/41).
 

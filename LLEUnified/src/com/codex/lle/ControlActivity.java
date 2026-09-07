@@ -5368,11 +5368,17 @@ public class ControlActivity extends Activity {
         if (variantControls != null && !blockedByNoColormap && !randomPoolEditing) {
             card.addView(variantControls);
         }
-        if (!blockedByNoColormap
+        boolean showHighFrameRate = !blockedByNoColormap
                 && !randomPoolEditing
                 && supportsPerEffectHighFrameRate(value)
-                && hasInternalHighRefreshDisplay()) {
-            card.addView(perEffectHighFrameRateControls(value));
+                && hasInternalHighRefreshDisplay();
+        boolean showSPenMode = !blockedByNoColormap
+                && !randomPoolEditing
+                && value == OverlayPrefs.EFFECT_RIPPLE_INK
+                && supportsPressureStylus();
+        if (showHighFrameRate || showSPenMode) {
+            card.addView(perEffectHighFrameRateControls(value,
+                    showHighFrameRate, showSPenMode));
         }
         if (blockedByNoColormap || (randomPoolEditing && !randomEligible)) {
             card.setAlpha(0.42f);
@@ -5949,13 +5955,10 @@ public class ControlActivity extends Activity {
                 HorizontalScrollView.LayoutParams.WRAP_CONTENT));
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        if (supportsPressureStylus()) {
-            controls.addView(addSPenRippleInkOption());
-        }
         return controls;
     }
 
-    private View addSPenRippleInkOption() {
+    private Switch createSPenRippleInkSwitch() {
         Switch sPen = compactEffectVariantSwitch(
                 "S Pen mode", OverlayPrefs.sPenRippleInkEnabled(this));
         sPen.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -5964,7 +5967,7 @@ public class ControlActivity extends Activity {
                 prefs.edit().putBoolean(OverlayPrefs.RIPPLE_INK_SPEN_ENABLED, checked).apply();
             }
         });
-        return effectVariantControls(sPen);
+        return sPen;
     }
 
     private Switch compactEffectVariantSwitch(String label, boolean checked) {
@@ -6035,13 +6038,21 @@ public class ControlActivity extends Activity {
         return false;
     }
 
-    private View perEffectHighFrameRateControls(final int effect) {
+    private View perEffectHighFrameRateControls(final int effect,
+            boolean showHighFrameRate, boolean showSPenMode) {
         final boolean supportsSpeed =
                 OverlayPrefs.supportsExperimentalNativeRefreshPhysicsSpeed(effect);
         final LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER_VERTICAL);
         controls.setPadding(dp(12), 0, dp(8), dp(4));
+
+        if (showSPenMode) {
+            controls.addView(createSPenRippleInkSwitch(), new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)));
+            controls.addView(new View(this), new LinearLayout.LayoutParams(
+                    0, 1, 1f));
+        }
 
         final Switch highFrameRate = new Switch(this);
         highFrameRate.setText("HFR");
@@ -6150,9 +6161,11 @@ public class ControlActivity extends Activity {
             });
         }
 
-        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
-        controls.addView(highFrameRate, switchParams);
+        if (showHighFrameRate) {
+            LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(30));
+            controls.addView(highFrameRate, switchParams);
+        }
         return controls;
     }
 
