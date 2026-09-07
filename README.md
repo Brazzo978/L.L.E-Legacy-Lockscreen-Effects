@@ -4,12 +4,11 @@ Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern d
 
 Every lockscreen effect is recreated 1:1 using the original sources.
 
-**Current stable release:** `1.0.6.4` · **Recommended build:** ARM64
+**Current stable release:** `1.0.6.5` · **Recommended build:** ARM64
 
-New in [1.0.6.4](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.4):
-**Hula Hoop V1 and V2**, **Circle Mosaic**, the recovered Light Particle
-variants, refined White Hole distortion, matching effect icons, and the
-refreshed effect-family and Random-pool interface.
+New in [1.0.6.5](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.5):
+**S Pen mode for N3 Ripple Ink**, pressure-aware ink response, a faithful
+**Light Particle V1/V2** split, and refined HFR/S Pen controls.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
 

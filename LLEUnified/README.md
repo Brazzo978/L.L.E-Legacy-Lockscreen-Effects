@@ -30,7 +30,7 @@ only; new effects and features target ARM64.
 | APK | ABI | Recommended use |
 |---|---|---|
 | `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
-| `LLE64-1.0.6.4-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
+| `LLE64-1.0.6.5-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
 | `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Historical final diagnostic build with frozen Samsung engines |
 
 Check the supported ABIs:
@@ -112,7 +112,7 @@ every screen in order.
 Quick ARM64 ADB update:
 
 ```shell
-adb install --no-incremental -r "LLE64-1.0.6.4-64-bit.apk"
+adb install --no-incremental -r "LLE64-1.0.6.5-64-bit.apk"
 ```
 
 Open ARM64:
@@ -258,6 +258,10 @@ NDK r27d.
 
 ## More documentation
 
+- [1.0.6.5 stable release notes](docs/RELEASE_NOTES_1.0.6.5.md)
+- [1.0.6.4 stable release notes](docs/RELEASE_NOTES_1.0.6.4.md)
+- [1.0.6.3 stable release notes](docs/RELEASE_NOTES_1.0.6.3.md)
+- [1.0.6.2 stable release notes](docs/RELEASE_NOTES_1.0.6.2.md)
 - [1.0.6.1 stable release notes](docs/RELEASE_NOTES_1.0.6.1.md)
 - [1.0.6.0 stable release notes](docs/RELEASE_NOTES_1.0.6.0.md)
 - [1.0.5.7 stable release notes](docs/RELEASE_NOTES_1.0.5.7.md)
