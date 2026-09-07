@@ -179,6 +179,13 @@ sent anywhere automatically.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
 - Some very HEAVY effect will not show properly on low end smartphones.
 
+## Contributors
+
+- [Eridion Kiorai (@erikiorai)](https://github.com/erikiorai) — contributed
+  [S Pen mode for N3 Ripple Ink](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/44).
+- [Curtis (@SparklingWaterBurns)](https://github.com/SparklingWaterBurns) — contributed the
+  [Material You icon and interface proposal](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/41).
+
 ## Star history
 
 <p align="center">

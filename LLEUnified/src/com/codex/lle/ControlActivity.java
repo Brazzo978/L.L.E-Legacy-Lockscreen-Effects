@@ -619,8 +619,7 @@ public class ControlActivity extends Activity {
 
     private boolean supportsPressureStylus() {
         PackageManager pm = getPackageManager();
-        if (pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN_STYLUS)
-                || pm.hasSystemFeature("com.sec.feature.spen_usp")
+        if (pm.hasSystemFeature("com.sec.feature.spen_usp")
                 || pm.hasSystemFeature("com.sec.feature.spen_usp.level10")
                 || pm.hasSystemFeature("com.sec.feature.spen_usp.level20")
                 || pm.hasSystemFeature("com.sec.feature.spen_usp.level30")) {
