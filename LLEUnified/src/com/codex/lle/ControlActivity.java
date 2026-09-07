@@ -5716,7 +5716,7 @@ public class ControlActivity extends Activity {
     private View g2LightParticleEffectOption(int current) {
         return effectOption(
                 "G2 Light Particle",
-                "Soft bokeh lights and glittering particles bloom around your touch.",
+                "Soft bokeh lights bloom around your touch in two preserved renderer revisions.",
                 OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
                 current == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE,
                 -1,
@@ -5728,9 +5728,37 @@ public class ControlActivity extends Activity {
         controls.setOrientation(LinearLayout.VERTICAL);
         controls.setPadding(dp(12), 0, dp(12), dp(10));
 
+        final RadioGroup revisions = new RadioGroup(this);
+        revisions.setOrientation(RadioGroup.HORIZONTAL);
+        int selectedRevision = OverlayPrefs.g2LightParticleRevision(this);
+        addG2LightParticleRevisionOption(revisions, "V1",
+                OverlayPrefs.G2_LIGHT_PARTICLE_REVISION_V1, selectedRevision);
+        addG2LightParticleRevisionOption(revisions, "V2",
+                OverlayPrefs.G2_LIGHT_PARTICLE_REVISION_V2, selectedRevision);
+        revisions.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
+                View checked = radioGroup.findViewById(checkedId);
+                Object tag = checked == null ? null : checked.getTag();
+                if (tag instanceof Integer) {
+                    prefs.edit().putInt(OverlayPrefs.G2_LIGHT_PARTICLE_REVISION,
+                            ((Integer) tag).intValue()).apply();
+                }
+                for (int index = 0; index < radioGroup.getChildCount(); index++) {
+                    View child = radioGroup.getChildAt(index);
+                    if (child instanceof RadioButton) {
+                        child.setBackground(controlRowBackground(
+                                ((RadioButton) child).isChecked()));
+                    }
+                }
+            }
+        });
+        controls.addView(revisions, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
         final int selectedVariant = OverlayPrefs.g2LightParticleVariant(this);
         TextView label = new TextView(this);
-        label.setText("Variant " + selectedVariant);
+        label.setText("Particle style " + selectedVariant);
         label.setTextColor(COLOR_ACCENT_DEEP);
         label.setTextSize(12f);
         label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -5770,6 +5798,25 @@ public class ControlActivity extends Activity {
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
         return controls;
+    }
+
+    private void addG2LightParticleRevisionOption(RadioGroup group, String label,
+            int revision, int selected) {
+        RadioButton button = new RadioButton(this);
+        button.setId(View.generateViewId());
+        button.setTag(Integer.valueOf(revision));
+        button.setText(label);
+        button.setContentDescription("G2 Light Particle renderer " + label);
+        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(14f);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setChecked(revision == selected);
+        button.setBackground(controlRowBackground(revision == selected));
+        tintRadio(button);
+        RadioGroup.LayoutParams params = new RadioGroup.LayoutParams(0, dp(40), 1f);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        group.addView(button, params);
     }
 
     private int g2LightParticleVariantPreviewDrawable(int variant) {

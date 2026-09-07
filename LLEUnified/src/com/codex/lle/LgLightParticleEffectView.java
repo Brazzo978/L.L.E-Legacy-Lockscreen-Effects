@@ -23,12 +23,14 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * LG G2 Light Particle restoration from the authorized OptimusDev/XLocker archive.
+ * LG Light Particle restoration preserving the XLocker/G2 and native LG revisions.
  *
  * <p>The archived renderer uses GLES2 for a radial background mask and 74 textured quads.
  * Modern HWUI can render the same workload without owning a second EGL surface, so this port
  * keeps the donor's timing, particle families, density behavior and shader edge in one stable
- * Canvas view. The revealed image is L.L.E.'s captured pre-lock underlay.</p>
+ * Canvas view. Revision V1 preserves the established XLocker/G2 restoration; V2 restores the
+ * native LG ring anchoring, physical ring dimensions and bokeh orientation. The revealed image
+ * is L.L.E.'s captured pre-lock underlay.</p>
  */
 public final class LgLightParticleEffectView extends View
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
@@ -55,8 +57,7 @@ public final class LgLightParticleEffectView extends View
             + " return half4(half3(rgb*alpha),half(alpha));"
             + "}";
 
-    private final LgLightParticleScene scene =
-            new LgLightParticleScene(BuildFlavor.TESTER);
+    private final LgLightParticleScene scene;
     private final LgLightParticleScene.Frame frame = new LgLightParticleScene.Frame();
     private final Bitmap[] textures = new Bitmap[LgLightParticleScene.TEXTURE_COUNT];
     private final Paint underlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG
@@ -76,6 +77,7 @@ public final class LgLightParticleEffectView extends View
     private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
     private final float assetDensityScale;
 
+    private final int rendererRevision;
     private int particleVariant;
     private Bitmap variantTexture;
     private Bitmap underlay;
@@ -105,16 +107,29 @@ public final class LgLightParticleEffectView extends View
     };
 
     public LgLightParticleEffectView(Context context) {
-        this(context, OverlayPrefs.g2LightParticleVariant(context));
+        this(context, OverlayPrefs.g2LightParticleVariant(context),
+                OverlayPrefs.g2LightParticleRevision(context));
     }
 
     LgLightParticleEffectView(Context context, int variant) {
+        this(context, variant, OverlayPrefs.g2LightParticleRevision(context));
+    }
+
+    LgLightParticleEffectView(Context context, int variant, int revision) {
         super(context);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        float density = getResources().getDisplayMetrics().density;
+        int normalizedRevision = OverlayPrefs.normalizeG2LightParticleRevision(revision);
+        rendererRevision = normalizedRevision;
+        scene = new LgLightParticleScene(BuildFlavor.TESTER,
+                normalizedRevision == OverlayPrefs.G2_LIGHT_PARTICLE_REVISION_V2
+                        ? LgLightParticleScene.REVISION_LG_NATIVE
+                        : LgLightParticleScene.REVISION_XLOCKER);
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float density = metrics.density;
         scene.setDensity(density);
+        scene.setHorizontalDpi(metrics.xdpi);
         assetDensityScale = density / ARCHIVE_DENSITY;
         particleVariant = OverlayPrefs.normalizeG2LightParticleVariant(variant);
         loadTextures();
@@ -214,6 +229,10 @@ public final class LgLightParticleEffectView extends View
 
     int getParticleVariant() {
         return particleVariant;
+    }
+
+    int getRendererRevision() {
+        return rendererRevision;
     }
 
     @Override public void showUnlockAffordance(Rect screenRect, long startDelayMs) {
@@ -403,7 +422,14 @@ public final class LgLightParticleEffectView extends View
             particleRect.set(sprite.x - half, sprite.y - half,
                     sprite.x + half, sprite.y + half);
             particlePaint.setAlpha(Math.round(255f * sprite.alpha));
-            canvas.drawBitmap(texture, null, particleRect, particlePaint);
+            if (sprite.rotationRadians != 0f) {
+                int save = canvas.save();
+                canvas.rotate((float) Math.toDegrees(sprite.rotationRadians), sprite.x, sprite.y);
+                canvas.drawBitmap(texture, null, particleRect, particlePaint);
+                canvas.restoreToCount(save);
+            } else {
+                canvas.drawBitmap(texture, null, particleRect, particlePaint);
+            }
         }
         particlePaint.setAlpha(255);
     }

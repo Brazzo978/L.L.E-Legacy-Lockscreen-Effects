@@ -3,12 +3,13 @@ package com.codex.lle;
 import java.util.Random;
 
 /**
- * Allocation-free scene recovered from the authorized OptimusDev G2 Light Particle archive.
+ * Allocation-free scene recovered from the authorized OptimusDev archive and native LG donor.
  *
  * <p>The donor renders in a world which is one quarter of the display size. Constants which
  * were authored directly in that world are therefore multiplied by four here, while touch and
- * radius values remain ordinary screen pixels. Particle rotation is intentionally omitted: the
- * archived bokeh vertex shader calculates a rotation matrix but never applies it.</p>
+ * radius values remain ordinary screen pixels. The XLocker revision keeps the archived shader's
+ * unused rotation, while the native LG revision applies the source renderer's random bokeh
+ * orientation and boundary-ring distribution.</p>
  */
 final class LgLightParticleScene {
     static final long TOUCH_FADE_IN_MS = 300L;
@@ -17,6 +18,11 @@ final class LgLightParticleScene {
     static final long COMPLETE_HOLD_MS = 550L;
     static final float MIN_RADIUS_DP = 44f;
     static final float UNLOCK_RADIUS_DP = 113.33f;
+    static final float LG_NATIVE_MIN_RADIUS_DP = 50.2f;
+    static final float LG_NATIVE_BOUNDARY_RADIUS_MM = 25f;
+
+    static final int REVISION_XLOCKER = 1;
+    static final int REVISION_LG_NATIVE = 2;
 
     static final int IDLE = 0;
     static final int ACTIVE = 1;
@@ -43,12 +49,14 @@ final class LgLightParticleScene {
     private static final int KIND_BOKEH = 1;
 
     private final Random random;
+    private final int revision;
     private final Particle[] particles = new Particle[PARTICLE_CAPACITY];
     private int particleCount;
     private int state = IDLE;
     private int width = 1;
     private int height = 1;
     private float density = 1f;
+    private float horizontalDpi = 160f;
     private float centreX;
     private float centreY;
     private float downX;
@@ -63,10 +71,16 @@ final class LgLightParticleScene {
     private long terminalAt;
 
     LgLightParticleScene() {
-        this(false);
+        this(false, REVISION_XLOCKER);
     }
 
     LgLightParticleScene(boolean deterministic) {
+        this(deterministic, REVISION_XLOCKER);
+    }
+
+    LgLightParticleScene(boolean deterministic, int requestedRevision) {
+        revision = requestedRevision == REVISION_LG_NATIVE
+                ? REVISION_LG_NATIVE : REVISION_XLOCKER;
         random = deterministic ? new Random(TESTER_SEED) : new Random();
         buildParticleLayout();
     }
@@ -78,6 +92,10 @@ final class LgLightParticleScene {
 
     void setDensity(float value) {
         density = Math.max(0.5f, value);
+    }
+
+    void setHorizontalDpi(float value) {
+        horizontalDpi = value > 0f && Float.isFinite(value) ? value : 160f * density;
     }
 
     void begin(float x, float y, long now) {
@@ -149,6 +167,7 @@ final class LgLightParticleScene {
             out.set(true, true, ACTIVE, radius,
                     lerp(0.5f, 1f, touch), spriteScale, spriteScale,
                     sceneElapsed);
+            out.particleDragDistance = dragDistance;
             populateParticles(out, now);
             return out;
         }
@@ -164,6 +183,7 @@ final class LgLightParticleScene {
                     terminalParticleAlpha * (1f - t),
                     lerp(terminalBackgroundScale, terminalBackgroundScale * 1.3f, t),
                     terminalBokehScale * (1f - t), sceneElapsed);
+            out.particleDragDistance = dragDistance;
             if (running) {
                 populateParticles(out, now);
             }
@@ -180,6 +200,8 @@ final class LgLightParticleScene {
                 lerp(terminalRadius, fullRadius(), t),
                 terminalParticleAlpha * (1f - t),
                 terminalBackgroundScale, terminalBokehScale, sceneElapsed);
+        out.particleDragDistance = revision == REVISION_LG_NATIVE
+                ? lerp(dragDistance, fullRadius(), t) : dragDistance;
         if (running && out.particleAlpha > 0f) {
             populateParticles(out, now);
         }
@@ -189,9 +211,18 @@ final class LgLightParticleScene {
     float centreX() { return centreX; }
     float centreY() { return centreY; }
     float dragDistance() { return dragDistance; }
-    float minRadius() { return MIN_RADIUS_DP * density; }
-    float unlockRadius() { return UNLOCK_RADIUS_DP * density; }
+    float minRadius() {
+        return (revision == REVISION_LG_NATIVE ? LG_NATIVE_MIN_RADIUS_DP : MIN_RADIUS_DP)
+                * density;
+    }
+    float unlockRadius() {
+        if (revision == REVISION_LG_NATIVE) {
+            return LG_NATIVE_BOUNDARY_RADIUS_MM * horizontalDpi / 25.4f;
+        }
+        return UNLOCK_RADIUS_DP * density;
+    }
     float fullRadius() { return (float) Math.hypot(width, height); }
+    int revision() { return revision; }
 
     static float edgeBandwidth(float radius, float minRadius) {
         return Math.min(Math.max(0f, radius), Math.max(0f, minRadius)) * 0.8f;
@@ -259,6 +290,8 @@ final class LgLightParticleScene {
 
             float alphaSeed = random.nextFloat();
             particle.baseAlpha = 0.7f + 0.3f * alphaSeed;
+            particle.textureRotationRadians = revision == REVISION_LG_NATIVE
+                    ? TWO_PI * alphaSeed : 0f;
             particle.baseSizeFactor = lerp(
                     particle.minSizeFactor, particle.maxSizeFactor, random.nextFloat());
             long lifeRange = Math.max(0L, particle.maxLifeMs - particle.minLifeMs);
@@ -285,7 +318,8 @@ final class LgLightParticleScene {
         for (Particle particle : particles) {
             if (particle.kind == KIND_BACKGROUND) {
                 float elapsed = Math.max(0L, now - particle.startedAt);
-                float baseRadius = frame.radius + 0.5f * dragDistance
+                float baseRadius = backgroundAnchorRadius(frame)
+                        + 0.5f * frame.particleDragDistance
                         + particle.radialOffsetPx;
                 float baseX = centreX + (float) Math.cos(particle.angle) * baseRadius;
                 float baseY = centreY + (float) Math.sin(particle.angle) * baseRadius;
@@ -295,8 +329,8 @@ final class LgLightParticleScene {
                 float y = baseY + (float) Math.sin(phase) * particle.orbitRadiusPx;
                 addSprite(frame, particle.texture, x, y,
                         particle.baseSizeFactor * frame.backgroundSizeScale,
-                        dragDistance * 0.25f * frame.backgroundSizeScale,
-                        particle.baseAlpha * frame.particleAlpha);
+                        frame.particleDragDistance * 0.25f * frame.backgroundSizeScale,
+                        particle.baseAlpha * frame.particleAlpha, 0f);
                 continue;
             }
 
@@ -306,6 +340,8 @@ final class LgLightParticleScene {
             }
             if (age >= particle.durationMs) {
                 particle.angle = TWO_PI * random.nextFloat();
+                particle.textureRotationRadians = revision == REVISION_LG_NATIVE
+                        ? random.nextFloat() * 360f : 0f;
                 particle.startedAt = now;
                 age = 0L;
             }
@@ -326,17 +362,23 @@ final class LgLightParticleScene {
                     particle.baseSizeFactor * (0.7f + 0.3f * eased)
                             * frame.bokehSizeScale,
                     0f,
-                    particle.baseAlpha * envelope * frame.particleAlpha);
+                    particle.baseAlpha * envelope * frame.particleAlpha,
+                    revision == REVISION_LG_NATIVE ? particle.textureRotationRadians : 0f);
         }
     }
 
+    float backgroundAnchorRadius(Frame frame) {
+        return revision == REVISION_LG_NATIVE ? unlockRadius() : frame.radius;
+    }
+
     private static void addSprite(Frame frame, int texture, float x, float y,
-            float sizeScale, float sizeExtraPx, float alpha) {
+            float sizeScale, float sizeExtraPx, float alpha, float rotationRadians) {
         if (frame.spriteCount >= frame.sprites.length || alpha <= 0f || sizeScale <= 0f) {
             return;
         }
         frame.sprites[frame.spriteCount++].set(texture, x, y,
-                sizeScale, Math.max(0f, sizeExtraPx), clamp(alpha, 0f, 1f));
+                sizeScale, Math.max(0f, sizeExtraPx), clamp(alpha, 0f, 1f),
+                rotationRadians);
     }
 
     private long nextLongBounded(long bound) {
@@ -375,6 +417,7 @@ final class LgLightParticleScene {
         float particleAlpha;
         float backgroundSizeScale;
         float bokehSizeScale;
+        float particleDragDistance;
         long elapsedMs;
         int spriteCount;
         final ParticleSprite[] sprites = new ParticleSprite[PARTICLE_CAPACITY];
@@ -395,6 +438,7 @@ final class LgLightParticleScene {
             particleAlpha = clamp(nextParticleAlpha, 0f, 1f);
             backgroundSizeScale = Math.max(0f, nextBackgroundSizeScale);
             bokehSizeScale = Math.max(0f, nextBokehSizeScale);
+            particleDragDistance = 0f;
             elapsedMs = Math.max(0L, nextElapsedMs);
             return this;
         }
@@ -409,15 +453,18 @@ final class LgLightParticleScene {
         float sizeScale;
         float sizeExtraPx;
         float alpha;
+        float rotationRadians;
 
         void set(int nextTexture, float nextX, float nextY,
-                float nextSizeScale, float nextSizeExtraPx, float nextAlpha) {
+                float nextSizeScale, float nextSizeExtraPx, float nextAlpha,
+                float nextRotationRadians) {
             texture = nextTexture;
             x = nextX;
             y = nextY;
             sizeScale = nextSizeScale;
             sizeExtraPx = nextSizeExtraPx;
             alpha = nextAlpha;
+            rotationRadians = nextRotationRadians;
         }
     }
 
@@ -439,5 +486,6 @@ final class LgLightParticleScene {
         float angularRatePerMs;
         float baseAlpha;
         float baseSizeFactor;
+        float textureRotationRadians;
     }
 }

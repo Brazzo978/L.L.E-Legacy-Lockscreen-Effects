@@ -7,6 +7,7 @@ public final class LgLightParticleSceneTest {
 
     public static void main(String[] args) {
         checkArchiveGeometry();
+        checkNativeLgRevision();
         checkTouchFadeAndParticles();
         checkCancelClock();
         checkCompleteClockAndHold();
@@ -22,6 +23,35 @@ public final class LgLightParticleSceneTest {
         require("ten archived textures", LgLightParticleScene.TEXTURE_COUNT == 10);
         require("five background plus 69 bokeh quads",
                 LgLightParticleScene.PARTICLE_CAPACITY == 74);
+    }
+
+    private static void checkNativeLgRevision() {
+        LgLightParticleScene scene = new LgLightParticleScene(
+                true, LgLightParticleScene.REVISION_LG_NATIVE);
+        scene.setDensity(3f);
+        scene.setHorizontalDpi(420f);
+        scene.setSurfaceSize(1080, 2340);
+        require("native LG high-density start radius",
+                near(scene.minRadius(), 150.6f, 0.01f));
+        require("native LG boundary uses the source 25 mm dimension",
+                near(scene.unlockRadius(), 25f * 420f / 25.4f, 0.01f));
+
+        long start = 5_000L;
+        scene.begin(400f, 700f, start);
+        LgLightParticleScene.Frame frame = scene.sample(
+                start + 300L, new LgLightParticleScene.Frame());
+        require("native background lights anchor to the boundary ring",
+                near(scene.backgroundAnchorRadius(frame), scene.unlockRadius(), 0.01f));
+        boolean rotatedBokeh = false;
+        for (int index = 0; index < frame.spriteCount; index++) {
+            LgLightParticleScene.ParticleSprite sprite = frame.sprites[index];
+            if (sprite.texture != LgLightParticleScene.TEXTURE_BG
+                    && Math.abs(sprite.rotationRadians) > 0.0001f) {
+                rotatedBokeh = true;
+                break;
+            }
+        }
+        require("native LG bokeh keeps the source random orientation", rotatedBokeh);
     }
 
     private static void checkTouchFadeAndParticles() {

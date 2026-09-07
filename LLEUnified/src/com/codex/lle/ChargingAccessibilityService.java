@@ -2438,6 +2438,10 @@ public class ChargingAccessibilityService extends AccessibilityService
             applyG2LightParticleVariantPreference();
             return;
         }
+        if (OverlayPrefs.G2_LIGHT_PARTICLE_REVISION.equals(key)) {
+            applyG2LightParticleRevisionPreference();
+            return;
+        }
         if (OverlayPrefs.HULA_HOOP_VARIANT.equals(key)) {
             applyHulaHoopVariantPreference();
             return;
@@ -2704,6 +2708,21 @@ public class ChargingAccessibilityService extends AccessibilityService
             preloadAndAttachSelectedUnlockEffectParked("prefs:g2_light_particle_variant");
         }
         evaluateVisibility("prefs:g2_light_particle_variant", false);
+    }
+
+    /** Rebuilds Light Particle between the preserved XLocker/G2 and native LG revisions. */
+    private void applyG2LightParticleRevisionPreference() {
+        if (!EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE)
+                || OverlayPrefs.unlockEffect(this)
+                != OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
+            return;
+        }
+        cancelUnlockAffordanceDispatch(false, "prefs:g2_light_particle_revision");
+        if (unlockEffectRenderer != null) {
+            destroyUnlockEffectOverlay();
+        }
+        preloadAndAttachSelectedUnlockEffectParked("prefs:g2_light_particle_revision");
+        evaluateVisibility("prefs:g2_light_particle_revision", false);
     }
 
     /** Rebuilds Hula between the separately preserved V1 and V2 render paths. */

@@ -145,6 +145,11 @@ final class OverlayPrefs {
     static final int G2_LIGHT_PARTICLE_VARIANT_DEFAULT = 1;
     static final int G2_LIGHT_PARTICLE_VARIANT_MIN = 1;
     static final int G2_LIGHT_PARTICLE_VARIANT_MAX = 6;
+    /** XLocker/G2 and native LG Light Particle renderer revisions. */
+    static final String G2_LIGHT_PARTICLE_REVISION = "g2_light_particle_revision";
+    static final int G2_LIGHT_PARTICLE_REVISION_V1 = 1;
+    static final int G2_LIGHT_PARTICLE_REVISION_V2 = 2;
+    static final int G2_LIGHT_PARTICLE_REVISION_DEFAULT = G2_LIGHT_PARTICLE_REVISION_V1;
     /** Hula Hoop keeps both LG revisions behind one effect card. */
     static final String HULA_HOOP_VARIANT = "hula_hoop_variant";
     static final int HULA_HOOP_VARIANT_V1 = 1;
@@ -951,6 +956,16 @@ final class OverlayPrefs {
     static int normalizeG2LightParticleVariant(int variant) {
         return Math.max(G2_LIGHT_PARTICLE_VARIANT_MIN,
                 Math.min(G2_LIGHT_PARTICLE_VARIANT_MAX, variant));
+    }
+
+    static int g2LightParticleRevision(Context context) {
+        return normalizeG2LightParticleRevision(get(context).getInt(
+                G2_LIGHT_PARTICLE_REVISION, G2_LIGHT_PARTICLE_REVISION_DEFAULT));
+    }
+
+    static int normalizeG2LightParticleRevision(int revision) {
+        return revision == G2_LIGHT_PARTICLE_REVISION_V2
+                ? G2_LIGHT_PARTICLE_REVISION_V2 : G2_LIGHT_PARTICLE_REVISION_V1;
     }
 
     static int hulaHoopVariant(Context context) {
