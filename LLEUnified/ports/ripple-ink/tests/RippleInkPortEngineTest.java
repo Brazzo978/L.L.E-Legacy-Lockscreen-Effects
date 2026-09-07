@@ -181,6 +181,28 @@ public final class RippleInkPortEngineTest {
                 RippleInkPortEngine.ACTION_CANCEL, x, y, 1.0f, 170L));
         require("cancel routed to ink path",
                 engine.getLastInkAction() == RippleInkPortEngine.ACTION_CANCEL);
+
+        engine.reset();
+        engine.configureSurface(1080, 1920);
+        require("water-only down accepted", engine.handleWaterOnly(
+                RippleInkPortEngine.ACTION_DOWN, x, y, 200L));
+        require("water-only path suppresses ink actions", engine.getInkPathEventCount() == 0);
+        require("water-only path suppresses density", engine.densitySum() == 0.0f);
+        require("water-only path retains ripple physics", engine.isWaterActive());
+
+        engine.reset();
+        engine.configureSurface(1080, 1920);
+        require("pressure-sensitive stylus down accepted", engine.handleFinger(
+                RippleInkPortEngine.ACTION_DOWN, x, y, 0.5f, 220L));
+        requireClose("native stylus pressure transform", 0.45f,
+                engine.getLastAdjustedPressure());
+        float halfPressureDensity = engine.densitySum();
+        engine.reset();
+        engine.configureSurface(1080, 1920);
+        require("full-pressure stylus down accepted", engine.handleFinger(
+                RippleInkPortEngine.ACTION_DOWN, x, y, 1.0f, 240L));
+        require("stylus pressure scales deposited density",
+                halfPressureDensity > 0.0f && halfPressureDensity < engine.densitySum());
     }
 
     private static void verifyOrientationDensityShape() {

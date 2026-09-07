@@ -20,6 +20,7 @@ public final class RippleInkPortFluidPipelineTest {
         verifyUiCallbackIsNotSerializedBehindDrawPasses();
         verifyConcurrentDownWinsOverPriorTickCommit();
         verifyStationaryPressDoesNotRestart();
+        verifyWaterOnlyInputSuppressesInkButKeepsFluidTick();
         verifyCancelUsesNativeUpAction();
         verifyShortDragUpRetainsStateOneButLongDragReleases();
         verifyHybridHfrUsesOnlyFixedInkTicks();
@@ -84,6 +85,16 @@ public final class RippleInkPortFluidPipelineTest {
         }
         require("state-1 emits only its ten native deposits", sink.inks.size() == 10);
         require("state-1 does not restart after n12", pipeline.densityUpperBound() < 127.0f);
+    }
+
+    private static void verifyWaterOnlyInputSuppressesInkButKeepsFluidTick() {
+        RippleInkPortFluidPipeline pipeline = configuredPipeline();
+        RecordingSink sink = new RecordingSink();
+        pipeline.onTouch(RippleInkPortEngine.ACTION_DOWN,
+                540.0f, 960.0f, 0.0f, false);
+        pipeline.executeFixedTick(sink);
+        require("water-only callback emits no ink pass", sink.inks.isEmpty());
+        require("water-only callback still advances fluid", !sink.advects.isEmpty());
     }
 
     private static void verifyHeldMoveModeTicksWithoutCallbacks() {

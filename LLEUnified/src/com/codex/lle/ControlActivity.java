@@ -81,8 +81,6 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Set;
 
-import android.content.Context;
-
 public class ControlActivity extends Activity {
     private static final float COMPACT_EFFECT_SWITCH_SCALE = 0.765f;
     // Hidden framework constant intentionally used by value: getDisplays(String) is public
@@ -619,9 +617,15 @@ public class ControlActivity extends Activity {
         }
     }
 
-    private static boolean supportSPen(Context context) {
-        PackageManager pm = context.getPackageManager();
-
+    private boolean supportsPressureStylus() {
+        PackageManager pm = getPackageManager();
+        if (pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN_STYLUS)
+                || pm.hasSystemFeature("com.sec.feature.spen_usp")
+                || pm.hasSystemFeature("com.sec.feature.spen_usp.level10")
+                || pm.hasSystemFeature("com.sec.feature.spen_usp.level20")
+                || pm.hasSystemFeature("com.sec.feature.spen_usp.level30")) {
+            return true;
+        }
         try {
             pm.getPackageInfo("com.samsung.android.service.aircommand", 0);
             return true;
@@ -5899,7 +5903,7 @@ public class ControlActivity extends Activity {
                 HorizontalScrollView.LayoutParams.WRAP_CONTENT));
         controls.addView(scroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        if (supportSPen(this)) {
+        if (supportsPressureStylus()) {
             controls.addView(addSPenRippleInkOption());
         }
         return controls;

@@ -8988,7 +8988,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRenderer instanceof RippleInkPortEffectView
                 && OverlayPrefs.sPenRippleInkEnabled(this)) {
             RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
-            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
+            if (isPressureStylus(toolType)) {
                 rippleInk.beginStylusGesture(unlockEffectAnchorX, unlockEffectAnchorY, pressure);
             } else {
                 rippleInk.beginWaterOnlyGesture(unlockEffectAnchorX, unlockEffectAnchorY);
@@ -9267,7 +9267,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRenderer instanceof RippleInkPortEffectView
                 && OverlayPrefs.sPenRippleInkEnabled(this)) {
             RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
-            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
+            if (isPressureStylus(toolType)) {
                 rippleInk.updateStylusGesture(screenX, screenY, pressure);
             } else {
                 rippleInk.updateWaterOnlyGesture(screenX, screenY);
@@ -9303,10 +9303,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         if (unlockEffectRenderer instanceof RippleInkPortEffectView
                 && OverlayPrefs.sPenRippleInkEnabled(this)) {
             RippleInkPortEffectView rippleInk = (RippleInkPortEffectView) unlockEffectRenderer;
-            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
-                rippleInk.finishStylusGesture();
+            if (isPressureStylus(toolType)) {
+                rippleInk.finishStylusGesture(unlockTriggered);
             } else {
-                rippleInk.finishWaterOnlyGesture();
+                rippleInk.finishWaterOnlyGesture(unlockTriggered);
             }
         } else if (unlockEffectRenderer instanceof S3Arm64RippleEffectView) {
             ((S3Arm64RippleEffectView) unlockEffectRenderer).finishGestureAt(
@@ -9342,6 +9342,11 @@ public class ChargingAccessibilityService extends AccessibilityService
                 + " distance=" + Math.round(distance)
                 + " threshold=" + dp(UNLOCK_TRIGGER_DISTANCE_DP)
                 + " unlockTriggered=" + unlockTriggered);
+    }
+
+    private static boolean isPressureStylus(int toolType) {
+        return toolType == MotionEvent.TOOL_TYPE_STYLUS
+                || toolType == MotionEvent.TOOL_TYPE_ERASER;
     }
 
     private void cancelUnlockEffectGesture() {

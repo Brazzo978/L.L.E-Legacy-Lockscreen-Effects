@@ -231,17 +231,17 @@ public final class RippleInkPortEngine {
             float pressure,
             long eventTimeMs) {
         return handlePointer(action, localX, localY, pressure, eventTimeMs, true);
-        }
+    }
 
-        public boolean handleWaterOnly(
+    public boolean handleWaterOnly(
             int action,
             float localX,
             float localY,
             long eventTimeMs) {
         return handlePointer(action, localX, localY, 0.0f, eventTimeMs, false);
-        }
+    }
 
-        private boolean handlePointer(
+    private boolean handlePointer(
             int action,
             float localX,
             float localY,
@@ -252,7 +252,9 @@ public final class RippleInkPortEngine {
             return false;
         }
         lastEventTimeMs = eventTimeMs;
-        lastAdjustedPressure = Math.max(0.0f, Math.min(1.0f, pressure));
+        float clampedPressure = Math.max(0.0f, Math.min(1.0f, pressure));
+        lastAdjustedPressure = clampedPressure > 0.0f
+                ? 0.2f + clampedPressure * clampedPressure : 0.0f;
 
         switch (action) {
             case ACTION_DOWN:
@@ -606,7 +608,9 @@ public final class RippleInkPortEngine {
                                 -distance * distance
                                         / (0.8f * INK_RADIUS * INK_RADIUS))
                         : INK_IMPULSE_DENSITY / (1.0f + distance);
-                float addition = baseAddition * lastAdjustedPressure;
+                // Preserve the stock pressure-one density exactly while allowing a real stylus
+                // to scale the amount of ink below that maximum.
+                float addition = baseAddition * (lastAdjustedPressure / 1.2f);
                 density[index] = Math.min(127.0f, density[index] + addition);
                 changed = true;
             }

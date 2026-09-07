@@ -49,6 +49,8 @@ public final class RippleInkPortEffectView extends GLSurfaceView
     private float lastSoundY;
     private float dragSoundDistance;
     private float lastStylusPressure = 1.0f;
+    private float activeGesturePressure = 1.0f;
+    private boolean activeGestureInkEnabled = true;
     private long gestureDownAtMs;
     private volatile int animationGeneration;
     private Runnable affordanceRunnable;
@@ -193,9 +195,9 @@ public final class RippleInkPortEffectView extends GLSurfaceView
 
     private void beginGestureWithPressure(float screenX, float screenY, float pressure) {
         beginGestureWithPressure(screenX, screenY, pressure, true);
-        }
+    }
 
-        private void beginGestureWithPressure(float screenX, float screenY, float pressure,
+    private void beginGestureWithPressure(float screenX, float screenY, float pressure,
             boolean inkEnabled) {
         cancelAffordance();
         float[] local = toLocal(screenX, screenY);
@@ -203,6 +205,8 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         lastSoundX = local[0];
         lastSoundY = local[1];
         dragSoundDistance = 0.0f;
+        activeGesturePressure = pressure;
+        activeGestureInkEnabled = inkEnabled;
         play(downSound);
         routeTouch(RippleInkPortEngine.ACTION_DOWN, local[0], local[1], pressure,
             SystemClock.uptimeMillis(), inkEnabled);
@@ -224,9 +228,9 @@ public final class RippleInkPortEffectView extends GLSurfaceView
 
     private void updateGestureWithPressure(float screenX, float screenY, float pressure) {
         updateGestureWithPressure(screenX, screenY, pressure, true);
-        }
+    }
 
-        private void updateGestureWithPressure(float screenX, float screenY, float pressure,
+    private void updateGestureWithPressure(float screenX, float screenY, float pressure,
             boolean inkEnabled) {
         float[] local = toLocal(screenX, screenY);
         float soundDx = local[0] - lastSoundX;
@@ -234,6 +238,8 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         dragSoundDistance += (float) Math.sqrt(soundDx * soundDx + soundDy * soundDy);
         lastSoundX = local[0];
         lastSoundY = local[1];
+        activeGesturePressure = pressure;
+        activeGestureInkEnabled = inkEnabled;
         if (dragSoundDistance > 150.0f) {
             play(downSound);
             dragSoundDistance = 0.0f;
@@ -247,19 +253,19 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         finishGestureWithPressure(completed, 1.0f);
     }
 
-    public void finishStylusGesture() {
-        finishGestureWithPressure(false, lastStylusPressure, true);
+    public void finishStylusGesture(boolean completed) {
+        finishGestureWithPressure(completed, lastStylusPressure, true);
     }
 
-    public void finishWaterOnlyGesture() {
-        finishGestureWithPressure(false, 0.0f, false);
+    public void finishWaterOnlyGesture(boolean completed) {
+        finishGestureWithPressure(completed, 0.0f, false);
     }
 
     private void finishGestureWithPressure(boolean completed, float pressure) {
         finishGestureWithPressure(completed, pressure, true);
-        }
+    }
 
-        private void finishGestureWithPressure(boolean completed, float pressure,
+    private void finishGestureWithPressure(boolean completed, float pressure,
             boolean inkEnabled) {
         long heldForMs = SystemClock.uptimeMillis() - gestureDownAtMs;
         routeTouch(RippleInkPortEngine.ACTION_UP, lastLocalX, lastLocalY, pressure,
@@ -270,6 +276,8 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         } else if (heldForMs > 600L) {
             play(downSound);
         }
+        activeGesturePressure = 1.0f;
+        activeGestureInkEnabled = true;
     }
 
     private static float normalizePressure(float pressure) {
@@ -279,8 +287,10 @@ public final class RippleInkPortEffectView extends GLSurfaceView
     @Override
     public void cancelGesture() {
         routeTouch(RippleInkPortEngine.ACTION_CANCEL, lastLocalX, lastLocalY,
-                1.0f, SystemClock.uptimeMillis());
+                activeGesturePressure, SystemClock.uptimeMillis(), activeGestureInkEnabled);
         dragSoundDistance = 0.0f;
+        activeGesturePressure = 1.0f;
+        activeGestureInkEnabled = true;
     }
 
     @Override
