@@ -6156,20 +6156,20 @@ public class ControlActivity extends Activity {
         }
 
         if (showSPenMode) {
-            // These are physical screen positions by design, independent of inherited locale
-            // direction: S Pen belongs on the left and HFR on the right.
+            // Keep HFR in the same physical left-hand position used by every other effect card;
+            // Ripple Ink's additional S Pen mode belongs at the opposite, right-hand edge.
             FrameLayout endpoints = new FrameLayout(this);
             endpoints.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
-            FrameLayout.LayoutParams sPenParams = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT, dp(30),
-                    Gravity.LEFT | Gravity.CENTER_VERTICAL);
-            endpoints.addView(sPenMode, sPenParams);
             if (showHighFrameRate) {
                 FrameLayout.LayoutParams hfrParams = new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.WRAP_CONTENT, dp(30),
-                        Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                        Gravity.LEFT | Gravity.CENTER_VERTICAL);
                 endpoints.addView(highFrameRate, hfrParams);
             }
+            FrameLayout.LayoutParams sPenParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, dp(30),
+                    Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            endpoints.addView(sPenMode, sPenParams);
             controls.addView(endpoints, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
         } else if (showHighFrameRate) {
