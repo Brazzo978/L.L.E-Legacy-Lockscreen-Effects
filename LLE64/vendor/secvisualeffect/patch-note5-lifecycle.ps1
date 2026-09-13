@@ -11,7 +11,14 @@ $vendorRoot = $PSScriptRoot
 $lleRoot = Split-Path (Split-Path $vendorRoot -Parent) -Parent
 $repoRoot = Split-Path $lleRoot -Parent
 $originalDex = Join-Path $vendorRoot "classes.dex"
-$javaTools = Join-Path $repoRoot "unlock-effects-test\tools\java\*"
+$javaToolsCandidates = @(
+    (Join-Path $repoRoot "unlock-effects-test\tools\java\*"),
+    (Join-Path $repoRoot "LLEUnified\vendor\smali-tools\*")
+)
+$javaTools = ($javaToolsCandidates | Where-Object { Test-Path (Split-Path $_ -Parent) } | Select-Object -First 1)
+if (-not $javaTools) {
+    throw "Missing smali/baksmali tools in $repoRoot"
+}
 $java = (Get-Command "java.exe" -ErrorAction Stop).Source
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $lleRoot "build"))
 $stage = [IO.Path]::GetFullPath((Join-Path $buildRoot "secvisualeffect-bounded-smali"))
@@ -49,6 +56,8 @@ function Replace-OneLiteral(
         [string] $Needle,
         [string] $Replacement,
         [string] $Label) {
+    $Needle = $Needle.Replace("`r`n", "`n")
+    $Replacement = $Replacement.Replace("`r`n", "`n")
     $first = $Text.IndexOf($Needle, [StringComparison]::Ordinal)
     if ($first -lt 0) {
         throw "Expected exactly one $Label block, found 0"
