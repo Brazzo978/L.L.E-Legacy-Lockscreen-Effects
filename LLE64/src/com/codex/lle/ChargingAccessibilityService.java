@@ -37,6 +37,7 @@ import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -45,6 +46,7 @@ import java.util.Calendar;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -361,6 +363,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private int debugLensLoopFrame;
     private final Set<String> homePackages = new HashSet<String>();
     private final Set<String> callPackages = new HashSet<String>();
+    private final Set<String> customBlacklistPackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
@@ -599,6 +602,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         prefs.registerOnSharedPreferenceChangeListener(this);
         loadHomePackages();
         loadCallPackages();
+        loadCustomBlacklistPackages();
         configurePassiveService();
         refreshChargingState();
         ensureDoodleLoaded();
@@ -613,6 +617,20 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         scheduleEffectBackgroundRefreshAlarm("connected");
         evaluateVisibility("connected");
+
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Toast.makeText(ChargingAccessibilityService.this, "Accessibility is enabled", Toast.LENGTH_SHORT).show();
+                    Intent launchIntent = new Intent(ChargingAccessibilityService.this, ControlActivity.class);
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    startActivity(launchIntent);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to launch ControlActivity on service connect", e);
+                }
+            }
+        });
     }
 
     private void applyPerfDefaultsOnce() {
@@ -635,6 +653,13 @@ public class ChargingAccessibilityService extends AccessibilityService
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event != null && event.getPackageName() != null) {
             lastWindowPackage = event.getPackageName().toString();
+        }
+        if ((event != null && isCustomBlacklistedPackage(event.getPackageName())) || isBlacklistedAppActive()) {
+            unlockAffordancePending = false;
+            unlockTouchCachedWhileScreenOff = false;
+            hideRuntimeSurfacesForBlacklistedApp("event:" + eventTypeName(event) + ":" + lastWindowPackage);
+            evaluateVisibility("event:" + eventTypeName(event) + ":blacklisted_app", false);
+            return;
         }
         logSystemUiEvent(event);
         boolean interactive = powerManager == null || powerManager.isInteractive();
@@ -713,7 +738,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     }
 
     @Override
-    public boolean onUnbind(android.content.Intent intent) {
+    public boolean onUnbind(Intent intent) {
         cleanup();
         ioExecutor.shutdownNow();
         return super.onUnbind(intent);
@@ -728,6 +753,9 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (OverlayPrefs.CUSTOM_BLACKLIST_PACKAGES.equals(key)) {
+            loadCustomBlacklistPackages();
+        }
         if (key != null && (key.startsWith(OverlayPrefs.EFFECT_BACKGROUND_LAST_CAPTURE_PREFIX)
                 || key.startsWith(
                 OverlayPrefs.EFFECT_BACKGROUND_HANDLED_REFRESH_TOKEN_PREFIX))) {
@@ -3838,6 +3866,23 @@ public class ChargingAccessibilityService extends AccessibilityService
         Log.i(TAG, "runtime surfaces hidden for call reason=" + reason);
     }
 
+    private void hideRuntimeSurfacesForBlacklistedApp(String reason) {
+        stopDebugLensLoop();
+        cancelSeasonalUnlockPartnerGesture();
+        if (unlockEffectRenderer != null) {
+            unlockEffectRenderer.cancelGesture();
+            unlockEffectRenderer.resetEffect();
+        }
+        unlockEffectGestureActive = false;
+        unlockFxVisible = false;
+        pinEntryPending = false;
+        removeDoodleOverlay();
+        destroySeasonalUnlockPartnerOverlay();
+        removeUnlockEffectOverlay(true);
+        removeTouchDebugOverlay();
+        Log.i(TAG, "runtime surfaces hidden for blacklisted app reason=" + reason);
+    }
+
     private void removeSeasonalUnlockPartnerOverlay() {
         if (seasonalUnlockPartnerOverlayAttached && seasonalUnlockPartnerView != null) {
             try {
@@ -4449,7 +4494,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && !aodSurface
                 && !hideOverlaysForTouchBoxCapture
                 && !hideOverlaysForBackgroundCapture
-                && !blockedSurfaceActive;
+                && !blockedSurfaceActive
+                && !isBlacklistedAppActive();
     }
 
     private boolean isChargingDoodleModeEnabled() {
@@ -4976,6 +5022,82 @@ public class ChargingAccessibilityService extends AccessibilityService
         for (int i = 0; i < CALL_SURFACE_PACKAGES.length; i++) {
             callPackages.add(CALL_SURFACE_PACKAGES[i]);
         }
+    }
+
+    private void loadCustomBlacklistPackages() {
+        customBlacklistPackages.clear();
+        Set<String> saved = OverlayPrefs.customBlacklistPackages(this);
+        if (saved != null && !saved.isEmpty()) {
+            for (String pkg : saved) {
+                if (pkg != null && !pkg.trim().isEmpty()) {
+                    customBlacklistPackages.add(pkg.trim().toLowerCase());
+                }
+            }
+        } else {
+            OverlayPrefs.autoScanAndBlacklistCategoriesIfNeeded(this, new Runnable() {
+                @Override
+                public void run() {
+                    Set<String> newSaved = OverlayPrefs.customBlacklistPackages(ChargingAccessibilityService.this);
+                    if (newSaved != null) {
+                        for (String pkg : newSaved) {
+                            if (pkg != null && !pkg.trim().isEmpty()) {
+                                customBlacklistPackages.add(pkg.trim().toLowerCase());
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private boolean isCustomBlacklistedPackage(CharSequence packageName) {
+        if (packageName == null || customBlacklistPackages.isEmpty()) {
+            return false;
+        }
+        String val = packageName.toString().toLowerCase(Locale.ROOT);
+        if (customBlacklistPackages.contains(val)) {
+            return true;
+        }
+        for (String blacklisted : customBlacklistPackages) {
+            if (blacklisted != null && !blacklisted.isEmpty() && val.contains(blacklisted)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isBlacklistedAppActive() {
+        if (customBlacklistPackages.isEmpty()) {
+            return false;
+        }
+        if (lastWindowPackage != null && isCustomBlacklistedPackage(lastWindowPackage)) {
+            return true;
+        }
+        try {
+            List<AccessibilityWindowInfo> windows = getWindows();
+            if (windows != null) {
+                for (int i = 0; i < windows.size(); i++) {
+                    AccessibilityWindowInfo window = windows.get(i);
+                    if (window == null) continue;
+                    AccessibilityNodeInfo root = null;
+                    try {
+                        root = window.getRoot();
+                        if (root != null && root.getPackageName() != null) {
+                            if (isCustomBlacklistedPackage(root.getPackageName())) {
+                                return true;
+                            }
+                        }
+                    } catch (RuntimeException ignored) {
+                    } finally {
+                        if (root != null) {
+                            root.recycle();
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return false;
     }
 
     private boolean isCallPackage(CharSequence packageName) {

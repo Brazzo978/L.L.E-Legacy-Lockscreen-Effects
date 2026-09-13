@@ -1,13 +1,23 @@
 package com.codex.lle;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Rect;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.MediaStore;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 final class OverlayPrefs {
     private static volatile long cachedEpochMinute = Long.MIN_VALUE;
@@ -672,6 +682,119 @@ final class OverlayPrefs {
 
     static File legacyEffectBackgroundFile(Context context, int effect) {
         return new File(context.getFilesDir(), "unlock_effect_background_" + effect + ".png");
+    }
+
+    static final String CUSTOM_BLACKLIST_PACKAGES = "custom_blacklist_packages";
+
+    static Set<String> customBlacklistPackages(Context context) {
+        Set<String> set = get(context).getStringSet(CUSTOM_BLACKLIST_PACKAGES, null);
+        if (set == null) {
+            return new HashSet<String>();
+        }
+        return new HashSet<String>(set);
+    }
+
+    static void saveCustomBlacklistPackages(Context context, Set<String> packages) {
+        get(context).edit().putStringSet(CUSTOM_BLACKLIST_PACKAGES, packages).apply();
+    }
+
+    static void addCustomBlacklistPackage(Context context, String packageName) {
+        if (packageName == null || packageName.trim().isEmpty()) return;
+        Set<String> set = customBlacklistPackages(context);
+        set.add(packageName.trim().toLowerCase());
+        saveCustomBlacklistPackages(context, set);
+    }
+
+    static final String AUTO_BLACKLIST_APPLIED = "auto_blacklist_category_applied_v1";
+
+    static boolean isCategoryAutoBlacklistApplied(Context context) {
+        return get(context).getBoolean(AUTO_BLACKLIST_APPLIED, false);
+    }
+
+    static void markCategoryAutoBlacklistApplied(Context context) {
+        get(context).edit().putBoolean(AUTO_BLACKLIST_APPLIED, true).apply();
+    }
+
+    static void removeCustomBlacklistPackage(Context context, String packageName) {
+        if (packageName == null || packageName.trim().isEmpty()) return;
+        Set<String> set = customBlacklistPackages(context);
+        set.remove(packageName.trim().toLowerCase());
+        saveCustomBlacklistPackages(context, set);
+    }
+
+    static void autoScanAndBlacklistCategoriesIfNeeded(final Context context, final Runnable onComplete) {
+        if (context == null) return;
+        Set<String> current = customBlacklistPackages(context);
+        if (!current.isEmpty()) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    PackageManager pm = context.getPackageManager();
+                    Set<String> autoDetected = new HashSet<String>();
+
+                    // 1. Camera Apps
+                    Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    List<ResolveInfo> cameraApps = pm.queryIntentActivities(cameraIntent, 0);
+                    for (ResolveInfo info : cameraApps) {
+                        if (info.activityInfo != null && info.activityInfo.packageName != null) {
+                            autoDetected.add(info.activityInfo.packageName.toLowerCase(Locale.ROOT));
+                        }
+                    }
+
+                    // 2. Music Apps
+                    Intent musicIntent = new Intent(Intent.ACTION_MAIN);
+                    musicIntent.addCategory(Intent.CATEGORY_APP_MUSIC);
+                    List<ResolveInfo> musicApps = pm.queryIntentActivities(musicIntent, 0);
+                    for (ResolveInfo info : musicApps) {
+                        if (info.activityInfo != null && info.activityInfo.packageName != null) {
+                            autoDetected.add(info.activityInfo.packageName.toLowerCase(Locale.ROOT));
+                        }
+                    }
+
+                    // 3. Scan all installed apps for keyword heuristics
+                    List<ApplicationInfo> installed = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+                    String selfPkg = context.getPackageName();
+
+                    for (ApplicationInfo app : installed) {
+                        if (app.packageName == null || selfPkg.equals(app.packageName)) continue;
+                        String pkg = app.packageName.toLowerCase(Locale.ROOT);
+
+                        if (pkg.contains("camera") || pkg.equals("com.sec.android.app.camera")
+                                || pkg.contains("spotify") || pkg.contains("music") || pkg.contains("soundcloud")
+                                || pkg.contains("shazam") || pkg.contains("deezer") || pkg.contains("ytmusic")
+                                || pkg.contains("pandora") || pkg.contains("tidal") || pkg.contains("apple.music")
+                                || pkg.contains("musicplayer") || pkg.contains("emergency")
+                                || pkg.contains("cellbroadcast") || pkg.contains("sos") || pkg.contains("safetyassurance")
+                                || pkg.equals("com.sec.android.app.clockpackage")
+                                || pkg.equals("com.google.android.deskclock")
+                                || pkg.equals("com.oneplus.deskclock")
+                                || pkg.equals("com.coloros.alarmclock")
+                                || pkg.equals("com.android.deskclock")
+                                || pkg.equals("com.vivo.alarmclock")
+                                || pkg.contains("droom.sleepifucan")) {
+                            autoDetected.add(pkg);
+                        }
+                    }
+
+                    if (!autoDetected.isEmpty()) {
+                        Set<String> existing = customBlacklistPackages(context);
+                        existing.addAll(autoDetected);
+                        saveCustomBlacklistPackages(context, existing);
+                        markCategoryAutoBlacklistApplied(context);
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                if (onComplete != null) {
+                    new Handler(Looper.getMainLooper()).post(onComplete);
+                }
+            }
+        }).start();
     }
 }
 
