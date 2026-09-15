@@ -43,6 +43,7 @@ import android.view.animation.Interpolator;
 import android.view.animation.PathInterpolator;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -53,6 +54,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.TimePicker;
 import android.widget.Toast;
 
 import java.io.File;
@@ -62,6 +64,7 @@ import java.io.FileOutputStream;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 public class ControlActivity extends Activity {
     private static final String STATE_SELECTED_TAB = "selected_tab";
@@ -107,6 +110,8 @@ public class ControlActivity extends Activity {
     private LinearLayout tabAdjacentContent;
     private TextView touchBoxSummary;
     private TextView effectProfilerSummary;
+    private Runnable customBlacklistRefreshRunnable;
+    private boolean customBlacklistExpanded = false;
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
     private int pendingUnlockEffect = -1;
     private boolean updatingServiceSwitch;
@@ -205,6 +210,14 @@ public class ControlActivity extends Activity {
         updateAccessibilityStatus();
         updateTouchBoxSummary();
         updateEffectProfilerSummary();
+        OverlayPrefs.autoScanAndBlacklistCategoriesIfNeeded(this, new Runnable() {
+            @Override
+            public void run() {
+                if (customBlacklistRefreshRunnable != null) {
+                    customBlacklistRefreshRunnable.run();
+                }
+            }
+        });
     }
 
     @Override
@@ -490,6 +503,7 @@ public class ControlActivity extends Activity {
             page.addView(chargingDoodleControls());
         } else {
             page.addView(effectSelector());
+            page.addView(customBlacklistControls());
             page.addView(lockscreenTouchControls());
             page.addView(lockscreenDebugMenu());
         }
@@ -1203,8 +1217,8 @@ public class ControlActivity extends Activity {
                 TimePickerDialog dialog = new TimePickerDialog(ControlActivity.this,
                         new TimePickerDialog.OnTimeSetListener() {
                             @Override
-                            public void onTimeSet(android.widget.TimePicker timePicker,
-                                    int hourOfDay, int minute) {
+                            public void onTimeSet(TimePicker timePicker,
+                                                  int hourOfDay, int minute) {
                                 int value = hourOfDay * 60 + minute;
                                 prefs.edit().putInt(key, value).apply();
                                 updateTimeValueButton(button, caption, value);
@@ -2914,6 +2928,193 @@ public class ControlActivity extends Activity {
         styleInsetPanel(section);
         section.addView(toggle("Rolling battery percent", OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
         return section;
+    }
+
+    private View customBlacklistControls() {
+        final LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        section.setLayoutParams(params);
+        styleCard(section);
+
+        section.addView(sectionTitle("App Blacklist"));
+        section.addView(infoText("Lockscreen effects will automatically hide when any of these apps are active on screen."));
+
+        // Clickable Summary Header showing count
+        final LinearLayout dropdownHeader = new LinearLayout(this);
+        dropdownHeader.setOrientation(LinearLayout.HORIZONTAL);
+        dropdownHeader.setGravity(Gravity.CENTER_VERTICAL);
+        dropdownHeader.setPadding(dp(12), dp(10), dp(12), dp(10));
+        dropdownHeader.setBackground(controlRowBackground(false));
+        dropdownHeader.setClickable(true);
+        dropdownHeader.setFocusable(true);
+
+        final TextView countSummaryText = new TextView(this);
+        countSummaryText.setTextColor(COLOR_TEXT);
+        countSummaryText.setTextSize(14f);
+        countSummaryText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        dropdownHeader.addView(countSummaryText, summaryParams);
+
+        final TextView arrowText = new TextView(this);
+        arrowText.setTextColor(COLOR_ACCENT_DEEP);
+        arrowText.setTextSize(14f);
+        arrowText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        dropdownHeader.addView(arrowText);
+
+        section.addView(dropdownHeader);
+
+        // Collapsible Dropdown List
+        final LinearLayout packageList = new LinearLayout(this);
+        packageList.setOrientation(LinearLayout.VERTICAL);
+        packageList.setPadding(0, dp(6), 0, dp(6));
+        packageList.setVisibility(customBlacklistExpanded ? View.VISIBLE : View.GONE);
+
+        final Runnable refreshList = new Runnable() {
+            @Override
+            public void run() {
+                packageList.removeAllViews();
+                Set<String> packages = OverlayPrefs.customBlacklistPackages(ControlActivity.this);
+                int count = packages == null ? 0 : packages.size();
+
+                countSummaryText.setText(count == 1 ? "1 app blacklisted" : count + " apps blacklisted");
+                arrowText.setText(customBlacklistExpanded ? "▲" : "▼");
+
+                if (packages == null || packages.isEmpty()) {
+                    TextView emptyText = new TextView(ControlActivity.this);
+                    emptyText.setText("No custom blacklisted apps.");
+                    emptyText.setTextColor(COLOR_MUTED);
+                    emptyText.setTextSize(13f);
+                    emptyText.setPadding(dp(12), dp(8), dp(12), dp(8));
+                    packageList.addView(emptyText);
+                } else {
+                    for (final String pkg : packages) {
+                        LinearLayout row = new LinearLayout(ControlActivity.this);
+                        row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setGravity(Gravity.CENTER_VERTICAL);
+                        row.setPadding(dp(12), dp(6), dp(12), dp(6));
+                        row.setBackground(infoBackground());
+                        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT);
+                        rowParams.setMargins(0, 0, 0, dp(4));
+                        row.setLayoutParams(rowParams);
+
+                        TextView pkgText = new TextView(ControlActivity.this);
+                        pkgText.setText(pkg);
+                        pkgText.setTextColor(COLOR_TEXT);
+                        pkgText.setTextSize(13f);
+                        pkgText.setTypeface(Typeface.MONOSPACE);
+                        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                        pkgText.setLayoutParams(textParams);
+
+                        TextView removeBtn = new TextView(ControlActivity.this);
+                        removeBtn.setText("✕");
+                        removeBtn.setTextColor(Color.RED);
+                        removeBtn.setTextSize(15f);
+                        removeBtn.setPadding(dp(12), dp(4), dp(12), dp(4));
+                        removeBtn.setClickable(true);
+                        removeBtn.setFocusable(true);
+                        removeBtn.setOnClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                OverlayPrefs.removeCustomBlacklistPackage(ControlActivity.this, pkg);
+                                run();
+                                Toast.makeText(ControlActivity.this, "Removed " + pkg, Toast.LENGTH_SHORT).show();
+                            }
+                        });
+
+                        row.addView(pkgText);
+                        row.addView(removeBtn);
+                        packageList.addView(row);
+                    }
+                }
+            }
+        };
+
+        dropdownHeader.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                customBlacklistExpanded = !customBlacklistExpanded;
+                setRevealState(packageList, customBlacklistExpanded, true);
+                arrowText.setText(customBlacklistExpanded ? "▲" : "▼");
+            }
+        });
+
+        refreshList.run();
+        customBlacklistRefreshRunnable = refreshList;
+        section.addView(packageList);
+
+        section.addView(button("Select app to blacklist", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(ControlActivity.this, AppPickerActivity.class);
+                startActivity(intent);
+            }
+        }));
+
+        section.addView(outlineButton("Type package name manually", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAddBlacklistDialog(refreshList);
+            }
+        }));
+
+        return section;
+    }
+
+    private void showAddBlacklistDialog(final Runnable onAdded) {
+        final Dialog dialog = new Dialog(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+        root.setBackground(pageBackground());
+
+        TextView title = sectionTitle("Add App to Blacklist");
+        root.addView(title);
+
+        TextView desc = infoText("Enter the package name (e.g. com.spotify.music or com.netflix.mediaclient):");
+        root.addView(desc);
+
+        final EditText input = new EditText(this);
+        input.setHint("com.example.app");
+        input.setTextColor(COLOR_TEXT);
+        input.setHintTextColor(COLOR_MUTED);
+        input.setTextSize(14f);
+        input.setTypeface(Typeface.MONOSPACE);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setBackground(infoBackground());
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        inputParams.setMargins(0, dp(10), 0, dp(14));
+        root.addView(input, inputParams);
+
+        Button addBtn = button("Add to Blacklist", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String pkg = input.getText() == null ? "" : input.getText().toString().trim();
+                if (pkg.isEmpty()) {
+                    Toast.makeText(ControlActivity.this, "Package name cannot be empty", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                OverlayPrefs.addCustomBlacklistPackage(ControlActivity.this, pkg);
+                if (onAdded != null) {
+                    onAdded.run();
+                }
+                Toast.makeText(ControlActivity.this, "Blacklisted " + pkg, Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            }
+        });
+        root.addView(addBtn);
+
+        dialog.setContentView(root, new ViewGroup.LayoutParams(
+                dp(320), ViewGroup.LayoutParams.WRAP_CONTENT));
+        dialog.show();
     }
 
     private View lockscreenTouchControls() {

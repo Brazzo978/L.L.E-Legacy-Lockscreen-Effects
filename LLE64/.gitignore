@@ -3,3 +3,14 @@
 /ports/water-ripple/build/
 /tools/dlopen-probe/build/
 *.log
+
+# Local Development & Gradle files (untracked for clean PRs)
+build.gradle
+settings.gradle
+gradlew
+gradlew.bat
+gradle/
+.gradle/
+.idea/
+*.iml
+run.ps1

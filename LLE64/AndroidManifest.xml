@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
         android:theme="@style/AppTheme"
@@ -83,5 +84,10 @@
             android:turnScreenOn="true"
             android:launchMode="singleTask"
             android:exported="true" />
+        <activity
+            android:name=".AppPickerActivity"
+            android:theme="@style/AppTheme"
+            android:label="Select App to Blacklist"
+            android:exported="false" />
     </application>
 </manifest>
