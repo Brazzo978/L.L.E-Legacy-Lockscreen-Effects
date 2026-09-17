@@ -1,9 +1,7 @@
-# L.L.E / L.L.E 32
+# L.L.E
 
 LLE restores a collection of legacy lockscreen effects on modern Android.
-The ARM32 and ARM64 applications share one project and can be installed
-together. ARM64 is named **L.L.E** (`com.codex.lle64`); the compatibility-only
-ARM32 build is named **L.L.E 32** (`com.codex.lle`).
+The actively supported application is ARM64 **L.L.E** (`com.codex.lle64`).
 
 ## ⚠️ DANGER: DO NOT DISABLE BOOT SAFETY UNLESS THIS DEVICE IS PROVEN STABLE
 
@@ -21,15 +19,14 @@ immediately at boot. **Enabling it completely removes the 120-second recovery
 window. If touch becomes blocked, Safe Mode or ADB may be required to disable
 or uninstall L.L.E. Do not enable it just to skip the wait.**
 
-ARM64 is the actively developed edition. The ARM32 build is retained for
-historical continuity and now receives compatibility and critical bug fixes
-only; new effects and features target ARM64.
+The retired ARM32 product and the complete pre-cleanup repository are preserved
+in `archive/full-unified-1.0.6.5` for historical and reverse-engineering use.
+They are not active products.
 
 ## APK selection
 
 | APK | ABI | Recommended use |
 |---|---|---|
-| `LLE-1.0.4.1-32-bit.apk` | `armeabi-v7a` | Frozen historical compatibility build |
 | `LLE64-1.0.6.5-64-bit.apk` | `arm64-v8a` | Recommended Samsung-free build |
 | `LLE64-1.0.5-64-bit-legacy-vendor.apk` | `arm64-v8a` | Historical final diagnostic build with frozen Samsung engines |
 
@@ -44,33 +41,33 @@ device.
 
 ## Effect availability
 
-| Effect | ARM32 | ARM64 |
-|---|:---:|:---:|
-| S3 None | Not in frozen build | Available |
-| S4 Lens Flare | Available | Available |
-| S3 Water Ripple | Available | Available |
-| S5 Popping Colours | Available | Available |
-| S5 Stone Skipping | Available | Available |
-| Mass Tension | Not in frozen build | Available |
-| S5 Brilliant Ring | Available | Available |
-| N3 Watercolor | Available | Available |
-| N2 Ink in Water / Indigo | Available | Available |
-| N3 Ripple Ink | Not in frozen build | Available |
-| N4 Abstract Tiles | Available | **Beta** |
-| N4 Geometric Mosaic | Available | **Beta** |
-| N5 Colored Droplet | Available | Available |
-| N5 Colored Droplet + Gyro | Available | Available |
-| N5 Sparkling Bubbles | Available | Available |
-| S6 Water Droplet | Not in frozen build | Available |
-| Tab S Blind | Available | Available |
-| Tab S Brilliant Cut | Available | Available |
-| Seasonal / Spring / Summer / Autumn / Winter | Available | Available |
-| Good Lock-inspired Popping / Rectangle / Bouncing | Not in frozen build | Available |
-| LG G1 White Hole / Dewdrop | Not in frozen build | Available |
-| LG G1 Hula Hoop V1 / V2 | Not in frozen build | Available |
-| LG G2 Soda / Particle / Light Particle / Pixelate / Crystal / Vector | Not in frozen build | Available |
-| LG G4 Circle Mosaic | Not in frozen build | Available |
-| Sony Xperia Z1 Blinds / Revolving Glass | Not in frozen build | Available |
+| Effect | ARM64 |
+|---|:---:|
+| S3 None | Available |
+| S4 Lens Flare | Available |
+| S3 Water Ripple | Available |
+| S5 Popping Colours | Available |
+| S5 Stone Skipping | Available |
+| Mass Tension | Available |
+| S5 Brilliant Ring | Available |
+| N3 Watercolor | Available |
+| N2 Ink in Water / Indigo | Available |
+| N3 Ripple Ink | Available |
+| N4 Abstract Tiles | **Beta** |
+| N4 Geometric Mosaic | **Beta** |
+| N5 Colored Droplet | Available |
+| N5 Colored Droplet + Gyro | Available |
+| N5 Sparkling Bubbles | Available |
+| S6 Water Droplet | Available |
+| Tab S Blind | Available |
+| Tab S Brilliant Cut | Available |
+| Seasonal / Spring / Summer / Autumn / Winter | Available |
+| Good Lock-inspired Popping / Rectangle / Bouncing | Available |
+| LG G1 White Hole / Dewdrop | Available |
+| LG G1 Hula Hoop V1 / V2 | Available |
+| LG G2 Soda / Particle / Light Particle / Pixelate / Crystal / Vector | Available |
+| LG G4 Circle Mosaic | Available |
+| Sony Xperia Z1 Blinds / Revolving Glass | Available |
 
 Water Ripple and Watercolor are included as Beta effects. Effects unavailable
 for the running application are automatically hidden.
@@ -88,7 +85,7 @@ On ARM64, the effect picker exposes two Abstract Tiles variants:
 
 ## Start here
 
-Use the current ARM64 release unless the device is genuinely 32-bit-only:
+Use the current ARM64 release on supported devices:
 
 - [Install the official APK manually — illustrated Samsung flow](docs/INSTALL_APK.md)
 - [Install or update from a computer with ADB](docs/INSTALL_ADB.md)
@@ -120,15 +117,6 @@ Open ARM64:
 ```shell
 adb shell am start -n com.codex.lle64/com.codex.lle.ControlActivity
 ```
-
-Historical ARM32 update:
-
-```shell
-adb install --no-incremental -r "LLE-1.0.4.1-32-bit.apk"
-```
-
-Both can remain installed, but their preferences and screenshot caches are
-separate. Enable only one of the LLE/LLE64 accessibility services at a time.
 
 The ARM64 releases use the same package and signing lineage and are
 alternatives, not co-installable editions. Use the Samsung-free APK normally.
@@ -244,7 +232,7 @@ older supported Android versions retain the compatible historical signer.
 Build the actively maintained ARM64 target:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1 -Target Arm64
+powershell -ExecutionPolicy Bypass -File .\LLEUnified\build.ps1
 ```
 
 The ARM64 target is always co-installable as `com.codex.lle64`:

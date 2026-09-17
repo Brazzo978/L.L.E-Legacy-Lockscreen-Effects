@@ -117,14 +117,23 @@ $sdk = if ($env:ANDROID_HOME) {
 } else {
     Join-Path $env:LOCALAPPDATA "Android\Sdk"
 }
-$cachedNdk = Join-Path (Split-Path -Parent $root) "tools-cache\android-ndk-r27d"
-$legacyNdk = Join-Path $root "..\unlock-effects-test\tools\android-ndk-r27d"
-$ndk = if ($env:ANDROID_NDK_HOME) {
+$cachedNdk = Join-Path $root "tools-cache\android-ndk-r27d"
+$installedNdk = Get-ChildItem -LiteralPath (Join-Path $sdk "ndk") -Directory `
+        -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Where-Object {
+            Test-Path -LiteralPath (Join-Path $_.FullName `
+                    "toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android23-clang.cmd")
+        } |
+        Select-Object -First 1
+$ndk = if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_NDK_HOME)) {
     $env:ANDROID_NDK_HOME
 } elseif (Test-Path -LiteralPath $cachedNdk) {
     $cachedNdk
+} elseif ($null -ne $installedNdk) {
+    $installedNdk.FullName
 } else {
-    $legacyNdk
+    throw "Android NDK not found. Set ANDROID_NDK_HOME, install an SDK NDK, or populate $cachedNdk."
 }
 $buildTools = Join-Path $sdk "build-tools\35.0.1"
 $platform = Join-Path $sdk "platforms\android-35\android.jar"
@@ -181,7 +190,6 @@ $nativeStage = Join-Path $out "native"
 $arm64Stage = Join-Path $nativeStage "lib\arm64-v8a"
 $marker = Join-Path $arm64Stage "liblle64marker.so"
 $keystore = Join-Path $root ".keys\debug.keystore"
-$sourceKeystore = Join-Path $root "..\unlock-effects-test\demo-apk\debug.keystore"
 $releaseCertificateSha256 = "5397D6ACE3E9D2F14D8FFD2285E26E9F1B26635589CAC3A3DC95C0DEFF76B8EE"
 $canonicalManifest = Join-Path $root "AndroidManifest.xml"
 $canonicalManifestHashBefore = (Get-FileHash -LiteralPath $canonicalManifest `
@@ -1132,10 +1140,21 @@ if ($ReleaseSigning) {
 } else {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keystore) | Out-Null
     if (-not (Test-Path $keystore)) {
-        if (-not (Test-Path $sourceKeystore)) {
-            throw "Missing compatible debug keystore: $sourceKeystore"
+        $keytool = (Get-Command keytool.exe -ErrorAction SilentlyContinue).Source
+        if ([string]::IsNullOrWhiteSpace($keytool)) {
+            throw "keytool.exe is required to create the local tester keystore."
         }
-        Copy-Item $sourceKeystore $keystore -Force
+        Run $keytool @(
+            "-genkeypair",
+            "-keystore", $keystore,
+            "-storepass", "android",
+            "-alias", "androiddebugkey",
+            "-keypass", "android",
+            "-dname", "CN=Android Debug,O=Android,C=US",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-validity", "10000"
+        )
     }
 }
 

@@ -84,11 +84,12 @@ be encoded as ASCII or UTF-8 without BOM
 Valid content:
 1.0.5.4
 Never put a tester version in this file.
-The currently built development Companion reads:
-https://raw.githubusercontent.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/codex/lle-unified/LLE_VERSION.txt
-Before publishing Companion on Google Play, its production URL should be changed to:
+The active Companion source must read:
 https://raw.githubusercontent.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/main/LLE_VERSION.txt
-Always update the file on the branch actually referenced by the shipped Companion. Do not assume that changing main is sufficient until the Companion has been rebuilt with the main URL.
+Older installed Companion builds still read:
+https://raw.githubusercontent.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/codex/lle-unified/LLE_VERSION.txt
+Mirror the stable version to that archived feed until those builds have aged out.
+Always update the file on every branch referenced by a shipped Companion.
 Mandatory publishing order
 Use this exact order:
 Choose the new four-part version.

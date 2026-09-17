@@ -1,39 +1,17 @@
-/*
-!/.gitignore
-!/AGENTS.md
-!/README.md
-!/.github/
-!/.github/**
-!/assets/
-!/assets/star-history.svg
-!/assets/star-history-dark.svg
+# Generated files and local editor state.
 **/__pycache__/
-!/LLE64/
-!/LLE64/**
-!/LLEUnified/
-!/LLEUnified/**
-!/s3ripplereverse/
-/s3ripplereverse/*
-!/s3ripplereverse/*.md
-!/unlock-effects-test/
+*.log
+.idea/
+.vscode/
 
-/unlock-effects-test/*
-!/unlock-effects-test/demo-apk/
-!/unlock-effects-test/demo-apk/**
-!/unlock-effects-test/charging-touch-test-apk/
-!/unlock-effects-test/charging-touch-test-apk/**
-!/unlock-effects-test/docs/
-!/unlock-effects-test/docs/*.md
-!/unlock-effects-test/docs/*.txt
-!/unlock-effects-test/qmg-dump-apk/
-!/unlock-effects-test/qmg-dump-apk/**
-!/unlock-effects-test/festival-qmg-dump-apk/
-!/unlock-effects-test/festival-qmg-dump-apk/**
-!/unlock-effects-test/resource-apk/
-!/unlock-effects-test/resource-apk/**
+# Android artifacts and local signing material.
+LLEUnified/build/
+LLEUnified/.keys/
+LLEUnified/tools-cache/
+*.apk
+*.aab
+*.idsig
 
-/unlock-effects-test/demo-apk/build/*
-/unlock-effects-test/demo-apk/dist/*
-
-/unlock-effects-test/charging-touch-test-apk/build/*
-!/unlock-effects-test/charging-touch-test-apk/build/LLE-debug.apk
+# Local device QA captures.
+/s23-*.png
+/s23-ui-*.xml

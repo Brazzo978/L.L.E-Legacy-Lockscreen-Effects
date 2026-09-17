@@ -33,12 +33,12 @@ from the official GitHub release and verify the supplied SHA-256 checksum.
 
 Choose the installation method:
 
-- **Recommended:** [install the APK manually](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_APK.md) —
+- **Recommended:** [install the APK manually](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LLEUnified/docs/INSTALL_APK.md) —
   complete illustrated Samsung setup, Play Protect, Accessibility, and
   Restricted Settings flow.
-- **Computer/advanced:** [install or update with ADB](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_ADB.md).
-- **More details:** [complete setup and troubleshooting](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/README.md).
-- **Problems or questions:** [read the L.L.E. FAQ](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/FAQ.md).
+- **Computer/advanced:** [install or update with ADB](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LLEUnified/docs/INSTALL_ADB.md).
+- **More details:** [complete setup and troubleshooting](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LLEUnified/README.md).
+- **Problems or questions:** [read the L.L.E. FAQ](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LLEUnified/docs/FAQ.md).
 - **XDA Thread:**[XDA](https://xdaforums.com/t/app-no-root-l-l-e-legacy-samsung-lockscreen-effects.4794942/)
 
 The first-launch wizard configures Accessibility, battery optimization,
@@ -57,25 +57,22 @@ first time:
 
 The **Allow restricted settings** menu item may not appear until after the first
 blocked activation attempt. The
-[illustrated APK guide](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LLEUnified/docs/INSTALL_APK.md) shows every screen.
+[illustrated APK guide](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LLEUnified/docs/INSTALL_APK.md) shows every screen.
 
 ## Current builds
 
 | Build | ABI | Status |
 |---|---|---|
 | **L.L.E** | `arm64-v8a` | Recommended and actively developed |
-| **L.L.E 32** | `armeabi-v7a` | Historical continuity; critical fixes only |
-
-New features and effects target ARM64. The 32-bit edition remains available for
-older compatible devices but is no longer developed in parallel.
+The retired 32-bit edition and its complete source remain available in the
+`archive/full-unified-1.0.6.5` branch for historical reference. It is not an
+active product and receives no new development.
 
 ## General compatibility
 
 L.L.E. is not limited to Samsung phones. It is designed for Android 6.0 or
 newer and does not require root. The current **L.L.E** build is recommended
-for modern `arm64-v8a` devices; the frozen 32-bit build is retained only for
-older `armeabi-v7a` devices and does not receive the full set of new effects or
-diagnostic features.
+for modern `arm64-v8a` devices. Historical 32-bit artifacts are unsupported.
 
 Exact behaviour can still vary between manufacturers, Android and vendor
 updates, GPUs, lockscreen implementations, and battery-management policies.
@@ -207,4 +204,4 @@ Thank you to everyone who has starred and supported L.L.E.
 ## License
 
 Project-authored source code is available under the
-[PolyForm Noncommercial License 1.0.0](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/codex/lle-unified/LICENSE.md).
+[PolyForm Noncommercial License 1.0.0](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/blob/main/LICENSE.md).

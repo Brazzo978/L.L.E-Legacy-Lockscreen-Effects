@@ -1,15 +1,13 @@
-# LLE Unified working rules
+# LLE ARM64 working rules
 
-- This directory is the only active LLE application source tree.
-- Keep `src`, `res`, `assets`, package name and preference schema shared across
-  ARM32 and ARM64.
-- Put ABI selection in `EffectAvailability`; picker visibility and renderer
-  construction must agree with that registry.
-- ARM32 uses original Samsung engines staged by `build-arm32.ps1`.
-- ARM64 uses reconstructed/validated engines staged by `build-arm64.ps1`.
-- Native code must load lazily when its effect is selected. App startup must not
-  initialize libraries for the other ABI.
-- A saved unavailable effect must fall back to S4 Lens Flare safely.
-- Run both target builds after any shared Java/resource/lifecycle change.
-- Do not edit `../LLE64` or `../unlock-effects-test/charging-touch-test-apk` to
-  implement new behavior; consult them only as frozen references.
+- This directory is the only active L.L.E. application source tree.
+- The supported APK is ARM64 `com.codex.lle64`.
+- Keep ABI and effect availability decisions centralized in
+  `EffectAvailability`; picker visibility and renderer construction must agree.
+- Load native code lazily only when its effect is selected.
+- A saved unavailable effect must fall back safely.
+- Do not add dependencies on deleted legacy trees or archived ARM32 binaries.
+- Do not store signing credentials in the repository. Stable builds require the
+  external release keystore, signing lineage inputs and compatible legacy signer.
+- Run `build.ps1` after Java/resource/lifecycle changes and exercise the
+  affected effect on a real device.

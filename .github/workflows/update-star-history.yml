@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - codex/star-history-graph
+      - main
     paths:
       - .github/scripts/update_star_history.py
       - .github/workflows/update-star-history.yml

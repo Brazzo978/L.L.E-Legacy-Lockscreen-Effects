@@ -1,6 +1,4 @@
 param(
-    [ValidateSet("All", "Arm32", "Arm64")]
-    [string] $Target = "Arm64",
     [switch] $IncludeNote5Probe,
     [switch] $IncludeRippleCoreProbe,
     [switch] $LegacyVendorEffects,
@@ -17,56 +15,36 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if ($Target -ne "Arm64" -and
-        ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
-        $LegacyVendorEffects -or $WatercolorFeedbackMode -ne "Stable")) {
-    throw "ARM64 diagnostic options require -Target Arm64"
-}
 if ($ReleaseSigning -and ($IncludeNote5Probe -or $IncludeRippleCoreProbe -or
         $WatercolorFeedbackMode -ne "Stable")) {
-    throw "Stable release signing does not support probe or experimental ARM64 variants"
+    throw "Stable release signing does not support probe or experimental variants"
 }
 
-function Run-Target([string] $Script, [string[]] $Arguments) {
-    & powershell -ExecutionPolicy Bypass -File $Script @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Script failed with exit code $LASTEXITCODE"
-    }
+$arguments = @("-WatercolorFeedbackMode", $WatercolorFeedbackMode)
+if ($IncludeNote5Probe) {
+    $arguments += "-IncludeNote5Probe"
+}
+if ($IncludeRippleCoreProbe) {
+    $arguments += "-IncludeRippleCoreProbe"
+}
+if ($LegacyVendorEffects) {
+    $arguments += "-LegacyVendorEffects"
+}
+if ($ReleaseSigning) {
+    $arguments += @(
+        "-ReleaseSigning",
+        "-ReleaseKeystorePath", $ReleaseKeystorePath,
+        "-ReleaseKeyAlias", $ReleaseKeyAlias,
+        "-ReleaseLineagePath", $ReleaseLineagePath,
+        "-ReleaseOldKeystorePath", $ReleaseOldKeystorePath,
+        "-ReleaseOldKeyAlias", $ReleaseOldKeyAlias
+    )
 }
 
-if ($Target -eq "All" -or $Target -eq "Arm32") {
-    $arm32Arguments = @()
-    if ($ReleaseSigning) {
-        $arm32Arguments += @("-ReleaseSigning",
-            "-ReleaseKeystorePath", $ReleaseKeystorePath,
-            "-ReleaseKeyAlias", $ReleaseKeyAlias,
-            "-ReleaseLineagePath", $ReleaseLineagePath,
-            "-ReleaseOldKeystorePath", $ReleaseOldKeystorePath,
-            "-ReleaseOldKeyAlias", $ReleaseOldKeyAlias)
-    }
-    Run-Target (Join-Path $root "build-arm32.ps1") $arm32Arguments
+& powershell -NoProfile -ExecutionPolicy Bypass `
+        -File (Join-Path $root "build-arm64.ps1") @arguments
+if ($LASTEXITCODE -ne 0) {
+    throw "ARM64 build failed with exit code $LASTEXITCODE"
 }
 
-if ($Target -eq "All" -or $Target -eq "Arm64") {
-    $arm64Arguments = @("-WatercolorFeedbackMode", $WatercolorFeedbackMode)
-    if ($IncludeNote5Probe) {
-        $arm64Arguments += "-IncludeNote5Probe"
-    }
-    if ($IncludeRippleCoreProbe) {
-        $arm64Arguments += "-IncludeRippleCoreProbe"
-    }
-    if ($LegacyVendorEffects) {
-        $arm64Arguments += "-LegacyVendorEffects"
-    }
-    if ($ReleaseSigning) {
-        $arm64Arguments += @("-ReleaseSigning",
-            "-ReleaseKeystorePath", $ReleaseKeystorePath,
-            "-ReleaseKeyAlias", $ReleaseKeyAlias,
-            "-ReleaseLineagePath", $ReleaseLineagePath,
-            "-ReleaseOldKeystorePath", $ReleaseOldKeystorePath,
-            "-ReleaseOldKeyAlias", $ReleaseOldKeyAlias)
-    }
-    Run-Target (Join-Path $root "build-arm64.ps1") $arm64Arguments
-}
-
-Write-Host "Unified LLE build complete for target: $Target"
+Write-Host "L.L.E ARM64 build complete."

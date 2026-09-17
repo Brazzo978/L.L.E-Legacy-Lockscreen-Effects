@@ -35,12 +35,12 @@ $outputHashes = @{
             "821B11D1EA2E1853D0DE0F547F9FE224100AAA53A500F69441765BB089615CCA"
 }
 
-$arm32PatchedHash =
+$transparentShaderSourceHash =
         "2A6085607D3C7748365DDBEBCD37505FD3F13582EC1E5284E853E96FF8F66148"
-$arm32ShaderHash =
+$transparentShaderHash =
         "D4DD042CA07D1D68595DB0F7B67576ABF0EE61CD404245A5B96D20256BA9698F"
-$arm32ShaderOffset = 0x5c714
-$arm32ShaderLength = 2785
+$transparentShaderOffset = 0x5c714
+$transparentShaderLength = 2785
 $colourShaderOffset = 0x65268
 $colourShaderCapacity = 10952
 
@@ -204,19 +204,22 @@ if (-not (Test-Path -LiteralPath $stagedFull)) {
 }
 
 $lleRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$arm32PatchedDroplet = Join-Path $lleRoot `
-        "reference\arm32-original\native-libs\armeabi-v7a\libColourDropletEffect.so"
-Assert-Sha256 $arm32PatchedDroplet $arm32PatchedHash `
-        "verified ARM32 patched Colour Droplet source"
+$transparentShaderSource = Join-Path $lleRoot `
+        "vendor\native-patches\reference\colour-droplet-transparent-source.so"
+Assert-Sha256 $transparentShaderSource $transparentShaderSourceHash `
+        "verified transparent Colour Droplet shader source"
 
-$arm32Bytes = [IO.File]::ReadAllBytes($arm32PatchedDroplet)
-if ($arm32ShaderOffset + $arm32ShaderLength -ge $arm32Bytes.Length -or
-        $arm32Bytes[$arm32ShaderOffset + $arm32ShaderLength] -ne 0) {
-    throw "ARM32 transparent shader length/terminator changed"
+$transparentShaderSourceBytes = [IO.File]::ReadAllBytes($transparentShaderSource)
+if ($transparentShaderOffset + $transparentShaderLength -ge
+        $transparentShaderSourceBytes.Length -or
+        $transparentShaderSourceBytes[
+                $transparentShaderOffset + $transparentShaderLength] -ne 0) {
+    throw "Transparent Colour Droplet shader length/terminator changed"
 }
-$shaderBytes = Get-ByteRange $arm32Bytes $arm32ShaderOffset $arm32ShaderLength
-if ((Get-ByteArraySha256 $shaderBytes) -ne $arm32ShaderHash) {
-    throw "ARM32 transparent shader content changed"
+$shaderBytes = Get-ByteRange $transparentShaderSourceBytes `
+        $transparentShaderOffset $transparentShaderLength
+if ((Get-ByteArraySha256 $shaderBytes) -ne $transparentShaderHash) {
+    throw "Transparent Colour Droplet shader content changed"
 }
 $shaderText = [Text.Encoding]::ASCII.GetString($shaderBytes)
 foreach ($required in @(
@@ -227,7 +230,7 @@ foreach ($required in @(
     "gl_FragColor = vec4(bg_color.rgb + keep, 1.0);"
 )) {
     if (-not $shaderText.Contains($required)) {
-        throw "ARM32 transparent shader is missing: $required"
+        throw "Transparent Colour Droplet shader is missing: $required"
     }
 }
 if ($shaderBytes.Length -ge $colourShaderCapacity) {
@@ -285,7 +288,7 @@ foreach ($name in $inputHashes.Keys) {
 
 $colourPatchedBytes = [IO.File]::ReadAllBytes($colourPath)
 $patchedShader = Get-ByteRange $colourPatchedBytes $colourShaderOffset $shaderBytes.Length
-if ((Get-ByteArraySha256 $patchedShader) -ne $arm32ShaderHash -or
+if ((Get-ByteArraySha256 $patchedShader) -ne $transparentShaderHash -or
         $colourPatchedBytes[$colourShaderOffset + $shaderBytes.Length] -ne 0) {
     throw "ARM64 Colour Droplet shader patch verification failed"
 }
