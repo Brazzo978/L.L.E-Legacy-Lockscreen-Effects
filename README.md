@@ -183,6 +183,10 @@ sent anywhere automatically.
   [SamsungEffectTester project](https://github.com/erikiorai/SamsungEffectTester).
 - [Curtis (@SparklingWaterBurns)](https://github.com/SparklingWaterBurns) — contributed the
   [Material You icon and interface proposal](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/41).
+- [@Longbatman09](https://github.com/Longbatman09) — proposed the installed-app
+  picker workflow in
+  [PR #46](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/pull/46);
+  its safe picker UX was ported onto L.L.E.'s existing runtime suppression engine.
 
 ## Star history
 

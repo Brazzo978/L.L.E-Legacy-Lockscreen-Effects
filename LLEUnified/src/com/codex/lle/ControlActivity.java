@@ -6608,6 +6608,14 @@ public class ControlActivity extends Activity {
         section.addView(infoText("Hide L.L.E. effects, doodles, and touch input when a "
                 + "vendor-specific app appears over the lockscreen. Enter only the package "
                 + "name, for example com.example.app. Built-in safety rules cannot be removed."));
+        section.addView(outlineButton("Choose installed apps", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startActivity(new Intent(ControlActivity.this, AppPickerActivity.class));
+            }
+        }));
+        section.addView(infoText("The picker shows launchable apps visible to Android. "
+                + "Use the package field below for a vendor component that is not listed."));
 
         final EditText packageInput = new EditText(this);
         packageInput.setHint("com.example.app");
@@ -6719,11 +6727,8 @@ public class ControlActivity extends Activity {
     }
 
     private boolean isProtectedCustomBlacklistPackage(String packageName) {
-        return "android".equals(packageName)
-                || "com.android.systemui".equals(packageName)
-                || "com.samsung.android.app.aodservice".equals(packageName)
-                || getPackageName().equals(packageName)
-                || packageName.startsWith("com.codex.lle");
+        return RuntimeBlacklistPolicy.isCoreProtectedPackage(
+                packageName, getPackageName());
     }
 
     private View batteryDebugControls() {
