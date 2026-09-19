@@ -413,7 +413,8 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
 
     private final class GlassRenderer implements GLSurfaceView.Renderer {
         private static final String VERTEX =
-                "attribute vec3 aPosition;attribute vec2 aUv;varying vec2 vUv;"
+                "precision mediump float;attribute vec3 aPosition;attribute vec2 aUv;"
+                + "varying vec2 vUv;"
                 + "uniform float uAngle;uniform float uFlat;uniform float uScale;"
                 + "void main(){vUv=aUv;if(uFlat>.5){gl_Position=vec4(aPosition.xy,0.,1.);return;}"
                 + "float c=cos(uAngle);float s=sin(uAngle);"
@@ -492,7 +493,7 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
         @Override public void onSurfaceChanged(GL10 gl, int width, int height) {
             GLES20.glViewport(0, 0, Math.max(1, width), Math.max(1, height));
             rebuildCardGeometry(Math.max(1, width), Math.max(1, height));
-            uploadIfNeeded();
+            if (program != 0) uploadIfNeeded();
         }
 
         @Override public void onDrawFrame(GL10 gl) {
@@ -527,6 +528,9 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
         }
 
         private void uploadIfNeeded() {
+            // onSurfaceChanged can still be delivered after a shader/link failure. Never
+            // promote a failed renderer back to resources-ready just because textures exist.
+            if (program == 0) return;
             boolean changed = false;
             synchronized (sourceLock) {
                 if (uploadedPrimarySerial != primarySerial) {

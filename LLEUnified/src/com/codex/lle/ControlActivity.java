@@ -99,14 +99,20 @@ public class ControlActivity extends Activity {
     private static final String STATE_PENDING_LOCK_WALLPAPER_PREVIEW =
             "pending_lock_wallpaper_preview";
     private static final String STATE_EFFECT_FILTER = "effect_filter";
+    private static final String STATE_ADVANCED_PAGE = "advanced_page";
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND = 4917;
     private static final int REQUEST_SETUP_WIZARD = 4918;
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
     private static final int REQUEST_LOCK_WALLPAPER_ACCESS = 4920;
     private static final int REQUEST_READ_WALLPAPER_STORAGE = 4921;
     private static final int REQUEST_DOODLE_POSITION = 4922;
+    private static final int REQUEST_IMPORTED_LG_UNDERLAY = 4923;
+    private static final int REQUEST_IMPORTED_LG_UNDERLAY_CROP = 4924;
     private static final int TAB_LOCKSCREEN_EFFECT = 0;
     private static final int TAB_CHARGING_DOODLE = 1;
+    private static final int TAB_ADVANCED = 2;
+    private static final int TAB_EASTER_EGG = 3;
+    private static final int EASTER_EGG_SWIPE_COUNT = 17;
     private static final String PROJECT_GITHUB_URL =
             "https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects";
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
@@ -141,6 +147,15 @@ public class ControlActivity extends Activity {
     private static final int EFFECT_FILTER_LG = 3;
     private static final int EFFECT_FILTER_SONY = 4;
     private static final int EFFECT_FILTER_SEASONAL = 5;
+    private static final int ADVANCED_PAGE_INDEX = 0;
+    private static final int ADVANCED_PAGE_SETUP = 1;
+    private static final int ADVANCED_PAGE_APPS = 2;
+    private static final int ADVANCED_PAGE_BATTERY = 3;
+    private static final int ADVANCED_PAGE_DISPLAY = 4;
+    private static final int ADVANCED_PAGE_COMPATIBILITY = 5;
+    private static final int ADVANCED_PAGE_TESTER_TOOLS = 6;
+    private static final int ADVANCED_PAGE_DIAGNOSTICS = 7;
+    private static final int ADVANCED_PAGE_DANGEROUS = 8;
 
     /**
      * Preview one fully developed stock Samsung ink layer over white.  At w=1,
@@ -171,12 +186,16 @@ public class ControlActivity extends Activity {
     private Switch serviceSwitch;
     private Button chargingDoodleTabButton;
     private Button lockscreenEffectTabButton;
+    private Button advancedTabButton;
+    private Button easterEggTabButton;
     private FrameLayout tabPager;
     private LinearLayout tabContent;
     private LinearLayout tabAdjacentContent;
     private TextView touchBoxSummary;
     private TextView effectProfilerSummary;
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
+    private int advancedEdgeSwipeCount;
+    private boolean easterEggUnlocked;
     private int pendingUnlockEffect = -1;
     private int pendingAbstractTilesLineMode = -1;
     private int pendingImportedBackgroundEffect = -1;
@@ -194,8 +213,7 @@ public class ControlActivity extends Activity {
     private int tabAdjacentDirection;
     private boolean tabAnimationRunning;
     private boolean doodleAdvancedExpanded;
-    private boolean doodleDebugExpanded;
-    private boolean lockscreenDebugExpanded;
+    private int advancedPage = ADVANCED_PAGE_INDEX;
     private boolean rendererWallpaperExpanded;
     private boolean touchBoxExpanded;
     private boolean randomPoolEditMode;
@@ -223,6 +241,7 @@ public class ControlActivity extends Activity {
         Log.i("LLE64", "native baseline abi=" + Lle64Abi.verify());
         configureGraceWindow();
         prefs = OverlayPrefs.get(this);
+        easterEggUnlocked = prefs.getBoolean(OverlayPrefs.EASTER_EGG_UNLOCKED, false);
         OverlayPrefs.migrateExperimentalNativeRefreshPrefsIfNeeded(this);
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this);
         ensureTouchAreaEnabled();
@@ -240,6 +259,8 @@ public class ControlActivity extends Activity {
                     STATE_PENDING_LOCK_WALLPAPER_PREVIEW, false);
             effectFilter = normalizeEffectFilter(savedInstanceState.getInt(
                     STATE_EFFECT_FILTER, EFFECT_FILTER_ALL));
+            advancedPage = savedInstanceState.getInt(
+                    STATE_ADVANCED_PAGE, ADVANCED_PAGE_INDEX);
         }
 
         FrameLayout scene = new FrameLayout(this);
@@ -310,7 +331,24 @@ public class ControlActivity extends Activity {
         outState.putBoolean(STATE_PENDING_LOCK_WALLPAPER_PREVIEW,
                 pendingLockWallpaperPreview);
         outState.putInt(STATE_EFFECT_FILTER, effectFilter);
+        outState.putInt(STATE_ADVANCED_PAGE, advancedPage);
         super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (selectedTab == TAB_EASTER_EGG) {
+            advancedEdgeSwipeCount = 0;
+            showTab(TAB_ADVANCED, true, -1);
+            return;
+        }
+        if (selectedTab == TAB_ADVANCED
+                && advancedPage != ADVANCED_PAGE_INDEX) {
+            advancedPage = ADVANCED_PAGE_INDEX;
+            showTab(selectedTab, false, 0);
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
@@ -324,8 +362,8 @@ public class ControlActivity extends Activity {
             pendingLockWallpaperPreview = false;
             showCurrentLockscreenWallpaper();
         }
-        if (selectedTab == TAB_LOCKSCREEN_EFFECT && tabContent != null) {
-            showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+        if (tabContent != null) {
+            showTab(selectedTab, false, 0);
         }
     }
 
@@ -341,7 +379,7 @@ public class ControlActivity extends Activity {
             return;
         }
         if (requestCode == REQUEST_SETUP_WIZARD) {
-            showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            showTab(TAB_ADVANCED, false, 0);
             return;
         }
         if (requestCode == REQUEST_DOODLE_POSITION) {
@@ -353,6 +391,54 @@ public class ControlActivity extends Activity {
                 SetupWizardActivity.rememberWallpaperMode(
                         this, SetupWizardActivity.MODE_CACHE_ONLY);
                 showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            }
+            return;
+        }
+        if (requestCode == REQUEST_IMPORTED_LG_UNDERLAY_CROP) {
+            if (resultCode == RESULT_OK) {
+                prefs.edit().putBoolean(
+                        OverlayPrefs.LG_CUSTOM_UNDERLAY_ENABLED, true).apply();
+                ChargingAccessibilityService.reloadLgLastScreenCache();
+                showTab(TAB_LOCKSCREEN_EFFECT, false, 0);
+            }
+            return;
+        }
+        if (requestCode == REQUEST_IMPORTED_LG_UNDERLAY) {
+            final int effect = pendingImportedBackgroundEffect;
+            final String profile = FoldDisplayTarget.normalizeProfile(
+                    pendingImportedBackgroundProfile);
+            final int targetWidth = pendingImportedBackgroundWidth;
+            final int targetHeight = pendingImportedBackgroundHeight;
+            pendingImportedBackgroundEffect = -1;
+            pendingImportedBackgroundProfile = "";
+            pendingImportedBackgroundWidth = 0;
+            pendingImportedBackgroundHeight = 0;
+            final Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            if (uri == null || effect < 0 || targetWidth <= 0 || targetHeight <= 0) {
+                return;
+            }
+            try {
+                int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(uri, flags);
+            } catch (Throwable ignored) {
+            }
+            Intent crop = new Intent(this, WallpaperCropActivity.class);
+            crop.setData(uri);
+            crop.putExtra(WallpaperCropActivity.EXTRA_SOURCE_URI, uri.toString());
+            crop.putExtra(WallpaperCropActivity.EXTRA_MODE,
+                    WallpaperCropActivity.MODE_LG_UNDERLAY_ONLY);
+            crop.putExtra(WallpaperCropActivity.EXTRA_PROFILE, profile);
+            crop.putExtra(WallpaperCropActivity.EXTRA_EFFECT, effect);
+            crop.putExtra(WallpaperCropActivity.EXTRA_TARGET_WIDTH, targetWidth);
+            crop.putExtra(WallpaperCropActivity.EXTRA_TARGET_HEIGHT, targetHeight);
+            crop.putExtra(WallpaperCropActivity.EXTRA_REQUIRE_PRECISE_ACK, true);
+            crop.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivityForResult(crop, REQUEST_IMPORTED_LG_UNDERLAY_CROP);
+            } catch (RuntimeException error) {
+                Toast.makeText(this, "Wallpaper editor is unavailable",
+                        Toast.LENGTH_LONG).show();
             }
             return;
         }
@@ -652,21 +738,43 @@ public class ControlActivity extends Activity {
         tabsParams.setMargins(dp(14), dp(12), dp(14), dp(10));
         tabs.setLayoutParams(tabsParams);
 
-        lockscreenEffectTabButton = tabButton("LOCKSCREEN", TAB_LOCKSCREEN_EFFECT);
-        chargingDoodleTabButton = tabButton("CHARGING", TAB_CHARGING_DOODLE);
+        lockscreenEffectTabButton = tabButton("EFFECTS", TAB_LOCKSCREEN_EFFECT);
+        chargingDoodleTabButton = tabButton("DOODLE", TAB_CHARGING_DOODLE);
+        advancedTabButton = tabButton("ADV", TAB_ADVANCED);
+        easterEggTabButton = tabButton("", TAB_EASTER_EGG);
+        android.graphics.drawable.Drawable eggIcon = getResources().getDrawable(
+                R.drawable.ic_easter_egg);
+        eggIcon.setBounds(0, 0, dp(22), dp(22));
+        easterEggTabButton.setCompoundDrawables(eggIcon, null, null, null);
+        easterEggTabButton.setContentDescription("Easter egg");
 
         LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                1f);
+                4f);
         tabs.addView(lockscreenEffectTabButton, firstParams);
 
         LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                1f);
+                4f);
         secondParams.setMargins(dp(4), 0, 0, 0);
         tabs.addView(chargingDoodleTabButton, secondParams);
+
+        LinearLayout.LayoutParams thirdParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                2f);
+        thirdParams.setMargins(dp(4), 0, 0, 0);
+        tabs.addView(advancedTabButton, thirdParams);
+
+        LinearLayout.LayoutParams fourthParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f);
+        fourthParams.setMargins(dp(4), 0, 0, 0);
+        tabs.addView(easterEggTabButton, fourthParams);
+        easterEggTabButton.setVisibility(easterEggUnlocked ? View.VISIBLE : View.GONE);
         return tabs;
     }
 
@@ -677,6 +785,8 @@ public class ControlActivity extends Activity {
         button.setAllCaps(false);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
         button.setPadding(dp(6), 0, dp(6), 0);
         button.setGravity(Gravity.CENTER);
         button.setOnClickListener(new View.OnClickListener() {
@@ -696,6 +806,9 @@ public class ControlActivity extends Activity {
 
     private void showTab(final int tab, boolean animate, final int direction) {
         final int targetTab = normalizeTab(tab);
+        if (targetTab < TAB_ADVANCED) {
+            advancedEdgeSwipeCount = 0;
+        }
         if (tabContent == null) {
             selectedTab = targetTab;
             updateTabStyles();
@@ -725,7 +838,13 @@ public class ControlActivity extends Activity {
     }
 
     private int normalizeTab(int tab) {
-        return tab == TAB_CHARGING_DOODLE ? TAB_CHARGING_DOODLE : TAB_LOCKSCREEN_EFFECT;
+        if (tab == TAB_EASTER_EGG && easterEggUnlocked) {
+            return TAB_EASTER_EGG;
+        }
+        if (tab == TAB_CHARGING_DOODLE) {
+            return TAB_CHARGING_DOODLE;
+        }
+        return tab == TAB_ADVANCED ? TAB_ADVANCED : TAB_LOCKSCREEN_EFFECT;
     }
 
     private LinearLayout createTabPage() {
@@ -756,15 +875,63 @@ public class ControlActivity extends Activity {
             return;
         }
         page.removeAllViews();
-        if (tab == TAB_CHARGING_DOODLE) {
+        if (tab == TAB_EASTER_EGG) {
+            page.addView(easterEggPage());
+            page.addView(infoFooter());
+        } else if (tab == TAB_CHARGING_DOODLE) {
             page.addView(chargingDoodleControls());
+            page.addView(infoFooter());
+        } else if (tab == TAB_ADVANCED) {
+            page.addView(advancedSettingsPage());
             page.addView(infoFooter());
         } else {
             page.addView(effectSelector());
             page.addView(lockscreenTouchControls());
-            page.addView(lockscreenDebugMenu());
         }
         forceSansSerif(page);
+    }
+
+    private View easterEggPage() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        section.setLayoutParams(params);
+        styleCard(section);
+        section.addView(sectionLabel("Easter egg"));
+        section.addView(sectionTitle("May the customization be with you"));
+        section.addView(infoText("You found the hidden customization menu."));
+        section.addView(infoText("This section is currently under development and is not "
+                + "finished yet. Its features and layout may change in future updates."));
+        section.addView(outlineButton("REMOVE EASTER EGG", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                removeEasterEgg();
+            }
+        }));
+        return section;
+    }
+
+    private void unlockEasterEgg() {
+        advancedEdgeSwipeCount = 0;
+        easterEggUnlocked = true;
+        prefs.edit().putBoolean(OverlayPrefs.EASTER_EGG_UNLOCKED, true).apply();
+        if (easterEggTabButton != null) {
+            easterEggTabButton.setVisibility(View.VISIBLE);
+        }
+        showTab(TAB_EASTER_EGG, false, 1);
+    }
+
+    private void removeEasterEgg() {
+        advancedEdgeSwipeCount = 0;
+        easterEggUnlocked = false;
+        prefs.edit().putBoolean(OverlayPrefs.EASTER_EGG_UNLOCKED, false).apply();
+        if (easterEggTabButton != null) {
+            easterEggTabButton.setVisibility(View.GONE);
+        }
+        showTab(TAB_ADVANCED, true, -1);
     }
 
     private float tabPagerWidth() {
@@ -856,6 +1023,9 @@ public class ControlActivity extends Activity {
             return;
         }
         final int target = normalizeTab(targetTab);
+        if (target < TAB_ADVANCED) {
+            advancedEdgeSwipeCount = 0;
+        }
         final int tabDirection = direction == 0 ? 1 : direction;
         final float width = tabPagerWidth();
         final LinearLayout adjacent = prepareAdjacentTabContent(target, tabDirection);
@@ -1100,11 +1270,11 @@ public class ControlActivity extends Activity {
     }
 
     private int swipeTargetForDx(float dx) {
-        if (dx < 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
-            return TAB_CHARGING_DOODLE;
+        if (dx < 0f && selectedTab < TAB_ADVANCED) {
+            return selectedTab + 1;
         }
-        if (dx > 0f && selectedTab == TAB_CHARGING_DOODLE) {
-            return TAB_LOCKSCREEN_EFFECT;
+        if (dx > 0f && selectedTab > TAB_LOCKSCREEN_EFFECT) {
+            return selectedTab - 1;
         }
         return -1;
     }
@@ -1127,12 +1297,30 @@ public class ControlActivity extends Activity {
         if (absX < dp(TAB_SWIPE_MIN_DISTANCE_DP) || absX < absY * TAB_SWIPE_AXIS_RATIO) {
             return false;
         }
-        if (dx < 0f && selectedTab == TAB_LOCKSCREEN_EFFECT) {
-            showTab(TAB_CHARGING_DOODLE, true, 1);
+        if (dx < 0f && selectedTab == TAB_ADVANCED) {
+            if (easterEggUnlocked) {
+                showTab(TAB_EASTER_EGG, true, 1);
+                return true;
+            }
+            advancedEdgeSwipeCount++;
+            if (advancedEdgeSwipeCount >= EASTER_EGG_SWIPE_COUNT) {
+                unlockEasterEgg();
+            }
             return true;
         }
-        if (dx > 0f && selectedTab == TAB_CHARGING_DOODLE) {
-            showTab(TAB_LOCKSCREEN_EFFECT, true, -1);
+        if (dx < 0f && selectedTab < TAB_ADVANCED) {
+            advancedEdgeSwipeCount = 0;
+            showTab(selectedTab + 1, true, 1);
+            return true;
+        }
+        if (dx > 0f && selectedTab == TAB_EASTER_EGG) {
+            advancedEdgeSwipeCount = 0;
+            showTab(TAB_ADVANCED, true, -1);
+            return true;
+        }
+        if (dx > 0f && selectedTab > TAB_LOCKSCREEN_EFFECT) {
+            advancedEdgeSwipeCount = 0;
+            showTab(selectedTab - 1, true, -1);
             return true;
         }
         return false;
@@ -1168,6 +1356,8 @@ public class ControlActivity extends Activity {
     private void updateTabStyles() {
         styleTabButton(chargingDoodleTabButton, selectedTab == TAB_CHARGING_DOODLE);
         styleTabButton(lockscreenEffectTabButton, selectedTab == TAB_LOCKSCREEN_EFFECT);
+        styleTabButton(advancedTabButton, selectedTab == TAB_ADVANCED);
+        styleTabButton(easterEggTabButton, selectedTab == TAB_EASTER_EGG);
     }
 
     private View infoFooter() {
@@ -1212,9 +1402,14 @@ public class ControlActivity extends Activity {
                 : solidDrawable(Color.TRANSPARENT, dp(17), Color.TRANSPARENT, 0));
         button.setBackground(states);
         button.setTextColor(selected ? COLOR_ACCENT_DEEP : COLOR_MUTED);
+        if (button == easterEggTabButton && button.getCompoundDrawables()[0] != null) {
+            button.getCompoundDrawables()[0].setTint(
+                    selected ? COLOR_ACCENT_DEEP : COLOR_MUTED);
+        }
         button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
         button.setSelected(selected);
-        button.setContentDescription(button.getText() + " tab"
+        String tabName = button == easterEggTabButton ? "Easter egg" : button.getText().toString();
+        button.setContentDescription(tabName + " tab"
                 + (selected ? ", selected" : ""));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(selected ? dp(3) : 0f);
@@ -1246,6 +1441,18 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private void styleWallpaperSourcePanel(LinearLayout section) {
+        section.setPadding(dp(14), dp(12), dp(14), dp(14));
+        section.setBackground(solidDrawable(
+                Color.rgb(248, 251, 252),
+                dp(18),
+                Color.rgb(218, 229, 232),
+                dp(1)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            section.setElevation(0f);
+        }
+    }
+
     private TextView sectionTitle(String text) {
         TextView label = new TextView(this);
         label.setText(text);
@@ -1264,6 +1471,16 @@ public class ControlActivity extends Activity {
         label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         label.setAllCaps(true);
         label.setPadding(0, dp(14), 0, dp(6));
+        return label;
+    }
+
+    private TextView subsectionTitle(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(COLOR_TEXT);
+        label.setTextSize(19f);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setPadding(dp(4), dp(4), 0, dp(10));
         return label;
     }
 
@@ -1639,7 +1856,6 @@ public class ControlActivity extends Activity {
         root.addView(positionControls());
         root.addView(doodleAodControls());
         root.addView(doodleAdvancedMenu());
-        root.addView(doodleDebugMenu());
         return root;
     }
 
@@ -1651,72 +1867,15 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(12));
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(sectionTitle("Setup & permissions"));
-        String mode = SetupWizardActivity.selectedWallpaperMode(this);
-        String source = SetupWizardActivity.MODE_SET_LOCK_AND_CACHE.equals(mode)
-                ? "user wallpaper (lockscreen + fixed cache, Beta)"
-                : SetupWizardActivity.MODE_CACHE_ONLY.equals(mode)
-                ? "current/imported exact wallpaper (Beta)" : "automatic screenshot";
-        section.addView(infoText("Accessibility: "
-                + (isChargingAccessibilityEnabled() ? "enabled" : "not enabled")
-                + ". " + batteryOptimizationStatus()
-                + " Background source: " + source + "."));
-        section.addView(outlineButton("Run setup wizard", new View.OnClickListener() {
+        section.addView(outlineButton("Re-run setup wizard", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 startActivityForResult(SetupWizardActivity.createLaunchIntent(
                         ControlActivity.this, true), REQUEST_SETUP_WIZARD);
             }
         }));
-        section.addView(outlineButton("Change background source", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivityForResult(SetupWizardActivity.createWallpaperLaunchIntent(
-                        ControlActivity.this), REQUEST_SETUP_WIZARD);
-            }
-        }));
-        section.addView(outlineButton("Show lockscreen wallpaper", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                requestLockscreenWallpaperPreview();
-            }
-        }));
-        section.addView(outlineButton("Show lockscreen cache", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showEffectBackgroundScreenshot();
-            }
-        }));
-        section.addView(outlineButton("Show Last screen cache", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showLgLastScreenCache();
-            }
-        }));
-        if (EffectAvailability.is64BitProcess()) {
-            section.addView(outlineButton("Create debug report", new View.OnClickListener() {
-                @Override
-                public void onClick(final View view) {
-                    createAndShareDebugReport(view, false);
-                }
-            }));
-            section.addView(infoText("Creates a text-only support report and opens the "
-                    + "share sheet. Wallpapers and images are never included."));
-            section.addView(outlineButton("Create advanced log (unredacted)",
-                    new View.OnClickListener() {
-                @Override
-                public void onClick(final View view) {
-                    confirmAdvancedDebugReport(view);
-                }
-            }));
-            TextView advancedLogWarning = infoText("DANGER: the advanced log is not "
-                    + "privacy-filtered. It may expose notification/accessibility text, "
-                    + "app names, filenames, paths and exact touch coordinates. Share it "
-                    + "only with a trusted recipient.");
-            advancedLogWarning.setTextColor(COLOR_ERROR);
-            advancedLogWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            section.addView(advancedLogWarning);
-        }
+        section.addView(infoText(
+                "Review the guided setup, required permissions and system access."));
         return section;
     }
 
@@ -2075,31 +2234,6 @@ public class ControlActivity extends Activity {
         sliderParams.setMargins(0, dp(2), 0, 0);
         row.addView(slider, sliderParams);
         return row;
-    }
-
-    private View doodleDebugMenu() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(8));
-        section.setLayoutParams(params);
-        styleCard(section);
-
-        section.addView(collapsibleHeader("Debug", doodleDebugExpanded,
-                new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                doodleDebugExpanded = !doodleDebugExpanded;
-                showTab(selectedTab);
-            }
-        }));
-
-        if (doodleDebugExpanded) {
-            section.addView(doodleDebugControls());
-        }
-        return section;
     }
 
     private TextView collapsibleHeader(String label, boolean expanded,
@@ -2800,10 +2934,43 @@ public class ControlActivity extends Activity {
         if (!rendererWallpaperExpanded) {
             return section;
         }
+        String wallpaperMode = SetupWizardActivity.selectedWallpaperMode(this);
+        String wallpaperSource = SetupWizardActivity.MODE_SET_LOCK_AND_CACHE.equals(wallpaperMode)
+                ? "User wallpaper (lockscreen + fixed cache, Beta)"
+                : SetupWizardActivity.MODE_CACHE_ONLY.equals(wallpaperMode)
+                ? "Current/imported exact wallpaper (Beta)" : "Automatic screenshot";
+        LinearLayout lockscreenPanel = verticalGroup();
+        styleWallpaperSourcePanel(lockscreenPanel);
+        lockscreenPanel.addView(sectionLabel("LOCKSCREEN BACKGROUND · STOCK"));
+        lockscreenPanel.addView(infoText(
+                "Controls the normal lockscreen screenshot or wallpaper cache. This source is "
+                        + "independent from the pre-lock Last screen used by LG effects."));
+        lockscreenPanel.addView(infoText("Current: " + wallpaperSource + "."));
+        lockscreenPanel.addView(outlineButton("Change background source",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivityForResult(SetupWizardActivity.createWallpaperLaunchIntent(
+                        ControlActivity.this), REQUEST_SETUP_WIZARD);
+            }
+        }));
+        section.addView(lockscreenPanel);
+
+        LinearLayout lastScreenPanel = verticalGroup();
+        LinearLayout.LayoutParams lastScreenParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lastScreenParams.setMargins(0, dp(12), 0, 0);
+        lastScreenPanel.setLayoutParams(lastScreenParams);
+        styleWallpaperSourcePanel(lastScreenPanel);
+        int lgFallbackEffect = OverlayPrefs.needsLgPreLockUnderlay(currentEffect)
+                ? currentEffect : OverlayPrefs.EFFECT_LG_G1_WHITE_HOLE;
+        addLgLastScreenCacheControls(lastScreenPanel, lgFallbackEffect);
+        section.addView(lastScreenPanel);
         if (OverlayPrefs.needsLgPreLockUnderlay(currentEffect)) {
             String effectName = OverlayPrefs.effectLabel(currentEffect);
             boolean secondary = OverlayPrefs.usesLgPreLockUnderlayAsSecondary(currentEffect);
-            section.addView(infoText(secondary
+            lastScreenPanel.addView(infoText(secondary
                     ? effectName + " uses two independent images: Last screen remains fixed "
                             + "under the effect, while the lockscreen cache is mapped only to "
                             + "the rotating glass tile. Neither cache replaces the other."
@@ -2811,12 +2978,12 @@ public class ControlActivity extends Activity {
                             + "the final unlocked app/launcher frame and supplies that private "
                             + "buffer only to effects that request it. It is separate from, and "
                             + "never replaces, the lockscreen colormap used by other effects."));
-            section.addView(sectionLabel(secondary
+            lockscreenPanel.addView(sectionLabel(secondary
                     ? "LOCKSCREEN CACHE · ROTATING TILE"
                     : "LOCKSCREEN CACHE · OTHER EFFECTS"));
-            section.addView(infoText(effectBackgroundProfileStatus(
+            lockscreenPanel.addView(infoText(effectBackgroundProfileStatus(
                     currentEffect, FoldDisplayTarget.cacheProfileForContext(this))));
-            section.addView(outlineButton("Force lockscreen cache recapture",
+            lockscreenPanel.addView(outlineButton("Force lockscreen cache recapture",
                     new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
@@ -2827,22 +2994,19 @@ public class ControlActivity extends Activity {
                                     Toast.LENGTH_SHORT).show();
                         }
                     }));
-            section.addView(outlineButton("View lockscreen cache",
+            lockscreenPanel.addView(outlineButton("View lockscreen cache",
                     new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
                             showEffectBackgroundScreenshot();
                         }
-                    }));
-            addLgLastScreenCacheControls(section, currentEffect);
-            addTesterUnderlayProbeControls(section);
+            }));
             return section;
         }
         if (!effectUsesColormapCache(currentEffect)) {
-            section.addView(infoText(
+            lockscreenPanel.addView(infoText(
                     "The selected effect is intentionally colormap-free. No wallpaper image "
                             + "is captured or supplied to its renderer."));
-            addTesterUnderlayProbeControls(section);
             return section;
         }
         final String activeProfile = FoldDisplayTarget.cacheProfileForContext(this);
@@ -2858,15 +3022,15 @@ public class ControlActivity extends Activity {
         }
 
         if (directModeActive) {
-            section.addView(sectionLabel("EXTRA / BETA - Direct wallpaper active"));
-            section.addView(infoText(
+            lockscreenPanel.addView(sectionLabel("EXTRA / BETA - Direct wallpaper active"));
+            lockscreenPanel.addView(infoText(
                     "Beta feature. LLE sends a private, display-sized wallpaper directly "
                             + "to screenshot-driven effects. Some effect UI masks may still "
                             + "need refinement."));
             for (String profile : profiles) {
-                addDirectWallpaperProfileControls(section, currentEffect, profile);
+                addDirectWallpaperProfileControls(lockscreenPanel, currentEffect, profile);
             }
-            section.addView(outlineButton(multipleProfiles
+            lockscreenPanel.addView(outlineButton(multipleProfiles
                     ? "View direct wallpapers"
                     : "View direct wallpaper", new View.OnClickListener() {
                 @Override
@@ -2878,7 +3042,8 @@ public class ControlActivity extends Activity {
         }
 
         if (automaticModeActive) {
-            section.addView(outlineButton("Force screenshot recapture", new View.OnClickListener() {
+            lockscreenPanel.addView(outlineButton("Force screenshot recapture",
+                    new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     applyPendingUnlockEffect();
@@ -2888,7 +3053,7 @@ public class ControlActivity extends Activity {
                             Toast.LENGTH_SHORT).show();
                 }
             }));
-            section.addView(outlineButton(multipleProfiles
+            lockscreenPanel.addView(outlineButton(multipleProfiles
                     ? "View automatic profile screenshots"
                     : "View colormap screenshot", new View.OnClickListener() {
                 @Override
@@ -2897,45 +3062,81 @@ public class ControlActivity extends Activity {
                     showEffectBackgroundScreenshot();
                 }
             }));
-            section.addView(sectionLabel("Automatic recapture"));
-            section.addView(toggle("Auto recapture expired cache",
+            lockscreenPanel.addView(sectionLabel("Automatic recapture"));
+            lockscreenPanel.addView(toggle("Auto recapture expired cache",
                     OverlayPrefs.EFFECT_BACKGROUND_AUTO_REFRESH_ENABLED, false));
-            section.addView(effectBackgroundIntervalSelector());
-            section.addView(toggle("Pause auto recapture 23-07",
+            lockscreenPanel.addView(effectBackgroundIntervalSelector());
+            lockscreenPanel.addView(toggle("Pause auto recapture 23-07",
                     OverlayPrefs.EFFECT_BACKGROUND_SKIP_NIGHT, true));
-            section.addView(toggle("Wake lockscreen for hard recapture",
+            lockscreenPanel.addView(toggle("Wake lockscreen for hard recapture",
                     OverlayPrefs.EFFECT_BACKGROUND_FORCE_RECAPTURE, false));
-            section.addView(infoText("These settings apply only to Automatic screenshot. "
+            lockscreenPanel.addView(infoText("These settings apply only to Automatic screenshot. "
                     + "Direct wallpaper sources remain fixed until you replace them."));
         }
-        addTesterUnderlayProbeControls(section);
         return section;
     }
 
     private void addLgLastScreenCacheControls(LinearLayout section, final int effect) {
-        final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
-        section.addView(sectionLabel("LAST SCREEN"));
-        section.addView(outlineButton("View Last screen", new View.OnClickListener() {
+        section.addView(sectionLabel("LAST SCREEN OVERRIDE · LG EFFECTS"));
+        final Switch custom = styledToggle("Force custom Last screen background",
+                OverlayPrefs.lgCustomUnderlayEnabled(this));
+        custom.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
-            public void onClick(View v) {
-                showLgLastScreenCache();
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.edit().putBoolean(
+                        OverlayPrefs.LG_CUSTOM_UNDERLAY_ENABLED, isChecked).apply();
+                ChargingAccessibilityService.reloadLgLastScreenCache();
+                showTab(selectedTab, false, 0);
             }
-        }));
-        section.addView(outlineButton("Force wallpaper fallback", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                confirmLgLastScreenFallback(effect, target);
-            }
-        }));
+        });
+        section.addView(custom);
         section.addView(infoText(
-                "Fallback is a one-time safety seed: it copies an exact-size wallpaper cache "
-                        + "into Last screen. The next successful screen-off capture replaces "
-                        + "it with the real last unlocked frame."));
+                "If you want to force the Last screen wallpaper to a single image, or if Last "
+                        + "screen capture does not work correctly on your device, select an image "
+                        + "here. It will always be used by effects that need it."));
+
+        String[] profiles = FoldDisplayTarget.backgroundProfiles(this);
+        for (int i = 0; i < profiles.length; i++) {
+            addLgCustomWallpaperProfileControls(section, effect, profiles[i]);
+        }
+        section.addView(outlineButton(OverlayPrefs.lgCustomUnderlayEnabled(this)
+                ? "View active LG background" : "View Last captured screen",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLgLastScreenCache(effect);
+            }
+        }));
+    }
+
+    private void addLgCustomWallpaperProfileControls(LinearLayout section, final int effect,
+            final String requestedProfile) {
+        final String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        int[] size = effectBackgroundTargetSize(profile);
+        File custom = OverlayPrefs.customLgUnderlayFile(this, profile);
+        Argb8888BitmapStore.Info info = Argb8888BitmapStore.inspect(custom);
+        boolean ready = info != null && info.width == size[0] && info.height == size[1];
+        String label = FoldDisplayTarget.profileLabel(profile);
+        section.addView(infoText(label.toUpperCase(Locale.US) + " · "
+                + size[0] + " x " + size[1] + " · "
+                + (ready ? OverlayPrefs.customLgUnderlayLabel(this, profile)
+                        : "Custom wallpaper missing")));
+        section.addView(outlineButton("Force custom wallpaper for Last screen effects",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                openLgCustomWallpaperPicker(effect, profile);
+            }
+        }));
     }
 
     private void showLgLastScreenCache() {
+        showLgLastScreenCache(pendingUnlockEffect >= 0
+                ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this));
+    }
+
+    private void showLgLastScreenCache(int effect) {
         final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
-        int effect = OverlayPrefs.unlockEffect(this);
         LgLastScreenCache.ResolvedSource resolved =
                 LgLastScreenCache.resolve(this, effect, target);
         if (resolved == null) {
@@ -2958,7 +3159,9 @@ public class ControlActivity extends Activity {
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
         root.setBackground(pageBackground());
         root.addView(sectionTitle("Last screen"));
-        String source = resolved.fallback
+        String source = resolved.customWallpaper
+                ? "custom LG wallpaper"
+                : resolved.fallback
                 ? (sourceFile.equals(target.file)
                         ? "forced wallpaper fallback" : "automatic lockscreen fallback")
                 : "last unlocked frame";
@@ -3050,44 +3253,6 @@ public class ControlActivity extends Activity {
                 });
             }
         }, "LLE-last-screen-fallback").start();
-    }
-
-    private void addTesterUnderlayProbeControls(LinearLayout section) {
-        if (!BuildFlavor.TESTER
-                || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            return;
-        }
-        section.addView(sectionLabel("TESTER - LG underlay API probe"));
-        section.addView(infoText(
-                "Tests whether Android exposes the launcher or previous app as a separate "
-                        + "accessibility window while locked. This does not replace or modify "
-                        + "the current colormap."));
-        section.addView(infoText("Status: "
-                + ChargingAccessibilityService.testerUnderlayProbeStatus(this)));
-        section.addView(outlineButton("Arm probe (30-second window)",
-                new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        applyPendingUnlockEffect();
-                        boolean armed = ChargingAccessibilityService
-                                .scheduleTesterUnderlayProbe(0L);
-                        Toast.makeText(ControlActivity.this,
-                                armed
-                                        ? "Probe armed. Go Home, lock and wake to the lockscreen within 30 seconds."
-                                        : "Accessibility service unavailable or API unsupported",
-                                Toast.LENGTH_LONG).show();
-                        if (armed) {
-                            showTab(selectedTab, false, 0);
-                        }
-                    }
-                }));
-        section.addView(outlineButton("View last underlay probe",
-                new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        showTesterUnderlayProbe();
-                    }
-                }));
     }
 
     private void addDirectWallpaperProfileControls(LinearLayout section, final int effect,
@@ -3239,6 +3404,40 @@ public class ControlActivity extends Activity {
         }
     }
 
+    private void openLgCustomWallpaperPicker(int effect, String requestedProfile) {
+        String profile = FoldDisplayTarget.normalizeProfile(requestedProfile);
+        int[] targetSize = effectBackgroundTargetSize(profile);
+        pendingImportedBackgroundEffect = effect;
+        pendingImportedBackgroundProfile = profile;
+        pendingImportedBackgroundWidth = targetSize[0];
+        pendingImportedBackgroundHeight = targetSize[1];
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(picker, REQUEST_IMPORTED_LG_UNDERLAY);
+        } catch (Throwable openDocumentFailure) {
+            Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+            fallback.addCategory(Intent.CATEGORY_OPENABLE);
+            fallback.setType("image/*");
+            fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivityForResult(Intent.createChooser(
+                        fallback, "Choose LG reveal wallpaper"),
+                        REQUEST_IMPORTED_LG_UNDERLAY);
+            } catch (Throwable fallbackFailure) {
+                pendingImportedBackgroundEffect = -1;
+                pendingImportedBackgroundProfile = "";
+                pendingImportedBackgroundWidth = 0;
+                pendingImportedBackgroundHeight = 0;
+                Toast.makeText(this,
+                        "No compatible image picker is available", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
     private void queueUnlockEffectSelection(int value) {
         queueUnlockEffectSelection(value, -1);
     }
@@ -3299,7 +3498,9 @@ public class ControlActivity extends Activity {
                 long capturedAt = LgLastScreenCache.capturedAt(this, target);
                 long ageMs = capturedAt <= 0L
                     ? 0L : Math.max(0L, System.currentTimeMillis() - capturedAt);
-                String source = resolved.fallback
+                String source = resolved.customWallpaper
+                        ? "custom LG wallpaper"
+                        : resolved.fallback
                         ? (resolved.file.equals(target.file)
                                 ? "forced wallpaper fallback"
                                 : "automatic lockscreen fallback")
@@ -4721,70 +4922,6 @@ public class ControlActivity extends Activity {
             paint.setColor(Color.argb(78, 255, 255, 255));
             canvas.drawCircle(width * (xs[i] - 0.025f), height * (ys[i] - 0.035f),
                     width * rs[i] * 0.28f, paint);
-        }
-    }
-
-    private void showTesterUnderlayProbe() {
-        File result = ChargingAccessibilityService.testerUnderlayProbeFile(this);
-        Argb8888BitmapStore.Info bounds = Argb8888BitmapStore.inspect(result);
-        if (bounds == null) {
-            Toast.makeText(this,
-                    "No underlay image. "
-                            + ChargingAccessibilityService.testerUnderlayProbeStatus(this),
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-        final Bitmap bitmap = decodePreviewBitmap(result);
-        if (bitmap == null || bitmap.isRecycled()) {
-            Toast.makeText(this, "Underlay probe result unreadable", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        final Dialog dialog = new Dialog(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(16), dp(16), dp(16));
-        root.setBackground(pageBackground());
-        root.addView(sectionTitle("LG underlay API probe"));
-        root.addView(infoText(ChargingAccessibilityService.testerUnderlayProbeStatus(this)
-                + "\nprivate ARGB8888 | source " + bounds.width + " x " + bounds.height
-                + " | preview " + bitmap.getWidth() + " x " + bitmap.getHeight()));
-
-        ImageView image = new ImageView(this);
-        image.setBackgroundColor(Color.BLACK);
-        image.setAdjustViewBounds(true);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        image.setImageBitmap(bitmap);
-        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        imageParams.setMargins(0, dp(8), 0, dp(10));
-        root.addView(image, imageParams);
-        root.addView(infoText(
-                "Interpretation: launcher/app pixels mean the API can drive a future LG "
-                        + "underlay source. A SystemUI-only/no-window failure means it cannot."));
-        root.addView(outlineButton("Close", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                dialog.dismiss();
-            }
-        }));
-        dialog.setContentView(root, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
-            @Override
-            public void onDismiss(DialogInterface dialogInterface) {
-                if (!bitmap.isRecycled()) {
-                    bitmap.recycle();
-                }
-            }
-        });
-        dialog.show();
-        Window dialogWindow = dialog.getWindow();
-        if (dialogWindow != null) {
-            dialogWindow.setLayout(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT);
         }
     }
 
@@ -6362,20 +6499,6 @@ public class ControlActivity extends Activity {
         return section;
     }
 
-    private View doodleDebugControls() {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, 0);
-        section.setLayoutParams(params);
-        styleInsetPanel(section);
-        section.addView(toggle("Rolling battery percent",
-                OverlayPrefs.DEBUG_ROLLING_CHARGE, false));
-        return section;
-    }
-
     private View lockscreenTouchControls() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
@@ -6411,11 +6534,6 @@ public class ControlActivity extends Activity {
         }
         section.addView(invertedToggle("Show touch box", OverlayPrefs.DEBUG_TOUCH_TRANSPARENT, true));
         section.addView(toggle("AOD standby touch box", OverlayPrefs.DEBUG_TOUCH_STANDBY, true));
-        section.addView(toggle("Three-finger emergency bypass",
-                OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED, true));
-        section.addView(infoText("When enabled, swipe three fingers together inside the touch "
-                + "box to remove L.L.E for the current lock cycle and expose the stock "
-                + "lockscreen. It rearms after the next screen-off/on cycle."));
         section.addView(outlineButton(FoldDisplayTarget.backgroundProfiles(this).length > 1
                 ? "Dual touch box wizard"
                 : "Touch box screenshot wizard", new View.OnClickListener() {
@@ -6463,7 +6581,7 @@ public class ControlActivity extends Activity {
         return section;
     }
 
-    private View lockscreenDebugMenu() {
+    private View advancedSettingsPage() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -6472,65 +6590,341 @@ public class ControlActivity extends Activity {
         params.setMargins(0, 0, 0, dp(8));
         section.setLayoutParams(params);
         styleCard(section);
-        section.addView(collapsibleHeader("Advanced settings", lockscreenDebugExpanded,
-                new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        lockscreenDebugExpanded = !lockscreenDebugExpanded;
-                        showTab(selectedTab);
-                    }
-        }));
-        if (lockscreenDebugExpanded) {
-            section.addView(setupWizardControls());
-            section.addView(exclusiveDisplayModeToggle(
-                    "FOLD MODE (Cover + Main)", OverlayPrefs.FOLD_MODE,
-                    FoldDisplayTarget.isFoldDevice(this), OverlayPrefs.TABLET_MODE));
-            section.addView(exclusiveDisplayModeToggle(
-                    "TABLET MODE (portrait + landscape)", OverlayPrefs.TABLET_MODE,
-                    FoldDisplayTarget.isTabletDevice(this)
-                            && !FoldDisplayTarget.isFoldDevice(this),
-                    OverlayPrefs.FOLD_MODE));
-            section.addView(infoText("Display profile: "
-                    + FoldDisplayTarget.cacheProfileForContext(this)
-                    + ". Enabling either mode disables the other."));
-            if (FoldDisplayTarget.usesFoldProfiles(this)) {
-                section.addView(foldPanelRoutingControls());
-            }
-            int current = pendingUnlockEffect >= 0
-                    ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
-            section.addView(effectProfilerControls());
-            section.addView(customAppBlacklistControls());
-            section.addView(batteryDebugControls());
-            section.addView(toggle("Media audio output",
-                    OverlayPrefs.LLE_AUDIO_ROUTE_MEDIA, false));
-            section.addView(infoText("Routes every L.L.E. effect and lock sound through "
-                    + "media volume instead of System sounds. This also bypasses the phone's "
-                    + "Screen lock/unlock sound switch."));
-            section.addView(toggle("Conservative unlock handoff (slow devices)",
-                    OverlayPrefs.DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false));
-            section.addView(infoText("Adds extra settling time before opening the PIN screen. "
-                    + "Try this only if Android reports delayed or unrecognized touches, or "
-                    + "unlocking sometimes needs a second swipe. The PIN screen may appear "
-                    + "slightly later."));
-            section.addView(toggle("Legacy quick-panel detection (1.0.5.3)",
-                    OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION, false));
-            TextView legacyQuickPanelWarning = infoText("Compatibility fallback only. "
-                    + "Restores the exact 1.0.5.3 quick-panel event and tree detector. "
-                    + "On recent or localized SystemUI versions it may leave L.L.E. active "
-                    + "over Quick Settings; keep it off unless the default detector fails.");
-            legacyQuickPanelWarning.setTextColor(COLOR_ERROR);
-            section.addView(legacyQuickPanelWarning);
-            section.addView(bootSafetyBypassToggle());
-            TextView bootSafetyWarning = infoText("⚠ DANGER — THIS REMOVES YOUR RECOVERY "
-                    + "WINDOW. Enable only after L.L.E. has proven stable on this exact device. "
-                    + "If an overlay blocks touch at boot, you may need Safe Mode or ADB to "
-                    + "disable or uninstall the app.");
-            bootSafetyWarning.setTextColor(COLOR_ERROR);
-            bootSafetyWarning.setTextSize(15f);
-            bootSafetyWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            section.addView(bootSafetyWarning);
-        }
+        section.addView(sectionTitle("Advanced settings"));
+        section.addView(advancedIndexControls());
         return section;
+    }
+
+    private View advancedIndexControls() {
+        LinearLayout root = verticalGroup();
+        root.addView(infoText("Manage setup, compatibility and diagnostics. Expand a section "
+                + "to see its controls."));
+        root.addView(advancedNavigationRow("Setup",
+                (isChargingAccessibilityEnabled() ? "Accessibility enabled" : "Setup needed")
+                        + " · Re-run the guided setup",
+                ADVANCED_PAGE_SETUP));
+        if (advancedPage == ADVANCED_PAGE_SETUP) {
+            root.addView(advancedExpandedControls(setupWizardControls()));
+        }
+        int excluded = OverlayPrefs.userRuntimeBlacklistPackages(this).size();
+        int allowed = OverlayPrefs.userLockscreenAllowlistPackages(this).size();
+        root.addView(advancedNavigationRow("Whitelist / blacklist",
+                allowed + " allowed · " + excluded + " blocked"
+                        + (OverlayPrefs.autoHideExternalLockscreenApps(this)
+                                ? " · Auto protection on" : " · Auto protection off"),
+                ADVANCED_PAGE_APPS));
+        if (advancedPage == ADVANCED_PAGE_APPS) {
+            root.addView(advancedExpandedControls(appCompatibilityControls()));
+        }
+        root.addView(advancedNavigationRow("Battery",
+                batteryOptimizationShortStatus(), ADVANCED_PAGE_BATTERY));
+        if (advancedPage == ADVANCED_PAGE_BATTERY) {
+            root.addView(advancedExpandedControls(batteryDebugControls()));
+        }
+        root.addView(advancedNavigationRow("Display",
+                "Active profile: " + FoldDisplayTarget.cacheProfileForContext(this),
+                ADVANCED_PAGE_DISPLAY));
+        if (advancedPage == ADVANCED_PAGE_DISPLAY) {
+            root.addView(advancedExpandedControls(displayControls()));
+        }
+        root.addView(advancedNavigationRow("Compatibility",
+                "Audio routing and legacy fallbacks",
+                ADVANCED_PAGE_COMPATIBILITY));
+        if (advancedPage == ADVANCED_PAGE_COMPATIBILITY) {
+            root.addView(advancedExpandedControls(compatibilityControls()));
+        }
+        if (BuildFlavor.TESTER) {
+            root.addView(advancedNavigationRow("Tester tools",
+                    "Runtime effect profiling",
+                    ADVANCED_PAGE_TESTER_TOOLS));
+            if (advancedPage == ADVANCED_PAGE_TESTER_TOOLS) {
+                root.addView(advancedExpandedControls(testerToolsControls()));
+            }
+        }
+        root.addView(advancedNavigationRow("Diagnostics",
+                "Reports and cache previews",
+                ADVANCED_PAGE_DIAGNOSTICS));
+        if (advancedPage == ADVANCED_PAGE_DIAGNOSTICS) {
+            root.addView(advancedExpandedControls(lockscreenDiagnosticsControls()));
+        }
+        root.addView(advancedNavigationRow("Dangerous",
+                "Emergency safeguards — change with care",
+                ADVANCED_PAGE_DANGEROUS));
+        if (advancedPage == ADVANCED_PAGE_DANGEROUS) {
+            root.addView(advancedExpandedControls(dangerousControls()));
+        }
+        return root;
+    }
+
+    private View advancedExpandedControls(View controls) {
+        LinearLayout container = verticalGroup();
+        container.setPadding(dp(8), dp(2), dp(8), dp(8));
+        container.addView(controls);
+        return container;
+    }
+
+    private View advancedNavigationRow(String title, String detail, final int targetPage) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(9), dp(12), dp(9));
+        row.setBackground(controlRowBackground(advancedPage == targetPage));
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(70));
+        rowParams.setMargins(0, dp(3), 0, dp(3));
+        row.setLayoutParams(rowParams);
+
+        LinearLayout copy = verticalGroup();
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(16f);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        copy.addView(titleView);
+        TextView detailView = new TextView(this);
+        detailView.setText(detail);
+        detailView.setTextColor(COLOR_MUTED);
+        detailView.setTextSize(13f);
+        detailView.setSingleLine(true);
+        detailView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        copy.addView(detailView);
+        row.addView(copy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView chevron = new TextView(this);
+        chevron.setText(advancedPage == targetPage ? "−" : "+");
+        chevron.setTextColor(COLOR_ACCENT_DEEP);
+        chevron.setTextSize(24f);
+        chevron.setGravity(Gravity.CENTER);
+        row.addView(chevron, new LinearLayout.LayoutParams(dp(34), dp(48)));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                advancedPage = advancedPage == targetPage
+                        ? ADVANCED_PAGE_INDEX : targetPage;
+                showTab(selectedTab, false, 0);
+            }
+        });
+        return row;
+    }
+
+    private String batteryOptimizationShortStatus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return "Not required on this Android version";
+        }
+        PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
+        return manager != null && manager.isIgnoringBatteryOptimizations(getPackageName())
+                ? "Unrestricted" : "Optimization enabled";
+    }
+
+    private View appCompatibilityControls() {
+        LinearLayout root = verticalGroup();
+        LinearLayout automatic = verticalGroup();
+        styleInsetPanel(automatic);
+        automatic.addView(subsectionTitle("Automatic lockscreen protection"));
+        automatic.addView(toggle("Hide under external lockscreen apps",
+                OverlayPrefs.AUTO_HIDE_EXTERNAL_LOCKSCREEN_APPS, false));
+        automatic.addView(infoText("Only while the phone is locked, L.L.E hides when a "
+                + "third-party app owns the active window. Notification events alone do not "
+                + "trigger it. Keep this off if your OEM exposes unusual lockscreen windows."));
+        int allowed = OverlayPrefs.userLockscreenAllowlistPackages(this).size();
+        automatic.addView(outlineButton("Allowed lockscreen apps (" + allowed + ")",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent picker = new Intent(ControlActivity.this, AppPickerActivity.class);
+                picker.putExtra(AppPickerActivity.EXTRA_MODE,
+                        AppPickerActivity.MODE_LOCKSCREEN_ALLOWLIST);
+                startActivity(picker);
+            }
+        }));
+        automatic.addView(infoText("Use the allowlist only when auto protection hides L.L.E "
+                + "under an app that should be treated as part of your lockscreen."));
+        root.addView(automatic);
+        root.addView(customAppBlacklistControls());
+        return root;
+    }
+
+    private View displayControls() {
+        LinearLayout root = verticalGroup();
+        root.addView(exclusiveDisplayModeToggle(
+                "FOLD MODE (Cover + Main)", OverlayPrefs.FOLD_MODE,
+                FoldDisplayTarget.isFoldDevice(this), OverlayPrefs.TABLET_MODE));
+        root.addView(exclusiveDisplayModeToggle(
+                "TABLET MODE (portrait + landscape)", OverlayPrefs.TABLET_MODE,
+                FoldDisplayTarget.isTabletDevice(this)
+                        && !FoldDisplayTarget.isFoldDevice(this),
+                OverlayPrefs.FOLD_MODE));
+        root.addView(infoText("Display profile: "
+                + FoldDisplayTarget.cacheProfileForContext(this)
+                + ". Enabling either mode disables the other."));
+        if (FoldDisplayTarget.usesFoldProfiles(this)) {
+            root.addView(foldPanelRoutingControls());
+        }
+        return root;
+    }
+
+    private View compatibilityControls() {
+        LinearLayout root = verticalGroup();
+        root.addView(toggle("Media audio output",
+                OverlayPrefs.LLE_AUDIO_ROUTE_MEDIA, false));
+        root.addView(infoText("Routes every L.L.E. effect and lock sound through media "
+                + "volume instead of System sounds."));
+        root.addView(toggle("Conservative unlock handoff (slow devices)",
+                OverlayPrefs.DEBUG_CONSERVATIVE_UNLOCK_HANDOFF, false));
+        root.addView(infoText("Adds settling time before opening the PIN screen. Use this "
+                + "only when unlocking needs a second swipe."));
+        root.addView(toggle("Legacy quick-panel detection (1.0.5.3)",
+                OverlayPrefs.DEBUG_LEGACY_QUICK_PANEL_DETECTION, false));
+        TextView warning = infoText("Compatibility fallback only. On recent or localized "
+                + "SystemUI versions it may leave L.L.E active over Quick Settings.");
+        warning.setTextColor(COLOR_ERROR);
+        root.addView(warning);
+        return root;
+    }
+
+    private View testerToolsControls() {
+        LinearLayout root = verticalGroup();
+        root.addView(infoText("Development-only runtime tools for comparing effect cost and "
+                + "rendering behavior."));
+        root.addView(effectProfilerControls());
+        return root;
+    }
+
+    private View lockscreenDiagnosticsControls() {
+        LinearLayout root = verticalGroup();
+        LinearLayout previews = verticalGroup();
+        styleInsetPanel(previews);
+        previews.addView(sectionTitle("Cache previews"));
+        previews.addView(outlineButton("Show lockscreen wallpaper",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                requestLockscreenWallpaperPreview();
+            }
+        }));
+        previews.addView(outlineButton("Show lockscreen cache",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showEffectBackgroundScreenshot();
+            }
+        }));
+        previews.addView(outlineButton("Show Last screen cache",
+                new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showLgLastScreenCache();
+            }
+        }));
+        int currentEffect = pendingUnlockEffect >= 0
+                ? pendingUnlockEffect : OverlayPrefs.unlockEffect(this);
+        if (OverlayPrefs.needsLgPreLockUnderlay(currentEffect)) {
+            final int effect = currentEffect;
+            final LgLastScreenCache.Target target = LgLastScreenCache.activeTarget(this);
+            previews.addView(outlineButton("Seed Last screen from wallpaper",
+                    new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    confirmLgLastScreenFallback(effect, target);
+                }
+            }));
+        }
+        root.addView(previews);
+
+        if (EffectAvailability.is64BitProcess()) {
+            LinearLayout reports = verticalGroup();
+            styleInsetPanel(reports);
+            reports.addView(sectionTitle("Support reports"));
+            reports.addView(outlineButton("Create debug report", new View.OnClickListener() {
+                @Override
+                public void onClick(final View view) {
+                    createAndShareDebugReport(view, false);
+                }
+            }));
+            reports.addView(infoText("Creates a privacy-filtered text report. Images are "
+                    + "never included."));
+            reports.addView(outlineButton("Create advanced log (unredacted)",
+                    new View.OnClickListener() {
+                @Override
+                public void onClick(final View view) {
+                    confirmAdvancedDebugReport(view);
+                }
+            }));
+            TextView logWarning = infoText("DANGER: the advanced log may expose text, app "
+                    + "names, paths and touch coordinates. Share it only with someone trusted.");
+            logWarning.setTextColor(COLOR_ERROR);
+            reports.addView(logWarning);
+            root.addView(reports);
+        }
+
+        return root;
+    }
+
+    private View dangerousControls() {
+        LinearLayout root = verticalGroup();
+        LinearLayout safety = verticalGroup();
+        styleInsetPanel(safety);
+        TextView warning = infoText("These controls disable emergency recovery safeguards. "
+                + "Change them only on a device with a tested recovery path.");
+        warning.setTextColor(COLOR_ERROR);
+        warning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        safety.addView(warning);
+        safety.addView(threeFingerSafetyToggle());
+        safety.addView(infoText("When enabled, a three-finger swipe inside the touch box removes "
+                + "L.L.E for the current lock cycle and exposes the stock lockscreen."));
+        safety.addView(bootSafetyBypassToggle());
+        TextView bootWarning = infoText("⚠ Disabling the boot recovery window can leave touch "
+                + "blocked after boot. Safe Mode or ADB may be required to recover.");
+        bootWarning.setTextColor(COLOR_ERROR);
+        bootWarning.setTextSize(15f);
+        bootWarning.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        safety.addView(bootWarning);
+        root.addView(safety);
+        return root;
+    }
+
+    private Switch threeFingerSafetyToggle() {
+        final Switch toggle = styledToggle("Three-finger emergency bypass",
+                prefs.getBoolean(OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED, true));
+        final boolean[] internalChange = new boolean[]{false};
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(final CompoundButton buttonView, boolean isChecked) {
+                if (internalChange[0]) {
+                    return;
+                }
+                if (isChecked) {
+                    prefs.edit().putBoolean(
+                            OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED, true).apply();
+                    return;
+                }
+                internalChange[0] = true;
+                buttonView.setChecked(true);
+                internalChange[0] = false;
+                new AlertDialog.Builder(ControlActivity.this)
+                        .setTitle("Disable three-finger emergency bypass?")
+                        .setMessage("The emergency gesture will no longer remove L.L.E if the "
+                                + "touch overlay becomes stuck. Continue only if ADB or another "
+                                + "recovery method is available.")
+                        .setNegativeButton("Keep safety", null)
+                        .setPositiveButton("I understand — disable",
+                                new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                prefs.edit().putBoolean(
+                                        OverlayPrefs.THREE_FINGER_SAFETY_BYPASS_ENABLED,
+                                        false).apply();
+                                internalChange[0] = true;
+                                buttonView.setChecked(false);
+                                internalChange[0] = false;
+                            }
+                        })
+                        .show();
+            }
+        });
+        return toggle;
     }
 
     private Switch bootSafetyBypassToggle() {
@@ -6604,14 +6998,17 @@ public class ControlActivity extends Activity {
         params.setMargins(0, dp(8), 0, 0);
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(sectionTitle("Custom app blacklist"));
-        section.addView(infoText("Hide L.L.E. effects, doodles, and touch input when a "
+        section.addView(sectionTitle("Always excluded apps"));
+        section.addView(infoText("Always hide L.L.E. effects, doodles, and touch input when a "
                 + "vendor-specific app appears over the lockscreen. Enter only the package "
                 + "name, for example com.example.app. Built-in safety rules cannot be removed."));
         section.addView(outlineButton("Choose installed apps", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                startActivity(new Intent(ControlActivity.this, AppPickerActivity.class));
+                Intent picker = new Intent(ControlActivity.this, AppPickerActivity.class);
+                picker.putExtra(AppPickerActivity.EXTRA_MODE,
+                        AppPickerActivity.MODE_EXCLUSIONS);
+                startActivity(picker);
             }
         }));
         section.addView(infoText("The picker shows launchable apps visible to Android. "
@@ -6740,9 +7137,10 @@ public class ControlActivity extends Activity {
         params.setMargins(0, dp(8), 0, 0);
         section.setLayoutParams(params);
         styleInsetPanel(section);
-        section.addView(sectionTitle("Battery"));
 
         section.addView(infoText(batteryOptimizationStatus()));
+        section.addView(infoText("These controls affect L.L.E reliability in the background. "
+                + "Charging doodle appearance remains in the CHARGING tab."));
         section.addView(outlineButton("Request battery unrestricted", new View.OnClickListener() {
             @Override
             public void onClick(View v) {

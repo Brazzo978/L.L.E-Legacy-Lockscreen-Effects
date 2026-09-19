@@ -41,6 +41,9 @@ import java.util.Set;
 
 /** Safe package picker for the existing runtime-surface blacklist. */
 public final class AppPickerActivity extends Activity {
+    static final String EXTRA_MODE = "picker_mode";
+    static final String MODE_EXCLUSIONS = "exclusions";
+    static final String MODE_LOCKSCREEN_ALLOWLIST = "lockscreen_allowlist";
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
     private static final int COLOR_TEXT = Color.rgb(33, 33, 33);
     private static final int COLOR_MUTED = Color.rgb(117, 117, 117);
@@ -60,12 +63,15 @@ public final class AppPickerActivity extends Activity {
     private Button systemButton;
     private int category = AppPickerModel.CATEGORY_ALL;
     private String query = "";
+    private boolean allowlistMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         configureBars();
+        allowlistMode = MODE_LOCKSCREEN_ALLOWLIST.equals(
+                getIntent().getStringExtra(EXTRA_MODE));
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -86,15 +92,20 @@ public final class AppPickerActivity extends Activity {
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(44), dp(48)));
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
-        titles.addView(text("Choose apps", 22f, COLOR_TEXT, true));
+        titles.addView(text(allowlistMode
+                ? "Allowed lockscreen apps" : "Choose excluded apps",
+                22f, COLOR_TEXT, true));
         summary = text("Finding launchable applications…", 13f, COLOR_MUTED, false);
         titles.addView(summary);
         titleRow.addView(titles, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         root.addView(titleRow);
 
-        TextView explanation = text(
-                "Selected apps suppress every L.L.E. runtime surface while they appear "
+        TextView explanation = text(allowlistMode
+                ? "When automatic protection is enabled, selected apps may remain above "
+                        + "the lockscreen without hiding L.L.E. Core lockscreen surfaces "
+                        + "are always allowed."
+                : "Selected apps suppress every L.L.E. runtime surface while they appear "
                         + "over the lockscreen. L.L.E. safety rules stay protected.",
                 13f, COLOR_MUTED, false);
         explanation.setPadding(dp(4), 0, dp(4), dp(10));
@@ -152,8 +163,9 @@ public final class AppPickerActivity extends Activity {
         progress.setIndeterminate(true);
         root.addView(progress, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(6)));
-        TextView fallback = text(
-                "App missing? Return to Advanced settings and enter its package name manually.",
+        TextView fallback = text(allowlistMode
+                ? "Only add an app here if automatic protection hides L.L.E. unnecessarily."
+                : "App missing? Return to App exclusions and enter its package name manually.",
                 12f, COLOR_MUTED, false);
         fallback.setGravity(Gravity.CENTER);
         fallback.setPadding(0, dp(8), 0, 0);
@@ -181,8 +193,9 @@ public final class AppPickerActivity extends Activity {
                 final Map<String, Drawable> loadedIcons =
                         new HashMap<String, Drawable>();
                 PackageManager manager = getPackageManager();
-                Set<String> selected =
-                        OverlayPrefs.userRuntimeBlacklistPackages(AppPickerActivity.this);
+                Set<String> selected = allowlistMode
+                        ? OverlayPrefs.userLockscreenAllowlistPackages(AppPickerActivity.this)
+                        : OverlayPrefs.userRuntimeBlacklistPackages(AppPickerActivity.this);
                 Map<String, ApplicationInfo> visible =
                         new LinkedHashMap<String, ApplicationInfo>();
 
@@ -220,15 +233,19 @@ public final class AppPickerActivity extends Activity {
                     String packageName = OverlayPrefs.normalizePackageName(info.packageName);
                     boolean builtIn = ChargingAccessibilityService
                             .isBuiltInRuntimeBlacklistPackage(packageName);
-                    boolean protectedByLle = RuntimeBlacklistPolicy.isProtectedPackage(
-                            packageName, getPackageName(), builtIn);
+                    boolean protectedByLle = allowlistMode
+                            ? RuntimeBlacklistPolicy.isCoreProtectedPackage(
+                                    packageName, getPackageName())
+                            : RuntimeBlacklistPolicy.isProtectedPackage(
+                                    packageName, getPackageName(), builtIn);
+                    boolean selectedByPolicy = allowlistMode && protectedByLle;
                     boolean system = (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
                     CharSequence label = manager.getApplicationLabel(info);
                     loaded.add(new AppPickerModel.Entry(
                             label == null ? packageName : label.toString(),
                             packageName,
                             system,
-                            selected.contains(packageName),
+                            selected.contains(packageName) || selectedByPolicy,
                             protectedByLle));
                     try {
                         loadedIcons.put(packageName, manager.getApplicationIcon(info));
@@ -307,7 +324,7 @@ public final class AppPickerActivity extends Activity {
         labels.addView(title);
         String detail = entry.packageName;
         if (entry.protectedByLle) {
-            detail += " · Protected by L.L.E";
+            detail += allowlistMode ? " · Always allowed" : " · Protected by L.L.E";
         } else if (entry.system) {
             detail += " · System";
         }
@@ -338,7 +355,9 @@ public final class AppPickerActivity extends Activity {
     }
 
     private void toggle(AppPickerModel.Entry entry) {
-        Set<String> packages = OverlayPrefs.userRuntimeBlacklistPackages(this);
+        Set<String> packages = allowlistMode
+                ? OverlayPrefs.userLockscreenAllowlistPackages(this)
+                : OverlayPrefs.userRuntimeBlacklistPackages(this);
         boolean selected;
         if (packages.contains(entry.packageName)) {
             packages.remove(entry.packageName);
@@ -347,7 +366,11 @@ public final class AppPickerActivity extends Activity {
             packages.add(entry.packageName);
             selected = true;
         }
-        OverlayPrefs.setUserRuntimeBlacklistPackages(this, packages);
+        if (allowlistMode) {
+            OverlayPrefs.setUserLockscreenAllowlistPackages(this, packages);
+        } else {
+            OverlayPrefs.setUserRuntimeBlacklistPackages(this, packages);
+        }
         for (int i = 0; i < allApps.size(); i++) {
             AppPickerModel.Entry current = allApps.get(i);
             if (current.packageName.equals(entry.packageName)) {
@@ -358,7 +381,9 @@ public final class AppPickerActivity extends Activity {
             }
         }
         Toast.makeText(this, selected
-                ? "L.L.E. will hide over " + entry.label
+                ? allowlistMode
+                        ? entry.label + " allowed on lockscreen"
+                        : "L.L.E. will hide over " + entry.label
                 : entry.label + " removed", Toast.LENGTH_SHORT).show();
         render();
     }

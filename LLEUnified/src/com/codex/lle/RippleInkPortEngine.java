@@ -37,6 +37,8 @@ public final class RippleInkPortEngine {
     static final float INK_RADIUS = 2.0f;
     static final float INK_IMPULSE_DENSITY = 200.0f;
     static final long LONG_PRESS_RIPPLE_MS = 600L;
+    private static final int MODERN_DRAG_RIPPLE_THRESHOLD_PX = 180;
+    private static final int REFERENCE_SHORT_SIDE_PX = 720;
 
     private static final int SIMULATION_HZ = 60;
     private static final int MAX_SIMULATION_STEPS = 4;
@@ -521,7 +523,11 @@ public final class RippleInkPortEngine {
     }
 
     private int dragRippleThresholdPx() {
-        return Math.max(1, (int) (0.2f * Math.min(surfaceWidth, surfaceHeight)));
+        int shortSide = Math.min(surfaceWidth, surfaceHeight);
+        if (shortSide <= 0) return MODERN_DRAG_RIPPLE_THRESHOLD_PX;
+        int scaled = Math.round(MODERN_DRAG_RIPPLE_THRESHOLD_PX
+                * (shortSide / (float) REFERENCE_SHORT_SIDE_PX));
+        return Math.max(MODERN_DRAG_RIPPLE_THRESHOLD_PX, scaled);
     }
 
     private float currentIntensity() {

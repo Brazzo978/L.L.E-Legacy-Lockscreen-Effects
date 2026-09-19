@@ -712,6 +712,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private final Set<String> homePackages = new HashSet<String>();
     private final Set<String> callPackages = new HashSet<String>();
     private final Set<String> runtimeSurfaceBlacklistPackages = new HashSet<String>();
+    private final Set<String> userLockscreenAllowlistPackages = new HashSet<String>();
     private String lastWindowPackage;
     private boolean charging;
     private int batteryPercent;
@@ -1319,7 +1320,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             return;
         }
-        boolean blockedPackage = isRuntimeSurfaceBlockPackage(event.getPackageName());
+        boolean blockedPackage = isRuntimeSurfaceBlockPackage(event.getPackageName())
+                || isExternalLockscreenSurfaceEvent(event);
         if (blockedPackage) {
             noteActiveRuntimeBlock(event);
         }
@@ -1807,6 +1809,13 @@ public class ChargingAccessibilityService extends AccessibilityService
         snapshot.append("custom_blacklist_packages=")
                 .append(new java.util.TreeSet<String>(
                         OverlayPrefs.userRuntimeBlacklistPackages(service)))
+                .append('\n');
+        snapshot.append("auto_hide_external_lockscreen_apps=")
+                .append(OverlayPrefs.autoHideExternalLockscreenApps(service))
+                .append('\n');
+        snapshot.append("lockscreen_allowlist_packages=")
+                .append(new java.util.TreeSet<String>(
+                        OverlayPrefs.userLockscreenAllowlistPackages(service)))
                 .append('\n');
         snapshot.append("background_capture_active=")
                 .append(service.colorScreenshotInFlight).append('\n');
@@ -2509,8 +2518,17 @@ public class ChargingAccessibilityService extends AccessibilityService
             stopAllRuntimeSurfaces();
             disableHardEffectBackgroundRecapture("master_disabled");
         }
-        if (OverlayPrefs.USER_RUNTIME_BLACKLIST_PACKAGES.equals(key)) {
+        if (OverlayPrefs.USER_RUNTIME_BLACKLIST_PACKAGES.equals(key)
+                || OverlayPrefs.USER_LOCKSCREEN_ALLOWLIST_PACKAGES.equals(key)
+                || OverlayPrefs.AUTO_HIDE_EXTERNAL_LOCKSCREEN_APPS.equals(key)) {
             loadRuntimeSurfaceBlacklistPackages();
+            if (activeRuntimeBlockPackage != null
+                    && !isRuntimeSurfaceBlockPackage(activeRuntimeBlockPackage)
+                    && (!OverlayPrefs.autoHideExternalLockscreenApps(this)
+                            || isAllowedLockscreenSurfacePackage(
+                                    activeRuntimeBlockPackage))) {
+                clearActiveRuntimeBlock("prefs:package_allowed");
+            }
             if (isRuntimeSurfaceBlocked()) {
                 hideRuntimeSurfacesForBlockedPackage("prefs:custom_blacklist");
             }
@@ -10189,11 +10207,14 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     private void loadRuntimeSurfaceBlacklistPackages() {
         runtimeSurfaceBlacklistPackages.clear();
+        userLockscreenAllowlistPackages.clear();
         for (int i = 0; i < RUNTIME_SURFACE_BLACKLIST_PACKAGES.length; i++) {
             runtimeSurfaceBlacklistPackages.add(RUNTIME_SURFACE_BLACKLIST_PACKAGES[i]);
         }
         runtimeSurfaceBlacklistPackages.addAll(
                 OverlayPrefs.userRuntimeBlacklistPackages(this));
+        userLockscreenAllowlistPackages.addAll(
+                OverlayPrefs.userLockscreenAllowlistPackages(this));
     }
 
     static boolean isBuiltInRuntimeBlacklistPackage(String packageName) {
@@ -10233,6 +10254,74 @@ public class ChargingAccessibilityService extends AccessibilityService
         }
         String value = packageName.toString().toLowerCase();
         return runtimeSurfaceBlacklistPackages.contains(value) || isCallPackage(value);
+    }
+
+    /**
+     * Optional fail-open protection for third-party activities that really own the focused
+     * window above keyguard. A package event by itself is not enough: notification content and
+     * cached accessibility trees can emit while SystemUI is still the visible lockscreen.
+     */
+    private boolean isExternalLockscreenSurfaceEvent(AccessibilityEvent event) {
+        if (event == null || event.getPackageName() == null
+                || !OverlayPrefs.autoHideExternalLockscreenApps(this)
+                || !isLockscreenLocked(false)) {
+            return false;
+        }
+        String packageName = OverlayPrefs.normalizePackageName(
+                event.getPackageName().toString());
+        if (isAllowedLockscreenSurfacePackage(packageName)) {
+            return false;
+        }
+        List<AccessibilityWindowInfo> windows;
+        try {
+            windows = getWindows();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "external lockscreen window scan failed", error);
+            return false;
+        }
+        if (windows == null) {
+            return false;
+        }
+        int eventWindowId = event.getWindowId();
+        for (int i = 0; i < windows.size(); i++) {
+            AccessibilityWindowInfo window = windows.get(i);
+            if (window == null || !isActiveOrFocusedWindow(window)
+                    || (eventWindowId >= 0 && window.getId() != eventWindowId)) {
+                continue;
+            }
+            AccessibilityNodeInfo root = null;
+            try {
+                root = window.getRoot();
+                String owner = root == null || root.getPackageName() == null
+                        ? "" : OverlayPrefs.normalizePackageName(
+                                root.getPackageName().toString());
+                if (packageName.equals(owner)
+                        && !isAllowedLockscreenSurfacePackage(owner)) {
+                    Log.i(TAG, "external lockscreen surface detected pkg=" + owner
+                            + " windowId=" + window.getId());
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+                // Fail open: an unreadable transient window must not hide L.L.E indefinitely.
+            } finally {
+                if (root != null) {
+                    root.recycle();
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isAllowedLockscreenSurfacePackage(String packageName) {
+        String value = OverlayPrefs.normalizePackageName(packageName);
+        return value.isEmpty()
+                || getPackageName().equals(value)
+                || "android".equals(value)
+                || SYSTEM_UI_PACKAGE.equals(value)
+                || AOD_PACKAGE.equals(value)
+                || homePackages.contains(value)
+                || isKeyboardPackage(value)
+                || userLockscreenAllowlistPackages.contains(value);
     }
 
     private void noteActiveRuntimeBlock(AccessibilityEvent event) {

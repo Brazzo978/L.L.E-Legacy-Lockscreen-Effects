@@ -26,6 +26,8 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness,
         RippleInkPortGlesRenderer.Host {
     public static final int DEFAULT_PALETTE_SLOT = 4;
+    private static final int MODERN_DRAG_RIPPLE_THRESHOLD_PX = 180;
+    private static final int REFERENCE_SHORT_SIDE_PX = 720;
 
     private final RippleInkPortGlesRenderer rippleRenderer;
     private final SoundPool soundPool;
@@ -240,7 +242,7 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         lastSoundY = local[1];
         activeGesturePressure = pressure;
         activeGestureInkEnabled = inkEnabled;
-        if (dragSoundDistance > 150.0f) {
+        if (dragSoundDistance > dragRippleThresholdPx()) {
             play(downSound);
             dragSoundDistance = 0.0f;
         }
@@ -587,6 +589,14 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         int[] location = new int[2];
         getLocationOnScreen(location);
         return new float[]{screenX - location[0], screenY - location[1]};
+    }
+
+    private int dragRippleThresholdPx() {
+        int shortSide = Math.min(getWidth(), getHeight());
+        if (shortSide <= 0) return MODERN_DRAG_RIPPLE_THRESHOLD_PX;
+        int scaled = Math.round(MODERN_DRAG_RIPPLE_THRESHOLD_PX
+                * (shortSide / (float) REFERENCE_SHORT_SIDE_PX));
+        return Math.max(MODERN_DRAG_RIPPLE_THRESHOLD_PX, scaled);
     }
 
     private boolean canAcceptCommands() {

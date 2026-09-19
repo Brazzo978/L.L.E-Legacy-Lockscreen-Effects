@@ -20,6 +20,7 @@ final class OverlayPrefs {
     private static volatile int cachedMinuteOfDay;
     static final String PREFS = "overlay_prefs";
     static final String MASTER_ENABLED = "master_enabled";
+    static final String EASTER_EGG_UNLOCKED = "easter_egg_unlocked";
     /** Tester-only low-memory mode: never capture, load or retain lockscreen colormaps. */
     static final String TESTER_NO_COLORMAP_MODE = "tester_no_colormap_mode";
     static final String SHOW_AOD = "show_aod";
@@ -114,6 +115,10 @@ final class OverlayPrefs {
     static final String LENS_FLARE_MODE_LIGHTNING = "lightning";
     static final String USER_RUNTIME_BLACKLIST_PACKAGES =
             "user_runtime_blacklist_packages";
+    static final String AUTO_HIDE_EXTERNAL_LOCKSCREEN_APPS =
+            "auto_hide_external_lockscreen_apps";
+    static final String USER_LOCKSCREEN_ALLOWLIST_PACKAGES =
+            "user_lockscreen_allowlist_packages";
     static final String FOLD_MODE = "fold_mode";
     static final String TABLET_MODE = "tablet_mode";
     static final String FOLD_COVER_UNLOCK_EFFECT_ENABLED =
@@ -176,6 +181,11 @@ final class OverlayPrefs {
     static final String LG_PRELOCK_UNDERLAY_ORIGIN_LAST_SCREEN = "last_screen";
     static final String LG_PRELOCK_UNDERLAY_ORIGIN_WALLPAPER_FALLBACK =
             "wallpaper_fallback";
+    static final String LG_CUSTOM_UNDERLAY_ENABLED = "lg_custom_underlay_enabled";
+    private static final String LG_CUSTOM_UNDERLAY_PATH_PREFIX =
+            "lg_custom_underlay_path_";
+    private static final String LG_CUSTOM_UNDERLAY_LABEL_PREFIX =
+            "lg_custom_underlay_label_";
     static final String EFFECT_BACKGROUND_REFRESH_INTERVAL_HOURS =
             "effect_background_refresh_interval_hours";
     static final String EFFECT_BACKGROUND_SKIP_NIGHT =
@@ -522,7 +532,9 @@ final class OverlayPrefs {
     }
 
     static boolean debugRollingCharge(Context context) {
-        return get(context).getBoolean(DEBUG_ROLLING_CHARGE, false);
+        // Retired with the old Doodle > Debug panel. Keep the key only so older preference
+        // files remain readable; hidden tester state must not keep the animation enabled.
+        return false;
     }
 
     static boolean doodleAodEnabled(Context context) {
@@ -637,6 +649,59 @@ final class OverlayPrefs {
         Set<String> copy = packages == null
                 ? new HashSet<String>() : new HashSet<String>(packages);
         get(context).edit().putStringSet(USER_RUNTIME_BLACKLIST_PACKAGES, copy).apply();
+    }
+
+    static boolean autoHideExternalLockscreenApps(Context context) {
+        return get(context).getBoolean(AUTO_HIDE_EXTERNAL_LOCKSCREEN_APPS, false);
+    }
+
+    static Set<String> userLockscreenAllowlistPackages(Context context) {
+        Set<String> stored = get(context).getStringSet(
+                USER_LOCKSCREEN_ALLOWLIST_PACKAGES, null);
+        return stored == null ? new HashSet<String>() : new HashSet<String>(stored);
+    }
+
+    static void setUserLockscreenAllowlistPackages(Context context, Set<String> packages) {
+        Set<String> copy = packages == null
+                ? new HashSet<String>() : new HashSet<String>(packages);
+        get(context).edit().putStringSet(
+                USER_LOCKSCREEN_ALLOWLIST_PACKAGES, copy).apply();
+    }
+
+    static boolean lgCustomUnderlayEnabled(Context context) {
+        return get(context).getBoolean(LG_CUSTOM_UNDERLAY_ENABLED, false);
+    }
+
+    static File customLgUnderlayFile(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String path = get(context).getString(
+                LG_CUSTOM_UNDERLAY_PATH_PREFIX + normalized, "");
+        return ManualEffectBackground.resolvePrivateFile(context, path);
+    }
+
+    static String customLgUnderlayLabel(Context context, String profile) {
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        return get(context).getString(
+                LG_CUSTOM_UNDERLAY_LABEL_PREFIX + normalized, "Custom wallpaper");
+    }
+
+    static boolean setCustomLgUnderlay(Context context, String profile, File file,
+            String label) {
+        File resolved = file == null
+                ? null : ManualEffectBackground.resolvePrivateFile(
+                        context, file.getAbsolutePath());
+        if (!ManualEffectBackground.isUsable(resolved)) {
+            return false;
+        }
+        String normalized = FoldDisplayTarget.normalizeProfile(profile);
+        String safeLabel = label == null || label.trim().isEmpty()
+                ? "Custom wallpaper" : label.trim();
+        get(context).edit()
+                .putString(LG_CUSTOM_UNDERLAY_PATH_PREFIX + normalized,
+                        resolved.getAbsolutePath())
+                .putString(LG_CUSTOM_UNDERLAY_LABEL_PREFIX + normalized, safeLabel)
+                .apply();
+        return true;
     }
 
     static String normalizePackageName(String packageName) {

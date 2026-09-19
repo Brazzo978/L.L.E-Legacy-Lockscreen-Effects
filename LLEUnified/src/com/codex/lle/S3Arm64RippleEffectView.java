@@ -46,7 +46,9 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     private static final String TAG = "LLE64S3Ripple";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     private static final long LONG_PRESS_RIPPLE_MS = 600L;
-    private static final int STOCK_DRAG_RIPPLE_THRESHOLD_PX = 150;
+    // Stock used 150 px on a 720 px short side. Modern high-density panels make
+    // that cadence look and sound too busy, so L.L.E deliberately uses 180/720.
+    private static final int MODERN_DRAG_RIPPLE_THRESHOLD_PX = 180;
     private static final int STOCK_REFERENCE_SHORT_SIDE_PX = 720;
     /* The original renderer advances the solver once per frame and targets a 60 Hz display.
      * Keep that intended cadence on a monotonic clock so faster panels change presentation
@@ -1663,15 +1665,13 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         private int dragRippleThresholdPx() {
             int shortSide = Math.min(surfaceWidth, surfaceHeight);
             if (shortSide <= 0) {
-                return STOCK_DRAG_RIPPLE_THRESHOLD_PX;
+                return MODERN_DRAG_RIPPLE_THRESHOLD_PX;
             }
             int scaled = Math.round(
-                    STOCK_DRAG_RIPPLE_THRESHOLD_PX
+                    MODERN_DRAG_RIPPLE_THRESHOLD_PX
                             * (shortSide / (float) STOCK_REFERENCE_SHORT_SIDE_PX));
-            // Preserve Samsung's literal 150 px minimum on lower-resolution and cover displays,
-            // while preventing high-resolution panels from producing denser drag ripples than
-            // the 720 px S3/Note 2 stock coordinate space.
-            return Math.max(STOCK_DRAG_RIPPLE_THRESHOLD_PX, scaled);
+            // Keep the same relative cadence across current phones, tablets and Fold panels.
+            return Math.max(MODERN_DRAG_RIPPLE_THRESHOLD_PX, scaled);
         }
 
         private boolean uploadActiveBackground() {

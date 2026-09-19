@@ -28,7 +28,7 @@ Questa integrazione è collegata al picker LLE64 come `S3 Water Ripple (Early Al
 - Ogni input conserva `downTime` ed `eventTime` da `SystemClock.uptimeMillis()`; il thread GL scarta eventi temporalmente precedenti all'ultimo elaborato.
 - Sequenza normale S3 conservata:
   - down: impulso `4 * intensity`;
-  - move: distanza intera accumulata e un solo impulso `3 * intensity` quando supera la soglia stock di 150 px; sui pannelli oltre 1080 px la soglia è `round(150 * shortSide / 1080)`;
+  - move: distanza intera accumulata e un solo impulso `3 * intensity`; L.L.E usa intenzionalmente una cadenza moderna di `180 px` sul riferimento da `720 px`, scalata come `max(180, round(180 * shortSide / 720))`, per evitare ripple e suoni troppo ravvicinati sui display contemporanei;
   - up tenuto `>600 ms`: impulso `4 * intensity`;
   - cancel: chiude il gesto senza nuovo impulso.
 - Coordinate conservate come nell'originale: conversione screen→mesh con ratio portrait `30/46`, landscape `45/25`, chiamata native con asse scambiato `ripple(glY, glX, ...)`.

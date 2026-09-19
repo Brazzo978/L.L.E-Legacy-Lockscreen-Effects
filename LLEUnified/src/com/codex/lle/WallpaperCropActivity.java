@@ -53,6 +53,7 @@ public final class WallpaperCropActivity extends Activity {
 
     public static final String MODE_SET_LOCK_AND_CACHE = "set_lock_and_cache";
     public static final String MODE_CACHE_ONLY = "cache_only";
+    public static final String MODE_LG_UNDERLAY_ONLY = "lg_underlay_only";
 
     private static final String TAG = "LLEWallpaperCrop";
     private static final String STATE_SOURCE_URI = "crop_source_uri";
@@ -186,7 +187,10 @@ public final class WallpaperCropActivity extends Activity {
                 ? FoldDisplayTarget.cacheProfileForContext(this) : requestedProfile);
         String requestedMode = intent == null ? null : intent.getStringExtra(EXTRA_MODE);
         mode = MODE_SET_LOCK_AND_CACHE.equals(requestedMode)
-                ? MODE_SET_LOCK_AND_CACHE : MODE_CACHE_ONLY;
+                ? MODE_SET_LOCK_AND_CACHE
+                : MODE_LG_UNDERLAY_ONLY.equals(requestedMode)
+                ? MODE_LG_UNDERLAY_ONLY
+                : MODE_CACHE_ONLY;
 
         int[] fallbackSize = currentDisplaySize();
         int configuredWidth = intent == null ? fallbackSize[0]
@@ -242,7 +246,10 @@ public final class WallpaperCropActivity extends Activity {
         TextView title = text("Center your wallpaper", Color.WHITE, 21f, true);
         titles.addView(title);
         String destination = MODE_SET_LOCK_AND_CACHE.equals(mode)
-                ? "Lock screen + all LLE effects" : "All LLE effects";
+                ? "Lock screen + all LLE effects"
+                : MODE_LG_UNDERLAY_ONLY.equals(mode)
+                ? "LG Last screen effects only"
+                : "All LLE effects";
         TextView subtitle = text(targetWidth + " × " + targetHeight + "  •  " + destination,
                 MUTED, 13f, false);
         titles.addView(subtitle);
@@ -312,7 +319,9 @@ public final class WallpaperCropActivity extends Activity {
         actions.addView(resetButton, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 0.34f));
         saveButton = actionButton(MODE_SET_LOCK_AND_CACHE.equals(mode)
-                ? "Set lock wallpaper" : "Use this crop", true, new View.OnClickListener() {
+                ? "Set lock wallpaper"
+                : MODE_LG_UNDERLAY_ONLY.equals(mode)
+                ? "Use for LG effects" : "Use this crop", true, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 requestSave();
@@ -588,7 +597,9 @@ public final class WallpaperCropActivity extends Activity {
         busy = true;
         setControlsEnabled(false);
         showLoading(MODE_SET_LOCK_AND_CACHE.equals(mode)
-                ? "Setting lock wallpaper and LLE source…" : "Saving exact LLE source…");
+                ? "Setting lock wallpaper and LLE source…"
+                : MODE_LG_UNDERLAY_ONLY.equals(mode)
+                ? "Saving LG reveal wallpaper…" : "Saving exact LLE source…");
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -600,10 +611,19 @@ public final class WallpaperCropActivity extends Activity {
                     if (MODE_SET_LOCK_AND_CACHE.equals(mode)) {
                         setExactLockWallpaper(prepared);
                     }
-                    // The same immutable prepared PNG backs every screenshot-driven renderer.
-                    if (!OverlayPrefs.useImportedEffectBackgroundForAll(
+                    if (MODE_LG_UNDERLAY_ONLY.equals(mode)) {
+                        if (!OverlayPrefs.setCustomLgUnderlay(
+                                WallpaperCropActivity.this, profile, imported.file,
+                                imported.displayName)) {
+                            throw new IOException(
+                                    "LLE could not commit the LG reveal wallpaper");
+                        }
+                    } else if (!OverlayPrefs.useImportedEffectBackgroundForAll(
                             WallpaperCropActivity.this, profile, imported.file,
                             imported.displayName, imported.width, imported.height)) {
+                        // The same immutable prepared image backs every screenshot-driven
+                        // renderer only in the traditional cache modes. LG-only imports are
+                        // deliberately independent so tiles/distortion keep their lock cache.
                         throw new IOException("LLE could not commit the fixed wallpaper source");
                     }
                     runOnUiThread(new Runnable() {
@@ -624,6 +644,8 @@ public final class WallpaperCropActivity extends Activity {
                             Toast.makeText(WallpaperCropActivity.this,
                                     MODE_SET_LOCK_AND_CACHE.equals(mode)
                                             ? "Lock wallpaper and LLE source are aligned"
+                                            : MODE_LG_UNDERLAY_ONLY.equals(mode)
+                                            ? "Custom LG wallpaper saved"
                                             : "Exact wallpaper source is active for LLE",
                                     Toast.LENGTH_LONG).show();
                             busy = false;

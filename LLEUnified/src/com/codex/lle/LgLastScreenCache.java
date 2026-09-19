@@ -41,11 +41,18 @@ final class LgLastScreenCache {
         final File file;
         final Argb8888BitmapStore.Info info;
         final boolean fallback;
+        final boolean customWallpaper;
 
         ResolvedSource(File file, Argb8888BitmapStore.Info info, boolean fallback) {
+            this(file, info, fallback, false);
+        }
+
+        ResolvedSource(File file, Argb8888BitmapStore.Info info, boolean fallback,
+                boolean customWallpaper) {
             this.file = file;
             this.info = info;
             this.fallback = fallback;
+            this.customWallpaper = customWallpaper;
         }
     }
 
@@ -89,6 +96,15 @@ final class LgLastScreenCache {
     static ResolvedSource resolve(Context context, int effect, Target target) {
         if (context == null || target == null) {
             return null;
+        }
+        if (OverlayPrefs.lgCustomUnderlayEnabled(context)) {
+            File custom = OverlayPrefs.customLgUnderlayFile(context, target.profile);
+            Argb8888BitmapStore.Info customInfo = Argb8888BitmapStore.inspect(custom);
+            if (customInfo != null
+                    && customInfo.width == target.width
+                    && customInfo.height == target.height) {
+                return new ResolvedSource(custom, customInfo, true, true);
+            }
         }
         Argb8888BitmapStore.Info lastScreen = inspect(target);
         if (lastScreen != null) {

@@ -4,11 +4,12 @@ Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern d
 
 Every lockscreen effect is recreated 1:1 using the original sources.
 
-**Current stable release:** `1.0.6.5` · **Recommended build:** ARM64
+**Current stable release:** `1.0.6.6` · **Recommended build:** ARM64
 
-New in [1.0.6.5](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.5):
-**S Pen mode for N3 Ripple Ink**, pressure-aware ink response, a faithful
-**Light Particle V1/V2** split, and refined HFR/S Pen controls.
+New in [1.0.6.6](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.6):
+a reorganized **Advanced** interface, safer lockscreen-app compatibility,
+independent custom **LG Last screen** backgrounds, broader GPU compatibility,
+and refined Ripple drag cadence on modern displays.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
 
@@ -173,6 +174,10 @@ sent anywhere automatically.
 - Samsung nighttime wallpaper dimming can make captured and displayed
   brightness differ; disabling that option is strongly recommended.
 - Fold wallpaper APIs do not expose every Cover/Main layer to third-party apps.
+- On slower devices, Android may finish the screen-off transition before L.L.E
+  can capture the LG Last screen source. If an LG/Sony effect shows the
+  lockscreen, black, or an outdated frame underneath, use **Effects → Wallpaper
+  source → Force custom wallpaper for Last screen effects**.
 - Some very HEAVY effect will not show properly on low end smartphones.
 
 ## Contributors

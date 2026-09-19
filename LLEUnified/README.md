@@ -206,6 +206,10 @@ screenshot and touch box separately.
 - Beta effects can differ slightly across GPUs, refresh rates and Android
   versions.
 - Screenshot capture can fail on protected or unusual lockscreen surfaces.
+- On slower devices, the screen-off transition can complete before Android
+  returns the LG Last screen capture. Use **Effects → Wallpaper source → Force
+  custom wallpaper for Last screen effects** when the automatic source is
+  black, stale, or already shows the lockscreen.
 - Direct wallpaper import is a Beta feature and needs precise crop alignment.
 - Samsung does not expose panel-specific wallpaper setting APIs to third-party
   apps on Fold devices; use automatic capture or provide Cover/Main images
