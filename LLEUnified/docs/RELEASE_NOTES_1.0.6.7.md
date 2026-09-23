@@ -2,7 +2,7 @@
 
 ## What's new
 
-- Added Easter egg.
+- Added Easter egg. A little surprise awaits the curious.
 - Added Emoji Trail customization with a choice of up to six emoji.
 - Added a seasonal calendar choice in Doodle for the automatic Seasonal effect
   and doodle.
