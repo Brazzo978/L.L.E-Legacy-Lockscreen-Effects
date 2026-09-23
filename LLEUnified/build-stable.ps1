@@ -1,7 +1,8 @@
 param(
     [switch] $IncludeLegacyVendor,
     [string] $KeystorePath = "",
-    [string] $KeyAlias = "lle-release"
+    [string] $KeyAlias = "lle-release",
+    [string] $LegacyKeystorePath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,7 +42,11 @@ if (-not (Get-Command -Name Get-FileHash -ErrorAction SilentlyContinue)) {
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $buildTools = Join-Path $env:LOCALAPPDATA "Android\Sdk\build-tools\35.0.1"
 $apksigner = Join-Path $buildTools "apksigner.bat"
-$oldKeystore = Join-Path $root ".keys\debug.keystore"
+$oldKeystore = if ([string]::IsNullOrWhiteSpace($LegacyKeystorePath)) {
+    Join-Path $root ".keys\debug.keystore"
+} else {
+    $LegacyKeystorePath
+}
 $expectedOldKeystoreSha256 = "DC310956BC5BB0A210950D68F4D2A24177D30DDE2CAF547C61C3F6CFD52B6AC8"
 $signingWork = Join-Path $root "build\release-signing"
 $lineagePath = Join-Path $signingWork "lle-signing-lineage.bin"
