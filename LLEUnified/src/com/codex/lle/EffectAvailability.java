@@ -34,6 +34,9 @@ final class EffectAvailability {
     }
 
     static boolean isAvailable(Context context, int effect) {
+        if (effect == OverlayPrefs.EFFECT_EMOJI_TRAIL) {
+            return OverlayPrefs.emojiTrailAvailable(context);
+        }
         return isAvailable(effect);
     }
 
@@ -65,6 +68,7 @@ final class EffectAvailability {
             case OverlayPrefs.EFFECT_GOOD_LOCK_POPPING:
             case OverlayPrefs.EFFECT_GOOD_LOCK_RECTANGLE:
             case OverlayPrefs.EFFECT_GOOD_LOCK_BOUNCING:
+            case OverlayPrefs.EFFECT_EMOJI_TRAIL:
                 return true;
             case OverlayPrefs.EFFECT_S3_NONE:
             case OverlayPrefs.EFFECT_LG_G2_PIXELATE:

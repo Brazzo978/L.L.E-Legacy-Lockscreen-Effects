@@ -31,6 +31,7 @@ final class LockSoundPlayer {
 
     private SoundPool soundPool;
     private int hulaHoopV2LockSound;
+    private int s3NoneUnlockSound;
 
     LockSoundPlayer(Context context) {
         this.context = context.getApplicationContext();
@@ -70,6 +71,15 @@ final class LockSoundPlayer {
         play(seasonalSounds[season], "season:" + season);
     }
 
+    void playS3NoneUnlock() {
+        if (!OverlayPrefs.unlockEffectSoundAllowedNow(context)) {
+            Log.i(TAG, "none unlock sound suppressed by effect sound settings");
+            return;
+        }
+        ensureLoaded();
+        play(s3NoneUnlockSound, "none:unlock");
+    }
+
     void release() {
         synchronized (soundLock) {
             if (soundPool != null) {
@@ -86,6 +96,7 @@ final class LockSoundPlayer {
                 seasonalSounds[i] = 0;
             }
             hulaHoopV2LockSound = 0;
+            s3NoneUnlockSound = 0;
         }
     }
 
@@ -110,6 +121,9 @@ final class LockSoundPlayer {
                     load(R.raw.lens_flare_lock);
             effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE] =
                     load(R.raw.s3_lock);
+            effectSounds[OverlayPrefs.EFFECT_S3_NONE] =
+                    load(R.raw.s3_none_lock);
+            s3NoneUnlockSound = load(R.raw.s3_none_unlock);
             effectSounds[OverlayPrefs.EFFECT_N4_INK_IN_WATER] =
                     effectSounds[OverlayPrefs.EFFECT_S3_RIPPLE_NATIVE];
             effectSounds[OverlayPrefs.EFFECT_STONE_SKIPPING] =
@@ -184,6 +198,8 @@ final class LockSoundPlayer {
                     seasonalSounds[SEASONAL_AUTUMN];
             effectSounds[OverlayPrefs.EFFECT_SEASONAL_WINTER] =
                     seasonalSounds[SEASONAL_WINTER];
+            effectSounds[OverlayPrefs.EFFECT_EMOJI_TRAIL] =
+                    seasonalSounds[SEASONAL_SUMMER];
         }
     }
 
@@ -246,20 +262,7 @@ final class LockSoundPlayer {
     }
 
     private int resolveSeason(int seasonMode) {
-        if (seasonMode >= SeasonalDoodleView.SEASON_SPRING
-                && seasonMode <= SeasonalDoodleView.SEASON_WINTER) {
-            return seasonMode;
-        }
-        int month = Calendar.getInstance().get(Calendar.MONTH);
-        if (month >= Calendar.MARCH && month <= Calendar.MAY) {
-            return SeasonalDoodleView.SEASON_SPRING;
-        }
-        if (month >= Calendar.JUNE && month <= Calendar.AUGUST) {
-            return SeasonalDoodleView.SEASON_SUMMER;
-        }
-        if (month >= Calendar.SEPTEMBER && month <= Calendar.NOVEMBER) {
-            return SeasonalDoodleView.SEASON_AUTUMN;
-        }
-        return SeasonalDoodleView.SEASON_WINTER;
+        return SeasonCalendar.resolve(seasonMode,
+                OverlayPrefs.seasonCalendar(context), Calendar.getInstance());
     }
 }

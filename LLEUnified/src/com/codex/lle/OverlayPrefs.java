@@ -21,6 +21,9 @@ final class OverlayPrefs {
     static final String PREFS = "overlay_prefs";
     static final String MASTER_ENABLED = "master_enabled";
     static final String EASTER_EGG_UNLOCKED = "easter_egg_unlocked";
+    static final String EMOJI_TRAIL_ENABLED = "emoji_trail_enabled";
+    static final String EMOJI_TRAIL_EMOJIS = "emoji_trail_emojis";
+    static final int EMOJI_TRAIL_MAX_EMOJIS = 6;
     /** Tester-only low-memory mode: never capture, load or retain lockscreen colormaps. */
     static final String TESTER_NO_COLORMAP_MODE = "tester_no_colormap_mode";
     static final String SHOW_AOD = "show_aod";
@@ -62,6 +65,7 @@ final class OverlayPrefs {
     static final String DOODLE_LOCK_SOUND_TIME_START = "doodle_lock_sound_time_start";
     static final String DOODLE_LOCK_SOUND_TIME_END = "doodle_lock_sound_time_end";
     static final String SEASON_MODE = "season_mode";
+    static final String SEASON_CALENDAR = "season_calendar";
     static final String DOODLE_SIZE_PERCENT = "doodle_size_percent";
     static final String POSITION_OFFSET_X = "position_offset_x";
     static final String POSITION_OFFSET_Y = "position_offset_y";
@@ -302,7 +306,8 @@ final class OverlayPrefs {
     static final int EFFECT_LG_G1_HULA_HOOP = 42;
     /** Stock-compatible Canvas restoration of LG G4 Circle Mosaic. */
     static final int EFFECT_LG_G4_CIRCLE_MOSAIC = 43;
-    static final int EFFECT_COUNT = 44;
+    static final int EFFECT_EMOJI_TRAIL = 44;
+    static final int EFFECT_COUNT = 45;
     static final int EFFECT_BACKGROUND_SOURCE_AUTO = 0;
     static final int EFFECT_BACKGROUND_SOURCE_IMPORTED = 1;
     static final int DEFAULT_TIME_START_MINUTE = 0;
@@ -516,6 +521,11 @@ final class OverlayPrefs {
 
     static int seasonMode(Context context) {
         return get(context).getInt(SEASON_MODE, SeasonalDoodleView.SEASON_AUTO);
+    }
+
+    static int seasonCalendar(Context context) {
+        return SeasonCalendar.normalize(get(context).getInt(SEASON_CALENDAR,
+                SeasonCalendar.EUROPE_AMERICA));
     }
 
     static int doodleSizePercent(Context context) {
@@ -745,6 +755,99 @@ final class OverlayPrefs {
         return get(context).getBoolean(UNLOCK_EFFECT_ENABLED, true);
     }
 
+    static boolean emojiTrailEnabled(Context context) {
+        return get(context).getBoolean(EMOJI_TRAIL_ENABLED, false);
+    }
+
+    static List<String> emojiTrailEmojis(Context context) {
+        String encoded = get(context).getString(EMOJI_TRAIL_EMOJIS, "");
+        ArrayList<String> result = new ArrayList<String>();
+        if (encoded == null || encoded.length() == 0) {
+            return result;
+        }
+        String[] values = encoded.split("\\|", -1);
+        for (String value : values) {
+            if (value == null || value.length() == 0 || result.contains(value)) {
+                continue;
+            }
+            result.add(value);
+            if (result.size() >= EMOJI_TRAIL_MAX_EMOJIS) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    static void setEmojiTrailEmojis(Context context, List<String> emojis) {
+        ArrayList<String> clean = new ArrayList<String>();
+        if (emojis != null) {
+            for (String emoji : emojis) {
+                if (emoji == null || emoji.length() == 0 || clean.contains(emoji)) {
+                    continue;
+                }
+                clean.add(emoji);
+                if (clean.size() >= EMOJI_TRAIL_MAX_EMOJIS) {
+                    break;
+                }
+            }
+        }
+        StringBuilder encoded = new StringBuilder();
+        for (String emoji : clean) {
+            if (encoded.length() > 0) {
+                encoded.append('|');
+            }
+            encoded.append(emoji);
+        }
+        SharedPreferences preferences = get(context);
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(EMOJI_TRAIL_EMOJIS, encoded.toString());
+        if (clean.isEmpty()) {
+            Set<Integer> pool = randomUnlockEffectPool(context);
+            pool.remove(EFFECT_EMOJI_TRAIL);
+            editor.putStringSet(UNLOCK_EFFECT_RANDOM_POOL,
+                            encodeRandomUnlockEffectPool(pool))
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING);
+            if (preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1)
+                    == EFFECT_EMOJI_TRAIL) {
+                editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT);
+            }
+            if (preferences.getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE)
+                    == EFFECT_EMOJI_TRAIL) {
+                editor.putInt(UNLOCK_EFFECT, EFFECT_S3_NONE);
+            }
+        }
+        editor.apply();
+    }
+
+    static boolean emojiTrailAvailable(Context context) {
+        SharedPreferences preferences = get(context);
+        return preferences.getBoolean(EASTER_EGG_UNLOCKED, false)
+                && preferences.getBoolean(EMOJI_TRAIL_ENABLED, false)
+                && !emojiTrailEmojis(context).isEmpty();
+    }
+
+    static synchronized void setEmojiTrailEnabled(Context context, boolean enabled) {
+        SharedPreferences preferences = get(context);
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(EMOJI_TRAIL_ENABLED, enabled);
+        if (!enabled) {
+            Set<Integer> pool = randomUnlockEffectPool(context);
+            pool.remove(EFFECT_EMOJI_TRAIL);
+            editor.putStringSet(UNLOCK_EFFECT_RANDOM_POOL,
+                            encodeRandomUnlockEffectPool(pool))
+                    .remove(UNLOCK_EFFECT_RANDOM_REMAINING);
+            if (preferences.getInt(UNLOCK_EFFECT_RANDOM_CURRENT, -1)
+                    == EFFECT_EMOJI_TRAIL) {
+                editor.remove(UNLOCK_EFFECT_RANDOM_CURRENT);
+            }
+            if (preferences.getInt(UNLOCK_EFFECT, EFFECT_S4_LENS_FLARE)
+                    == EFFECT_EMOJI_TRAIL) {
+                editor.putInt(UNLOCK_EFFECT, EFFECT_S3_NONE);
+            }
+        }
+        editor.apply();
+    }
+
     static boolean randomUnlockEffectEnabled(Context context) {
         return get(context).getBoolean(UNLOCK_EFFECT_RANDOM_ENABLED, false);
     }
@@ -964,6 +1067,7 @@ final class OverlayPrefs {
             // Resource-heavy effects remain opt-in so every first inclusion passes through
             // ControlActivity's explicit two-step warning.
             if (isRandomUnlockEffectEligible(context, effect)
+                    && effect != EFFECT_EMOJI_TRAIL
                     && !isRandomUnlockEffectExcludedForCost(effect)) {
                 result.add(effect);
             }
@@ -995,6 +1099,7 @@ final class OverlayPrefs {
                 || effect == EFFECT_MASS_TENSION
                 || effect == EFFECT_S3_NONE
                 || effect == EFFECT_N5_SPARKLING_BUBBLES_WIP
+                || effect == EFFECT_EMOJI_TRAIL
                 || isSeasonalUnlockEffect(effect);
     }
 
@@ -1213,6 +1318,8 @@ final class OverlayPrefs {
                 return "Seasonal Autumn";
             case EFFECT_SEASONAL_WINTER:
                 return "Seasonal Winter";
+            case EFFECT_EMOJI_TRAIL:
+                return "Emoji Trail";
             default:
                 return "Unknown effect " + effect;
         }

@@ -517,21 +517,8 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     }
 
     private int resolveSeason() {
-        if (seasonMode >= SeasonalDoodleView.SEASON_SPRING
-                && seasonMode <= SeasonalDoodleView.SEASON_WINTER) {
-            return seasonMode;
-        }
-        int month = Calendar.getInstance().get(Calendar.MONTH);
-        if (month >= Calendar.MARCH && month <= Calendar.MAY) {
-            return SeasonalDoodleView.SEASON_SPRING;
-        }
-        if (month >= Calendar.JUNE && month <= Calendar.AUGUST) {
-            return SeasonalDoodleView.SEASON_SUMMER;
-        }
-        if (month >= Calendar.SEPTEMBER && month <= Calendar.NOVEMBER) {
-            return SeasonalDoodleView.SEASON_AUTUMN;
-        }
-        return SeasonalDoodleView.SEASON_WINTER;
+        return SeasonCalendar.resolve(seasonMode,
+                OverlayPrefs.seasonCalendar(getContext()), Calendar.getInstance());
     }
 
     private void loadBitmaps() {
