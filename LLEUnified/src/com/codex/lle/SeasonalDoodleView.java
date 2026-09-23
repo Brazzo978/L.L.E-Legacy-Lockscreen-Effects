@@ -220,20 +220,8 @@ public class SeasonalDoodleView extends View {
     }
 
     private int resolvedTheme() {
-        if (seasonMode >= SEASON_SPRING && seasonMode <= SEASON_WINTER) {
-            return seasonMode;
-        }
-        int month = Calendar.getInstance().get(Calendar.MONTH);
-        if (month >= Calendar.MARCH && month <= Calendar.MAY) {
-            return SEASON_SPRING;
-        }
-        if (month >= Calendar.JUNE && month <= Calendar.AUGUST) {
-            return SEASON_SUMMER;
-        }
-        if (month >= Calendar.SEPTEMBER && month <= Calendar.NOVEMBER) {
-            return SEASON_AUTUMN;
-        }
-        return SEASON_WINTER;
+        return SeasonCalendar.resolve(seasonMode,
+                OverlayPrefs.seasonCalendar(getContext()), Calendar.getInstance());
     }
 
     private void drawSeasonalChargingDoodle(Canvas canvas, long now, int theme) {

@@ -2455,6 +2455,21 @@ public class ChargingAccessibilityService extends AccessibilityService
             applyHulaHoopVariantPreference();
             return;
         }
+        if (OverlayPrefs.EMOJI_TRAIL_ENABLED.equals(key)
+                || OverlayPrefs.EMOJI_TRAIL_EMOJIS.equals(key)
+                || OverlayPrefs.EASTER_EGG_UNLOCKED.equals(key)) {
+            int selectedEffect = OverlayPrefs.unlockEffect(this);
+            if (unlockEffectRendererType == OverlayPrefs.EFFECT_EMOJI_TRAIL
+                    || selectedEffect == OverlayPrefs.EFFECT_EMOJI_TRAIL) {
+                cancelUnlockAffordanceDispatch(false, "prefs:emoji_trail");
+                if (unlockEffectRenderer != null) {
+                    destroyUnlockEffectOverlay();
+                }
+                preloadAndAttachSelectedUnlockEffectParked("prefs:emoji_trail");
+            }
+            evaluateVisibility("prefs:emoji_trail", false);
+            return;
+        }
         if (OverlayPrefs.LENS_FLARE_GLES_RENDERER.equals(key)) {
             boolean staleEnabled = OverlayPrefs.get(this).getBoolean(key, false);
             if (staleEnabled) {
@@ -2611,6 +2626,7 @@ public class ChargingAccessibilityService extends AccessibilityService
             }
         }
         if ((OverlayPrefs.SEASON_MODE.equals(key)
+                || OverlayPrefs.SEASON_CALENDAR.equals(key)
                 || OverlayPrefs.POSITION_OFFSET_X.equals(key)
                 || OverlayPrefs.POSITION_OFFSET_Y.equals(key)
                 || OverlayPrefs.DOODLE_SIZE_PERCENT.equals(key)
@@ -2623,7 +2639,9 @@ public class ChargingAccessibilityService extends AccessibilityService
                 && overlayView != null) {
             applyOverlayPrefs();
         }
-        if (OverlayPrefs.SEASON_MODE.equals(key) && seasonalUnlockPartnerRenderer != null) {
+        if ((OverlayPrefs.SEASON_MODE.equals(key)
+                || OverlayPrefs.SEASON_CALENDAR.equals(key))
+                && seasonalUnlockPartnerRenderer != null) {
             seasonalUnlockPartnerRenderer.setSeasonMode(OverlayPrefs.seasonMode(this));
         }
         if (OverlayPrefs.SEASONAL_UNLOCK_PARTNER.equals(key)
@@ -4885,6 +4903,8 @@ public class ChargingAccessibilityService extends AccessibilityService
                         rendererContext(), OverlayPrefs.hulaHoopVariant(this));
             } else if (effect == OverlayPrefs.EFFECT_LG_G4_CIRCLE_MOSAIC) {
                 unlockEffectRenderer = new LgCircleMosaicEffectView(rendererContext());
+            } else if (effect == OverlayPrefs.EFFECT_EMOJI_TRAIL) {
+                unlockEffectRenderer = new EmojiTrailEffectView(rendererContext());
             } else if (effect == OverlayPrefs.EFFECT_RIPPLE_INK) {
                 unlockEffectRenderer = new RippleInkPortEffectView(
                         rendererContext(),
@@ -9367,6 +9387,10 @@ public class ChargingAccessibilityService extends AccessibilityService
         } else if (unlockEffectRenderer != null) {
             unlockEffectRenderer.updateGesture(screenX, screenY);
             unlockEffectRenderer.finishGesture(unlockTriggered);
+        }
+        if (unlockTriggered && unlockEffectRendererType == OverlayPrefs.EFFECT_S3_NONE
+                && lockSoundPlayer != null) {
+            lockSoundPlayer.playS3NoneUnlock();
         }
         unlockEffectGestureActive = false;
         if (unlockTriggered) {

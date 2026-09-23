@@ -39,6 +39,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -79,6 +80,7 @@ import java.util.Calendar;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.List;
 import java.util.Set;
 
 public class ControlActivity extends Activity {
@@ -112,7 +114,6 @@ public class ControlActivity extends Activity {
     private static final int TAB_CHARGING_DOODLE = 1;
     private static final int TAB_ADVANCED = 2;
     private static final int TAB_EASTER_EGG = 3;
-    private static final int EASTER_EGG_SWIPE_COUNT = 17;
     private static final String PROJECT_GITHUB_URL =
             "https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects";
     private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
@@ -194,7 +195,33 @@ public class ControlActivity extends Activity {
     private TextView touchBoxSummary;
     private TextView effectProfilerSummary;
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
-    private int advancedEdgeSwipeCount;
+    private final KonamiCode konamiCode = new KonamiCode();
+    private FrameLayout appScene;
+    private KonamiConfettiView konamiConfettiView;
+    private View konamiButtonA;
+    private View konamiButtonB;
+    private View konamiStartSelect;
+    private TextView konamiMissPopup;
+    private float konamiDownX;
+    private float konamiDownY;
+    private long konamiDownAt;
+    private boolean konamiTouchOnButton;
+    private final Runnable konamiTimeoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            int completed = konamiCode.expire(SystemClock.uptimeMillis());
+            if (completed > 0) {
+                clearKonamiButtons();
+                showKonamiMiss(completed);
+            }
+        }
+    };
+    private final Runnable konamiHideMissRunnable = new Runnable() {
+        @Override
+        public void run() {
+            clearKonamiMiss();
+        }
+    };
     private boolean easterEggUnlocked;
     private int pendingUnlockEffect = -1;
     private int pendingAbstractTilesLineMode = -1;
@@ -264,6 +291,7 @@ public class ControlActivity extends Activity {
         }
 
         FrameLayout scene = new FrameLayout(this);
+        appScene = scene;
         scene.addView(new GraceBackdropView(), new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -338,7 +366,7 @@ public class ControlActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (selectedTab == TAB_EASTER_EGG) {
-            advancedEdgeSwipeCount = 0;
+            resetKonamiCode();
             showTab(TAB_ADVANCED, true, -1);
             return;
         }
@@ -504,6 +532,9 @@ public class ControlActivity extends Activity {
     @Override
     protected void onStop() {
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        clearKonamiConfetti();
+        resetKonamiCode();
+        clearKonamiMiss();
         persistPendingUnlockEffect(false);
         hideEffectPreviewBubble();
         super.onStop();
@@ -512,13 +543,23 @@ public class ControlActivity extends Activity {
     @Override
     protected void onDestroy() {
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
+        clearKonamiConfetti();
+        resetKonamiCode();
+        clearKonamiMiss();
         hideEffectPreviewBubble();
         super.onDestroy();
     }
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (trackTabSwipe(event)) {
+        if (konamiConfettiView != null) {
+            return super.dispatchTouchEvent(event);
+        }
+        boolean konamiButtonGesture = konamiTouchOnButton || event != null
+                && event.getActionMasked() == MotionEvent.ACTION_DOWN
+                && isKonamiButtonAt(event.getRawX(), event.getRawY());
+        trackKonamiGesture(event);
+        if (!konamiButtonGesture && trackTabSwipe(event)) {
             return true;
         }
         return super.dispatchTouchEvent(event);
@@ -806,9 +847,6 @@ public class ControlActivity extends Activity {
 
     private void showTab(final int tab, boolean animate, final int direction) {
         final int targetTab = normalizeTab(tab);
-        if (targetTab < TAB_ADVANCED) {
-            advancedEdgeSwipeCount = 0;
-        }
         if (tabContent == null) {
             selectedTab = targetTab;
             updateTabStyles();
@@ -905,6 +943,7 @@ public class ControlActivity extends Activity {
         section.addView(infoText("You found the hidden customization menu."));
         section.addView(infoText("This section is currently under development and is not "
                 + "finished yet. Its features and layout may change in future updates."));
+        section.addView(emojiTrailControls());
         section.addView(outlineButton("REMOVE EASTER EGG", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -914,18 +953,396 @@ public class ControlActivity extends Activity {
         return section;
     }
 
+    private View emojiTrailControls() {
+        final LinearLayout panel = verticalGroup();
+        styleInsetPanel(panel);
+        panel.addView(subsectionTitle("Emoji Trail"));
+        panel.addView(infoText("Unlock a hidden effect built from up to six of your favorite "
+                + "emoji. Once configured, Emoji Trail appears at the very bottom of Effects."));
+
+        final boolean enabled = OverlayPrefs.emojiTrailEnabled(this);
+        final Switch toggle = styledToggle("Enable Emoji Trail", enabled);
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                OverlayPrefs.setEmojiTrailEnabled(ControlActivity.this, isChecked);
+                showTab(TAB_EASTER_EGG, false, 0);
+                if (isChecked) {
+                    showEmojiTrailPicker();
+                }
+            }
+        });
+        panel.addView(toggle);
+        if (!enabled) {
+            return panel;
+        }
+
+        final List<String> selected = OverlayPrefs.emojiTrailEmojis(this);
+        panel.addView(infoText(selected.isEmpty()
+                ? "Choose at least one emoji before the effect becomes available."
+                : "Selected (" + selected.size() + " / "
+                        + OverlayPrefs.EMOJI_TRAIL_MAX_EMOJIS + "): "
+                        + joinEmojiSelection(selected)));
+        if (!selected.isEmpty()) {
+            HorizontalScrollView selectedScroll = new HorizontalScrollView(this);
+            selectedScroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout selectedRow = new LinearLayout(this);
+            selectedRow.setOrientation(LinearLayout.HORIZONTAL);
+            for (final String emoji : selected) {
+                TextView chip = new TextView(this);
+                chip.setText(emoji + "  ×");
+                chip.setTextSize(21f);
+                chip.setGravity(Gravity.CENTER);
+                chip.setPadding(dp(12), 0, dp(12), 0);
+                chip.setBackground(solidDrawable(Color.rgb(232, 247, 245), dp(14),
+                        COLOR_ACCENT_DEEP, dp(1)));
+                chip.setContentDescription("Remove " + emoji);
+                chip.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        ArrayList<String> updated = new ArrayList<String>(
+                                OverlayPrefs.emojiTrailEmojis(ControlActivity.this));
+                        updated.remove(emoji);
+                        OverlayPrefs.setEmojiTrailEmojis(ControlActivity.this, updated);
+                        showTab(TAB_EASTER_EGG, false, 0);
+                    }
+                });
+                LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, dp(48));
+                chipParams.setMargins(dp(3), dp(3), dp(3), dp(3));
+                selectedRow.addView(chip, chipParams);
+            }
+            selectedScroll.addView(selectedRow);
+            panel.addView(selectedScroll);
+        }
+        panel.addView(outlineButton("CHOOSE EMOJIS", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showEmojiTrailPicker();
+            }
+        }));
+        return panel;
+    }
+
+    private void showEmojiTrailPicker() {
+        EmojiTrailPickerDialog.show(this, new Runnable() {
+            @Override
+            public void run() {
+                showTab(TAB_EASTER_EGG, false, 0);
+            }
+        });
+    }
+
+    private String joinEmojiSelection(List<String> emojis) {
+        StringBuilder value = new StringBuilder();
+        for (String emoji : emojis) {
+            if (value.length() > 0) {
+                value.append(' ');
+            }
+            value.append(emoji);
+        }
+        return value.toString();
+    }
+
+    private boolean trackKonamiGesture(MotionEvent event) {
+        if (event == null || easterEggUnlocked) {
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            konamiDownX = event.getRawX();
+            konamiDownY = event.getRawY();
+            konamiDownAt = event.getEventTime();
+            konamiTouchOnButton = isKonamiButtonAt(konamiDownX, konamiDownY);
+            if (konamiCode.progress() > 0) {
+                uiHandler.removeCallbacks(konamiTimeoutRunnable);
+            }
+            return false;
+        }
+        if (konamiTouchOnButton) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                konamiTouchOnButton = false;
+                if (action == MotionEvent.ACTION_CANCEL && konamiCode.progress() > 0) {
+                    int completed = konamiCode.progress();
+                    resetKonamiCode();
+                    showKonamiMiss(completed);
+                }
+            }
+            return false;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            return false;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            if (konamiCode.progress() > 0) {
+                int completed = konamiCode.progress();
+                resetKonamiCode();
+                showKonamiMiss(completed);
+            }
+            return false;
+        }
+        if (action != MotionEvent.ACTION_UP) {
+            return false;
+        }
+        int direction = konamiSwipeDirection(
+                event.getRawX() - konamiDownX,
+                event.getRawY() - konamiDownY);
+        if (direction != 0 || konamiCode.progress() > 0) {
+            stepKonamiCode(direction, konamiDownAt, event.getEventTime());
+        }
+        return false;
+    }
+
+    private int konamiSwipeDirection(float dx, float dy) {
+        float absX = Math.abs(dx);
+        float absY = Math.abs(dy);
+        float minimum = dp(TAB_SWIPE_MIN_DISTANCE_DP);
+        if (absX >= minimum && absX > absY * TAB_SWIPE_AXIS_RATIO) {
+            return dx < 0f ? KonamiCode.LEFT : KonamiCode.RIGHT;
+        }
+        if (absY >= minimum && absY > absX * TAB_SWIPE_AXIS_RATIO) {
+            return dy < 0f ? KonamiCode.UP : KonamiCode.DOWN;
+        }
+        return 0;
+    }
+
+    private boolean isKonamiButtonAt(float rawX, float rawY) {
+        return konamiButtonA != null && isPointInsideView(konamiButtonA, rawX, rawY)
+                || konamiButtonB != null && isPointInsideView(konamiButtonB, rawX, rawY)
+                || konamiStartSelect instanceof ViewGroup
+                && (isPointInsideView(((ViewGroup) konamiStartSelect).getChildAt(0), rawX, rawY)
+                || isPointInsideView(((ViewGroup) konamiStartSelect).getChildAt(1), rawX, rawY));
+    }
+
+    private void stepKonamiCode(int step) {
+        stepKonamiCode(step, konamiDownAt, SystemClock.uptimeMillis());
+    }
+
+    private void stepKonamiCode(int step, long startedAt, long completedAt) {
+        if (easterEggUnlocked) {
+            return;
+        }
+        KonamiCode.Result result = konamiCode.input(step, startedAt, completedAt);
+        Log.i("LLEKonami", "input=" + step + " accepted=" + result.accepted
+                + " completed=" + result.completedSteps + "/"
+                + KonamiCode.TOTAL_STEPS + " unlocked=" + result.unlocked);
+        if (result.unlocked) {
+            clearKonamiMiss();
+            unlockEasterEgg();
+            return;
+        }
+        if (result.accepted) {
+            clearKonamiMiss();
+            uiHandler.removeCallbacks(konamiTimeoutRunnable);
+            uiHandler.postDelayed(konamiTimeoutRunnable, konamiCode.timeoutMs() + 1L);
+            updateKonamiButtons();
+            if (result.completedSteps == 4) {
+                showKonamiMessage("keep going", 650L);
+            }
+        } else if (result.completedSteps > 0) {
+            uiHandler.removeCallbacks(konamiTimeoutRunnable);
+            clearKonamiButtons();
+            showKonamiMiss(result.completedSteps);
+        }
+    }
+
+    private void resetKonamiCode() {
+        uiHandler.removeCallbacks(konamiTimeoutRunnable);
+        konamiCode.reset();
+        konamiTouchOnButton = false;
+        clearKonamiButtons();
+    }
+
+    private void updateKonamiButtons() {
+        clearKonamiButtons();
+        if (appScene == null || easterEggUnlocked) {
+            return;
+        }
+        int progress = konamiCode.progress();
+        if (progress >= 8 && progress < KonamiCode.TOTAL_STEPS) {
+            konamiButtonA = addKonamiRoundButton("A", 120, 106, KonamiCode.A);
+            konamiButtonB = addKonamiRoundButton("B", 24, 106, KonamiCode.B);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            TextView select = konamiActionLabel("SELECT", false);
+            select.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    stepKonamiCode(KonamiCode.SELECT);
+                }
+            });
+            row.addView(select, new LinearLayout.LayoutParams(dp(84), dp(39)));
+            TextView start = konamiActionLabel("START", false);
+            start.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    stepKonamiCode(KonamiCode.START);
+                }
+            });
+            LinearLayout.LayoutParams startParams =
+                    new LinearLayout.LayoutParams(dp(84), dp(39));
+            startParams.setMargins(dp(12), 0, 0, 0);
+            row.addView(start, startParams);
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(39),
+                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            params.bottomMargin = dp(63);
+            appScene.addView(row, params);
+            konamiStartSelect = row;
+        }
+    }
+
+    private View addKonamiRoundButton(String label, int rightDp, int bottomDp,
+            final int step) {
+        TextView button = konamiActionLabel(label, true);
+        button.setTextSize(27f);
+        button.setBackground(solidDrawable(COLOR_GRACE_NAVY,
+                dp(44), Color.WHITE, dp(3)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setElevation(dp(14));
+        }
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                stepKonamiCode(step);
+            }
+        });
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dp(88), dp(88), Gravity.BOTTOM | Gravity.RIGHT);
+        params.rightMargin = dp(rightDp);
+        params.bottomMargin = dp(bottomDp);
+        appScene.addView(button, params);
+        return button;
+    }
+
+    private TextView konamiActionLabel(String label, boolean primary) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setTextColor(primary ? Color.WHITE : COLOR_GRACE_NAVY);
+        button.setTextSize(12f);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setContentDescription(label + " Konami button");
+        button.setBackground(solidDrawable(
+                primary ? COLOR_GRACE_NAVY : Color.rgb(232, 247, 248),
+                dp(22), COLOR_GRACE_AQUA, dp(2)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setElevation(dp(5));
+        }
+        return button;
+    }
+
+    private void clearKonamiButtons() {
+        if (appScene == null) {
+            return;
+        }
+        if (konamiButtonA != null) {
+            appScene.removeView(konamiButtonA);
+            konamiButtonA = null;
+        }
+        if (konamiButtonB != null) {
+            appScene.removeView(konamiButtonB);
+            konamiButtonB = null;
+        }
+        if (konamiStartSelect != null) {
+            appScene.removeView(konamiStartSelect);
+            konamiStartSelect = null;
+        }
+    }
+
+    private void showKonamiMiss(int completed) {
+        if (completed < 4) {
+            return;
+        }
+        showKonamiMessage("almost there " + completed + "/"
+                + KonamiCode.TOTAL_STEPS, 750L);
+        Log.i("LLEKonami", "miss popup=" + completed + "/"
+                + KonamiCode.TOTAL_STEPS);
+    }
+
+    private void showKonamiMessage(String message, long durationMs) {
+        if (appScene == null) {
+            return;
+        }
+        clearKonamiMiss();
+        TextView popup = new TextView(this);
+        popup.setText(message);
+        popup.setTextColor(Color.WHITE);
+        popup.setTextSize(13f);
+        popup.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        popup.setGravity(Gravity.CENTER);
+        popup.setPadding(dp(16), dp(9), dp(16), dp(9));
+        popup.setBackground(solidDrawable(Color.rgb(47, 53, 67), dp(20),
+                Color.TRANSPARENT, 0));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            popup.setElevation(dp(12));
+        }
+        popup.setContentDescription(popup.getText());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        params.bottomMargin = dp(153);
+        appScene.addView(popup, params);
+        konamiMissPopup = popup;
+        uiHandler.postDelayed(konamiHideMissRunnable, durationMs);
+    }
+
+    private void clearKonamiMiss() {
+        uiHandler.removeCallbacks(konamiHideMissRunnable);
+        if (konamiMissPopup != null && appScene != null) {
+            appScene.removeView(konamiMissPopup);
+            konamiMissPopup = null;
+        }
+    }
+
     private void unlockEasterEgg() {
-        advancedEdgeSwipeCount = 0;
+        resetKonamiCode();
         easterEggUnlocked = true;
         prefs.edit().putBoolean(OverlayPrefs.EASTER_EGG_UNLOCKED, true).apply();
         if (easterEggTabButton != null) {
             easterEggTabButton.setVisibility(View.VISIBLE);
         }
-        showTab(TAB_EASTER_EGG, false, 1);
+        if (appScene == null) {
+            showTab(TAB_EASTER_EGG, false, 1);
+            return;
+        }
+        clearKonamiConfetti();
+        final KonamiConfettiView confetti = new KonamiConfettiView(this);
+        konamiConfettiView = confetti;
+        appScene.addView(confetti, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        Log.i("LLEKonami", "confetti started");
+        confetti.play(new Runnable() {
+            @Override
+            public void run() {
+                if (konamiConfettiView != confetti) {
+                    return;
+                }
+                clearKonamiConfetti();
+                Log.i("LLEKonami", "confetti completed; opening easter egg");
+                showTab(TAB_EASTER_EGG, false, 1);
+            }
+        });
+    }
+
+    private void clearKonamiConfetti() {
+        if (konamiConfettiView != null) {
+            KonamiConfettiView confetti = konamiConfettiView;
+            konamiConfettiView = null;
+            confetti.stop();
+            if (appScene != null) {
+                appScene.removeView(confetti);
+            }
+        }
     }
 
     private void removeEasterEgg() {
-        advancedEdgeSwipeCount = 0;
+        clearKonamiConfetti();
+        resetKonamiCode();
+        OverlayPrefs.setEmojiTrailEnabled(this, false);
         easterEggUnlocked = false;
         prefs.edit().putBoolean(OverlayPrefs.EASTER_EGG_UNLOCKED, false).apply();
         if (easterEggTabButton != null) {
@@ -1023,9 +1440,6 @@ public class ControlActivity extends Activity {
             return;
         }
         final int target = normalizeTab(targetTab);
-        if (target < TAB_ADVANCED) {
-            advancedEdgeSwipeCount = 0;
-        }
         final int tabDirection = direction == 0 ? 1 : direction;
         final float width = tabPagerWidth();
         final LinearLayout adjacent = prepareAdjacentTabContent(target, tabDirection);
@@ -1302,24 +1716,17 @@ public class ControlActivity extends Activity {
                 showTab(TAB_EASTER_EGG, true, 1);
                 return true;
             }
-            advancedEdgeSwipeCount++;
-            if (advancedEdgeSwipeCount >= EASTER_EGG_SWIPE_COUNT) {
-                unlockEasterEgg();
-            }
-            return true;
+            return false;
         }
         if (dx < 0f && selectedTab < TAB_ADVANCED) {
-            advancedEdgeSwipeCount = 0;
             showTab(selectedTab + 1, true, 1);
             return true;
         }
         if (dx > 0f && selectedTab == TAB_EASTER_EGG) {
-            advancedEdgeSwipeCount = 0;
             showTab(TAB_ADVANCED, true, -1);
             return true;
         }
         if (dx > 0f && selectedTab > TAB_LOCKSCREEN_EFFECT) {
-            advancedEdgeSwipeCount = 0;
             showTab(selectedTab - 1, true, -1);
             return true;
         }
@@ -2124,7 +2531,89 @@ public class ControlActivity extends Activity {
                 "Snowflakes and crisp winter light.",
                 SeasonalDoodleView.SEASON_WINTER,
                 currentSeason));
+        section.addView(seasonCalendarControl());
         return section;
+    }
+
+    private View seasonCalendarControl() {
+        LinearLayout panel = verticalGroup();
+        panel.setPadding(dp(14), dp(12), dp(14), dp(14));
+        panel.setBackground(solidDrawable(Color.rgb(248, 251, 252), dp(16),
+                Color.rgb(218, 229, 232), dp(1)));
+        LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        panelParams.setMargins(0, dp(16), 0, dp(12));
+        panel.setLayoutParams(panelParams);
+        TextView title = new TextView(this);
+        title.setText("Seasonal calendar");
+        title.setTextSize(15f);
+        title.setTextColor(COLOR_TEXT);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        panel.addView(title);
+        TextView description = new TextView(this);
+        description.setText("Automatic Seasonal effect and doodle: choose when seasons change.");
+        description.setTextSize(12f);
+        description.setTextColor(COLOR_MUTED);
+        description.setPadding(0, dp(4), 0, dp(11));
+        panel.addView(description);
+        int current = OverlayPrefs.seasonCalendar(this);
+        LinearLayout choices = new LinearLayout(this);
+        choices.setOrientation(LinearLayout.HORIZONTAL);
+        choices.addView(seasonCalendarChoice("Europe / America",
+                SeasonCalendar.EUROPE_AMERICA, current, choices),
+                new LinearLayout.LayoutParams(0, dp(48), 1f));
+        LinearLayout.LayoutParams chinaParams =
+                new LinearLayout.LayoutParams(0, dp(48), 1f);
+        chinaParams.setMargins(dp(8), 0, 0, 0);
+        choices.addView(seasonCalendarChoice("China",
+                SeasonCalendar.CHINA_TRADITIONAL_APPROXIMATE, current, choices),
+                chinaParams);
+        panel.addView(choices);
+        return panel;
+    }
+
+    private TextView seasonCalendarChoice(String label, final int calendar, int current,
+            final LinearLayout choices) {
+        TextView choice = new TextView(this);
+        choice.setText(label);
+        choice.setTextSize(14f);
+        choice.setGravity(Gravity.CENTER);
+        choice.setIncludeFontPadding(false);
+        choice.setTag(Integer.valueOf(calendar));
+        styleSeasonCalendarChoice(choice, calendar, current);
+        choice.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                setSeasonCalendar(calendar, choices);
+            }
+        });
+        return choice;
+    }
+
+    private void styleSeasonCalendarChoice(TextView choice, int calendar, int current) {
+        choice.setTextColor(calendar == current ? Color.WHITE : COLOR_ACCENT_DEEP);
+        choice.setTypeface(Typeface.DEFAULT,
+                calendar == current ? Typeface.BOLD : Typeface.NORMAL);
+        choice.setBackground(solidDrawable(
+                calendar == current ? COLOR_ACCENT_DEEP : COLOR_ACCENT_SOFT,
+                dp(15), Color.argb(calendar == current ? 0 : 100, 64, 152, 160), dp(1)));
+        choice.setContentDescription(choice.getText() + " season calendar"
+                + (calendar == current ? ", selected" : ""));
+    }
+
+    private void setSeasonCalendar(int calendar, LinearLayout choices) {
+        if (OverlayPrefs.seasonCalendar(this) == calendar) {
+            return;
+        }
+        prefs.edit().putInt(OverlayPrefs.SEASON_CALENDAR, calendar).apply();
+        for (int index = 0; index < choices.getChildCount(); index++) {
+            View child = choices.getChildAt(index);
+            if (child instanceof TextView && child.getTag() instanceof Integer) {
+                styleSeasonCalendarChoice((TextView) child,
+                        ((Integer) child.getTag()).intValue(), calendar);
+            }
+        }
     }
 
     private View doodleAodControls() {
@@ -2564,6 +3053,14 @@ public class ControlActivity extends Activity {
                 "Snowflakes sparkling around your touch.",
                 OverlayPrefs.EFFECT_SEASONAL_WINTER,
                 current);
+        if (EffectAvailability.isAvailable(this, OverlayPrefs.EFFECT_EMOJI_TRAIL)) {
+            effects.addView(sectionLabel("Easter egg"));
+            addEffectOptionIfAvailable(effects,
+                    "Emoji Trail",
+                    "Your favorite emoji scatter and float along your swipe.",
+                    OverlayPrefs.EFFECT_EMOJI_TRAIL,
+                    current);
+        }
         applyEffectFilter(effects, false);
         root.addView(effects);
         root.addView(infoFooter());
@@ -2872,6 +3369,9 @@ public class ControlActivity extends Activity {
         if ("Seasonal".equalsIgnoreCase(label)) {
             return EFFECT_FILTER_SEASONAL;
         }
+        if ("Easter egg".equalsIgnoreCase(label)) {
+            return EFFECT_FILTER_SEASONAL;
+        }
         return -1;
     }
 
@@ -2907,6 +3407,7 @@ public class ControlActivity extends Activity {
             case OverlayPrefs.EFFECT_SEASONAL_SUMMER:
             case OverlayPrefs.EFFECT_SEASONAL_AUTUMN:
             case OverlayPrefs.EFFECT_SEASONAL_WINTER:
+            case OverlayPrefs.EFFECT_EMOJI_TRAIL:
                 return EFFECT_FILTER_SEASONAL;
             default:
                 return EFFECT_FILTER_SAMSUNG;
@@ -5084,21 +5585,8 @@ public class ControlActivity extends Activity {
     }
 
     private int resolveDoodlePreviewSeason(int mode) {
-        if (mode >= SeasonalDoodleView.SEASON_SPRING
-                && mode <= SeasonalDoodleView.SEASON_WINTER) {
-            return mode;
-        }
-        int month = Calendar.getInstance().get(Calendar.MONTH);
-        if (month >= Calendar.MARCH && month <= Calendar.MAY) {
-            return SeasonalDoodleView.SEASON_SPRING;
-        }
-        if (month >= Calendar.JUNE && month <= Calendar.AUGUST) {
-            return SeasonalDoodleView.SEASON_SUMMER;
-        }
-        if (month >= Calendar.SEPTEMBER && month <= Calendar.NOVEMBER) {
-            return SeasonalDoodleView.SEASON_AUTUMN;
-        }
-        return SeasonalDoodleView.SEASON_WINTER;
+        return SeasonCalendar.resolve(mode,
+                OverlayPrefs.seasonCalendar(this), Calendar.getInstance());
     }
 
     private void drawDoodleSeasonalParticles(Canvas canvas, Paint paint, int width, int height,
@@ -7479,6 +7967,8 @@ public class ControlActivity extends Activity {
                 return seasonAccentColor(SeasonalDoodleView.SEASON_AUTUMN);
             case OverlayPrefs.EFFECT_SEASONAL_WINTER:
                 return seasonAccentColor(SeasonalDoodleView.SEASON_WINTER);
+            case OverlayPrefs.EFFECT_EMOJI_TRAIL:
+                return Color.rgb(210, 95, 190);
             default:
                 return COLOR_ACCENT;
         }
@@ -8114,6 +8604,19 @@ public class ControlActivity extends Activity {
         float cx = rect.centerX();
         float cy = rect.centerY();
         float unit = Math.min(rect.width(), rect.height());
+
+        if (effect == OverlayPrefs.EFFECT_EMOJI_TRAIL) {
+            List<String> emojis = OverlayPrefs.emojiTrailEmojis(this);
+            String emoji = emojis.isEmpty() ? "✨" : emojis.get(0);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(unit * 0.58f);
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            float baseline = cy - (metrics.ascent + metrics.descent) * 0.5f;
+            canvas.drawText(emoji, cx, baseline, paint);
+            paint.setTextAlign(Paint.Align.LEFT);
+            return;
+        }
 
         if (OverlayPrefs.isSeasonalUnlockEffect(effect)) {
             drawSeasonalEffectMotif(canvas, paint,
