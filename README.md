@@ -4,12 +4,11 @@ Bring lockscreen effects from old Samsung, LG, and Sony devices back to modern d
 
 Every lockscreen effect is recreated 1:1 using the original sources.
 
-**Current stable release:** `1.0.6.6` · **Recommended build:** ARM64
+**Current stable release:** `1.0.6.7` · **Recommended build:** ARM64
 
-New in [1.0.6.6](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.6):
-a reorganized **Advanced** interface, safer lockscreen-app compatibility,
-independent custom **LG Last screen** backgrounds, broader GPU compatibility,
-and refined Ripple drag cadence on modern displays.
+New in [1.0.6.7](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.7):
+an Easter egg, Emoji Trail customization, seasonal calendar controls, and
+updated **S3 None** lock and unlock sounds.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
 
