@@ -7,8 +7,7 @@ Every lockscreen effect is recreated 1:1 using the original sources.
 **Current stable release:** `1.0.6.7` · **Recommended build:** ARM64
 
 New in [1.0.6.7](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/releases/tag/v1.0.6.7):
-an Easter egg, Emoji Trail customization, seasonal calendar controls, and
-updated **S3 None** lock and unlock sounds.
+an Easter egg, seasonal calendar controls, and updated **S3 None** lock and unlock sounds.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Brazzo978/L.L.E-Legacy-Lockscreen-Effects?style=for-the-badge&logo=github&label=STARS&labelColor=181717&color=F2C94C)](https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects/stargazers)
 
