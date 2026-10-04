@@ -189,7 +189,7 @@ public final class S6WaterDropletAppOwnedEffectView extends FrameLayout
                 Math.max(width, height),
                 this,
                 nativeRefreshPhysics,
-                nativeRefreshSpeedMultiplier);
+                nativeRefreshSpeedMultiplier, EffectWorkshopPrefs.values(context, 26));
         addView(
                 glView,
                 new LayoutParams(

@@ -48,6 +48,9 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
     private static final int SEAM_COLOR = 0xbb2b2b2b;
     private static final int SHADOW_COLOR = 0xbb000000;
 
+    private final EffectWorkshopConfig.Values workshop;
+    private final int stripCount;
+    private final float affectedRange;
     private final Paint stripPaint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
     private final Paint seamPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -60,7 +63,7 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
     private final PorterDuffColorFilter[] brightFilters = new PorterDuffColorFilter[100];
     private final LightingColorFilter[] darkFilters = new LightingColorFilter[100];
     private final float[] springOutput = new float[2];
-    private final float[] stripAlpha = new float[STRIP_COUNT];
+    private final float[] stripAlpha;
     private final SoundPool soundPool;
     private final int touchSound;
     private final int unlockSound;
@@ -70,7 +73,7 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
         public void run() {
             if (!destroyed) {
                 beginGesture(affordanceX, affordanceY);
-                postDelayed(affordanceRelease, AFFORDANCE_HOLD_MS);
+                postDelayed(affordanceRelease, workshop.intValue("hint_hold_ms"));
             }
         }
     };
@@ -107,12 +110,16 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
 
     public XperiaBlindsEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 35);
+        stripCount = workshop.intValue("strip_count");
+        affectedRange = workshop.get("affected_range");
+        stripAlpha = new float[stripCount];
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         seamPaint.setColor(SEAM_COLOR);
-        seamPaint.setStrokeWidth(2.0f);
+        seamPaint.setStrokeWidth(workshop.get("seam_width"));
         shadowPaint.setStyle(Paint.Style.FILL);
         resetStripAlpha();
         for (int i = 0; i < 100; i++) {
@@ -151,7 +158,7 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
         resetStripAlpha();
         touchX = clamp(x, 0f, Math.max(0f, renderWidth() - 1f));
         touchY = clamp(y, 0f, Math.max(0f, renderHeight() - 1f));
-        targetPosition = 1f;
+        targetPosition = workshop.get("fold_intensity");
         lastFrameAtNs = 0L;
         lastSoundStrip = -1;
         updateTouchSound();
@@ -337,8 +344,8 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
 
     private void drawBlinds(Canvas canvas, int width, int height, float exitAlpha) {
         float pressY = clamp(touchY / Math.max(1f, height), 0f, 1f);
-        int start = affectedStart(pressY);
-        int end = affectedEnd(pressY);
+        int start = XperiaBlindsDynamics.start(pressY,stripCount,affectedRange);
+        int end = XperiaBlindsDynamics.end(pressY,stripCount,affectedRange);
         if (end <= start) return;
 
         // L.L.E. keeps the live lockscreen visible underneath this transparent
@@ -356,10 +363,10 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
     private void drawFoldedStrip(
             Canvas canvas, int width, int height, int strip,
             float pressY, float exitAlpha) {
-        int top = bandTop(height, strip);
-        int bottom = bandTop(height, strip + 1);
+        int top = XperiaBlindsDynamics.bandTop(height, strip,stripCount);
+        int bottom = XperiaBlindsDynamics.bandTop(height, strip + 1,stripCount);
         if (bottom <= top) return;
-        float normalizedDistance = normalizedDistance(strip, pressY);
+        float normalizedDistance = XperiaBlindsDynamics.distance(strip,pressY,stripCount,affectedRange);
         if (Math.abs(normalizedDistance) >= 1f) return;
 
         float wave = (float) Math.sin(Math.PI * normalizedDistance);
@@ -373,13 +380,13 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
         float rotationPivotX = normalizedX < .5f
                 ? sourceRect.centerX() : -sourceRect.centerX();
         transform.postRotate(
-                (.5f - normalizedX) * HORIZONTAL_FOLD_DEGREES * fold,
+                (.5f - normalizedX) * workshop.get("horizontal_fold") * fold,
                 rotationPivotX,
                 sourceRect.width() / 2f);
 
         camera.save();
-        camera.translate(0f, 0f, CAMERA_DEPTH * fold);
-        camera.rotateX(CAMERA_FOLD_DEGREES * wave * springPosition);
+        camera.translate(0f, 0f, workshop.get("camera_depth") * fold);
+        camera.rotateX(workshop.get("camera_fold") * wave * springPosition);
         cameraTransform.reset();
         camera.getMatrix(cameraTransform);
         camera.restore();
@@ -387,25 +394,25 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
         transform.postTranslate(sourceRect.centerX(), sourceRect.centerY());
 
         setFoldColorFilter(wave * springPosition);
-        int alpha = Math.round(stripAlphaFor(strip, exitAlpha));
+        int alpha = Math.round(stripAlphaFor(strip, exitAlpha) * workshop.get("strip_opacity"));
         stripPaint.setAlpha(alpha);
-        seamPaint.setAlpha(alpha);
+        seamPaint.setAlpha(Math.round(alpha * workshop.get("seam_opacity")));
         int save = canvas.save();
         canvas.concat(transform);
         canvas.drawBitmap(backgroundBitmap, sourceRect, destinationRect, stripPaint);
 
-        if (springPosition > .5f) {
-            float shadowLength = (1f - Math.abs(normalizedDistance)) * 50f;
+        if (springPosition > workshop.get("shadow_threshold")) {
+            float shadowLength = (1f - Math.abs(normalizedDistance)) * workshop.get("shadow_length");
             shadowPaint.setShader(new LinearGradient(
                     sourceRect.left, sourceRect.top - .5f,
                     sourceRect.left, sourceRect.top + shadowLength,
-                    SHADOW_COLOR, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+                    (workshop.enabled ? Color.argb(Math.round(255f*workshop.get("shadow_alpha")),0,0,0) : SHADOW_COLOR), Color.TRANSPARENT, Shader.TileMode.CLAMP));
             canvas.drawRect(
                     sourceRect.left, sourceRect.top - .5f,
                     sourceRect.right, sourceRect.top + shadowLength,
                     shadowPaint);
         }
-        if (fold > .1f) {
+        if (fold > workshop.get("seam_threshold")) {
             canvas.drawLine(
                     sourceRect.left, sourceRect.top - 1f,
                     sourceRect.right, sourceRect.top - 1f,
@@ -425,7 +432,7 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
 
     private void setFoldColorFilter(float value) {
         int index = clampInt(
-                (int) (99f * Math.abs(value) * SHADE_STRENGTH), 0, 99);
+                (int) (99f * Math.abs(value) * workshop.get("shade_strength")), 0, 99);
         stripPaint.setColorFilter(
                 value > 0f ? brightFilters[index] : darkFilters[index]);
     }
@@ -450,9 +457,9 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
                 0L, Math.min(MAX_PHYSICS_STEP_NS, now - lastFrameAtNs));
         lastFrameAtNs = now;
         if (deltaNs == 0L) return;
-        springStepInto(
-                springPosition, springVelocity, targetPosition,
-                deltaNs / 1_000_000_000f, springOutput);
+        XperiaBlindsDynamics.spring(springPosition, springVelocity, targetPosition,
+                deltaNs / 1_000_000_000f, workshop.get("spring_stiffness"),
+                workshop.get("spring_damping"), springOutput);
         springPosition = Math.max(0f, springOutput[0]);
         springVelocity = springOutput[1];
     }
@@ -492,14 +499,14 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
     private void configureExitStripFade() {
         float pressY = clamp(touchY / Math.max(1f, getHeight()), 0f, 1f);
         float greatestDistance = 0f;
-        for (int strip = 0; strip < STRIP_COUNT; strip++) {
+        for (int strip = 0; strip < stripCount; strip++) {
             greatestDistance = Math.max(
                     greatestDistance,
-                    Math.abs(((strip + .5f) / STRIP_COUNT) - pressY));
+                    Math.abs(((strip + .5f) / stripCount) - pressY));
         }
         float maxAlpha = 255f;
-        for (int strip = 0; strip < STRIP_COUNT; strip++) {
-            float distance = Math.abs(((strip + .5f) / STRIP_COUNT) - pressY);
+        for (int strip = 0; strip < stripCount; strip++) {
+            float distance = Math.abs(((strip + .5f) / stripCount) - pressY);
             stripAlpha[strip] = 255f + 600f
                     * (greatestDistance <= 0f ? 0f : distance / greatestDistance);
             maxAlpha = Math.max(maxAlpha, stripAlpha[strip]);
@@ -512,27 +519,27 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
         float elapsedMs = Math.max(
                 0f, Math.min(50f, (now - lastExitFrameAtNs) / 1_000_000f));
         lastExitFrameAtNs = now;
-        for (int strip = 0; strip < STRIP_COUNT; strip++) {
+        for (int strip = 0; strip < stripCount; strip++) {
             stripAlpha[strip] = Math.max(
                     0f, stripAlpha[strip] - stripFadePerMs * elapsedMs);
         }
     }
 
     private float stripAlphaFor(int strip, float globalAlpha) {
-        return Math.min(255f, stripAlpha[clampInt(strip, 0, STRIP_COUNT - 1)])
+        return Math.min(255f, stripAlpha[clampInt(strip, 0, stripCount - 1)])
                 * globalAlpha;
     }
 
     private void resetStripAlpha() {
-        for (int strip = 0; strip < STRIP_COUNT; strip++) stripAlpha[strip] = 255f;
+        for (int strip = 0; strip < stripCount; strip++) stripAlpha[strip] = 255f;
         stripFadePerMs = 0f;
     }
 
     private void updateTouchSound() {
         int soundStrip = clampInt(
-                (int) (STRIP_COUNT * clamp(
+                (int) (stripCount * clamp(
                         touchY / Math.max(1f, renderHeight()), 0f, 1f)),
-                0, STRIP_COUNT - 1);
+                0, stripCount - 1);
         if (soundStrip != lastSoundStrip) {
             lastSoundStrip = soundStrip;
             play(touchSound);
@@ -542,7 +549,7 @@ public final class XperiaBlindsEffectView extends View implements UnlockEffectRe
     private void play(int soundId) {
         if (soundId != 0
                 && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-            soundPool.play(soundId, 1f, 1f, 0, 0, 1f);
+            soundPool.play(soundId, workshop.get("sound_gain"), workshop.get("sound_gain"), 0, 0, 1f);
         }
     }
 

@@ -60,6 +60,11 @@ import java.util.concurrent.RejectedExecutionException;
 public class ChargingAccessibilityService extends AccessibilityService
         implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static volatile ChargingAccessibilityService activeService;
+
+    static boolean isRuntimeServiceConnected() {
+        ChargingAccessibilityService service = activeService;
+        return service != null && service.serviceAlive;
+    }
     private static final String TAG = "ChargingA11y";
     private static final String ACTION_DEBUG_UNLOCK_EFFECT_PROFILE =
             "com.codex.lle.DEBUG_UNLOCK_EFFECT_PROFILE";
@@ -824,6 +829,7 @@ public class ChargingAccessibilityService extends AccessibilityService
     private RuntimeMemoryStats activeEffectProfileBefore;
     private boolean unlockEffectRendererNeedsRecreate;
     private String unlockEffectRendererRecreateReason = "";
+    private String unlockEffectRendererWorkshopSignature;
     private boolean colorScreenshotInFlight;
     private boolean lgPreLockUnderlayCaptureInFlight;
     private int lgPreLockUnderlayCaptureGeneration;
@@ -1637,6 +1643,14 @@ public class ChargingAccessibilityService extends AccessibilityService
         snapshot.append("effect_renderer_class=")
                 .append(service.unlockEffectRenderer == null ? "none"
                         : service.unlockEffectRenderer.getClass().getSimpleName()).append('\n');
+        EffectWorkshopConfig.Values workshopValues = EffectWorkshopPrefs.values(
+                service, OverlayPrefs.unlockEffect(service));
+        String savedWorkshopSignature = EffectWorkshopConfig.runtimeSignature(workshopValues);
+        snapshot.append("effect_workshop_custom_enabled=").append(workshopValues.enabled).append('\n');
+        snapshot.append("effect_workshop_renderer_matches_saved=")
+                .append(service.unlockEffectRenderer != null
+                        && savedWorkshopSignature.equals(service.unlockEffectRendererWorkshopSignature))
+                .append('\n');
         snapshot.append("effect_renderer_display_dimensions=")
                 .append(service.unlockEffectRendererDisplayWidth).append('x')
                 .append(service.unlockEffectRendererDisplayHeight).append('\n');
@@ -2401,6 +2415,24 @@ public class ChargingAccessibilityService extends AccessibilityService
             return;
         }
         if (holdRuntimeForBootSafety("prefs:" + key)) {
+            return;
+        }
+        int workshopEffect = EffectWorkshopPrefs.effectFromPreferenceKey(key);
+        if (workshopEffect >= 0) {
+            if (workshopEffect != OverlayPrefs.unlockEffect(this)) {
+                return;
+            }
+            String reason = "prefs:effect_workshop";
+            if (unlockEffectRenderer != null && !canRecreateStaleLockBgRenderer()) {
+                Log.i(TAG, "workshop settings saved; renderer replacement deferred type=" + workshopEffect);
+                return;
+            }
+            cancelUnlockAffordanceDispatch(false, reason);
+            if (unlockEffectRenderer != null) {
+                destroyUnlockEffectOverlay();
+            }
+            preloadAndAttachSelectedUnlockEffectParked(reason);
+            evaluateVisibility(reason, false);
             return;
         }
         if (OverlayPrefs.UNLOCK_EFFECT_RANDOM_ENABLED.equals(key)
@@ -4758,8 +4790,12 @@ public class ChargingAccessibilityService extends AccessibilityService
                     + "; applying safe fallback type=" + effect);
             effect = setUnlockEffectFallbackInternally(effect, "unavailable_in_build");
         }
+        String workshopSignature = EffectWorkshopConfig.runtimeSignature(
+                EffectWorkshopPrefs.values(this, effect));
         if (unlockEffectRenderer != null && unlockEffectRendererType == effect) {
-            if (!unlockEffectRendererNeedsRecreate || !isRecreatableNativeEffect(effect)) {
+            boolean workshopChanged = !workshopSignature.equals(unlockEffectRendererWorkshopSignature);
+            if (!workshopChanged
+                    && (!unlockEffectRendererNeedsRecreate || !isRecreatableNativeEffect(effect))) {
                 return;
             }
             if (!canRecreateStaleLockBgRenderer()) {
@@ -4773,7 +4809,7 @@ public class ChargingAccessibilityService extends AccessibilityService
                 return;
             }
             Log.i(TAG, "native lockbg renderer recreating reason="
-                    + unlockEffectRendererRecreateReason
+                    + (workshopChanged ? "workshop_settings_changed" : unlockEffectRendererRecreateReason)
                     + " type=" + effect);
             rearmAffordanceForReplacement = unlockAffordanceShownThisWake
                     && unlockAffordanceDeliveredRenderer == unlockEffectRenderer;
@@ -5181,6 +5217,11 @@ public class ChargingAccessibilityService extends AccessibilityService
             unlockAffordancePending = true;
             Log.i(TAG, "unlock affordance rearmed for replacement renderer type=" + effect);
         }
+        EffectWorkshopConfig.Values appliedWorkshop = EffectWorkshopPrefs.values(this, effect);
+        unlockEffectRendererWorkshopSignature = EffectWorkshopConfig.runtimeSignature(appliedWorkshop);
+        Log.i(TAG, "workshop renderer settings effect=" + effect
+                + " custom=" + appliedWorkshop.enabled
+                + " signature=" + Integer.toHexString(unlockEffectRendererWorkshopSignature.hashCode()));
         registerUnlockEffectReadinessListener();
         if (isRecreatableNativeEffect(effect)) {
             DisplayMetrics metrics = activeDisplayMetrics();
@@ -7945,6 +7986,7 @@ public class ChargingAccessibilityService extends AccessibilityService
         unlockEffectWindowParams = null;
         unlockEffectRendererType = -1;
         unlockEffectOverlayAddRetryAt = 0L;
+        unlockEffectRendererWorkshopSignature = null;
         unlockEffectOverlayParked = false;
         unlockEffectWindowNeutralizedForHandoff = false;
         unlockEffectGestureActive = false;

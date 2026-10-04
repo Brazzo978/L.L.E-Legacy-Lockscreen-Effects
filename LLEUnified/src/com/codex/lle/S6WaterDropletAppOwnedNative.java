@@ -8,7 +8,7 @@ final class S6WaterDropletAppOwnedNative {
     static final int TEXTURE_LANDSCAPE_BACKGROUND = 1;
     static final int TEXTURE_NORMAL = 2;
     static final int TEXTURE_EDGE_DENSITY = 3;
-    static final int BRIDGE_VERSION = 3;
+    static final int BRIDGE_VERSION = 4;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -40,6 +40,8 @@ final class S6WaterDropletAppOwnedNative {
     }
 
     static native int nativeBridgeVersion();
+
+    static native void nativeSetWorkshop(long handle, float[] values);
 
     static native long nativeCreate(
             int projectKind, int quality, long deterministicSeed);

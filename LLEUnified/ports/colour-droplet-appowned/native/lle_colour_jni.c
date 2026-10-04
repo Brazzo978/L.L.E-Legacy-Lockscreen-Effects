@@ -12,7 +12,7 @@
 #include <string.h>
 
 #define LLE_COLOUR_LOG_TAG "LLEColourDroplet"
-#define LLE_COLOUR_BRIDGE_VERSION 2
+#define LLE_COLOUR_BRIDGE_VERSION 3
 #define LLE_COLOUR_HANDLE_MAGIC UINT64_C(0x4c4c45434f4c4f52)
 #define LLE_COLOUR_DEFAULT_WIDTH 1440
 #define LLE_COLOUR_DEFAULT_HEIGHT 2560
@@ -752,4 +752,17 @@ Java_com_codex_lle_ColourDropletNative_nativeGetLastError(
             ? handle->error
             : "Invalid Coloured Droplet native handle";
     return (*env)->NewStringUTF(env, message);
+}
+
+/* Called on the owning GL thread immediately after CPU handle creation. */
+JNIEXPORT void JNICALL
+Java_com_codex_lle_ColourDropletNative_nativeSetWorkshop(JNIEnv *env, jclass clazz, jlong native_handle, jfloatArray values) {
+    (void)clazz;
+    LleColourHandle *handle = colour_handle(native_handle);
+    if (handle == NULL || handle->sim == NULL || values == NULL
+            || (*env)->GetArrayLength(env, values) != LLE_COLOUR_WORKSHOP_COUNT) return;
+    float packed[LLE_COLOUR_WORKSHOP_COUNT];
+    (*env)->GetFloatArrayRegion(env, values, 0, LLE_COLOUR_WORKSHOP_COUNT, packed);
+    if ((*env)->ExceptionCheck(env)) return;
+    lle_colour_sim_set_workshop(handle->sim, packed, LLE_COLOUR_WORKSHOP_COUNT);
 }

@@ -56,6 +56,21 @@ static float g_ink_anchor_x;
 static float g_ink_anchor_y;
 static uint32_t g_ink_random_state = 0x4e34494eU;
 static char g_last_error[ERROR_SIZE];
+static float g_workshop_radius = 1.0f, g_workshop_impulse = 1.0f, g_workshop_velocity = 1.0f;
+static float g_workshop_advection = 1.0f, g_workshop_density_decay = 1.0f, g_workshop_velocity_decay = 1.0f;
+static int g_workshop_jacobi = 20;
+
+static void reset_workshop(void) {
+    g_workshop_radius = g_workshop_impulse = g_workshop_velocity = 1.0f;
+    g_workshop_advection = g_workshop_density_decay = g_workshop_velocity_decay = 1.0f;
+    g_workshop_jacobi = 20;
+}
+static float workshop_bound(float v, float min, float max) {
+    return isfinite(v) ? fminf(max, fmaxf(min, v)) : 1.0f;
+}
+static float workshop_decay(float stock, float multiplier) {
+    return multiplier == 1.0f ? stock : fmaxf(0.0f, 1.0f - (1.0f-stock)*multiplier);
+}
 
 typedef struct InkStockPreset {
     int mode;
@@ -295,7 +310,7 @@ static void project_ink_velocity(const InkStockPreset *preset) {
 
     unsigned int pressure_index = 0U;
     /* Indigo's stock Fluid uses twenty Jacobi iterations. */
-    for (int iteration = 0; iteration < 20; ++iteration) {
+    for (int iteration = 0; iteration < g_workshop_jacobi; ++iteration) {
         const unsigned int destination = 1U - pressure_index;
         float *source = g_ink_pressure[pressure_index];
         float *target = g_ink_pressure[destination];
@@ -330,7 +345,7 @@ static void advance_ink_velocity(const InkStockPreset *preset) {
     const int height = g_ink_fluid_height;
     add_fast_ink_segment_velocity(preset);
     /* Stock performs one semi-Lagrangian velocity advection with dt=0.25. */
-    const float time_step_cells = 0.25f;
+    const float time_step_cells = 0.25f * g_workshop_advection;
     const float dissipation = preset == NULL ? 0.90f : preset->velocity_dissipation;
     for (int y = 1; y < height - 1; ++y) {
         for (int x = 1; x < width - 1; ++x) {
@@ -455,6 +470,7 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeInitGpu(
     (void) env;
     (void) clazz;
     clear_last_error();
+    reset_workshop();
 
     destroy_ink_surfaces();
     if (g_overlay_initialized) {
@@ -648,7 +664,12 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeAdvanceInk(
         return JNI_FALSE;
     }
 
-    const InkStockPreset preset = current_ink_preset();
+    InkStockPreset preset = current_ink_preset();
+    preset.add_radius *= g_workshop_radius;
+    preset.add_impulse *= g_workshop_impulse;
+    preset.velocity_impulse *= g_workshop_velocity;
+    preset.density_dissipation = workshop_decay(preset.density_dissipation, g_workshop_density_decay);
+    preset.velocity_dissipation = workshop_decay(preset.velocity_dissipation, g_workshop_velocity_decay);
     /* The stock frame scheduler uploads the solver result from the previous
      * frame before starting the next CPU update. */
     if (!upload_ink_velocity()) {
@@ -663,8 +684,8 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeAdvanceInk(
         args.velocity = &g_ink_velocity;
         args.source = &g_ink_density[g_ink_density_index];
         args.destination = &g_ink_density[destination_index];
-        args.time_step_x = 0.225f / (float) g_ink_fluid_width;
-        args.time_step_y = 0.225f / (float) g_ink_fluid_height;
+        args.time_step_x = 0.225f * g_workshop_advection / (float) g_ink_fluid_width;
+        args.time_step_y = 0.225f * g_workshop_advection / (float) g_ink_fluid_height;
         args.backward_step_size = preset.backward_step;
         args.dissipation = preset.density_dissipation;
         args.scale_x = (float) g_ink_viewport_width;
@@ -1060,4 +1081,19 @@ Java_com_codex_lle_S3RippleLifecycleNative_nativeGetLastError(
         jclass clazz) {
     (void) clazz;
     return (*env)->NewStringUTF(env, g_last_error);
+}
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_S3RippleLifecycleNative_nativeConfigureInk(
+        JNIEnv *env, jclass clazz, jfloat radius, jfloat impulse, jfloat velocity,
+        jfloat advection, jfloat density_decay, jfloat velocity_decay, jint iterations) {
+    (void)env; (void)clazz;
+    if (!g_initialized || !g_ink_initialized) return;
+    g_workshop_radius = workshop_bound(radius, .25f, 2.0f);
+    g_workshop_impulse = workshop_bound(impulse, .1f, 3.0f);
+    g_workshop_velocity = workshop_bound(velocity, 0.0f, 2.0f);
+    g_workshop_advection = workshop_bound(advection, .25f, 2.0f);
+    g_workshop_density_decay = workshop_bound(density_decay, .25f, 3.0f);
+    g_workshop_velocity_decay = workshop_bound(velocity_decay, .25f, 2.0f);
+    g_workshop_jacobi = iterations < 4 ? 4 : (iterations > 40 ? 40 : iterations);
 }

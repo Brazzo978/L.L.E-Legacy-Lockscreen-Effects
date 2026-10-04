@@ -52,6 +52,9 @@ final class N3RippleInkWorkerNative {
     /** Joins a pending worker and clears only velocity/pressure state, not GLES density. */
     static native void nativeReset(long handle);
 
+    /** Per-handle bounded pressure solver/advection settings; joins any pending update. */
+    static native void nativeConfigure(long handle, int iterations, float backtraceStep);
+
     /**
      * Returns the completed N-1 velocity surface, packed (vx-hi, vx-lo, vy-hi, vy-lo), then
      * launches the current ENB4 worker. Profile values must be the exact onDraw profile selected

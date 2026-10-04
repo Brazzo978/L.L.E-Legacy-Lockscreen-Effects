@@ -36,8 +36,14 @@ final class LgWhiteHoleWarp {
 
     static float displacement(float distance, float holeRadius,
             float absorbRadius, float bandWidth, float viewportWidth) {
+        return displacement(distance, holeRadius, absorbRadius, bandWidth, viewportWidth,
+                ABSORB_STRENGTH, EDGE_STRENGTH);
+    }
+
+    static float displacement(float distance, float holeRadius, float absorbRadius,
+            float bandWidth, float viewportWidth, float absorbStrength, float edgeStrength) {
         float normal = normal(distance, holeRadius, absorbRadius, bandWidth);
-        return strength(holeRadius, absorbRadius) * normal * normal
+        return (holeRadius >= absorbRadius ? edgeStrength : absorbStrength) * normal * normal
                 * Math.max(0f, viewportWidth);
     }
 

@@ -33,7 +33,33 @@ public final class RippleInkPortFluidPipelineTest {
         verifySeededWorkerJitterIsBoundedDeterministicAndTwoDraw();
         verifyWorkerMarginSkipsProjection();
         verifyThousandWorkerTicksStayFinite();
+        verifyWorkshopControlsAndIsolation();
         System.out.println("RippleInkPortFluidPipelineTest: PASS");
+    }
+
+    private static void verifyWorkshopControlsAndIsolation() {
+        RippleInkPortFluidPipeline stock = configuredPipeline();
+        RippleInkPortFluidPipeline tuned = new RippleInkPortFluidPipeline();
+        tuned.configureWorkshop(1.5f, 2f, .5f, 1.5f, 2f, 1.5f, 6);
+        tuned.configure(1080, 1920);
+        RecordingSink original = new RecordingSink(), changed = new RecordingSink();
+        stock.onTouch(RippleInkPortEngine.ACTION_DOWN, 540f, 960f, 1f, 0L);
+        tuned.onTouch(RippleInkPortEngine.ACTION_DOWN, 540f, 960f, 1f, 0L);
+        stock.executeFixedTick(original); tuned.executeFixedTick(changed);
+        stock.executeFixedTick(original); tuned.executeFixedTick(changed);
+        require("workshop radius changes real AddInk", Math.abs(changed.inks.get(1).radius
+                - original.inks.get(1).radius * 1.5f) < EPSILON);
+        require("workshop pigment changes real mass", Math.abs(changed.inks.get(1).impulseDensity
+                - original.inks.get(1).impulseDensity * 2f) < EPSILON);
+        require("workshop advection changes real shader step", Math.abs(changed.advects.get(1).timeStepX
+                - original.advects.get(1).timeStepX * 1.5f) < EPSILON);
+        require("workshop decay changes actual density", Math.abs(changed.advects.get(1).dissipation
+                - (1f - (1f-original.advects.get(1).dissipation)*2f)) < EPSILON);
+        require("another instance remains stock", original.inks.get(1).impulseDensity == 200f);
+        tuned.reset(); changed.inks.clear(); changed.advects.clear();
+        tuned.onTouch(RippleInkPortEngine.ACTION_DOWN, 540f, 960f, 1f, 0L);
+        tuned.executeFixedTick(changed); tuned.executeFixedTick(changed);
+        require("surface/reset preserves owned snapshot", changed.inks.get(1).impulseDensity == 400f);
     }
 
     /** The host harness must never fake Android JNI availability or silently exercise it. */

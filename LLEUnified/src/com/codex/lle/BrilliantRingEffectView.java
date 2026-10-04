@@ -35,6 +35,7 @@ import javax.microedition.khronos.opengles.GL10;
 /** Transparent GLES lifecycle host for Samsung's S5/Note 4 Brilliant Ring scene. */
 final class BrilliantRingEffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 14);
     private static final String TAG = "LLEBrilliantRing";
     private static final long GL_CLEANUP_TIMEOUT_MS = 350L;
     private static final long STOCK_SIMULATION_INTERVAL_NS = 16_666_667L;
@@ -734,7 +735,7 @@ final class BrilliantRingEffectView extends GLSurfaceView
 
     private void playOneShot(int soundId) {
         if (soundId != 0 && !destroyed && canPlaySound()) {
-            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+            soundPool.play(soundId, workshop.get("sound_volume"), workshop.get("sound_volume"), 1, 0, 1f);
         }
     }
 
@@ -751,12 +752,12 @@ final class BrilliantRingEffectView extends GLSurfaceView
 
     private void maybeStartDragSound(long now) {
         if (dragSoundStreamId != 0 || dragSound == 0 || gestureDownAt == 0L
-                || now - gestureDownAt <= DRAG_SOUND_LONG_PRESS_MS || !canPlaySound()) {
+                || now - gestureDownAt <= workshop.intValue("sound_long_press_ms") || !canPlaySound()) {
             return;
         }
         removeCallbacks(dragSoundFadeRunnable);
         dragSoundVolume = 1f;
-        dragSoundStreamId = soundPool.play(dragSound, 1f, 1f, 0, -1, 1f);
+        dragSoundStreamId = soundPool.play(dragSound, workshop.get("sound_volume"), workshop.get("sound_volume"), 0, -1, 1f);
     }
 
     private void fadeOutDragSound(float step) {
@@ -773,7 +774,7 @@ final class BrilliantRingEffectView extends GLSurfaceView
             return;
         }
         dragSoundVolume = Math.max(0f, dragSoundVolume - dragSoundFadeStep);
-        soundPool.setVolume(dragSoundStreamId, dragSoundVolume, dragSoundVolume);
+        soundPool.setVolume(dragSoundStreamId, dragSoundVolume * workshop.get("sound_volume"), dragSoundVolume * workshop.get("sound_volume"));
         if (dragSoundVolume > 0f) {
             postDelayed(dragSoundFadeRunnable, DRAG_SOUND_FADE_STEP_MS);
         } else {
@@ -791,7 +792,7 @@ final class BrilliantRingEffectView extends GLSurfaceView
     }
 
     private final class RingRenderer implements GLSurfaceView.Renderer {
-        final BrilliantRingGlesPipeline pipeline = new BrilliantRingGlesPipeline();
+        final BrilliantRingGlesPipeline pipeline = new BrilliantRingGlesPipeline(workshop);
         private final boolean adaptiveRefresh;
         private final BrilliantRingGlesPipeline.AdaptiveSimulationClock
                 adaptiveSimulationClock = new BrilliantRingGlesPipeline.AdaptiveSimulationClock();

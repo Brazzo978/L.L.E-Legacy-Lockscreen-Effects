@@ -65,6 +65,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     private final int unlockSound;
     private final int tensionTargetDensityDpi;
     private final float lineDeletePx;
+    private final EffectWorkshopConfig.Values workshop;
     private final Object soundLock = new Object();
     private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
     private final Set<Integer> pendingSoundIds = new HashSet<Integer>();
@@ -98,6 +99,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
     MassTensionEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 25);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
 
@@ -108,7 +110,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         fingerAfter = decode(R.drawable.mass_tension_finger_after);
         line = decode(R.drawable.mass_tension_line);
         outer = decode(R.drawable.mass_tension_outer);
-        lineDeletePx = 20f * tensionTargetDensityDpi
+        lineDeletePx = setting("line_gap", 20f) * tensionTargetDensityDpi
                 / DisplayMetrics.DENSITY_DEFAULT;
 
         soundPool = new SoundPool.Builder()
@@ -170,16 +172,16 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         int diffX = (int) (screenX - originX);
         int diffY = (int) (screenY - originY);
         float distance = (float) Math.hypot(diffX, diffY);
-        float threshold = Math.max(1f, outer.getWidth() * 0.5f);
+        float threshold = Math.max(1f, outer.getWidth() * 0.5f * setting("distance_scale", 1f));
         distanceRatio = distance / threshold;
 
-        betweenX = (int) (originX + ((screenX - originX) / BETWEEN_FACTOR));
-        betweenY = (int) (originY + ((screenY - originY) / BETWEEN_FACTOR));
+        betweenX = (int) (originX + ((screenX - originX) / setting("between_factor", BETWEEN_FACTOR)));
+        betweenY = (int) (originY + ((screenY - originY) / setting("between_factor", BETWEEN_FACTOR)));
         lineAngle = (float) Math.toDegrees(
                 Math.atan2(screenY - originY, screenX - originX));
 
         float radius = (finger.getWidth() * 0.5f)
-                + (outer.getWidth() * 0.5f) - CIRCLE_PLACE_ADJUST_PX;
+                + (outer.getWidth() * 0.5f) - setting("circle_adjust", CIRCLE_PLACE_ADJUST_PX);
         if (distanceRatio < TEMP_THRESHOLD) {
             fingerX = (int) screenX;
             fingerY = (int) screenY;
@@ -312,10 +314,11 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         drawCentered(canvas, finger, fingerX, fingerY, 1f, MAX_ALPHA);
         drawLine(canvas, betweenX, betweenY, lineSize, lineAngle, MAX_ALPHA);
 
-        int alpha = (int) (OUTER_MIN_ALPHA
-                + (MAX_ALPHA * distanceRatio * OUTER_ALPHA_FACTOR));
+        int minimumAlpha = (int) setting("outer_min_alpha", OUTER_MIN_ALPHA);
+        int alpha = (int) (minimumAlpha
+                + (MAX_ALPHA * distanceRatio * setting("outer_alpha", OUTER_ALPHA_FACTOR)));
         drawCentered(canvas, outer, (int) originX, (int) originY, 1f,
-                Math.min(MAX_ALPHA, Math.max(OUTER_MIN_ALPHA, alpha)));
+                Math.min(MAX_ALPHA, Math.max(minimumAlpha, alpha)));
     }
 
     private boolean drawRelease(Canvas canvas, long now) {
@@ -323,9 +326,10 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
         if (releaseMode == RELEASE_FADE) {
             drawReleaseOuter(canvas, elapsed);
+            long shortReleaseMs = Math.max(1L, Math.round(SHORT_RELEASE_MS * setting("fade_duration", 1f)));
             float progress = accelerateDecelerate(
-                    clamp01(elapsed / (float) SHORT_RELEASE_MS));
-            if (elapsed < SHORT_RELEASE_MS) {
+                    clamp01(elapsed / (float) shortReleaseMs));
+            if (elapsed < shortReleaseMs) {
                 float scale = 0.4f + 0.6f * progress;
                 int alpha = alphaFromRemaining(1f - progress);
                 drawCentered(canvas, fingerAfter, releaseFingerX, releaseFingerY,
@@ -333,7 +337,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
                 drawCentered(canvas, centerDotAfter, releaseBetweenX, releaseBetweenY,
                         scale, alpha);
             }
-            if (elapsed >= OUTER_FADE_MS) {
+            if (elapsed >= outerFadeMs()) {
                 releaseMode = RELEASE_NONE;
                 return false;
             }
@@ -342,9 +346,10 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
 
         // During a snap the original 20 px dot travels back to the initial touch
         // while the line retracts. It is below all four "after" roots in stock.
-        if (elapsed >= LINE_START_MS && elapsed < LINE_START_MS + LINE_RELEASE_MS) {
+        long lineReleaseMs = (long) setting("line_retraction", LINE_RELEASE_MS);
+        if (elapsed >= LINE_START_MS && elapsed < LINE_START_MS + lineReleaseMs) {
             float progress = decelerate(clamp01(
-                    (elapsed - LINE_START_MS) / (float) LINE_RELEASE_MS));
+                    (elapsed - LINE_START_MS) / (float) lineReleaseMs));
             float dotX = lerp(releaseBetweenX, (int) releaseOriginX, progress);
             float dotY = lerp(releaseBetweenY, (int) releaseOriginY, progress);
             drawCentered(canvas, centerDot, dotX, dotY, 1f, MAX_ALPHA);
@@ -368,9 +373,9 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
         if (elapsed < LINE_START_MS) {
             drawLine(canvas, releaseBetweenX, releaseBetweenY,
                     releaseLineSize, releaseLineAngle, MAX_ALPHA);
-        } else if (elapsed < LINE_START_MS + LINE_RELEASE_MS) {
+        } else if (elapsed < LINE_START_MS + lineReleaseMs) {
             float progress = decelerate(clamp01(
-                    (elapsed - LINE_START_MS) / (float) LINE_RELEASE_MS));
+                    (elapsed - LINE_START_MS) / (float) lineReleaseMs));
             drawLine(canvas, releaseBetweenX, releaseBetweenY,
                     releaseLineSize * (1f - progress), releaseLineAngle, MAX_ALPHA);
         }
@@ -410,11 +415,12 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
     }
 
     private void drawReleaseOuter(Canvas canvas, long elapsed) {
-        if (elapsed >= OUTER_FADE_MS) {
+        long outerFadeMs = outerFadeMs();
+        if (elapsed >= outerFadeMs) {
             return;
         }
         float progress = accelerateDecelerate(
-                clamp01(elapsed / (float) OUTER_FADE_MS));
+                clamp01(elapsed / (float) outerFadeMs));
         drawCentered(canvas, outer, (int) releaseOriginX, (int) releaseOriginY,
                 1f, alphaFromRemaining(1f - progress));
     }
@@ -477,7 +483,7 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
                 pendingSoundIds.add(soundId);
                 return;
             }
-            soundPool.play(soundId, TAP_VOLUME, TAP_VOLUME, 1, 0, 1f);
+            soundPool.play(soundId, soundVolume(), soundVolume(), 1, 0, 1f);
         }
     }
 
@@ -500,9 +506,21 @@ final class MassTensionEffectView extends View implements UnlockEffectRenderer {
             loadedSoundIds.add(sampleId);
             if (pendingSoundIds.remove(sampleId)
                     && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-                soundPool.play(sampleId, TAP_VOLUME, TAP_VOLUME, 1, 0, 1f);
+                soundPool.play(sampleId, soundVolume(), soundVolume(), 1, 0, 1f);
             }
         }
+    }
+
+    private float setting(String key, float original) {
+        return workshop.enabled ? workshop.get(key) : original;
+    }
+
+    private long outerFadeMs() {
+        return Math.max(1L, Math.round(OUTER_FADE_MS * setting("fade_duration", 1f)));
+    }
+
+    private float soundVolume() {
+        return Math.min(1f, TAP_VOLUME * setting("sound_gain", 1f));
     }
 
     private Bitmap decode(int resourceId) {

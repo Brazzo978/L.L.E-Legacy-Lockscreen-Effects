@@ -62,7 +62,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
     private static final AtomicReference<GeometricMosaicArm64EffectView> OWNER =
             new AtomicReference<GeometricMosaicArm64EffectView>();
 
-    private final MosaicRenderer mosaicRenderer = new MosaicRenderer();
+    private final MosaicRenderer mosaicRenderer;
+    private final EffectWorkshopConfig.Values workshop;
     private final FrameLayout windowHost;
     private final Object bitmapLock = new Object();
     private final Object readinessLock = new Object();
@@ -127,6 +128,8 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
 
     public GeometricMosaicArm64EffectView(Context context, boolean highRefreshPresentation) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 8);
+        mosaicRenderer = new MosaicRenderer();
         this.highRefreshPresentation = highRefreshPresentation;
         ownsRenderer = OWNER.compareAndSet(null, this);
 
@@ -209,7 +212,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         lastScreenX = screenX;
         lastScreenY = screenY;
         stopDragSound();
-        dragSoundVolume = 1.0f;
+        dragSoundVolume = workshop.get("sound_gain");
         dragSoundFadeStep = DRAG_SOUND_RELEASE_FADE_STEP;
         playOneShot(tapSound);
         queueTouch(MosaicRenderer.ACTION_DOWN, screenX, screenY);
@@ -785,7 +788,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
 
     private void playOneShot(int soundId) {
         if (!destroyed && soundId != 0 && canPlaySound()) {
-            soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
+            soundPool.play(soundId, workshop.get("sound_gain"), workshop.get("sound_gain"), 1, 0, 1.0f);
         }
     }
 
@@ -806,7 +809,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
                 || !canPlaySound()) {
             return;
         }
-        dragSoundVolume = 1.0f;
+        dragSoundVolume = workshop.get("sound_gain");
         dragSoundFading = false;
         removeCallbacks(dragSoundFadeRunnable);
         dragSoundStreamId = soundPool.play(
@@ -868,7 +871,7 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
         private static final float UNLOCK_FADE_SECONDS = 0.60f;
 
         private final GeometricMosaicGlesPipeline exactPipeline =
-                new GeometricMosaicGlesPipeline();
+                new GeometricMosaicGlesPipeline(workshop);
         private final ArrayList<Pulse> pulses = new ArrayList<Pulse>(MAX_SCENE_PULSES);
         private final FloatBuffer vertices;
         private final ByteBuffer maskPixels = ByteBuffer.allocateDirect(
@@ -1028,7 +1031,10 @@ public final class GeometricMosaicArm64EffectView extends GLSurfaceView
                 // the native trail by its 0.0085 normalized minimum distance.
                 lastX = x;
                 lastY = y;
-                if (dx * dx + dy * dy >= TOUCH_SAMPLE_DISTANCE * TOUCH_SAMPLE_DISTANCE) {
+                // Custom spacing belongs to the pipeline; retain the original extra gate
+                // only for stock rendering, otherwise it would hide small-spacing edits.
+                if (workshop.enabled
+                        || dx * dx + dy * dy >= TOUCH_SAMPLE_DISTANCE * TOUCH_SAMPLE_DISTANCE) {
                     exactPipeline.addTouch(x, y, now);
                 }
             } else if (action == ACTION_UP || action == ACTION_CANCEL) {

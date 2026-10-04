@@ -46,6 +46,7 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
     private static final float NATIVE_REFRESH_MAX_SPEED_MULTIPLIER = 2.0f;
 
     private final Listener listener;
+    private final EffectWorkshopConfig.Values workshop;
     private final Object bitmapLock = new Object();
     private final Object generationLock = new Object();
     private final Bitmap normalMap;
@@ -127,7 +128,22 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
             Listener listener,
             boolean nativeRefreshSimulationEnabled,
             float nativeRefreshSpeedMultiplier) {
+        this(context, normalMap, edgeDensityMap, projectKind, logicalShortSide, logicalLongSide, listener, nativeRefreshSimulationEnabled, nativeRefreshSpeedMultiplier, EffectWorkshopConfig.originals(26));
+    }
+
+    S6WaterDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalShortSide,
+            int logicalLongSide,
+            Listener listener,
+            boolean nativeRefreshSimulationEnabled,
+            float nativeRefreshSpeedMultiplier,
+            EffectWorkshopConfig.Values workshop) {
         super(context);
+        this.workshop = workshop == null ? EffectWorkshopConfig.originals(26) : workshop;
         this.normalMap = normalMap;
         this.edgeDensityMap = edgeDensityMap;
         this.projectKind = projectKind;
@@ -169,6 +185,8 @@ final class S6WaterDropletAppOwnedGlView extends GLSurfaceView
                 if (nativeHandle == 0L) {
                     throw new IllegalStateException("nativeCreate returned zero");
                 }
+                if (workshop.enabled) S6WaterDropletAppOwnedNative.nativeSetWorkshop(
+                        nativeHandle, EffectWorkshopDropsParameters.pack(workshop));
             } else {
                 /*
                  * The Java bitmaps survive EGL loss. Native CPU/simulation

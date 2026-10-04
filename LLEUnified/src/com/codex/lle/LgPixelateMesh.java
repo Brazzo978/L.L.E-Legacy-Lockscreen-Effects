@@ -4,6 +4,7 @@ package com.codex.lle;
 final class LgPixelateMesh {
     static final int BASE_RESOLUTION = 100;
 
+    private float intersectAlpha = .5f;
     final int width;
     final int height;
     final int rows;
@@ -31,12 +32,19 @@ final class LgPixelateMesh {
     }
 
     static LgPixelateMesh build(int requestedWidth, int requestedHeight) {
+        return build(requestedWidth, requestedHeight, EffectWorkshopConfig.originals(32));
+    }
+
+    static LgPixelateMesh build(int requestedWidth, int requestedHeight, EffectWorkshopConfig.Values values) {
         int width = Math.max(1, requestedWidth);
         int height = Math.max(1, requestedHeight);
-        int rows = BASE_RESOLUTION + 2;
+        int resolution = values.intValue("mesh_resolution");
+        float mix = values.get("uv_mix");
+        float inverseMix = values.enabled ? 1f - mix : .4f;
+        int rows = resolution + 2;
         float shortSide = Math.min(width, height);
         float longSide = Math.max(width, height);
-        int columns = Math.max(2, (int) (BASE_RESOLUTION * shortSide / longSide) + 2);
+        int columns = Math.max(2, (int) (resolution * shortSide / longSide) + 2);
         int vertices = rows * columns * 6;
         float[] positions = new float[vertices * 2];
         float[] uv = new float[vertices * 2];
@@ -54,8 +62,8 @@ final class LgPixelateMesh {
                 float u1 = (column + 1f) / columns;
                 float x0 = u0 * width;
                 float x1 = u1 * width;
-                float flat1u = .6f * u0 + .4f * u1;
-                float flat1v = .6f * v0 + .4f * v1;
+                float flat1u = mix * u0 + inverseMix * u1;
+                float flat1v = mix * v0 + inverseMix * v1;
                 vertex = put(vertex, positions, uv, mosaicUv, alpha,
                         x0, y0, u0, v0, flat1u, flat1v);
                 vertex = put(vertex, positions, uv, mosaicUv, alpha,
@@ -63,8 +71,8 @@ final class LgPixelateMesh {
                 vertex = put(vertex, positions, uv, mosaicUv, alpha,
                         x1, y0, u1, v0, flat1u, flat1v);
 
-                float flat2u = .6f * u1 + .4f * u0;
-                float flat2v = .6f * v0 + .4f * v1;
+                float flat2u = mix * u1 + inverseMix * u0;
+                float flat2v = mix * v0 + inverseMix * v1;
                 vertex = put(vertex, positions, uv, mosaicUv, alpha,
                         x0, y1, u0, v1, flat2u, flat2v);
                 vertex = put(vertex, positions, uv, mosaicUv, alpha,
@@ -73,8 +81,10 @@ final class LgPixelateMesh {
                         x1, y0, u1, v0, flat2u, flat2v);
             }
         }
-        return new LgPixelateMesh(width, height, rows, columns,
+        LgPixelateMesh mesh = new LgPixelateMesh(width, height, rows, columns,
                 positions, uv, mosaicUv, alpha, effect);
+        mesh.intersectAlpha = values.get("triangle_alpha");
+        return mesh;
     }
 
     void updateUserAlpha(float touchX, float touchY, float dragPx, float meshScale) {
@@ -96,11 +106,11 @@ final class LgPixelateMesh {
             effectAlpha[vertex + 2] = firstEffect;
             boolean secondIntersects = triangleIntersects(vertex + 3, transformedX,
                     transformedY, radiusSquared);
-            float second = secondIntersects ? .5f : 1f;
+            float second = secondIntersects ? intersectAlpha : 1f;
             userAlpha[vertex + 3] = second;
             userAlpha[vertex + 4] = second;
             userAlpha[vertex + 5] = second;
-            float secondEffect = secondIntersects ? .5f : 0f;
+            float secondEffect = secondIntersects ? 1f - intersectAlpha : 0f;
             effectAlpha[vertex + 3] = secondEffect;
             effectAlpha[vertex + 4] = secondEffect;
             effectAlpha[vertex + 5] = secondEffect;

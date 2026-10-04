@@ -27,6 +27,7 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
     private final Random random = new Random();
     private final ArrayList<Bitmap> emojiBitmaps = new ArrayList<Bitmap>();
     private final ArrayList<Particle> particles = new ArrayList<Particle>();
+    private final EffectWorkshopConfig.Values workshop;
     private float lastSpawnX;
     private float lastSpawnY;
     private long lastDragSoundAt;
@@ -39,6 +40,7 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
 
     EmojiTrailEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 44);
         setWillNotDraw(false);
         buildEmojiBitmaps(OverlayPrefs.emojiTrailEmojis(context));
     }
@@ -64,7 +66,7 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
         lastDragSoundAt = SystemClock.uptimeMillis();
         ensureSounds();
         play(tapSound);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < workshop.intValue("burst_count"); i++) {
             spawnParticle(screenX, screenY, true);
         }
         invalidate();
@@ -81,17 +83,18 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
         }
         float dx = screenX - lastSpawnX;
         float dy = screenY - lastSpawnY;
-        float minimum = MIN_TRAVEL_DP * density();
+        float minimum = workshop.get("spawn_distance") * density();
         if (dx * dx + dy * dy >= minimum * minimum) {
             spawnParticle(screenX, screenY, false);
-            if (random.nextInt(4) == 0) {
+            if (workshop.get("extra_probability") == .25f ? random.nextInt(4) == 0
+                    : random.nextFloat() < workshop.get("extra_probability")) {
                 spawnParticle(screenX, screenY, false);
             }
             lastSpawnX = screenX;
             lastSpawnY = screenY;
         }
         long now = SystemClock.uptimeMillis();
-        if (now - lastDragSoundAt >= DRAG_SOUND_INTERVAL_MS) {
+        if (now - lastDragSoundAt >= workshop.intValue("sound_interval")) {
             ensureSounds();
             play(dragSound);
             lastDragSoundAt = now;
@@ -173,22 +176,24 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
         if (emojiBitmaps.isEmpty()) {
             return;
         }
-        while (particles.size() >= MAX_PARTICLES) {
+        while (particles.size() >= workshop.intValue("max_particles")) {
             particles.remove(0);
         }
         float d = density();
         Particle particle = new Particle();
         particle.bitmap = emojiBitmaps.get(random.nextInt(emojiBitmaps.size()));
-        particle.startX = x + (random.nextFloat() - 0.5f) * (burst ? 46f : 24f) * d;
-        particle.startY = y + (random.nextFloat() - 0.5f) * (burst ? 38f : 18f) * d;
-        particle.travelX = (random.nextFloat() - 0.5f) * (burst ? 96f : 72f) * d;
-        particle.travelY = -(64f + random.nextFloat() * (burst ? 92f : 68f)) * d;
-        particle.startScale = 0.24f + random.nextFloat() * 0.16f;
-        particle.peakScale = 0.72f + random.nextFloat() * 0.52f;
-        particle.endScale = 0.46f + random.nextFloat() * 0.24f;
+        particle.startX = x + (random.nextFloat() - 0.5f) * workshop.get(burst ? "burst_spread_x" : "trail_spread_x") * d;
+        particle.startY = y + (random.nextFloat() - 0.5f) * workshop.get(burst ? "burst_spread_y" : "trail_spread_y") * d;
+        particle.travelX = (random.nextFloat() - 0.5f) * workshop.get(burst ? "burst_travel_x" : "trail_travel_x") * d;
+        particle.travelY = -(workshop.get("travel_y_min") + random.nextFloat() * workshop.get(burst ? "burst_travel_y" : "trail_travel_y")) * d;
+        particle.startScale = workshop.get("start_scale") + random.nextFloat() * workshop.get("start_scale_range");
+        particle.peakScale = workshop.get("peak_scale") + random.nextFloat() * workshop.get("peak_scale_range");
+        particle.endScale = workshop.get("end_scale") + random.nextFloat() * workshop.get("end_scale_range");
         particle.rotationStart = -12f + random.nextFloat() * 24f;
         particle.rotationEnd = particle.rotationStart - 42f + random.nextFloat() * 84f;
-        particle.durationMs = 850L + random.nextInt(501);
+        particle.rotationStart *= workshop.get("rotation");
+        particle.rotationEnd *= workshop.get("rotation");
+        particle.durationMs = workshop.intValue("lifetime_min") + random.nextInt(workshop.intValue("lifetime_range") + 1);
         particle.startMs = SystemClock.uptimeMillis();
         particles.add(particle);
     }
@@ -199,18 +204,21 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
         float x = particle.startX + particle.travelX * motion;
         float y = particle.startY + particle.travelY * motion;
         float scale;
-        if (progress < 0.22f) {
-            scale = lerp(particle.startScale, particle.peakScale, progress / 0.22f);
+        float growth = workshop.get("growth_phase");
+        if (progress < growth) {
+            scale = lerp(particle.startScale, particle.peakScale, progress / growth);
         } else {
             scale = lerp(particle.peakScale, particle.endScale,
-                    (progress - 0.22f) / 0.78f);
+                    (progress - growth) / (workshop.enabled ? 1f - growth : .78f));
         }
-        float alpha = progress < 0.12f
-                ? progress / 0.12f
-                : 1f - clamp((progress - 0.58f) / 0.42f);
+        float alphaIn = workshop.get("alpha_in");
+        float alphaOut = workshop.get("alpha_out");
+        float alpha = progress < alphaIn
+                ? progress / alphaIn
+                : 1f - clamp((progress - alphaOut) / (workshop.enabled ? 1f - alphaOut : .42f));
         float rotation = lerp(particle.rotationStart, particle.rotationEnd, progress);
         drawBitmap(canvas, particle.bitmap, x, y, scale * displayScale(), rotation,
-                Math.round(alpha * 255f));
+                Math.round(alpha * 255f * workshop.get("opacity")));
     }
 
     private void drawBitmap(Canvas canvas, Bitmap bitmap, float x, float y,
@@ -261,7 +269,8 @@ final class EmojiTrailEffectView extends View implements UnlockEffectRenderer {
         }
         ensureSounds();
         if (soundPool != null && soundId != 0) {
-            soundPool.play(soundId, 0.28f, 0.28f, 0, 0, 1f);
+            float gain = Math.min(1f, .28f * workshop.get("sound_gain"));
+            soundPool.play(soundId, gain, gain, 0, 0, 1f);
         }
     }
 

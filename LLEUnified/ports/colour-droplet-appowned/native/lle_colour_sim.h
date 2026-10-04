@@ -24,6 +24,27 @@ extern "C" {
 
 typedef struct LleColourSim LleColourSim;
 
+/* Immutable per-instance tuning, array order documented in WORKSHOP.md. */
+typedef struct LleColourWorkshop {
+    float radius_scale;
+    float density_scale;
+    float viscosity_scale;
+    float pressure_scale;
+    float near_pressure_scale;
+    float growth_scale;
+    float edge_bounce;
+    float tilt_x_scale;
+    float tilt_y_scale;
+    float refraction_scale;
+    float shadow_width;
+    float saturation;
+    float brightness;
+    float minimum_value;
+} LleColourWorkshop;
+#define LLE_COLOUR_WORKSHOP_COUNT 14u
+void lle_colour_sim_set_workshop(LleColourSim *sim, const float *values, size_t count);
+
+
 LleColourSim *lle_colour_sim_create(float width, float height, int project_kind,
                                     uint64_t seed);
 

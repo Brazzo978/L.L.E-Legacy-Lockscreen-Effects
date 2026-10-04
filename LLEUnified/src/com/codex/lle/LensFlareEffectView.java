@@ -29,15 +29,15 @@ import java.util.Random;
 public class LensFlareEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
     private static final String TAG = "ChargingS4LensFlare";
-    private static final long SHOW_ANIMATION_DURATION_MS = 6000L;
-    private static final long FOG_ON_DURATION_MS = 100L;
-    private static final long TAP_ANIMATION_DURATION_MS = 4000L;
-    private static final long FADE_OUT_DURATION_MS = 500L;
+    private final long showAnimationDurationMs;
+    private final long fogOnDurationMs;
+    private final long tapAnimationDurationMs;
+    private final long fadeOutDurationMs;
     private static final long UNLOCK_ANIMATION_DURATION_MS = 1200L;
-    private static final long AFFORDANCE_ON_DURATION_MS = 200L;
-    private static final long AFFORDANCE_OFF_DURATION_MS = 1100L;
-    private static final float GLOBAL_ALPHA = 0.8f;
-    private static final float FOG_MAX_ALPHA = 0.6f;
+    private final long affordanceOnDurationMs;
+    private final long affordanceOffDurationMs;
+    private final float globalAlpha;
+    private final float fogMaxAlpha;
     // The Note 4 oracle reserves highlight headroom for additive flares. Apply the
     // measured 8% compensation only to broadly saturated backgrounds: the matched
     // S23 wallpaper had 39.74% of pixels at max(R,G,B) >= 240, versus 0.15% on the
@@ -47,12 +47,14 @@ public class LensFlareEffectView extends FrameLayout
     private static final float BACKGROUND_HIGHLIGHT_FRACTION = 0.10f;
     private static final int BACKGROUND_BRIGHTNESS_SAMPLE_SIDE = 64;
     private static final float DEFAULT_IN_SAMPLE_SIZE = 2f;
-    private static final float BASE_FINGER_Y_OFFSET_PX = -80f;
-    private static final float BASE_MAX_ALPHA_DISTANCE_PX = 1500f;
-    private static final float BASE_TAP_AREA_RADIUS_PX = 600f;
     private static final float BASE_SCREEN_WIDTH_PX = 1080f;
-    private static final int TAP_HEXAGON_TOTAL = 7;
-    private static final int DRAG_HEXAGON_TOTAL = 6;
+    private final int tapHexagonTotal;
+    private final int dragHexagonTotal;
+    private final float spriteScale;
+    private final float dragHexagonSpacing;
+    private final float tapSoundGain;
+    private final float unlockSoundGain;
+    private final EffectWorkshopConfig.Values workshop;
     private static final String ADDITIVE_COMPOSITE_SHADER =
             "uniform shader flare;"
             + "uniform shader background;"
@@ -94,10 +96,10 @@ public class LensFlareEffectView extends FrameLayout
     private final Bitmap flareVignetting;
     private final Bitmap[] tapHexagons;
     private final Bitmap[] dragHexagons;
-    private final float[] tapHexagonRotations = new float[TAP_HEXAGON_TOTAL];
-    private final float[] dragHexagonDistance = new float[DRAG_HEXAGON_TOTAL];
-    private final float[] dragHexagonScale = new float[DRAG_HEXAGON_TOTAL];
-    private final float[] dragHexagonRotations = new float[DRAG_HEXAGON_TOTAL];
+    private final float[] tapHexagonRotations;
+    private final float[] dragHexagonDistance;
+    private final float[] dragHexagonScale;
+    private final float[] dragHexagonRotations;
     private final float fingerYOffsetPx;
     private final float maxAlphaDistancePx;
     private final float tapAreaRadiusPx;
@@ -146,6 +148,27 @@ public class LensFlareEffectView extends FrameLayout
 
     public LensFlareEffectView(Context context) {
         super(context);
+        // Read one applied snapshot. Slider edits do not mutate a running renderer.
+        workshop = EffectWorkshopPrefs.values(
+                context, OverlayPrefs.EFFECT_S4_LENS_FLARE);
+        showAnimationDurationMs = workshop.enabled ? workshop.intValue("show_duration") : 6000L;
+        fogOnDurationMs = workshop.enabled ? workshop.intValue("fog_duration") : 100L;
+        tapAnimationDurationMs = workshop.enabled ? workshop.intValue("tap_duration") : 4000L;
+        fadeOutDurationMs = workshop.enabled ? workshop.intValue("fade_duration") : 500L;
+        affordanceOnDurationMs = workshop.enabled ? workshop.intValue("affordance_on_duration") : 200L;
+        affordanceOffDurationMs = workshop.enabled ? workshop.intValue("affordance_off_duration") : 1100L;
+        globalAlpha = workshop.enabled ? workshop.get("global_alpha") : 0.8f;
+        fogMaxAlpha = workshop.enabled ? workshop.get("fog_alpha") : 0.6f;
+        tapHexagonTotal = workshop.enabled ? workshop.intValue("tap_hexagon_count") : 7;
+        dragHexagonTotal = workshop.enabled ? workshop.intValue("drag_hexagon_count") : 6;
+        spriteScale = workshop.enabled ? workshop.get("sprite_scale") : 1f;
+        dragHexagonSpacing = workshop.enabled ? workshop.get("drag_hexagon_spacing") : 0.24f;
+        tapSoundGain = workshop.enabled ? workshop.get("tap_sound_gain") : 1f;
+        unlockSoundGain = workshop.enabled ? workshop.get("unlock_sound_gain") : 1f;
+        tapHexagonRotations = new float[tapHexagonTotal];
+        dragHexagonDistance = new float[dragHexagonTotal];
+        dragHexagonScale = new float[dragHexagonTotal];
+        dragHexagonRotations = new float[dragHexagonTotal];
         random = BuildFlavor.TESTER
                 ? new Random(LensFlareScene.AB_RANDOM_SEED) : new Random();
         setWillNotDraw(false);
@@ -192,9 +215,9 @@ public class LensFlareEffectView extends FrameLayout
         }
 
         float ratio = screenScaleRatio();
-        fingerYOffsetPx = BASE_FINGER_Y_OFFSET_PX * ratio;
-        maxAlphaDistancePx = BASE_MAX_ALPHA_DISTANCE_PX * ratio;
-        tapAreaRadiusPx = BASE_TAP_AREA_RADIUS_PX * ratio;
+        fingerYOffsetPx = (workshop.enabled ? workshop.get("finger_y_offset") : -80f) * ratio;
+        maxAlphaDistancePx = (workshop.enabled ? workshop.get("alpha_distance") : 1500f) * ratio;
+        tapAreaRadiusPx = (workshop.enabled ? workshop.get("tap_radius") : 600f) * ratio;
 
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(3)
@@ -256,7 +279,7 @@ public class LensFlareEffectView extends FrameLayout
         setHexagonRandomTarget();
         tapAnimation = createTapAnimation(startX, startY, now);
         unlockAnimation = null;
-        play(tapSound);
+        play(tapSound, tapSoundGain);
         Log.i(TAG, "canvas lens flare begin x=" + Math.round(startX)
                 + " y=" + Math.round(startY));
         invalidateEffect();
@@ -293,7 +316,7 @@ public class LensFlareEffectView extends FrameLayout
                     currentY,
                     now,
                     unlockRotation());
-            play(unlockSound);
+            play(unlockSound, unlockSoundGain);
         }
         Log.i(TAG, "canvas lens flare finish completed=" + completed
                 + " x=" + Math.round(currentX)
@@ -486,7 +509,7 @@ public class LensFlareEffectView extends FrameLayout
                     currentFogAnimationValue(now));
             keepAnimating = true;
         } else if (fading) {
-            float t = clamp01((now - fadeStartedAt) / (float) FADE_OUT_DURATION_MS);
+            float t = clamp01((now - fadeStartedAt) / (float) fadeOutDurationMs);
             drawDragFlare(canvas, now, fadeX, fadeY, 1f - t,
                     fadeFogAnimationValue);
             keepAnimating = t < 1f;
@@ -496,7 +519,7 @@ public class LensFlareEffectView extends FrameLayout
         }
 
         if (tapAnimation != null) {
-            float t = clamp01((now - tapAnimation.startedAt) / (float) TAP_ANIMATION_DURATION_MS);
+            float t = clamp01((now - tapAnimation.startedAt) / (float) tapAnimationDurationMs);
             if (t < 1f) {
                 drawTapAnimation(canvas, tapAnimation, quintOut(t));
                 keepAnimating = true;
@@ -555,13 +578,14 @@ public class LensFlareEffectView extends FrameLayout
     private void drawDragFlare(Canvas canvas, long now, float x, float y, float fadeAlpha,
             float fogAnimationValue) {
         float objValue = quintOut(clamp01((now - gestureStartedAt)
-                / (float) SHOW_ANIMATION_DURATION_MS));
+                / (float) showAnimationDurationMs));
         float distance = (float) Math.hypot(x - startX, y - startY);
         float distanceAlpha = clamp01(distance / maxAlphaDistancePx);
         float fogAlpha = clamp01(fogAnimationValue * (1f - distanceAlpha))
-                * GLOBAL_ALPHA * fadeAlpha;
+                * globalAlpha * fadeAlpha;
         float objAlpha = clamp01(distanceAlpha * 3f) * fadeAlpha;
-        float rotation = -objValue * 30f - distanceAlpha * 160f;
+        float rotation = objValue * workshop.get("drag_rotation_time")
+                + distanceAlpha * workshop.get("drag_rotation_distance");
         float lightScale = 1f + distanceAlpha;
 
         drawAdditiveBitmapCentered(canvas, flareLight, x, y,
@@ -571,8 +595,8 @@ public class LensFlareEffectView extends FrameLayout
             return;
         }
 
-        for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
-            Bitmap hexagon = dragHexagons[i];
+        for (int i = 0; i < dragHexagonTotal; i++) {
+            Bitmap hexagon = dragHexagons[i % dragHexagons.length];
             float animationScale = 0.5f + objValue * 0.5f;
             float byDistanceScale = 0.5f + (distance / 720f) * 0.5f;
             float scale = dragHexagonScale[i] * byDistanceScale * animationScale;
@@ -586,7 +610,7 @@ public class LensFlareEffectView extends FrameLayout
 
     private void drawTapAnimation(Canvas canvas, TapAnimation animation, float value) {
         float alpha = value < 0.5f ? 1f : 1f - (value - 0.5f) * 2f;
-        alpha = clamp01(alpha) * GLOBAL_ALPHA;
+        alpha = clamp01(alpha) * globalAlpha;
         float distanceScale = 0.2f + 0.8f * value;
 
         for (int i = 0; i < animation.hexagons.length; i++) {
@@ -598,13 +622,13 @@ public class LensFlareEffectView extends FrameLayout
                     bitmapSize(hexagon.bitmap, scale), alpha, hexagon.rotation);
         }
 
-        float particleValue = value * 1.8f;
+        float particleValue = value * workshop.get("particle_pulse");
         float particleAlpha = pulseAlpha(particleValue);
         drawAdditiveBitmapCentered(canvas, flareParticle, animation.x, animation.y,
                 bitmapSize(flareParticle, value * 1.2f), particleAlpha,
                 animation.rotation);
 
-        float ringValue = value * 1.4f;
+        float ringValue = value * workshop.get("ring_pulse");
         float ringAlpha = pulseAlpha(ringValue);
         drawAdditiveBitmapCentered(canvas, flareRing, animation.x, animation.y,
                 bitmapSize(flareRing, 0.5f + value), ringAlpha, 0f);
@@ -617,12 +641,12 @@ public class LensFlareEffectView extends FrameLayout
             AffordanceAnimation animation) {
         long elapsed = now - animation.startedAt;
         float alpha;
-        if (elapsed < AFFORDANCE_ON_DURATION_MS) {
-            alpha = FOG_MAX_ALPHA * clamp01(elapsed / (float) AFFORDANCE_ON_DURATION_MS);
-        } else if (elapsed < AFFORDANCE_ON_DURATION_MS + AFFORDANCE_OFF_DURATION_MS) {
-            float offT = (elapsed - AFFORDANCE_ON_DURATION_MS)
-                    / (float) AFFORDANCE_OFF_DURATION_MS;
-            alpha = FOG_MAX_ALPHA * (1f - clamp01(offT));
+        if (elapsed < affordanceOnDurationMs) {
+            alpha = fogMaxAlpha * clamp01(elapsed / (float) affordanceOnDurationMs);
+        } else if (elapsed < affordanceOnDurationMs + affordanceOffDurationMs) {
+            float offT = (elapsed - affordanceOnDurationMs)
+                    / (float) affordanceOffDurationMs;
+            alpha = fogMaxAlpha * (1f - clamp01(offT));
         } else {
             return false;
         }
@@ -641,13 +665,14 @@ public class LensFlareEffectView extends FrameLayout
     }
 
     private TapAnimation createTapAnimation(float x, float y, long now) {
-        TapHexagon[] animationHexagons = new TapHexagon[TAP_HEXAGON_TOTAL];
+        TapHexagon[] animationHexagons = new TapHexagon[tapHexagonTotal];
         for (int i = 0; i < animationHexagons.length; i++) {
             float angle = randomRotation;
             float distance = random.nextFloat() * tapAreaRadiusPx;
             float dx = (float) Math.cos(angle) * distance;
             float dy = (float) Math.sin(angle) * distance;
-            float scale = 0.3f + random.nextFloat() * 0.8f;
+            float scale = workshop.get("tap_scale_min")
+                    + random.nextFloat() * workshop.get("tap_scale_range");
             Bitmap bitmap = tapHexagons[i % tapHexagons.length];
             animationHexagons[i] = new TapHexagon(
                     dx,
@@ -690,15 +715,15 @@ public class LensFlareEffectView extends FrameLayout
     }
 
     private void setHexagonRandomTarget() {
-        float startDistance = 0.2f;
-        float distanceGap = 0.24f;
-        for (int i = 0; i < DRAG_HEXAGON_TOTAL; i++) {
+        float startDistance = workshop.get("drag_start");
+        float distanceGap = dragHexagonSpacing;
+        for (int i = 0; i < dragHexagonTotal; i++) {
             float distance = startDistance + i * distanceGap
-                    + (random.nextFloat() - 0.5f) * 0.4f;
+                    + (random.nextFloat() - 0.5f) * workshop.get("drag_jitter");
             dragHexagonDistance[i] = distance;
-            dragHexagonScale[i] = dragHexagonDistance[i] + 0.2f;
+            dragHexagonScale[i] = dragHexagonDistance[i] + workshop.get("drag_scale_offset");
         }
-        for (int i = DRAG_HEXAGON_TOTAL - 1; i > 0; i--) {
+        for (int i = dragHexagonTotal - 1; i > 0; i--) {
             int swapIndex = random.nextInt(i + 1);
             float distance = dragHexagonDistance[i];
             dragHexagonDistance[i] = dragHexagonDistance[swapIndex];
@@ -763,6 +788,7 @@ public class LensFlareEffectView extends FrameLayout
         return Math.max(bitmap.getWidth(), bitmap.getHeight())
                 * DEFAULT_IN_SAMPLE_SIZE
                 * modeAssetScale
+                * spriteScale
                 * Math.max(0f, scale);
     }
 
@@ -799,10 +825,10 @@ public class LensFlareEffectView extends FrameLayout
         }
     }
 
-    private void play(int soundId) {
+    private void play(int soundId, float gain) {
         if (!destroyed && soundId != 0
                 && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+            soundPool.play(soundId, gain, gain, 1, 0, 1f);
         }
     }
 
@@ -822,7 +848,7 @@ public class LensFlareEffectView extends FrameLayout
             x = fadeX;
             y = fadeY;
             fadeAlpha = 1f - clamp01((now - fadeStartedAt)
-                    / (float) FADE_OUT_DURATION_MS);
+                    / (float) fadeOutDurationMs);
         } else {
             return 0f;
         }
@@ -935,7 +961,7 @@ public class LensFlareEffectView extends FrameLayout
                     int color = backgroundBitmap.getPixel(x, y);
                     if (Math.max(Color.red(color),
                             Math.max(Color.green(color), Color.blue(color)))
-                            >= BACKGROUND_HIGHLIGHT_CHANNEL) {
+                            >= workshop.intValue("highlight_channel")) {
                         brightSamples++;
                     }
                     sampleCount++;
@@ -947,8 +973,8 @@ public class LensFlareEffectView extends FrameLayout
             return;
         }
         float brightFraction = sampleCount <= 0 ? 0f : brightSamples / (float) sampleCount;
-        backgroundDimAlpha = brightFraction >= BACKGROUND_HIGHLIGHT_FRACTION
-                ? HIGH_BACKGROUND_DIM_ALPHA : 0f;
+        backgroundDimAlpha = brightFraction >= workshop.get("highlight_fraction")
+                ? workshop.get("background_dim") : 0f;
         Log.i(TAG, "lens flare adaptive background dim source=" + backgroundSource
                 + " brightFraction=" + brightFraction
                 + " threshold=" + BACKGROUND_HIGHLIGHT_FRACTION
@@ -967,8 +993,8 @@ public class LensFlareEffectView extends FrameLayout
     }
 
     private float currentFogAnimationValue(long now) {
-        return FOG_MAX_ALPHA * quintOut(clamp01((now - gestureStartedAt)
-                / (float) FOG_ON_DURATION_MS));
+        return fogMaxAlpha * quintOut(clamp01((now - gestureStartedAt)
+                / (float) fogOnDurationMs));
     }
 
     private float screenScaleRatio() {

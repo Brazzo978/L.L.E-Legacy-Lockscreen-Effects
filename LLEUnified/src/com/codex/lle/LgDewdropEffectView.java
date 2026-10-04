@@ -52,6 +52,7 @@ public final class LgDewdropEffectView extends View
             + "uniform float uRadius;"
             + "uniform float uEllipseB;"
             + "uniform float uAlpha;"
+            + "uniform float uRefractionIndex;"
             + "half4 main(float2 p) {"
             + " float2 d=p-uCenter; float r=length(d);"
             + " if (r>uRadius || uRadius<0.5) return half4(0.0);"
@@ -61,7 +62,7 @@ public final class LgDewdropEffectView extends View
             + " float z=b*sqrt(max(0.0,1.0-q*q/(a*a)));"
             + " float slope=atan((a*a*z)/(b*b*max(q,0.0001)));"
             + " float incidence=1.57079632679-slope;"
-            + " float refractAngle=asin(sin(incidence)/3.0);"
+            + " float refractAngle=asin(sin(incidence)/uRefractionIndex);"
             + " float newM=tan(slope+refractAngle);"
             + " float sourceR=abs(r-z/(abs(newM)>0.0001?newM:0.0001));"
             + " half4 c=uUnderlay.eval(uCenter+dir*sourceR);"
@@ -108,8 +109,11 @@ public final class LgDewdropEffectView extends View
         }
     };
 
+    private final EffectWorkshopConfig.Values workshop;
+
     public LgDewdropEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 39);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= 33) {
@@ -377,7 +381,8 @@ public final class LgDewdropEffectView extends View
         sourceRect.set(0, 0, underlay.getWidth(), underlay.getHeight());
         screenRect.set(0f, 0f, getWidth(), getHeight());
         bitmapPaint.setAlpha(Math.round(255f * alpha));
-        float ellipseB = ellipseHeight(drawRadius);
+        float ellipseB = EffectWorkshopLgOpticsParameters.dewdropEllipseHeight(workshop,
+                drawRadius, getResources().getDisplayMetrics().density, fullRadius());
 
         if (Build.VERSION.SDK_INT >= 33 && refractionShader != null) {
             if (underlayShader == null) rebuildUnderlayShader();
@@ -388,6 +393,7 @@ public final class LgDewdropEffectView extends View
                 refractionShader.setFloatUniform("uRadius", drawRadius);
                 refractionShader.setFloatUniform("uEllipseB", Math.max(0.001f, ellipseB));
                 refractionShader.setFloatUniform("uAlpha", alpha);
+                refractionShader.setFloatUniform("uRefractionIndex", workshop.get("refraction_index"));
                 bitmapPaint.setShader(refractionShader);
                 canvas.drawRect(screenRect, bitmapPaint);
                 bitmapPaint.setShader(null);
@@ -397,7 +403,8 @@ public final class LgDewdropEffectView extends View
         }
 
         if (holeTexture != null && !holeTexture.isRecycled()) {
-            float diameter = archiveHoleDiameter(drawRadius);
+            float diameter = EffectWorkshopLgOpticsParameters.dewdropOverlayDiameter(workshop,
+                    drawRadius, getResources().getDisplayMetrics().density);
             float half = diameter * 0.5f;
             holeRect.set(centerX - half, centerY - half, centerX + half, centerY + half);
             holePaint.setAlpha(Math.round(255f * alpha));
@@ -413,7 +420,8 @@ public final class LgDewdropEffectView extends View
             float inner = drawRadius * band / REFRACTION_BANDS;
             float outer = drawRadius * (band + 1f) / REFRACTION_BANDS;
             float sampleAt = (inner + outer) * 0.5f;
-            float sourceAt = refractedSourceRadius(sampleAt, drawRadius, ellipseB);
+            float sourceAt = EffectWorkshopLgOpticsParameters.dewdropSourceRadius(
+                    workshop, sampleAt, drawRadius, ellipseB);
             float scale = sourceAt > 0.001f ? sampleAt / sourceAt : 1f;
             scale = clamp(scale, 0.35f, 3f);
             annulus.reset();
@@ -445,54 +453,8 @@ public final class LgDewdropEffectView extends View
         underlayShader.setLocalMatrix(underlayShaderMatrix);
     }
 
-    /** Direct translation of dewdrop_vs.glsl for a positive radial coordinate. */
-    private static float refractedSourceRadius(float position, float a, float b) {
-        if (position <= 0.0001f || a <= 0.0001f || b <= 0.0001f) return 0f;
-        float clamped = Math.min(position, a);
-        float z = b * (float) Math.sqrt(Math.max(0f, 1f - clamped * clamped / (a * a)));
-        float slope = (float) Math.atan((a * a * z) / (b * b * clamped));
-        float incidence = (float) (Math.PI * 0.5) - slope;
-        float refraction = (float) Math.asin(Math.sin(incidence) / REFRACTION_INDEX);
-        float newM = (float) Math.tan(slope + refraction);
-        if (Math.abs(newM) < 0.0001f) return position;
-        return Math.abs(position - z / newM);
-    }
-
-    private float ellipseHeight(float a) {
-        float cap = dp(90f);
-        float b = 0.4f * a;
-        if (b > cap) {
-            float full = fullRadius();
-            float taperStart = cap / 0.4f;
-            b = cap * ((full - a) / Math.max(1f, full - taperStart));
-        }
-        return Math.max(0f, b);
-    }
-
-    /** Direct translation of the donor m180b() optical-overlay scale curve. */
-    private float archiveHoleDiameter(float r) {
-        float density = getResources().getDisplayMetrics().density;
-        float scale;
-        if (r <= 47.342f * density) {
-            scale = 0.23f / (47.342f * density) * r;
-        } else if (r <= 123.865f * density) {
-            scale = 0.00108987f + 0.37f / (76.522f * density) * r;
-        } else if (r <= 205.346f * density) {
-            scale = 0.4f / (81.48f * density) * r - 0.00807484f;
-        } else if (r <= 265.969f * density) {
-            scale = 0.7f / (142.103f * density) * r - 0.01016121f;
-        } else if (r <= 373.158f * density) {
-            scale = 0.05934662f + 0.5f / (107.189f * density) * r;
-        } else {
-            scale = 0.7f / (145.098f * density) * r - 0.000226446f;
-        }
-        // BitmapFactory scaled the original hdpi resource to the device density.
-        float decodedArchiveWidth = 720f * density / ARCHIVE_BASE_DENSITY;
-        return Math.max(0f, decodedArchiveWidth * scale);
-    }
-
-    private float minRadius() { return dp(44f); }
-    private float unlockDistance() { return dp(113.33f); }
+    private float minRadius() { return dp(workshop.get("minimum_radius")); }
+    private float unlockDistance() { return dp(workshop.get("drag_threshold")); }
     private float fullRadius() {
         // Keep the donor's generous target, but express it in actual view pixels. Its old
         // renderer multiplied display pixels by density a second time, which modern QHD

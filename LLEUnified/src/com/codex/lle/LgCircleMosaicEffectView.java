@@ -20,7 +20,8 @@ import java.util.Set;
 /** App-owned Canvas port of the LG G4 Circle Mosaic renderer. */
 public final class LgCircleMosaicEffectView extends View implements UnlockEffectRenderer,
         BackgroundSourceRenderer, SecondaryBackgroundSourceRenderer, UnlockEffectReadiness {
-    private final LgCircleMosaicScene scene = new LgCircleMosaicScene();
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 43);
+    private final LgCircleMosaicScene scene = new LgCircleMosaicScene(workshop);
     private final LgCircleMosaicScene.Frame frame = new LgCircleMosaicScene.Frame();
     private final Paint blurPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint underlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -293,18 +294,18 @@ public final class LgCircleMosaicEffectView extends View implements UnlockEffect
     }
 
     private void drawMosaic(Canvas canvas, LgCircleMosaicScene.Frame f) {
-        float cellWidth = getWidth() / (float) LgCircleMosaicScene.COLUMNS;
-        float cellHeight = getHeight() / (float) LgCircleMosaicScene.ROWS;
+        float cellWidth = getWidth() / (float) scene.columns();
+        float cellHeight = getHeight() / (float) scene.rows();
         float blurRadius = LgCircleMosaicScene.cellBlurRadius(f);
         blurPaint.setAlpha(Math.round(255f * f.alpha));
         underlayPaint.setAlpha(255);
-        for (int row = 0; row < LgCircleMosaicScene.ROWS; row++) {
+        for (int row = 0; row < scene.rows(); row++) {
             float top = row * cellHeight;
-            float bottom = row == LgCircleMosaicScene.ROWS - 1
+            float bottom = row == scene.rows() - 1
                     ? getHeight() : (row + 1) * cellHeight;
-            for (int column = 0; column < LgCircleMosaicScene.COLUMNS; column++) {
+            for (int column = 0; column < scene.columns(); column++) {
                 float left = column * cellWidth;
-                float right = column == LgCircleMosaicScene.COLUMNS - 1
+                float right = column == scene.columns() - 1
                         ? getWidth() : (column + 1) * cellWidth;
                 float centerX = (left + right) * .5f;
                 float centerY = (top + bottom) * .5f;

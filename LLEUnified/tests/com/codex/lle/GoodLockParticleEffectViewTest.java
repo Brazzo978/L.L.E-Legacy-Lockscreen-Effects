@@ -1,6 +1,8 @@
 package com.codex.lle;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Deterministic host seams for the Good Lock 24.0.15 particle port. */
 public final class GoodLockParticleEffectViewTest {
@@ -20,6 +22,9 @@ public final class GoodLockParticleEffectViewTest {
         testHighFrameSpeedMultiplierClamp();
         testHighFrameBouncingCompositionAndExactQOne();
         testLongDragInjectionCountIsPresentationIndependent();
+        testWorkshopDisabledIgnoresOverrides();
+        testWorkshopGravityComposesAcrossRefreshRates();
+        testWorkshopEmissionHasBoundedLiveCount();
     }
 
     private static void testDownCreatesExactlyFiveWallpaperSampledParticles() {
@@ -176,6 +181,73 @@ public final class GoodLockParticleEffectViewTest {
         }
         assertInt("long drag particle count", 25, simulation.particleCount());
         assertInt("long drag exact samples", 25, sampler.samples.size());
+    }
+
+    private static void testWorkshopDisabledIgnoresOverrides() {
+        Map<String, Float> overrides = new HashMap<String, Float>();
+        overrides.put("size", 4f);
+        overrides.put("velocity_x", 4f);
+        overrides.put("velocity_y", .1f);
+        overrides.put("gravity", 4f);
+        overrides.put("friction", 4f);
+        overrides.put("spawn_count", 40f);
+        for (GoodLockParticleEffectView.Variant variant : GoodLockParticleEffectView.Variant.values()) {
+            int effect = variant == GoodLockParticleEffectView.Variant.POPPING ? 28
+                    : variant == GoodLockParticleEffectView.Variant.RECTANGLE ? 29 : 30;
+            GoodLockParticleEffectView.Settings settings = new GoodLockParticleEffectView.Settings(
+                    EffectWorkshopConfig.create(effect, false, overrides), variant);
+            GoodLockParticleEffectView.Particle stock = GoodLockParticleEffectView.Particle.create(
+                    variant, 0xff8090a0, 120, 400, new FixedRandomSource());
+            GoodLockParticleEffectView.Particle disabled = GoodLockParticleEffectView.Particle.create(
+                    variant, 0xff8090a0, 120, 400, new FixedRandomSource(), settings);
+            for (int i = 0; i < 12; i++) {
+                stock.advanceHighFrame(.5f, 400, 800, new FixedRandomSource());
+                disabled.advanceHighFrame(.5f, 400, 800, new FixedRandomSource());
+            }
+            assertInt("disabled colour " + variant, stock.color, disabled.color);
+            assertInt("disabled size bits " + variant, Float.floatToIntBits(stock.size), Float.floatToIntBits(disabled.size));
+            assertInt("disabled x bits " + variant, Float.floatToIntBits(stock.x), Float.floatToIntBits(disabled.x));
+            assertInt("disabled y bits " + variant, Float.floatToIntBits(stock.y), Float.floatToIntBits(disabled.y));
+            assertInt("disabled rotation bits " + variant, Float.floatToIntBits(stock.degree), Float.floatToIntBits(disabled.degree));
+            GoodLockParticleEffectView.Simulation simulation = new GoodLockParticleEffectView.Simulation(
+                    variant, 400, 800, new FixedRandomSource(), settings);
+            simulation.touch(0, 120, 400, new RecordingSampler(400, 800, 0xff8090a0));
+            assertInt("disabled burst " + variant, 5, simulation.particleCount());
+        }
+    }
+
+    private static void testWorkshopGravityComposesAcrossRefreshRates() {
+        Map<String, Float> overrides = new HashMap<String, Float>();
+        overrides.put("gravity", 2.5f);
+        overrides.put("friction", 2f);
+        overrides.put("velocity_y", 1.5f);
+        GoodLockParticleEffectView.Settings settings = new GoodLockParticleEffectView.Settings(
+                EffectWorkshopConfig.create(30, true, overrides), GoodLockParticleEffectView.Variant.BOUNCING);
+        GoodLockParticleEffectView.Particle full = GoodLockParticleEffectView.Particle.create(
+                GoodLockParticleEffectView.Variant.BOUNCING, 0xff8090a0, 120, 400, new FixedRandomSource(), settings);
+        GoodLockParticleEffectView.Particle halves = GoodLockParticleEffectView.Particle.create(
+                GoodLockParticleEffectView.Variant.BOUNCING, 0xff8090a0, 120, 400, new FixedRandomSource(), settings);
+        full.advanceHighFrame(1f, 400, 800, new FixedRandomSource());
+        halves.advanceHighFrame(.5f, 400, 800, new FixedRandomSource());
+        halves.advanceHighFrame(.5f, 400, 800, new FixedRandomSource());
+        assertNear("custom composed x", full.x, halves.x);
+        assertNear("custom composed y", full.y, halves.y);
+        assertNear("custom composed gravity", full.accelerationY, halves.accelerationY);
+        assertNear("custom gravity applied", 5f, full.accelerationY);
+    }
+
+    private static void testWorkshopEmissionHasBoundedLiveCount() {
+        Map<String, Float> overrides = new HashMap<String, Float>();
+        overrides.put("spawn_count", 40f);
+        GoodLockParticleEffectView.Settings settings = new GoodLockParticleEffectView.Settings(
+                EffectWorkshopConfig.create(28, true, overrides), GoodLockParticleEffectView.Variant.POPPING);
+        GoodLockParticleEffectView.Simulation simulation = new GoodLockParticleEffectView.Simulation(
+                GoodLockParticleEffectView.Variant.POPPING, 400, 800, new FixedRandomSource(), settings);
+        RecordingSampler sampler = new RecordingSampler(400, 800, 0xff8090a0);
+        simulation.touch(0, 120, 400, sampler);
+        assertInt("custom burst count", 40, simulation.particleCount());
+        for (int i = 0; i < 100; i++) simulation.touch(0, 120, 400, sampler);
+        assertInt("workshop live particle cap", 2048, simulation.particleCount());
     }
 
     private static final class RecordingSampler implements GoodLockParticleEffectView.PixelSampler {

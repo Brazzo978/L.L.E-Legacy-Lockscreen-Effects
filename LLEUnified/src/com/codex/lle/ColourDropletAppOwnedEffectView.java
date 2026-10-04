@@ -165,7 +165,7 @@ public final class ColourDropletAppOwnedEffectView extends FrameLayout
                 renderHeight(),
                 this,
                 nativeRefreshPhysics,
-                nativeRefreshSpeedMultiplier);
+                nativeRefreshSpeedMultiplier, EffectWorkshopPrefs.values(context, gyroEnabled ? 24 : 23));
         addView(glView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 

@@ -71,10 +71,25 @@ final class RevolvingGlassScene {
     private long lastMoveMs;
     private boolean dragged;
 
+    private final float centerSensitivity, dragSensitivity, dragSpeed, initialSpeed, dragSlop, maxAngle;
+    private final float cancelSpeedScale, cancelDecayScale, hintAngle, hintCycles, exitScale;
+    private final long entryMs, hintMs;
+
+    RevolvingGlassScene() {
+        this(.02f,.44f,.9f,.13f,20f,179f,1f,1f,140L,480L,9f,1f,.84f);
+    }
+    RevolvingGlassScene(float center, float drag, float speed, float initial, float slop,
+            float angle, float cancelSpeed, float cancelDecay, long entry, long hint,
+            float hintAngle, float hintCycles, float exitScale) {
+        centerSensitivity=center; dragSensitivity=drag; dragSpeed=speed; initialSpeed=initial;
+        dragSlop=slop; maxAngle=angle; cancelSpeedScale=cancelSpeed; cancelDecayScale=cancelDecay;
+        entryMs=entry; hintMs=hint; this.hintAngle=hintAngle; this.hintCycles=hintCycles; this.exitScale=exitScale;
+    }
+
     void begin(float x, float screenWidth, long nowMs) {
         long now = normalize(nowMs);
         baseAngle = clamp((x - Math.max(1f, screenWidth) * .5f)
-                * CENTER_DEGREES_PER_PIXEL, -MAX_ANGLE_DEGREES, MAX_ANGLE_DEGREES);
+                * centerSensitivity, -maxAngle, maxAngle);
         heldAngle = 0f;
         releaseAngle = 0f;
         lastMoveMs = now;
@@ -90,14 +105,14 @@ final class RevolvingGlassScene {
             begin(downX, screenWidth, now);
         }
         float delta = x - downX;
-        if (Math.abs(delta) <= MOVE_SLOP_PX && !dragged) {
+        if (Math.abs(delta) <= dragSlop && !dragged) {
             heldAngle = initialAngleAt(now);
             return;
         }
         dragged = true;
-        float target = clamp(baseAngle + delta * DRAG_DEGREES_PER_PIXEL,
-                -MAX_ANGLE_DEGREES, MAX_ANGLE_DEGREES);
-        float maxTravel = Math.max(1L, now - lastMoveMs) * MAX_DRAG_DEGREES_PER_MS;
+        float target = clamp(baseAngle + delta * dragSensitivity,
+                -maxAngle, maxAngle);
+        float maxTravel = Math.max(1L, now - lastMoveMs) * dragSpeed;
         heldAngle = approach(heldAngle, target, maxTravel);
         lastMoveMs = now;
     }
@@ -187,20 +202,20 @@ final class RevolvingGlassScene {
                 float exitT = clamp((elapsed - exitStartMs) / (float) TILE_EXIT_MS,
                         0f, 1f);
                 float exitEase = smoothStep(exitT);
-                float tileScale = 1f - (1f - TILE_EXIT_SCALE) * exitEase;
+                float tileScale = 1f - (1f - exitScale) * exitEase;
                 float tileAlpha = 1f - exitEase;
                 boolean tileVisible = elapsed < tileEndMs;
                 return new Frame(true, tileVisible, true,
                         releaseAngle + direction * travel, tileScale,
                         tileAlpha * entryAlpha, entryAlpha);
             case AFFORDANCE:
-                if (elapsed >= AFFORDANCE_MS) {
+                if (elapsed >= hintMs) {
                     phase = Phase.IDLE;
                     return hidden();
                 }
-                float t = elapsed / (float) AFFORDANCE_MS;
+                float t = elapsed / (float) hintMs;
                 float envelope = (float) Math.sin(Math.PI * t);
-                float angle = (float) Math.sin(t * Math.PI * 2d) * 9f * envelope;
+                float angle = (float) Math.sin(t * Math.PI * 2d * hintCycles) * hintAngle * envelope;
                 return new Frame(true, true, true, angle,
                         1f, entryAlpha, entryAlpha);
             case IDLE:
@@ -214,12 +229,12 @@ final class RevolvingGlassScene {
     }
 
     private float initialAngleAt(long now) {
-        float travel = Math.max(0L, now - phaseStartMs) * INITIAL_DEGREES_PER_MS;
+        float travel = Math.max(0L, now - phaseStartMs) * initialSpeed;
         return approach(0f, baseAngle, travel);
     }
 
-    private static CancelFrame cancelFrameAt(float start, long elapsedMs) {
-        float position = clamp(start, -MAX_ANGLE_DEGREES, MAX_ANGLE_DEGREES);
+    private CancelFrame cancelFrameAt(float start, long elapsedMs) {
+        float position = clamp(start, -maxAngle, maxAngle);
         float amplitude = Math.abs(position);
         if (amplitude <= 1f && elapsedMs >= CANCEL_TICK_MS) {
             return new CancelFrame(0f, true);
@@ -232,11 +247,11 @@ final class RevolvingGlassScene {
         float direction = position > 0f ? -1f : 1f;
         float target = direction * amplitude;
         for (int tick = 0; tick < ticks; tick++) {
-            float speed = cancelSpeed(amplitude);
+            float speed = cancelSpeed(amplitude) * cancelSpeedScale;
             float next = position + direction * speed;
             if ((direction > 0f && next >= target) || (direction < 0f && next <= target)) {
                 position = target;
-                amplitude = Math.max(0f, amplitude - cancelAttenuation(amplitude));
+                amplitude = Math.max(0f, amplitude - cancelAttenuation(amplitude) * cancelDecayScale);
                 if (amplitude <= 1f) {
                     return new CancelFrame(0f, true);
                 }
@@ -287,7 +302,7 @@ final class RevolvingGlassScene {
 
     private float entryAlphaAt(long now) {
         if (gestureStartMs <= 0L) return 1f;
-        return smoothStep((now - gestureStartMs) / (float) TILE_ENTER_MS);
+        return smoothStep((now - gestureStartMs) / (float) entryMs);
     }
 
     private static float smoothStep(float value) {

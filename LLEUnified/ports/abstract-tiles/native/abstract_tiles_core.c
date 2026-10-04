@@ -14,6 +14,29 @@
 #define AT_RAND_PI_OVER_4 3.6572952999414099e-10f
 #define AT_RAND_PI 1.462918119976564e-9f
 
+static const float at_defaults[AT_WORKSHOP_COUNT] = {
+    .4f, .16f, .02f, 1.f, 1.f, .8f, .016f, 1.f, .3f, 1.f, .8f, 1.f, 1.f
+};
+static const float at_minimum[AT_WORKSHOP_COUNT] = {
+    .05f, .02f, 0.f, 0.f, .1f, 0.f, 0.f, 0.f, 0.f, 0.f, .05f, .1f, .1f
+};
+static const float at_maximum[AT_WORKSHOP_COUNT] = {
+    3.f, 2.f, .2f, 4.f, 5.f, 1.f, 1.f, 3.f, 1.f, 3.f, 3.f, 3.f, 3.f
+};
+static float at_setting(const AtScene *scene, int index) {
+    return scene->workshop_enabled ? scene->workshop[index] : at_defaults[index];
+}
+void at_scene_configure(AtScene *scene, const float *values, size_t count) {
+    if (scene == NULL) return;
+    scene->workshop_enabled = values != NULL && count == AT_WORKSHOP_COUNT;
+    if (!scene->workshop_enabled) return;
+    for (int i=0; i<AT_WORKSHOP_COUNT; ++i) {
+        float value=values[i];
+        if (!isfinite(value)) value=at_defaults[i];
+        scene->workshop[i]=fmaxf(at_minimum[i], fminf(at_maximum[i], value));
+    }
+}
+
 static float at_clamp(float value, float low, float high) {
     if (value < low) return low;
     if (value > high) return high;
@@ -224,8 +247,8 @@ void at_scene_init(AtScene *scene, int width, int height) {
     const float display_aspect = (float) safe_width / (float) safe_height;
     const float ray_radius_multiplier = display_aspect >= 0.82f ? 1.25f : 3.25f;
     scene->ray_radius_squared = ray_radius_multiplier
-            * scene->physical_radius * scene->physical_radius;
-    scene->ray_reach = 10.0f * sqrtf(wx * wx + hy * hy);
+            * scene->physical_radius * scene->physical_radius * at_setting(scene, 12);
+    scene->ray_reach = 10.0f * sqrtf(wx * wx + hy * hy) * at_setting(scene, 11);
     if (scene->random_state == 0U) {
         const uint32_t seed = (uint32_t) time(NULL);
         srand(seed);
@@ -394,16 +417,16 @@ static void at_pop_batch(AtScene *scene, float center_x, float center_y) {
                 triangle->centroid_y,
                 center_x,
                 center_y);
-        const float probability = distance_squared < 0.1406f ? 0.8f : 0.016f;
+        const float probability = distance_squared < 0.1406f * at_setting(scene, 4) ? at_setting(scene, 5) : at_setting(scene, 6);
         if (at_next_float_lut(scene) > probability) continue;
 
         triangle->start = scene->time + stagger;
-        triangle->duration = AT_NORMAL_POP_DURATION;
+        triangle->duration = at_setting(scene, 0);
         triangle->pivot = (uint8_t) (at_next_uint_lut(scene) % 3U);
-        triangle->strength = (at_next_uint_lut(scene) & 1U) == 0U ? 0.5f : 1.0f;
-        triangle->brightness = at_next_float_lut(scene) * 0.75f - 0.375f;
+        triangle->strength = ((at_next_uint_lut(scene) & 1U) == 0U ? 0.5f : 1.0f) * at_setting(scene, 3);
+        triangle->brightness = (at_next_float_lut(scene) * 0.75f - 0.375f) * at_setting(scene, 7);
         triangle->transform_kind = AT_TRANSFORM_POP;
-        stagger += 0.02f;
+        stagger += at_setting(scene, 2);
     }
 }
 
@@ -536,7 +559,7 @@ static void at_build_ray_paths(AtScene *scene, float origin_x, float origin_y) {
             }
             if (at_aspect_distance_squared(
                         scene, origin_x, origin_y, current_x, current_y)
-                    >= AT_RAY_STOP_DISTANCE_SQUARED) {
+                    >= at_setting(scene, 10)) {
                 break;
             }
         }
@@ -629,7 +652,7 @@ void at_scene_touch(AtScene *scene, int action, float x, float y, int64_t event_
             scene->anchor_y = clip_y;
             scene->accepted_x = clip_x;
             scene->accepted_y = clip_y;
-            scene->next_held_batch = scene->time + AT_POP_INTERVAL;
+            scene->next_held_batch = scene->time + at_setting(scene, 1);
             at_build_ray_paths(scene, clip_x, clip_y);
             at_schedule_radial(scene, clip_x, clip_y, 0.6f, 0.5f, 0.5f);
             at_pop_batch(scene, clip_x, clip_y);
@@ -701,13 +724,13 @@ void at_scene_unlock(AtScene *scene) {
                 triangle->centroid_y,
                 scene->anchor_x,
                 scene->anchor_y);
-        const float probability = distance_squared < 20.0f * 0.1406f ? 0.8f : 0.016f;
+        const float probability = distance_squared < 20.0f * 0.1406f * at_setting(scene, 4) ? at_setting(scene, 5) : at_setting(scene, 6);
         if (at_next_float_lut(scene) > probability) continue;
         triangle->start = scene->time;
         triangle->duration = AT_UNLOCK_DURATION;
         triangle->pivot = (uint8_t) (at_next_uint_lut(scene) % 3U);
         triangle->strength = (at_next_uint_lut(scene) & 1U) == 0U ? 1.0f : 2.0f;
-        triangle->brightness = at_next_float_lut(scene) * 0.75f - 0.375f;
+        triangle->brightness = (at_next_float_lut(scene) * 0.75f - 0.375f) * at_setting(scene, 7);
         triangle->transform_kind = AT_TRANSFORM_UNLOCK;
     }
     scene->unlock_line_start = scene->time;
@@ -756,7 +779,7 @@ bool at_scene_step(AtScene *scene, float elapsed_seconds) {
 
     if (scene->held && scene->time >= scene->next_held_batch) {
         at_pop_batch(scene, scene->anchor_x, scene->anchor_y);
-        scene->next_held_batch = scene->time + AT_POP_INTERVAL;
+        scene->next_held_batch = scene->time + at_setting(scene, 1);
     }
     if (scene->held) {
         at_schedule_rays(scene);
@@ -791,15 +814,15 @@ static float at_geometry_envelope(const AtTriangle *triangle, float now) {
     return 1.0f - inverse * inverse * inverse;
 }
 
-static float at_tile_alpha(const AtTriangle *triangle, float now) {
+static float at_tile_alpha(const AtScene *scene, const AtTriangle *triangle, float now) {
     if (!at_transform_record_live(triangle, now)) return 0.0f;
-    if (triangle->transform_kind == AT_TRANSFORM_UNLOCK) return 0.3f;
+    if (triangle->transform_kind == AT_TRANSFORM_UNLOCK) return at_setting(scene, 8);
     /* Normal-pop records write alpha=.3 when scheduled, before their staggered
      * geometry start. The delayed stationary triangles are therefore visible. */
-    if (now < triangle->start) return 0.3f;
+    if (now < triangle->start) return at_setting(scene, 8);
     const float elapsed = now - triangle->start;
-    if (elapsed <= 0.2f) return 0.3f;
-    return 0.3f * at_clamp(1.0f - (elapsed - 0.2f) / 0.2f, 0.0f, 1.0f);
+    if (elapsed <= (triangle->duration * 0.5f)) return at_setting(scene, 8);
+    return at_setting(scene, 8) * at_clamp(1.0f - (elapsed - (triangle->duration * 0.5f)) / (triangle->duration * 0.5f), 0.0f, 1.0f);
 }
 
 static float at_radial_envelope(const AtTriangle *triangle, float now) {
@@ -848,7 +871,7 @@ int at_scene_build_vertices(
         const float geometry = at_geometry_envelope(triangle, scene->time);
         const float brightness = triangle->brightness
                 * at_linear_progress(triangle, scene->time);
-        const float alpha = at_tile_alpha(triangle, scene->time);
+        const float alpha = at_tile_alpha(scene, triangle, scene->time);
         const float radial = at_radial_envelope(triangle, scene->time);
         const float ray = at_ray_envelope(triangle, scene->time);
         for (int vertex_index = 0; vertex_index < 3; ++vertex_index) {
@@ -878,7 +901,7 @@ int at_scene_build_vertices(
             out[6] = 0.0f;
             out[7] = alpha;
             out[8] = brightness;
-            out[9] = triangle->proximity_alpha;
+            out[9] = fminf(1.f, triangle->proximity_alpha * at_setting(scene, 9));
             out[10] = radial;
             out[11] = ray;
             ++emitted;

@@ -25,6 +25,15 @@ import java.util.Random;
  */
 final class PoppingColoursArm64EffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 2);
+    private int workshopCreatedDotsAmountMove = workshop.intValue("created_dots_amount_move");
+    private int workshopCreatedDotsAmountDown = workshop.intValue("created_dots_amount_down");
+    private int workshopCreatedDotsAmountAffordance = workshop.intValue("created_dots_amount_affordance");
+    private int workshopParticleMaxAlive = workshop.intValue("particle_max_alive");
+    private int workshopDrawingMarginPx = workshop.intValue("drawing_margin_px");
+    private int workshopDragSoundCountStartPoint = workshop.intValue("drag_sound_count_start_point");
+    private int workshopDragSoundCountInterval = workshop.intValue("drag_sound_count_interval");
+    private float workshopTouchSoundVolume = workshop.get("touch_sound_volume");
     private static final String TAG = "ChargingS5Popping64";
 
     private static final int CREATED_DOTS_AMOUNT_MOVE = 3;
@@ -48,7 +57,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     private final List<Particle> particlePool =
             new ArrayList<Particle>(PARTICLE_POOL_SIZE);
     private final List<Particle> aliveParticles =
-            new ArrayList<Particle>(PARTICLE_MAX_ALIVE);
+            new ArrayList<Particle>(workshopParticleMaxAlive);
     private final float[] hsvOrigin = new float[3];
     private final float[] hsvTemp = new float[3];
     private final int[] sampledColor = new int[1];
@@ -104,10 +113,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
             } else {
                 if (isAvailableDrawingRect()) {
                     invalidate(
-                            drawingLeft - DRAWING_MARGIN_PX,
-                            drawingTop - DRAWING_MARGIN_PX,
-                            drawingRight + DRAWING_MARGIN_PX,
-                            drawingBottom + DRAWING_MARGIN_PX);
+                            drawingLeft - workshopDrawingMarginPx,
+                            drawingTop - workshopDrawingMarginPx,
+                            drawingRight + workshopDrawingMarginPx,
+                            drawingBottom + workshopDrawingMarginPx);
                 } else {
                     invalidate(0, 0, 1, 1);
                 }
@@ -126,7 +135,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         @Override
         public void run() {
             if (!destroyed && pendingAffordanceColorAvailable) {
-                addDots(CREATED_DOTS_AMOUNT_AFFORDANCE,
+                addDots(workshopCreatedDotsAmountAffordance,
                         pendingAffordanceX,
                         pendingAffordanceY,
                         pendingAffordanceColor);
@@ -158,7 +167,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         int height = context.getResources().getDisplayMetrics().heightPixels;
         float particleRatio = Math.min(width, height) / 1080f;
         for (int index = 0; index < PARTICLE_POOL_SIZE; index++) {
-            particlePool.add(new Particle(particleRatio));
+            particlePool.add(new Particle(particleRatio, workshop));
         }
 
         soundPool = new SoundPool.Builder()
@@ -203,11 +212,11 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         gestureActive = true;
         lastGestureX = screenX;
         lastGestureY = screenY;
-        dragSoundCount = DRAG_SOUND_COUNT_START_POINT;
+        dragSoundCount = workshopDragSoundCountStartPoint;
         lastDragSoundMoveAtMs = SystemClock.uptimeMillis();
-        play(tapSound, TOUCH_SOUND_VOLUME);
+        play(tapSound, workshopTouchSoundVolume);
         if (sampleColor(screenX, screenY, sampledColor)) {
-            addDots(CREATED_DOTS_AMOUNT_DOWN, screenX, screenY, sampledColor[0]);
+            addDots(workshopCreatedDotsAmountDown, screenX, screenY, sampledColor[0]);
         }
         Log.i(TAG, "popping colours ARM64 begin x=" + Math.round(screenX)
                 + " y=" + Math.round(screenY));
@@ -228,13 +237,13 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         if (now - lastDragSoundMoveAtMs >= DRAG_SOUND_MOVE_SAMPLE_MS) {
             lastDragSoundMoveAtMs = now;
             dragSoundCount++;
-            if (dragSoundCount >= DRAG_SOUND_COUNT_INTERVAL) {
-                play(dragSound, TOUCH_SOUND_VOLUME);
+            if (dragSoundCount >= workshopDragSoundCountInterval) {
+                play(dragSound, workshopTouchSoundVolume);
                 dragSoundCount = 0;
             }
         }
         if (sampleColor(screenX, screenY, sampledColor)) {
-            addDots(CREATED_DOTS_AMOUNT_MOVE, screenX, screenY, sampledColor[0]);
+            addDots(workshopCreatedDotsAmountMove, screenX, screenY, sampledColor[0]);
         }
     }
 
@@ -436,7 +445,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     }
 
     private void addDots(int amount, float x, float y, int color) {
-        if (destroyed || aliveParticles.size() + amount > PARTICLE_MAX_ALIVE) {
+        if (destroyed || aliveParticles.size() + amount > workshopParticleMaxAlive) {
             return;
         }
         lastAddedX = x;
@@ -447,9 +456,9 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         Color.RGBToHSV(Color.red(color), Color.green(color), Color.blue(color), hsvOrigin);
         for (int index = 0; index < amount; index++) {
             hsvTemp[0] = hsvOrigin[0];
-            hsvTemp[1] = (float) (hsvOrigin[1] * (1.0 - 0.7 * Math.random()));
+            hsvTemp[1] = (float) (hsvOrigin[1] * (1.0 - workshop.get("saturation_variation") * Math.random()));
             hsvTemp[2] = (float) (hsvOrigin[2]
-                    + (1f - hsvOrigin[2]) * Math.random());
+                    + (1f - hsvOrigin[2]) * workshop.get("brightness_variation") * Math.random());
             int particleColor = Color.HSVToColor(hsvTemp);
             Particle particle = getNextParticle();
             particle.initialize(x, y, particleColor);
@@ -469,7 +478,7 @@ final class PoppingColoursArm64EffectView extends FrameLayout
 
     private void unlockDots() {
         if (lastAddedColorAvailable) {
-            addDots(PARTICLE_MAX_ALIVE - aliveParticles.size(),
+            addDots(workshopParticleMaxAlive - aliveParticles.size(),
                     lastAddedX, lastAddedY, lastAddedColor);
         }
         for (Particle particle : aliveParticles) {
@@ -579,8 +588,8 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
 
         if (hasPreviousBounds || hasCurrentBounds) {
-            invalidate(left - DRAWING_MARGIN_PX, top - DRAWING_MARGIN_PX,
-                    right + DRAWING_MARGIN_PX, bottom + DRAWING_MARGIN_PX);
+            invalidate(left - workshopDrawingMarginPx, top - workshopDrawingMarginPx,
+                    right + workshopDrawingMarginPx, bottom + workshopDrawingMarginPx);
         } else {
             invalidate(0, 0, 1, 1);
         }
@@ -719,12 +728,13 @@ final class PoppingColoursArm64EffectView extends FrameLayout
     }
 
     private static final class Particle {
-        private static final float GRAVITY = 4f;
-        private static final float MAX_SPEED = 7f;
-        private static final float SMALL_RADIUS = 25f;
-        private static final float BIG_RADIUS = 66f;
-        private static final int DOT_ALPHA = 200;
-        private static final int RANDOM_TOTAL = 20;
+        private final EffectWorkshopConfig.Values workshop;
+        private final float workshopGravity;
+        private final float workshopMaxSpeed;
+        private final float workshopSmallRadius;
+        private final float workshopBigRadius;
+        private final int workshopDotAlpha;
+        private final int workshopRandomTotal;
 
         final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         final float gravity;
@@ -742,22 +752,31 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         float dx;
         float dy;
 
-        Particle(float ratio) {
-            gravity = GRAVITY * ratio;
-            maxSpeed = MAX_SPEED * ratio;
-            smallRadius = (int) (SMALL_RADIUS * ratio);
-            bigRadius = (int) (BIG_RADIUS * ratio);
+        Particle(float ratio) { this(ratio, EffectWorkshopConfig.originals(2)); }
+
+        Particle(float ratio, EffectWorkshopConfig.Values workshop) {
+            this.workshop = workshop;
+            workshopGravity = workshop.get("gravity");
+            workshopMaxSpeed = workshop.get("max_speed");
+            workshopSmallRadius = workshop.get("small_radius");
+            workshopBigRadius = workshop.get("big_radius");
+            workshopDotAlpha = workshop.intValue("dot_alpha");
+            workshopRandomTotal = workshop.intValue("random_total");
+            gravity = workshopGravity * ratio;
+            maxSpeed = workshopMaxSpeed * ratio;
+            smallRadius = (int) (workshopSmallRadius * ratio);
+            bigRadius = (int) (workshopBigRadius * ratio);
         }
 
         void initialize(float initialX, float initialY, int color) {
             Random random = new Random();
-            life = random.nextInt(100) + 50;
+            life = random.nextInt(workshop.intValue("life_variation_frames")) + workshop.intValue("life_min_frames");
             /* Stock draws the current integer life before decrementing it. Keep the
              * same visible value at an exact 60 Hz elapsed frame while retaining a
              * fractional value between high-refresh display frames. */
             adaptiveLife = life + 1f;
-            float randomTotal = random.nextInt(RANDOM_TOTAL) / (float) RANDOM_TOTAL;
-            radius = (int) ((random.nextInt(10) == 0 ? bigRadius : smallRadius)
+            float randomTotal = random.nextInt(workshopRandomTotal) / (float) workshopRandomTotal;
+            radius = (int) ((random.nextInt(workshop.intValue("large_one_in")) == 0 ? bigRadius : smallRadius)
                     * randomTotal);
             dx = (float) (maxSpeed * Math.random() - maxSpeed / 2f);
             dy = (float) (maxSpeed * Math.random() - maxSpeed / 2f - gravity);
@@ -780,10 +799,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
 
         void draw(Canvas canvas) {
-            int alphaStartFrame = unlocked ? 20 : 30;
+            int alphaStartFrame = unlocked ? 20 : workshop.intValue("fade_frames");
             int alpha = life < alphaStartFrame
-                    ? DOT_ALPHA * life / alphaStartFrame
-                    : DOT_ALPHA;
+                    ? workshopDotAlpha * life / alphaStartFrame
+                    : workshopDotAlpha;
             paint.setAlpha(alpha);
             canvas.drawCircle(x, y, radius, paint);
             if (life <= 0) {
@@ -794,10 +813,10 @@ final class PoppingColoursArm64EffectView extends FrameLayout
         }
 
         void drawAdaptive(Canvas canvas) {
-            float alphaStartFrame = unlocked ? 20f : 30f;
+            float alphaStartFrame = unlocked ? 20f : workshop.get("fade_frames");
             int alpha = adaptiveLife < alphaStartFrame
-                    ? Math.max(0, (int) (DOT_ALPHA * adaptiveLife / alphaStartFrame))
-                    : DOT_ALPHA;
+                    ? Math.max(0, (int) (workshopDotAlpha * adaptiveLife / alphaStartFrame))
+                    : workshopDotAlpha;
             paint.setAlpha(alpha);
             canvas.drawCircle(x, y, radius, paint);
             if (adaptiveLife <= 0f) {

@@ -23,6 +23,13 @@ import android.view.View;
  * circle at the physical size Samsung intended on phones, tablets and foldables.</p>
  */
 final class NoneCircleUnlockEffectView extends View implements UnlockEffectRenderer {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 31);
+    private float workshopMaxDiameterPx = workshop.get("max_diameter_px");
+    private float workshopArrowBoxPx = workshop.get("arrow_box_px");
+    private float workshopLockBoxPx = workshop.get("lock_box_px");
+    private float workshopOuterStrokePx = workshop.get("outer_stroke_px");
+    private float workshopInnerStrokePx = workshop.get("inner_stroke_px");
+    private float workshopMinRadiusAdjustPx = workshop.get("min_radius_adjust_px");
     private static final int PHASE_IDLE = 0;
     private static final int PHASE_ENTER = 1;
     private static final int PHASE_ACTIVE = 2;
@@ -254,16 +261,16 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
         float groupAlpha = 1f;
         float arrowAlpha;
         if (phase == PHASE_ENTER) {
-            strokeAnimationValue = Timing.enterValue(now - phaseStartedAt);
+            strokeAnimationValue = workshopEnterValue(now - phaseStartedAt);
             groupAlpha = strokeAnimationValue;
             if (strokeAnimationValue >= 1f) {
                 strokeAnimationValue = 1f;
                 phase = PHASE_ACTIVE;
             }
-            arrowAlpha = Timing.arrowPulse(now - phaseStartedAt, dragAnimationValue);
+            arrowAlpha = workshopArrowPulse(now - phaseStartedAt, dragAnimationValue);
         } else if (phase == PHASE_ACTIVE) {
             strokeAnimationValue = 1f;
-            arrowAlpha = Timing.arrowPulse(now - phaseStartedAt, dragAnimationValue);
+            arrowAlpha = workshopArrowPulse(now - phaseStartedAt, dragAnimationValue);
         } else if (phase == PHASE_EXIT) {
             float remaining = Timing.exitRemaining(now - phaseStartedAt);
             strokeAnimationValue = exitStrokeMax * remaining;
@@ -276,7 +283,7 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
             }
         } else {
             long elapsed = now - phaseStartedAt;
-            float enter = Timing.enterValue(elapsed);
+            float enter = workshopEnterValue(elapsed);
             float out = Timing.affordanceRemaining(elapsed);
             strokeAnimationValue = Math.min(enter, out);
             dragAnimationValue = 0f;
@@ -299,36 +306,51 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
             return;
         }
         if (phase == PHASE_ENTER) {
-            strokeAnimationValue = Timing.enterValue(now - phaseStartedAt);
+            strokeAnimationValue = workshopEnterValue(now - phaseStartedAt);
         }
         exitStrokeMax = strokeAnimationValue;
         exitDragMax = dragAnimationValue;
-        exitArrowAlphaMax = Timing.arrowPulse(now - phaseStartedAt, dragAnimationValue);
+        exitArrowAlphaMax = workshopArrowPulse(now - phaseStartedAt, dragAnimationValue);
         phase = PHASE_EXIT;
         phaseStartedAt = now;
         invalidate();
+    }
+
+    private float workshopEnterValue(long elapsedMs) {
+        if (!workshop.enabled) return Timing.enterValue(elapsedMs);
+        float t = Timing.clamp01(elapsedMs / workshop.get("enter_ms"));
+        return Timing.quintEaseOut(t);
+    }
+
+    private float workshopArrowPulse(long elapsedMs, float progress) {
+        if (!workshop.enabled) return Timing.arrowPulse(elapsedMs, progress);
+        long halfCycle = workshop.intValue("arrow_cycle_ms");
+        float cycle = (elapsedMs % (2L * halfCycle)) / (float) halfCycle;
+        float pulse = cycle <= 1f ? cycle : 2f - cycle;
+        float fade = workshop.get("arrow_fade_progress");
+        return pulse * (1f - Timing.clamp01(progress / fade));
     }
 
     private void drawStockScene(Canvas canvas, float groupAlpha, float arrowAlpha) {
         float minRadius = minRadiusPx();
         float maxRadius = maxRadiusPx();
         float betweenRadius = maxRadius - minRadius;
-        float outerWidth = stockPx(STOCK_OUTER_STROKE_PX);
-        float innerWidth = stockPx(STOCK_INNER_STROKE_PX);
+        float outerWidth = stockPx(workshopOuterStrokePx);
+        float innerWidth = stockPx(workshopInnerStrokePx);
 
         outerStroke.setStrokeWidth(outerWidth);
-        outerStroke.setAlpha(Math.round(170f * Timing.clamp01(groupAlpha)));
+        outerStroke.setAlpha(Math.round(workshop.get("outer_alpha") * Timing.clamp01(groupAlpha)));
         float radius = minRadius + betweenRadius * strokeAnimationValue - outerWidth * 0.5f;
         canvas.drawCircle(centerX, centerY, Math.max(0f, radius), outerStroke);
 
         innerStroke.setStrokeWidth(innerWidth);
-        innerStroke.setAlpha(Math.round(255f * Timing.clamp01(groupAlpha)));
+        innerStroke.setAlpha(Math.round(workshop.get("inner_alpha") * Timing.clamp01(groupAlpha)));
         canvas.drawCircle(centerX, centerY, minRadius, innerStroke);
 
         float fill = Math.min(dragAnimationValue, strokeAnimationValue);
         if (fill > 0f) {
             fillStroke.setStrokeWidth(betweenRadius * fill);
-            fillStroke.setAlpha(Math.round(85f * Timing.clamp01(groupAlpha)));
+            fillStroke.setAlpha(Math.round(workshop.get("fill_alpha") * Timing.clamp01(groupAlpha)));
             canvas.drawCircle(centerX, centerY,
                     minRadius + betweenRadius * fill * 0.5f, fillStroke);
         }
@@ -342,9 +364,9 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
         if (alpha <= 0f) {
             return;
         }
-        float box = stockPx(STOCK_ARROW_BOX_PX);
+        float box = stockPx(workshopArrowBoxPx);
         float half = box * 0.5f;
-        float wedge = box * (16f / STOCK_ARROW_BOX_PX);
+        float wedge = box * (16f / workshopArrowBoxPx);
         glyphFill.setAlpha(Math.round(255f * alpha));
         for (int sx = -1; sx <= 1; sx += 2) {
             for (int sy = -1; sy <= 1; sy += 2) {
@@ -363,7 +385,7 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
 
     /** Draws the exact stock 30-frame sequence in its original left-opening direction. */
     private void drawLockSequence(Canvas canvas, float progress, float groupAlpha) {
-        float box = stockPx(STOCK_LOCK_BOX_PX);
+        float box = stockPx(workshopLockBoxPx);
         int frameIndex = Timing.lockFrameIndex(progress);
         Bitmap frame = lockFrames[frameIndex];
         if (frame == null) {
@@ -372,19 +394,19 @@ final class NoneCircleUnlockEffectView extends View implements UnlockEffectRende
         float half = box * 0.5f;
         lockDestination.set(centerX - half, centerY - half,
                 centerX + half, centerY + half);
-        lockPaint.setAlpha(Math.round(255f * Timing.clamp01(groupAlpha)));
+        lockPaint.setAlpha(Math.round(workshop.get("lock_alpha") * Timing.clamp01(groupAlpha)));
         canvas.drawBitmap(frame, null, lockDestination, lockPaint);
         lockPaint.setAlpha(255);
     }
 
     private float maxRadiusPx() {
-        return stockPx(STOCK_MAX_DIAMETER_PX) * 0.5f;
+        return stockPx(workshopMaxDiameterPx) * 0.5f;
     }
 
     private float minRadiusPx() {
-        float arrowWidth = stockPx(STOCK_ARROW_BOX_PX);
-        return Math.max(1f, (arrowWidth - stockPx(STOCK_INNER_STROKE_PX)
-                - stockPx(STOCK_MIN_RADIUS_ADJUST_PX)) * 0.5f);
+        float arrowWidth = stockPx(workshopArrowBoxPx);
+        return Math.max(1f, (arrowWidth - stockPx(workshopInnerStrokePx)
+                - stockPx(workshopMinRadiusAdjustPx)) * 0.5f);
     }
 
     private float stockPx(float value) {

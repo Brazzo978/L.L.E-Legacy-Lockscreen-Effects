@@ -42,6 +42,8 @@ LleN3InkWorker *lle_n3_ink_worker_create(
 
 /* Joins a pending ENB4 worker before zeroing its velocity surfaces. */
 void lle_n3_ink_worker_reset(LleN3InkWorker *worker);
+/* Per-worker, bounded to 4..20 iterations and .0625.. .5 backtrace cells. */
+void lle_n3_ink_worker_configure(LleN3InkWorker *worker, int iterations, float backtrace_step);
 void lle_n3_ink_worker_destroy(LleN3InkWorker *worker);
 
 /* RGBA8 size required for the completed N-1 velocity surface. */

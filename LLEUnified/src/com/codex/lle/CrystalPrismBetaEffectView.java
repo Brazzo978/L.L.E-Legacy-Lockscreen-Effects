@@ -26,6 +26,7 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 public final class CrystalPrismBetaEffectView extends GLSurfaceView implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 34);
     private static final String TAG = "LLECrystalPrism";
     private static final long GL_RELEASE_TIMEOUT_MS = 350;
     private static final float DEFAULT_SPEED = 1.0f;
@@ -594,7 +595,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                 this.pendingSoundIds.add(soundId);
                 return;
             }
-            this.soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
+            this.soundPool.play(soundId, workshop.get("sound_volume"), workshop.get("sound_volume"), 1, 0, 1.0f);
         }
     }
 
@@ -611,7 +612,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.loadedSoundIds.add(sampleId);
             if (this.pendingSoundIds.remove(sampleId)
                     && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-                this.soundPool.play(sampleId, 1.0f, 1.0f, 1, 0, 1.0f);
+                this.soundPool.play(sampleId, workshop.get("sound_volume"), workshop.get("sound_volume"), 1, 0, 1.0f);
             }
         }
     }
@@ -881,7 +882,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                     -0.5f, 0.5f, 0.0f, 0.0f,
                     0.5f, 0.5f, 1.0f, 0.0f
             });
-            this.motion = new MotionPlan();
+            this.motion = new MotionPlan(workshop);
             this.width = 1;
             this.height = 1;
         }
@@ -898,7 +899,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.initializationFailed = false;
             try {
                 this.crystalProgram = CrystalPrismBetaEffectView.linkProgram(
-                        CRYSTAL_VERTEX_SHADER, CRYSTAL_FRAGMENT_SHADER);
+                        configuredCrystalVertexShader(CRYSTAL_VERTEX_SHADER, workshop), CRYSTAL_FRAGMENT_SHADER);
                 this.meshOverlayProgram = CrystalPrismBetaEffectView.linkProgram(
                         MESH_OVERLAY_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER);
                 this.spriteProgram = CrystalPrismBetaEffectView.linkProgram(
@@ -929,7 +930,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.height = Math.max(1, i2);
             GLES20.glViewport(0, 0, this.width, this.height);
             this.motion.setViewport(this.width, this.height);
-            this.mesh = new CrystalMesh(this.width, this.height);
+            this.mesh = new CrystalMesh(this.width, this.height, workshop);
             Matrix.frustumM(this.projectionMatrix, 0,
                     -this.width / 512.0f, this.width / 512.0f,
                     -this.height / 512.0f, this.height / 512.0f,
@@ -1018,7 +1019,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                     GLES20.GL_ONE_MINUS_SRC_ALPHA);
             float overlayScale = oracleOverlayScale(frame.radiusPx);
             if (overlayScale > 0.0f) {
-                float overlaySize = 666.6667f
+                float overlaySize = workshop.get("overlay_size_dp")
                         * getResources().getDisplayMetrics().density;
                 float angleRadians = (float) Math.toRadians(angleDegrees);
                 drawSprite(this.shadowTexture, frame.centerX, frame.centerY,
@@ -1026,16 +1027,16 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                 double lightOneAngle = Math.toRadians(angleDegrees - 54.0f);
                 drawSprite(this.lightingOneTexture,
                         frame.centerX + ((float) Math.cos(lightOneAngle)
-                                * frame.radiusPx * 0.85f),
+                                * frame.radiusPx * workshop.get("light_one_radius")),
                         frame.centerY - ((float) Math.sin(lightOneAngle)
-                                * frame.radiusPx * 0.85f),
+                                * frame.radiusPx * workshop.get("light_one_radius")),
                         overlaySize, overlaySize, overlayScale, 0.0f, frame.opacity);
                 double lightTwoAngle = Math.toRadians(angleDegrees - 56.5f);
                 drawSprite(this.lightingTwoTexture,
                         frame.centerX + ((float) Math.cos(lightTwoAngle)
-                                * frame.radiusPx * 0.73f),
+                                * frame.radiusPx * workshop.get("light_two_radius")),
                         frame.centerY - ((float) Math.sin(lightTwoAngle)
-                                * frame.radiusPx * 0.73f),
+                                * frame.radiusPx * workshop.get("light_two_radius")),
                         overlaySize, overlaySize, overlayScale, angleRadians, frame.opacity);
             }
             GLES20.glDisable(GLES20.GL_BLEND);
@@ -1063,7 +1064,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                     this.crystalProgram, "uInverseRotateMatrix");
             GLES20.glUniformMatrix4fv(inverseLocation, 1, false,
                     this.inverseRotationMatrix, 0);
-            float ratio = frame.radiusPx / MotionPlan.ORACLE_UNLOCK_RADIUS_PX;
+            float ratio = frame.radiusPx / workshop.get("boundary_px");
             double orbit = 0.0d;
             if (ratio <= 1.0f) {
                 orbit = ratio * Math.PI * 2.0d;
@@ -1179,7 +1180,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
 
         private float oracleOverlayScale(float radiusPx) {
-            if (radiusPx <= MotionPlan.ORACLE_MIN_RADIUS_PX) {
+            if (radiusPx <= workshop.get("min_radius_px")) {
                 return 0.0f;
             }
             float density = Math.max(0.01f,
@@ -1433,7 +1434,15 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         }
     }
 
+    static String configuredCrystalVertexShader(String original, EffectWorkshopConfig.Values values) {
+        if (!values.enabled) return original;
+        return original.replace("shiness = 80.0", "shiness = " + values.get("shine_power"))
+                .replace("(ambient + diffuse + specular) * 1.2", "(ambient + diffuse + specular) * " + values.get("light_gain"))
+                .replace("texCoord + deltaTexCoord", "texCoord + deltaTexCoord * " + values.get("refraction_gain"));
+    }
+
     static final class MotionPlan {
+        private final EffectWorkshopConfig.Values workshop;
         static final int IDLE = 0;
         static final int DRAG = 1;
         static final int RETRACT = 2;
@@ -1457,8 +1466,8 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         private int phase = 0;
         private float speedMultiplier = CrystalPrismBetaEffectView.DEFAULT_SPEED;
 
-        MotionPlan() {
-        }
+        MotionPlan() { this(EffectWorkshopConfig.originals(34)); }
+        MotionPlan(EffectWorkshopConfig.Values values) { workshop = values; }
 
         void setViewport(int i, int i2) {
             this.width = Math.max(1, i);
@@ -1476,7 +1485,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.centerY = clamp(f2, 0.0f, this.height);
             this.downX = this.centerX;
             this.downY = this.centerY;
-            this.radiusPx = ORACLE_MIN_RADIUS_PX;
+            this.radiusPx = workshop.get("min_radius_px");
             this.startRadiusPx = this.radiusPx;
             this.phase = 1;
             this.phaseStartMs = j;
@@ -1491,10 +1500,10 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                 }
                 float dragDistance = distance(this.downX, this.downY,
                         clamp(f, 0.0f, this.width), clamp(f2, 0.0f, this.height));
-                this.radiusPx = ORACLE_MIN_RADIUS_PX
+                this.radiusPx = workshop.get("min_radius_px")
                         + (dragDistance
-                        * ((ORACLE_UNLOCK_RADIUS_PX - ORACLE_MIN_RADIUS_PX)
-                        / ORACLE_UNLOCK_RADIUS_PX));
+                        * ((workshop.get("boundary_px") - workshop.get("min_radius_px"))
+                        / workshop.get("boundary_px")));
             }
         }
 
@@ -1518,7 +1527,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             this.centerY = clamp(f2, 0.0f, this.height);
             this.downX = this.centerX;
             this.downY = this.centerY;
-            this.radiusPx = ORACLE_MIN_RADIUS_PX;
+            this.radiusPx = workshop.get("min_radius_px");
             this.startRadiusPx = this.radiusPx;
             this.phaseStartMs = j;
             this.phase = 4;
@@ -1541,7 +1550,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             float fMax = Math.max(0L, j - this.phaseStartMs) * this.speedMultiplier;
             float f = 1.0f;
             if (this.phase == 2) {
-                float fSaturate = saturate(fMax / RETRACT_MS);
+                float fSaturate = saturate(fMax / workshop.get("retract_ms"));
                 float accelerated = fSaturate * fSaturate;
                 this.radiusPx = this.startRadiusPx * (1.0f - accelerated);
                 if (fSaturate >= CrystalPrismBetaEffectView.DEFAULT_SPEED) {
@@ -1560,11 +1569,11 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
                     return new Frame(this.centerX, this.centerY, 0.0f, 0.0f, fMax, false);
                 }
             } else if (this.phase == 4) {
-                float fSaturate3 = saturate(fMax / AFFORDANCE_MS);
-                this.radiusPx = ORACLE_MIN_RADIUS_PX
-                        + (12.0f * ((float) Math.sin(
+                float fSaturate3 = saturate(fMax / workshop.get("hint_ms"));
+                this.radiusPx = workshop.get("min_radius_px")
+                        + (workshop.get("hint_amplitude_px") * ((float) Math.sin(
                         ((double) fSaturate3) * Math.PI * 3.0d)));
-                f = 0.26f * (1.0f - fSaturate3);
+                f = workshop.get("hint_alpha") * (1.0f - fSaturate3);
                 if (fSaturate3 >= CrystalPrismBetaEffectView.DEFAULT_SPEED) {
                     reset();
                     return new Frame(this.centerX, this.centerY, 0.0f, 0.0f, fMax, false);
@@ -1616,8 +1625,10 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
         final FloatBuffer upperBezel;
         final FloatBuffer upperGirdle;
 
-        CrystalMesh(float width, float height) {
-            float[] source = buildSource(width, height);
+        CrystalMesh(float width, float height) { this(width, height, EffectWorkshopConfig.originals(34)); }
+
+        CrystalMesh(float width, float height, EffectWorkshopConfig.Values values) {
+            float[] source = buildSource(width, height, values);
             this.upperGirdle = buildFaces(source, new int[][]{
                     {9, 10, 0}, {0, 11, 1}, {1, 12, 2}, {2, 13, 3},
                     {3, 14, 4}, {4, 15, 5}, {5, 16, 6}, {6, 17, 7},
@@ -1642,7 +1653,12 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             });
         }
 
-        private static float[] buildSource(float width, float height) {
+        private static float[] buildSource(float width, float height, EffectWorkshopConfig.Values values) {
+            float innerTan = (float) Math.tan(Math.toRadians(values.get("inner_angle_deg")));
+            float midTan = (float) Math.tan(Math.toRadians(values.get("mid_angle_deg")));
+            float rotation = (float) Math.toRadians(values.get("mesh_rotation_deg"));
+            float tableRadius = Math.min(values.get("table_radius"),
+                    Math.min(values.get("girdle_even_radius"), values.get("girdle_odd_radius")) - .05f);
             float[] out = new float[250];
             float widthUnits = width * 0.25f;
             float heightUnits = height * 0.25f;
@@ -1650,7 +1666,7 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             float halfHeightUnits = heightUnits * 0.5f;
             int cursor = 0;
             for (int i = 0; i < 10; i++) {
-                float angle = (i * STEP) + HALF_STEP;
+                float angle = (i * STEP) + HALF_STEP + rotation;
                 float x = (float) Math.sin(angle);
                 float y = (float) Math.cos(angle);
                 cursor = writeSourceVertex(out, cursor, x, y, 0.0f,
@@ -1660,20 +1676,20 @@ public final class CrystalPrismBetaEffectView extends GLSurfaceView implements U
             }
             for (int i = 0; i < 10; i++) {
                 boolean even = (i & 1) == 0;
-                float radius = even ? 0.82f : 0.87f;
-                float x = ((float) Math.sin(i * STEP)) * radius;
-                float y = ((float) Math.cos(i * STEP)) * radius;
-                float z = (even ? 0.18f : 0.13f) * MID_TAN;
+                float radius = even ? values.get("girdle_even_radius") : values.get("girdle_odd_radius");
+                float x = ((float) Math.sin(i * STEP + rotation)) * radius;
+                float y = ((float) Math.cos(i * STEP + rotation)) * radius;
+                float z = (even ? 0.18f : 0.13f) * midTan;
                 cursor = writeSourceVertex(out, cursor, x, y, z,
                         (x + halfWidthUnits) / widthUnits,
                         (halfHeightUnits - y) / heightUnits,
                         secondaryUv(x, y, even ? 0.007f : 0.005f));
             }
-            float z = 0.537f * INNER_TAN;
+            float z = values.get("table_depth") * innerTan;
             for (int i = 0; i < 5; i++) {
-                float angle = (i * STEP * 2.0f) + STEP;
-                float x = ((float) Math.sin(angle)) * 0.463f;
-                float y = ((float) Math.cos(angle)) * 0.463f;
+                float angle = (i * STEP * 2.0f) + STEP + rotation;
+                float x = ((float) Math.sin(angle)) * tableRadius;
+                float y = ((float) Math.cos(angle)) * tableRadius;
                 cursor = writeSourceVertex(out, cursor, x, y, z,
                         (x + halfWidthUnits) / widthUnits,
                         (halfHeightUnits - y) / heightUnits,

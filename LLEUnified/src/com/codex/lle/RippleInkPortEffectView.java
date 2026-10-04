@@ -72,7 +72,7 @@ public final class RippleInkPortEffectView extends GLSurfaceView
         this.paletteSlot = paletteSlot;
         this.highFrameRateEnabled = highFrameRateEnabled;
         rippleRenderer = new RippleInkPortGlesRenderer(
-                this, paletteSlot, highFrameRateEnabled);
+                this, paletteSlot, highFrameRateEnabled, EffectWorkshopPrefs.values(context, 27));
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(6)
                 .setAudioAttributes(EffectAudio.soundPoolAttributes(context))

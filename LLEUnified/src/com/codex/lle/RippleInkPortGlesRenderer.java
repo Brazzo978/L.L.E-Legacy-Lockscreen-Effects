@@ -34,6 +34,7 @@ final class RippleInkPortGlesRenderer
     private static final float INK_INTENSITY = 0.02f;
 
     private final Host host;
+    private final EffectWorkshopConfig.Values workshop;
     private final RippleInkPortEngine engine;
     private final RippleInkPortFluidPipeline fluidPipeline;
     private final FloatBuffer vertexBuffer;
@@ -69,9 +70,21 @@ final class RippleInkPortGlesRenderer
     private String failureDetail = "not initialized";
 
     RippleInkPortGlesRenderer(Host host, int paletteSelector, boolean highFrameRateEnabled) {
+        this(host, paletteSelector, highFrameRateEnabled, EffectWorkshopConfig.originals(27));
+    }
+
+    RippleInkPortGlesRenderer(Host host, int paletteSelector, boolean highFrameRateEnabled,
+            EffectWorkshopConfig.Values workshop) {
         this.host = host;
+        this.workshop = workshop;
         engine = new RippleInkPortEngine();
         fluidPipeline = new RippleInkPortFluidPipeline();
+        engine.configureWorkshop(workshop.get("wave_damping"), workshop.get("wave_coefficient"),
+                workshop.get("wave_intensity"));
+        if (workshop.enabled) fluidPipeline.configureWorkshop(workshop.get("ink_radius"),
+                workshop.get("ink_impulse"), workshop.get("ink_velocity"),
+                workshop.get("ink_advection"), workshop.get("ink_decay"),
+                workshop.get("velocity_decay"), workshop.intValue("jacobi_iterations"));
         engine.setPaletteSelector(paletteSelector);
         engine.setHighFrameRateEnabled(highFrameRateEnabled);
         vertexBuffer = directFloatBuffer(engine.vertices());
@@ -607,13 +620,13 @@ final class RippleInkPortGlesRenderer
         uniform1f("uMESH_SIZE_HEIGHT", renderMeshHeight);
         uniform1f("uNUM_DETAILS_WIDTH", RippleInkPortEngine.DETAIL_WIDTH / 2.0f);
         uniform1f("uNUM_DETAILS_HEIGHT", RippleInkPortEngine.DETAIL_HEIGHT / 2.0f);
-        uniform1f("uRefractiveIndex", REFRACTIVE_INDEX);
-        uniform1f("alphaRatio1", REFLECTION_RATIO);
-        uniform1f("fresnelRatio", FRESNEL_RATIO);
-        uniform1f("specularRatio", SPECULAR_RATIO);
-        uniform1f("exponent", EXPONENT_RATIO);
+        uniform1f("uRefractiveIndex", workshop.get("refraction"));
+        uniform1f("alphaRatio1", workshop.get("reflection"));
+        uniform1f("fresnelRatio", workshop.get("fresnel"));
+        uniform1f("specularRatio", workshop.get("specular"));
+        uniform1f("exponent", workshop.get("exponent"));
         uniform2f("Scale", 1.0f / surfaceWidth, 1.0f / surfaceHeight);
-        uniform1f("intensity", INK_INTENSITY);
+        uniform1f("intensity", workshop.get("ink_opacity"));
         uniform3f("ink_color",
                 engine.getPaletteRed(),
                 engine.getPaletteGreen(),

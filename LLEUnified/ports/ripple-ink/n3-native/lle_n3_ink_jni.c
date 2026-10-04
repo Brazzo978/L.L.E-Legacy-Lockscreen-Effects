@@ -131,3 +131,13 @@ Java_com_codex_lle_N3RippleInkWorkerNative_nativeDestroy(
   (void)pthread_mutex_destroy(&handle->mutex);
   free(handle);
 }
+
+JNIEXPORT void JNICALL
+Java_com_codex_lle_N3RippleInkWorkerNative_nativeConfigure(
+    JNIEnv *environment, jclass clazz, jlong value, jint iterations, jfloat backtrace_step) {
+  (void)environment; (void)clazz;
+  LleN3InkHandle *handle = n3_handle(value);
+  if (handle == NULL || pthread_mutex_lock(&handle->mutex) != 0) return;
+  lle_n3_ink_worker_configure(handle->worker, iterations, backtrace_step);
+  (void)pthread_mutex_unlock(&handle->mutex);
+}

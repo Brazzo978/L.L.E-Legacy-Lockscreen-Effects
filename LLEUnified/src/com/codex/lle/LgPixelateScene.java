@@ -2,6 +2,7 @@ package com.codex.lle;
 
 /** Deterministic donor-derived timing model for the LG G2 Pixelate restoration. */
 final class LgPixelateScene {
+    private final EffectWorkshopConfig.Values workshop;
     static final long CANCEL_RETRACT_MS = 300L;
     static final long CANCEL_FADE_MS = 350L;
     static final long UNLOCK_MS = 400L;
@@ -45,6 +46,9 @@ final class LgPixelateScene {
     private float releasedDragPx;
     private long phaseStartedAtMs;
     private long lastClockMs;
+
+    LgPixelateScene() { this(EffectWorkshopConfig.originals(32)); }
+    LgPixelateScene(EffectWorkshopConfig.Values values) { workshop = values; }
 
     void begin(float x, float y, long nowMs) {
         long now = normalizeTime(nowMs);
@@ -113,13 +117,13 @@ final class LgPixelateScene {
             case HELD:
                 break;
             case CANCEL:
-                if (elapsed < CANCEL_RETRACT_MS) {
-                    float t = elapsed / (float) CANCEL_RETRACT_MS;
+                if (elapsed < workshop.get("cancel_retract_ms")) {
+                    float t = elapsed / (float) workshop.get("cancel_retract_ms");
                     drag = releasedDragPx * (1f - t * t);
-                } else if (elapsed < CANCEL_RETRACT_MS + CANCEL_FADE_MS) {
+                } else if (elapsed < workshop.get("cancel_retract_ms") + workshop.get("cancel_fade_ms")) {
                     drag = 0f;
-                    globalAlpha = 1f - (elapsed - CANCEL_RETRACT_MS)
-                            / (float) CANCEL_FADE_MS;
+                    globalAlpha = 1f - (elapsed - workshop.get("cancel_retract_ms"))
+                            / (float) workshop.get("cancel_fade_ms");
                 } else {
                     phase = Phase.IDLE;
                     return hidden();
@@ -139,14 +143,14 @@ final class LgPixelateScene {
                 }
                 break;
             case AFFORDANCE:
-                if (elapsed >= AFFORDANCE_MS) {
+                if (elapsed >= workshop.get("hint_ms")) {
                     phase = Phase.IDLE;
                     return hidden();
                 }
-                float hintT = elapsed / (float) AFFORDANCE_MS;
+                float hintT = elapsed / (float) workshop.get("hint_ms");
                 // Donor touchdown is almost imperceptible: expose the triangular topology
                 // without jumping to the large cells reserved for an actual drag.
-                drag = threshold * .10f * (float) Math.sin(Math.PI * hintT);
+                drag = threshold * workshop.get("hint_strength") * (float) Math.sin(Math.PI * hintT);
                 globalAlpha = hintT < .78f ? 1f : 1f - (hintT - .78f) / .22f;
                 break;
             default:
@@ -158,10 +162,15 @@ final class LgPixelateScene {
         // that background before the final primary fade so L.L.E. cannot flash the home
         // capture full-screen.  Unlock deliberately keeps it through the hand-off tail.
         revealUnderlay = revealUnderlay || drag > .01f;
-        float alpha = clamp(globalAlpha * donorAlpha(drag, threshold, diagonal), 0f, 1f);
+        float alpha = clamp(globalAlpha * (workshop.enabled ? customAlpha(drag, threshold, diagonal) : donorAlpha(drag, threshold, diagonal)), 0f, 1f);
         return new Frame(true, alpha > .001f, drag > .01f, revealUnderlay,
                 originX, originY, drag,
-                1f + 5f * clamp(drag / threshold, 0f, 1f), alpha);
+                1f + workshop.get("mesh_growth") * clamp(drag / threshold, 0f, 1f), alpha);
+    }
+
+    private float customAlpha(float drag, float threshold, float diagonal) {
+        float start = workshop.get("alpha_start") * Math.max(1f, threshold);
+        return 1f - clamp((drag - start) / (Math.max(start + 1f, diagonal) - start), 0f, 1f);
     }
 
     static float donorAlpha(float dragPx, float thresholdPx, float diagonalPx) {

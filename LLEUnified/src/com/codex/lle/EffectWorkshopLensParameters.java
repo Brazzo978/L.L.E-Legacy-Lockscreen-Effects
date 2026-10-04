@@ -1,0 +1,70 @@
+package com.codex.lle;
+
+/** Applied controls for the shared S4/Note lens-flare Canvas renderer. */
+final class EffectWorkshopLensParameters {
+    private EffectWorkshopLensParameters() {}
+
+    static EffectWorkshopConfig.Parameter[] parameters() {
+        return new EffectWorkshopConfig.Parameter[] {
+            EffectWorkshopConfig.number("background_dim", "Bright wallpaper dim opacity", "Appearance",
+                    20f / 255f, 0f, 1f, .01f, "", "Higher values darken a wallpaper that passes the bright-wallpaper test, helping the flare stand out. Zero removes that darkening; wallpapers below the test thresholds remain undimmed."),
+            EffectWorkshopConfig.integer("highlight_channel", "Wallpaper highlight threshold", "Appearance",
+                    240f, 0f, 255f, 1f, "RGB", "Higher values require brighter wallpaper pixels to count as highlights. Lower values classify more pixels as bright and make wallpaper dimming more likely."),
+            EffectWorkshopConfig.number("highlight_fraction", "Bright wallpaper coverage threshold", "Appearance",
+                    .1f, 0f, 1f, .01f, "", "Higher values require a larger fraction of bright wallpaper pixels before dimming is applied. Lower values make dimming apply to more wallpapers."),
+            EffectWorkshopConfig.number("drag_rotation_time", "Drag rotation over time", "Geometry",
+                    -30f, -720f, 720f, 5f, "deg", "Sets how far the main flare rotates as the drag expansion progresses. Larger absolute values add more rotation; the sign chooses its direction."),
+            EffectWorkshopConfig.number("drag_rotation_distance", "Drag rotation with distance", "Geometry",
+                    -160f, -720f, 720f, 5f, "deg", "Sets how far the main flare rotates as drag distance increases. Larger absolute values add more rotation; the sign chooses its direction."),
+            EffectWorkshopConfig.number("drag_start", "First drag hexagon distance", "Geometry",
+                    .2f, -1f, 2f, .05f, "x drag", "Higher values place the first drag hexagon farther along the line from the initial touch toward the finger. Negative values can place it behind the initial touch; spacing positions the remaining hexagons."),
+            EffectWorkshopConfig.number("drag_jitter", "Drag hexagon random spread", "Geometry",
+                    .4f, 0f, 2f, .05f, "x drag", "Higher values randomly spread the drag hexagons farther along the gesture line. Zero keeps their distance spacing regular."),
+            EffectWorkshopConfig.number("drag_scale_offset", "Drag hexagon size offset", "Geometry",
+                    .2f, 0f, 2f, .05f, "", "Higher values add more size to the drag hexagons without changing their positions along the gesture. Lower values make those hexagons smaller."),
+            EffectWorkshopConfig.number("tap_scale_min", "Tap random minimum size", "Geometry",
+                    .3f, .05f, 3f, .05f, "x", "Higher values raise the smallest random size of tap hexagons. The random size range is added above this minimum."),
+            EffectWorkshopConfig.number("tap_scale_range", "Tap random size range", "Geometry",
+                    .8f, 0f, 3f, .05f, "x", "Higher values allow a wider range of tap hexagon sizes above the minimum. Zero gives them the same starting size."),
+            EffectWorkshopConfig.number("particle_pulse", "Tap particle pulse", "Animation",
+                    1.8f, .1f, 4f, .05f, "x", "Higher values advance the tap particle through its opacity pulse more quickly within the tap animation. Lower values slow that pulse; this does not change the particle sprite size."),
+            EffectWorkshopConfig.number("ring_pulse", "Tap ring pulse", "Animation",
+                    1.4f, .1f, 4f, .05f, "x", "Higher values advance the tap ring and long flare through their opacity pulse more quickly. Lower values slow that pulse without changing the tap animation duration."),
+            EffectWorkshopConfig.number("global_alpha", "Tap and fog opacity", "Appearance",
+                    0.8f, 0f, 1f, 0.01f, "", "Higher values make tap hexagons and drag fog more opaque. Zero hides those layers; the separate central particle and ring pulses can still appear."),
+            EffectWorkshopConfig.number("fog_alpha", "Fog peak opacity", "Appearance",
+                    0.6f, 0f, 1f, 0.01f, "", "Higher values make the fog peak brighter during a drag or hint. Lower values soften it, while zero removes this fog contribution."),
+            EffectWorkshopConfig.number("sprite_scale", "Flare sprite size", "Geometry",
+                    1f, 0.1f, 4f, 0.05f, "x", "Higher values enlarge the flare sprites across the effect. Lower values make the same artwork smaller without changing the number of hexagons."),
+            // Distances use the original 1080-pixel reference and scale with screen width.
+            EffectWorkshopConfig.number("finger_y_offset", "Finger vertical offset", "Geometry",
+                    -80f, -600f, 600f, 10f, "reference px", "Moves the flare touch position vertically relative to the finger. Positive values move it downward and negative values upward; the offset scales with screen width."),
+            EffectWorkshopConfig.number("alpha_distance", "Drag alpha distance", "Geometry",
+                    1500f, 100f, 4000f, 50f, "reference px", "Higher values require a longer drag to bring the hexagon trail to full opacity and reduce the central fog. Lower values make that transition happen closer to the starting touch."),
+            EffectWorkshopConfig.number("tap_radius", "Tap hexagon spread radius", "Geometry",
+                    600f, 0f, 2000f, 25f, "reference px", "Higher values spread tap hexagons farther from the touch point. Zero gathers them at that point; the distance scales with screen width."),
+            EffectWorkshopConfig.integer("tap_hexagon_count", "Tap hexagons", "Geometry",
+                    7f, 1f, 32f, 1f, "", "Higher values add more hexagons to each tap burst. Lower values produce a simpler burst with fewer sprites."),
+            EffectWorkshopConfig.integer("drag_hexagon_count", "Drag hexagons", "Geometry",
+                    6f, 1f, 32f, 1f, "", "Higher values add more hexagons along the drag trail. Lower values make the trail sparser without changing its spacing setting."),
+            EffectWorkshopConfig.number("drag_hexagon_spacing", "Drag hexagon spacing", "Geometry",
+                    0.24f, 0f, 0.8f, 0.01f, "x drag", "Higher values place successive drag hexagons farther apart along the gesture line. Zero gathers them around the same starting distance, apart from random spread."),
+            EffectWorkshopConfig.integer("show_duration", "Drag expansion duration", "Animation",
+                    6000f, 100f, 20000f, 100f, "ms", "Higher values slow the growth of the drag flare and hexagons toward their expanded state. Lower values make the expansion settle sooner."),
+            EffectWorkshopConfig.integer("fog_duration", "Fog fade-in duration", "Animation",
+                    100f, 10f, 2000f, 10f, "ms", "Higher values make the drag fog fade in more slowly. Lower values make it reach its peak opacity sooner."),
+            EffectWorkshopConfig.integer("tap_duration", "Tap animation duration", "Animation",
+                    4000f, 100f, 12000f, 100f, "ms", "Higher values lengthen the tap burst, including its movement and fade. Lower values make that animation finish sooner."),
+            EffectWorkshopConfig.integer("fade_duration", "Release fade-out duration", "Animation",
+                    500f, 50f, 3000f, 50f, "ms", "Higher values lengthen the effect fade after release. Lower values clear the released flare more quickly."),
+            EffectWorkshopConfig.integer("affordance_on_duration", "Hint fade-in duration", "Animation",
+                    200f, 10f, 2000f, 10f, "ms", "Higher values make the hint fog take longer to fade in. Lower values bring it to its peak sooner."),
+            EffectWorkshopConfig.integer("affordance_off_duration", "Hint fade-out duration", "Animation",
+                    1100f, 100f, 5000f, 100f, "ms", "Higher values make the hint fog fade out more slowly after its peak. Lower values clear it sooner."),
+            EffectWorkshopConfig.number("tap_sound_gain", "Tap sound volume", "Audio",
+                    1f, 0f, 1f, 0.05f, "", "Higher values make the tap sound louder; zero mutes it. Sound also depends on the app sound setting."),
+            EffectWorkshopConfig.number("unlock_sound_gain", "Unlock sound volume", "Audio",
+                    1f, 0f, 1f, 0.05f, "", "Higher values make the unlock sound louder; zero mutes it. Sound also depends on the app sound setting.")
+        };
+    }
+}

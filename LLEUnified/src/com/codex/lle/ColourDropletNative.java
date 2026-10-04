@@ -7,7 +7,7 @@ final class ColourDropletNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_NORMAL = 1;
     static final int TEXTURE_EDGE_DENSITY = 2;
-    static final int BRIDGE_VERSION = 2;
+    static final int BRIDGE_VERSION = 3;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -39,6 +39,8 @@ final class ColourDropletNative {
     }
 
     static native int nativeBridgeVersion();
+
+    static native void nativeSetWorkshop(long handle, float[] values);
 
     /** Allocates CPU/simulation state. Project kind is 0 for phone or 1 for tablet. */
     static native long nativeCreate(int projectKind);

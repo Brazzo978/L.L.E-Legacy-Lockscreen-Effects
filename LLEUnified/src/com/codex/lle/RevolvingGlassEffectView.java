@@ -49,8 +49,9 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
     private final Object sourceLock = new Object();
     private final Object sceneLock = new Object();
     private final Object soundLock = new Object();
-    private final RevolvingGlassScene scene = new RevolvingGlassScene();
-    private final GlassRenderer renderer = new GlassRenderer();
+    private final EffectWorkshopConfig.Values workshop;
+    private final RevolvingGlassScene scene;
+    private final GlassRenderer renderer;
     private final SoundPool soundPool;
     private final int unlockSound;
     private final Set<Integer> loadedSoundIds = new HashSet<Integer>();
@@ -85,6 +86,14 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
 
     public RevolvingGlassEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 36);
+        scene = new RevolvingGlassScene(workshop.get("center_sensitivity"),
+                workshop.get("drag_sensitivity"), workshop.get("drag_speed"),
+                workshop.get("initial_speed"), workshop.get("drag_slop"),
+                workshop.get("max_angle"), workshop.get("cancel_speed"), workshop.get("cancel_decay"),
+                workshop.intValue("entry_ms"), workshop.intValue("hint_ms"),
+                workshop.get("hint_angle"), workshop.get("hint_cycles"), workshop.get("exit_scale"));
+        renderer = new GlassRenderer();
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(1)
                 .setAudioAttributes(EffectAudio.soundPoolAttributes(context))
@@ -363,7 +372,7 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
                 pendingSoundIds.add(soundId);
                 return;
             }
-            soundPool.play(soundId, 1f, 1f, 1, 0, 1f);
+            soundPool.play(soundId, workshop.get("sound_gain"), workshop.get("sound_gain"), 1, 0, 1f);
         }
     }
 
@@ -377,7 +386,7 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
             loadedSoundIds.add(sampleId);
             if (pendingSoundIds.remove(sampleId)
                     && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-                soundPool.play(sampleId, 1f, 1f, 1, 0, 1f);
+                soundPool.play(sampleId, workshop.get("sound_gain"), workshop.get("sound_gain"), 1, 0, 1f);
             }
         }
     }
@@ -456,6 +465,9 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
                 + "vec3 edge=vec3(.78,.92,1.)*(.82+.18*glint)*edgeLight;"
                 + "gl_FragColor=vec4(min(edge,vec3(1.))*a*uAlpha,a*uAlpha);}";
 
+        private String workshopVertex() { return RevolvingGlassOptics.vertex(VERTEX,workshop); }
+        private String workshopFragment() { return RevolvingGlassOptics.fragment(FRAGMENT,workshop); }
+
         private final FloatBuffer fullScreen = quad(-1f, -1f, 1f, 1f, 0f,
                 0f, 1f, 1f, 0f);
         private FloatBuffer front;
@@ -477,7 +489,7 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
         @Override public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             try {
                 releaseGl();
-                program = createProgram(VERTEX, FRAGMENT);
+                program = createProgram(workshopVertex(), workshopFragment());
                 GLES20.glEnable(GLES20.GL_BLEND);
                 GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
                 GLES20.glEnable(GLES20.GL_DEPTH_TEST);
@@ -585,17 +597,17 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
             GLES20.glDisable(GLES20.GL_DEPTH_TEST);
             if (secondaryTexture != 0) {
                 drawQuad(fullScreen, secondaryTexture, 0f, 3f, 1f,
-                        frame.underlayAlpha);
+                        frame.underlayAlpha * workshop.get("underlay_opacity"));
             }
             if (!frame.tileVisible) return;
             GLES20.glEnable(GLES20.GL_DEPTH_TEST);
             GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT);
             drawMesh(back, faceVertexCount, GLES20.GL_TRIANGLE_FAN,
-                    primaryTexture, angle, 1f, 0f, frame.tileScale, frame.tileAlpha);
+                    primaryTexture, angle, 1f, 0f, frame.tileScale, frame.tileAlpha * workshop.get("tile_opacity"));
             drawMesh(roundedEdge, edgeVertexCount, GLES20.GL_TRIANGLE_STRIP,
-                    0, angle, 2f, 0f, frame.tileScale, frame.tileAlpha);
+                    0, angle, 2f, 0f, frame.tileScale, frame.tileAlpha * workshop.get("tile_opacity"));
             drawMesh(front, faceVertexCount, GLES20.GL_TRIANGLE_FAN,
-                    primaryTexture, angle, 0f, 0f, frame.tileScale, frame.tileAlpha);
+                    primaryTexture, angle, 0f, 0f, frame.tileScale, frame.tileAlpha * workshop.get("tile_opacity"));
         }
 
         private void drawQuad(FloatBuffer vertices, int texture, float angle,
@@ -633,28 +645,36 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
         }
 
         private void rebuildCardGeometry(int surfaceWidth, int surfaceHeight) {
-            int pointsPerCorner = CARD_CORNER_SEGMENTS + 1;
+            int segments = workshop.enabled ? workshop.intValue("corner_segments") : CARD_CORNER_SEGMENTS;
+            float scale = workshop.get("card_scale"), offsetX=workshop.get("card_x"), offsetY=workshop.get("card_y");
+            float left = workshop.enabled ? CARD_LEFT * scale + offsetX : CARD_LEFT;
+            float right = workshop.enabled ? CARD_RIGHT * scale + offsetX : CARD_RIGHT;
+            float bottom = workshop.enabled ? .03f + (CARD_BOTTOM-.03f)*scale + offsetY : CARD_BOTTOM;
+            float top = workshop.enabled ? .03f + (CARD_TOP-.03f)*scale + offsetY : CARD_TOP;
+            float depth = workshop.get("box_depth");
+            float cornerRadius = workshop.get("corner_radius");
+            int pointsPerCorner = segments + 1;
             int perimeterCount = pointsPerCorner * 4;
             float[] xs = new float[perimeterCount];
             float[] ys = new float[perimeterCount];
-            float radiusX = Math.min(CARD_CORNER_RADIUS_X,
-                    (CARD_RIGHT - CARD_LEFT) * .25f);
+            float radiusX = Math.min(cornerRadius,
+                    (right - left) * .25f);
             float radiusY = Math.min(radiusX * surfaceWidth / (float) surfaceHeight,
-                    (CARD_TOP - CARD_BOTTOM) * .25f);
+                    (top - bottom) * .25f);
             float[] centerX = new float[] {
-                    CARD_RIGHT - radiusX, CARD_LEFT + radiusX,
-                    CARD_LEFT + radiusX, CARD_RIGHT - radiusX
+                    right - radiusX, left + radiusX,
+                    left + radiusX, right - radiusX
             };
             float[] centerY = new float[] {
-                    CARD_TOP - radiusY, CARD_TOP - radiusY,
-                    CARD_BOTTOM + radiusY, CARD_BOTTOM + radiusY
+                    top - radiusY, top - radiusY,
+                    bottom + radiusY, bottom + radiusY
             };
             int point = 0;
             for (int corner = 0; corner < 4; corner++) {
                 float startDegrees = corner * 90f;
-                for (int segment = 0; segment <= CARD_CORNER_SEGMENTS; segment++) {
+                for (int segment = 0; segment <= segments; segment++) {
                     double radians = Math.toRadians(startDegrees
-                            + segment * (90f / CARD_CORNER_SEGMENTS));
+                            + segment * (90f / segments));
                     xs[point] = centerX[corner] + radiusX * (float) Math.cos(radians);
                     ys[point] = centerY[corner] + radiusY * (float) Math.sin(radians);
                     point++;
@@ -664,17 +684,17 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
             faceVertexCount = perimeterCount + 2;
             float[] frontValues = new float[faceVertexCount * 5];
             float[] backValues = new float[faceVertexCount * 5];
-            putVertex(frontValues, 0, (CARD_LEFT + CARD_RIGHT) * .5f,
-                    (CARD_BOTTOM + CARD_TOP) * .5f, 0f, .5f, .5f);
-            putVertex(backValues, 0, (CARD_LEFT + CARD_RIGHT) * .5f,
-                    (CARD_BOTTOM + CARD_TOP) * .5f, -BOX_DEPTH, .5f, .5f);
+            putVertex(frontValues, 0, (left + right) * .5f,
+                    (bottom + top) * .5f, 0f, .5f, .5f);
+            putVertex(backValues, 0, (left + right) * .5f,
+                    (bottom + top) * .5f, -depth, .5f, .5f);
             for (int i = 0; i <= perimeterCount; i++) {
                 int source = i % perimeterCount;
-                float u = (xs[source] - CARD_LEFT) / (CARD_RIGHT - CARD_LEFT);
-                float v = (CARD_TOP - ys[source]) / (CARD_TOP - CARD_BOTTOM);
+                float u = (xs[source] - left) / (right - left);
+                float v = (top - ys[source]) / (top - bottom);
                 putVertex(frontValues, i + 1, xs[source], ys[source], 0f, u, v);
                 putVertex(backValues, i + 1, xs[source], ys[source],
-                        -BOX_DEPTH, u, v);
+                        -depth, u, v);
             }
             front = buffer(frontValues);
             back = buffer(backValues);
@@ -687,7 +707,7 @@ public final class RevolvingGlassEffectView extends GLSurfaceView
                 putVertex(edgeValues, i * 2, xs[source], ys[source],
                         0f, along, 0f);
                 putVertex(edgeValues, i * 2 + 1, xs[source], ys[source],
-                        -BOX_DEPTH, along, 1f);
+                        -depth, along, 1f);
             }
             roundedEdge = buffer(edgeValues);
         }

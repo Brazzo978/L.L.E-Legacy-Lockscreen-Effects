@@ -10,7 +10,7 @@
 #include <string.h>
 
 #define LLE_SPARK_LOG_TAG "LLESparklingBubbles"
-#define LLE_SPARK_BRIDGE_VERSION 2
+#define LLE_SPARK_BRIDGE_VERSION 3
 #define LLE_SPARK_HANDLE_MAGIC UINT64_C(0x4c4c45535041524b)
 #define LLE_SPARK_DEFAULT_WIDTH 1440
 #define LLE_SPARK_DEFAULT_HEIGHT 2560
@@ -397,4 +397,17 @@ Java_com_codex_lle_SparklingBubblesNative_nativeGetLastError(
     const char *message = handle != NULL
             ? handle->error : "Invalid Sparkling Bubbles native handle";
     return (*env)->NewStringUTF(env, message);
+}
+
+/* Called on the owning GL thread immediately after CPU handle creation. */
+JNIEXPORT void JNICALL
+Java_com_codex_lle_SparklingBubblesNative_nativeSetWorkshop(JNIEnv *env, jclass clazz, jlong native_handle, jfloatArray values) {
+    (void)clazz;
+    LleSparkHandle *handle = spark_handle(native_handle);
+    if (handle == NULL || handle->sim == NULL || values == NULL
+            || (*env)->GetArrayLength(env, values) != LLE_SPARK_WORKSHOP_COUNT) return;
+    float packed[LLE_SPARK_WORKSHOP_COUNT];
+    (*env)->GetFloatArrayRegion(env, values, 0, LLE_SPARK_WORKSHOP_COUNT, packed);
+    if ((*env)->ExceptionCheck(env)) return;
+    lle_spark_sim_set_workshop(handle->sim, packed, LLE_SPARK_WORKSHOP_COUNT);
 }

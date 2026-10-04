@@ -6,6 +6,7 @@ import java.util.Random;
  * No Android state: a stopped hint or a repeated unlock cannot retain an animator callback.
  */
 final class LgVectorScene {
+    private final EffectWorkshopConfig.Values workshop;
     static final long TAP_MS = 680L;
     static final long CANCEL_MS = 300L;
     static final long UNLOCK_MS = 400L;
@@ -28,15 +29,17 @@ final class LgVectorScene {
     private int palette;
 
     LgVectorScene() { this(new Random()); }
-    LgVectorScene(Random random) { this.random = random; }
+    LgVectorScene(Random random) { this(random, EffectWorkshopConfig.originals(41)); }
+    LgVectorScene(EffectWorkshopConfig.Values values) { this(new Random(), values); }
+    LgVectorScene(Random random, EffectWorkshopConfig.Values values) { this.random = random; workshop = values; }
 
     void configure(int width, int height, float density) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
         this.density = finite(density) && density > 0f ? density : 1f;
     }
-    float minRadius() { return 44f * density; }
-    float boundaryRadius() { return 113.32999f * density; }
+    float minRadius() { return workshop.get("min_radius_dp") * density; }
+    float boundaryRadius() { return workshop.get("boundary_dp") * density; }
     float fullRadius() { return (float) Math.hypot(width, height); }
     int state() { return stage; }
     boolean gestureActive() { return stage == ACTIVE; }
@@ -50,14 +53,14 @@ final class LgVectorScene {
         centerY = clamp(y, 0, height);
         distance = terminalDistance = 0f;
         dragging = false;
-        palette = random.nextInt(PALETTES.length);
+        palette = workshop.intValue("palette") == 0 ? random.nextInt(PALETTES.length) : workshop.intValue("palette") - 1;
     }
 
     void move(float x, float y, long now) {
         if (stage != ACTIVE || !finite(x) || !finite(y)) return;
         distance = Math.min(fullRadius(), (float) Math.hypot(x - centerX, y - centerY));
         // l.b(x,y) ends the tap animator when the drag exceeds half the minimum ring.
-        if (distance > .5f * minRadius()) dragging = true;
+        if (distance > workshop.get("drag_fraction") * minRadius()) dragging = true;
     }
 
     void finish(boolean completed, long now) {
@@ -81,7 +84,7 @@ final class LgVectorScene {
         long age = Math.max(0, now - startedAt);
         long terminalAge = Math.max(0, now - finishedAt);
         if (stage == COMPLETE && terminalAge >= UNLOCK_MS + UNDERLAY_HOLD_MS
-                || stage == CANCEL && (dragging ? terminalAge >= CANCEL_MS : age >= TAP_MS)) {
+                || stage == CANCEL && (dragging ? terminalAge >= workshop.get("cancel_ms") : age >= workshop.get("tap_ms"))) {
             reset();
             return out;
         }
@@ -100,9 +103,9 @@ final class LgVectorScene {
             out.outerRadius = out.innerRadius = fullRadius();
             return out;
         }
-        if (!dragging && age < TAP_MS) {
+        if (!dragging && age < workshop.get("tap_ms")) {
             out.tap = true;
-            out.tapProgress = .5f - .5f * (float) Math.cos(Math.PI * clamp(age / (float) TAP_MS, 0, 1));
+            out.tapProgress = .5f - .5f * (float) Math.cos(Math.PI * clamp(age / (float) workshop.get("tap_ms"), 0, 1));
             out.visible = out.running = true;
             return out;
         }
@@ -110,7 +113,7 @@ final class LgVectorScene {
         if (!dragging && distance == 0f) return out;
         float d = distance;
         if (stage == CANCEL) {
-            float t = clamp(terminalAge / (float) CANCEL_MS, 0, 1);
+            float t = clamp(terminalAge / (float) workshop.get("cancel_ms"), 0, 1);
             d = terminalDistance * (1f - t * t);
         } else if (stage == COMPLETE) {
             float t = clamp(terminalAge / (float) UNLOCK_MS, 0, 1);
@@ -118,19 +121,26 @@ final class LgVectorScene {
         }
         out.distance = d;
         if (d <= out.boundary) {
-            out.outerRadius = outerRadius(d, out.minRadius, out.boundary);
+            out.outerRadius = (workshop.enabled ? customOuterRadius(d, out.minRadius, out.boundary) : outerRadius(d, out.minRadius, out.boundary));
             out.innerRadius = innerRadius(d, out.minRadius, out.boundary);
         } else {
             out.outerRadius = d;
             out.innerRadius = out.boundary + .5f * (d - out.boundary);
         }
-        float alpha = 1f - .7f * normalize(0f, out.boundary, d);
+        float alpha = 1f - workshop.get("alpha_falloff") * normalize(0f, out.boundary, d);
         // Q.f is the primary texture MODEL SCALE, not uAlphaBG (Q.b). Do not
         // mistake the donor's zoom uniform for an opacity multiplier.
-        out.primaryScale = 1f + .5f * normalize(out.boundary / 4f, fullRadius(), d);
-        out.bandAlpha = alpha * .5f + .5f;
+        out.primaryScale = 1f + workshop.get("texture_growth") * normalize(out.boundary / 4f, fullRadius(), d);
+        out.bandAlpha = alpha * (1f - workshop.get("band_base_alpha")) + workshop.get("band_base_alpha");
         out.visible = out.running = true;
         return out;
+    }
+
+    private float customOuterRadius(float d, float min, float boundary) {
+        float knee = workshop.get("outer_knee");
+        if (d < boundary * .5f) return min + d / (boundary * .5f) * (boundary * knee - min);
+        if (d >= boundary) return boundary;
+        return boundary * knee + (d - boundary * .5f) / (boundary * .5f) * boundary * (1f - knee);
     }
 
     static float outerRadius(float d, float min, float boundary) {

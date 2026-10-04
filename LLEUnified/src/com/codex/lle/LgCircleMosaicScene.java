@@ -8,6 +8,7 @@ package com.codex.lle;
  * transparent circle. Values below mirror CircleMosaicRenderer/Object.</p>
  */
 final class LgCircleMosaicScene {
+    private final EffectWorkshopConfig.Values workshop;
     static final int COLUMNS = 15;
     static final int ROWS = 25;
     static final long CANCEL_MS = 250L;
@@ -33,6 +34,11 @@ final class LgCircleMosaicScene {
         configure(width, height, density, 0f);
     }
 
+    LgCircleMosaicScene() { this(EffectWorkshopConfig.originals(43)); }
+    LgCircleMosaicScene(EffectWorkshopConfig.Values values) { workshop = values; }
+    int columns() { return workshop.intValue("columns"); }
+    int rows() { return workshop.intValue("rows"); }
+
     void configure(int width, int height, float density, float xdpi) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
@@ -40,15 +46,16 @@ final class LgCircleMosaicScene {
         this.xdpi = finite(xdpi) && xdpi > 0f ? xdpi : 0f;
     }
 
-    float minRadius() { return 50.199982f * density; }
+    float minRadius() { return workshop.get("min_radius_dp") * density; }
     /** unlock_handler_radius_max is exactly 25mm in every donor resource bucket. */
     float boundaryRadius() {
-        return xdpi > 0f ? 25f * xdpi / 25.4f : 201f * density;
+        float boundary = xdpi > 0f ? workshop.get("boundary_mm") * xdpi / 25.4f : workshop.get("fallback_boundary_dp") * density;
+        return workshop.enabled ? Math.max(minRadius() + 1f, boundary) : boundary;
     }
     float maxRadius() { return (float) Math.hypot(width, height); }
-    float opaqueFactor() { return 3.5f * (14f - 2f * density); }
-    float alphaFactor() { return .75f * (14f - 2f * density); }
-    float initialOpaqueInset() { return density >= 4f ? 16f : 0f; }
+    float opaqueFactor() { return workshop.enabled ? workshop.get("opaque_multiplier") * Math.max(.1f, workshop.get("density_base") - workshop.get("density_slope") * density) : 3.5f * (14f - 2f * density); }
+    float alphaFactor() { return workshop.enabled ? workshop.get("alpha_multiplier") * Math.max(.1f, workshop.get("density_base") - workshop.get("density_slope") * density) : .75f * (14f - 2f * density); }
+    float initialOpaqueInset() { return density >= 4f ? workshop.get("opaque_inset_px") : 0f; }
     int state() { return stage; }
     boolean gestureActive() { return stage == ACTIVE; }
 

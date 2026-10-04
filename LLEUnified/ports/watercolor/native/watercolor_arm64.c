@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "watercolor_refresh.h"
+#include "watercolor_parameters.h"
 
 #define LOG_TAG "LLE64-Watercolor"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -21,23 +22,13 @@
 /* Literal classic S4/Note 4 Watercolor values recovered from ARM32. */
 static const float kRadialFboScale = 0.025f;
 static const float kDensityFboScale = 0.60f;
-static const float kBrushScale = 0.80f;
 static const float kPortraitBrushFactor = 0.35f;
 static const float kSquareBrushFactor = 0.196875f;
-static const float kDragThresholdWidth = 0.025f;
-static const float kDragInterpolationWidth = 0.05f;
 static const float kMoveSizeMin = 0.55f;
 static const float kMoveSizeRange = 0.25f;
 static const float kMoveScaleStep = 0.025f;
 static const float kMoveScaleMin = 0.50f;
 /* Common-library setters scale the scene's nominal 3.4/3.6 before upload. */
-static const float kNoiseVectorScalar = 425.0f;
-static const float kRadialVectorScalar = 66.69f;
-static const float kSaturation = 1.2f;
-static const float kRedSaturation = 1.3f;
-static const float kGreenSaturation = 0.4f;
-static const float kBlueSaturation = 0.4f;
-static const float kBrightness = 1.35f;
 static const float kStampAlphaStep = 0.025f;
 static const float kStampAlphaLimit = 1.06f;
 
@@ -93,6 +84,7 @@ typedef struct MixProgramLocations {
 } MixProgramLocations;
 
 typedef struct WatercolorState {
+    LleWatercolorParameters parameters;
     int width;
     int height;
     int radial_width;
@@ -554,9 +546,9 @@ static int initialize_gl(WatercolorState *state, int width, int height) {
 static float base_brush_size(const WatercolorState *state) {
     int short_side = state->width < state->height ? state->width : state->height;
     if (state->width == state->height) {
-        return kBrushScale * kSquareBrushFactor * (float)short_side;
+        return state->parameters.brush_scale * kSquareBrushFactor * (float)short_side;
     }
-    return kBrushScale * kPortraitBrushFactor * (float)short_side;
+    return state->parameters.brush_scale * kPortraitBrushFactor * (float)short_side;
 }
 
 static int random_mask(void) {
@@ -852,8 +844,8 @@ static void render_advection_pass(WatercolorState *state,
     bind_texture_location(locations->u_velocity, state->noise_texture, 1);
     bind_texture_location(locations->u_radial, state->radial_texture, 2);
     bind_texture_location(locations->u_original, state->background_texture, 3);
-    glUniform1f(locations->u_noise_scalar, kNoiseVectorScalar);
-    glUniform1f(locations->u_radial_scalar, kRadialVectorScalar);
+    glUniform1f(locations->u_noise_scalar, state->parameters.noise_scalar);
+    glUniform1f(locations->u_radial_scalar, state->parameters.radial_scalar);
     glUniform1f(locations->u_frame_scale, stock_ticks);
     glUniform1f(locations->u_relaxation,
             lle_watercolor_refresh_fraction(0.03f, stock_ticks));
@@ -904,11 +896,11 @@ static void render_mix(WatercolorState *state) {
     bind_texture_location(locations->u_density,
             state->density_textures[state->density_read_index], 0);
     bind_texture_location(locations->u_alpha, state->radial_texture, 1);
-    glUniform1f(locations->u_saturation, kSaturation);
-    glUniform1f(locations->u_brightness, kBrightness);
-    glUniform1f(locations->u_red_saturation, kRedSaturation);
-    glUniform1f(locations->u_green_saturation, kGreenSaturation);
-    glUniform1f(locations->u_blue_saturation, kBlueSaturation);
+    glUniform1f(locations->u_saturation, state->parameters.saturation);
+    glUniform1f(locations->u_brightness, state->parameters.brightness);
+    glUniform1f(locations->u_red_saturation, state->parameters.red_saturation);
+    glUniform1f(locations->u_green_saturation, state->parameters.green_saturation);
+    glUniform1f(locations->u_blue_saturation, state->parameters.blue_saturation);
     draw_full_quad(locations->a_position, locations->a_uv);
 }
 
@@ -1080,6 +1072,7 @@ Java_com_samsung_android_visualeffect_lock_common_Native_loadEffect(
         return NULL;
     }
     state->clear_requested = 1;
+    state->parameters = lle_watercolor_parameters_defaults();
     reset_brush_state(state);
     srand((unsigned int)time(NULL));
     set_state(env, object, state);
@@ -1269,9 +1262,9 @@ Java_com_samsung_android_visualeffect_lock_common_Native_onTouch(
         float dy = fy - state->last_y;
         float distance = sqrtf(dx * dx + dy * dy);
         float threshold = (float)state->width * state->move_scale
-                * kDragThresholdWidth;
+                * state->parameters.drag_threshold;
         if (distance < threshold) return;
-        float spacing = (float)state->width * kDragInterpolationWidth;
+        float spacing = (float)state->width * state->parameters.stamp_spacing;
         int count = spacing > 0.0f ? (int)ceilf(distance / spacing) : 2;
         if (count < 2) count = 2;
         if (count > 101) count = 101;
@@ -1335,10 +1328,19 @@ Java_com_samsung_android_visualeffect_lock_common_Native_destroy(
 JNIEXPORT void JNICALL
 Java_com_samsung_android_visualeffect_lock_common_Native_setParameters(
         JNIEnv *env, jobject object, jintArray numbers, jfloatArray values) {
-    (void)env;
-    (void)object;
-    (void)numbers;
-    (void)values;
+    WatercolorState *state = get_state(env, object);
+    if (state == NULL || numbers == NULL || values == NULL) return;
+    jsize count = (*env)->GetArrayLength(env, numbers);
+    if (count != (*env)->GetArrayLength(env, values) || count <= 0 || count > 32) return;
+    jint ids[32];
+    jfloat data[32];
+    (*env)->GetIntArrayRegion(env, numbers, 0, count, ids);
+    if ((*env)->ExceptionCheck(env)) return;
+    (*env)->GetFloatArrayRegion(env, values, 0, count, data);
+    if ((*env)->ExceptionCheck(env)) return;
+    for (jsize i = 0; i < count; ++i) {
+        lle_watercolor_parameters_set(&state->parameters, ids[i], data[i]);
+    }
 }
 
 JNIEXPORT void JNICALL

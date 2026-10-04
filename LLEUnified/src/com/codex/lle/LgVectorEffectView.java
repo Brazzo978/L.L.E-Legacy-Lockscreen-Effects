@@ -29,7 +29,8 @@ import java.util.Set;
  */
 public final class LgVectorEffectView extends View implements UnlockEffectRenderer,
         BackgroundSourceRenderer, SecondaryBackgroundSourceRenderer, UnlockEffectReadiness {
-    private final LgVectorScene scene = new LgVectorScene();
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 41);
+    private final LgVectorScene scene = new LgVectorScene(workshop);
     private final LgVectorScene.Frame frame = new LgVectorScene.Frame();
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint bandPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);

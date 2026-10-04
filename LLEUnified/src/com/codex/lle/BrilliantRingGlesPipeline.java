@@ -19,6 +19,19 @@ import java.util.Iterator;
  * synchronized: the owning {@code GLSurfaceView} must marshal every call onto its GL thread.</p>
  */
 public final class BrilliantRingGlesPipeline {
+    private final EffectWorkshopConfig.Values workshop;
+    private int workshopLongAxisCells;
+    private int workshopAdvectScale;
+    private int workshopMaxActiveRecords;
+    private float workshopNormalInnerDelay;
+    private float workshopNormalOpacityHold;
+    private float workshopNormalDuration;
+    private float workshopNormalRadius;
+    private float workshopNormalForcedFadeStep;
+    private float workshopNormalEmitDistanceCells;
+    private float workshopRadialQuadScale;
+    private float workshopTabScale;
+    private float workshopTabShiftRange;
     private static final String TAG = "LLEBrilliantRingGL";
 
     public static final int ACTION_DOWN = 0;
@@ -137,7 +150,22 @@ public final class BrilliantRingGlesPipeline {
     private float tabOffsetX;
     private float tabOffsetY;
 
-    public BrilliantRingGlesPipeline() {
+    public BrilliantRingGlesPipeline() { this(EffectWorkshopConfig.originals(14)); }
+
+    BrilliantRingGlesPipeline(EffectWorkshopConfig.Values workshop) {
+        this.workshop = workshop;
+        workshopLongAxisCells = workshop.intValue("long_axis_cells");
+        workshopAdvectScale = workshop.intValue("advect_scale");
+        workshopMaxActiveRecords = workshop.intValue("max_active_records");
+        workshopNormalInnerDelay = workshop.get("normal_inner_delay");
+        workshopNormalOpacityHold = workshop.get("normal_opacity_hold");
+        workshopNormalDuration = workshop.get("normal_duration");
+        workshopNormalRadius = workshop.get("normal_radius");
+        workshopNormalForcedFadeStep = workshop.get("normal_forced_fade_step");
+        workshopNormalEmitDistanceCells = workshop.get("normal_emit_distance_cells");
+        workshopRadialQuadScale = workshop.get("radial_quad_scale");
+        workshopTabScale = workshop.get("tab_scale");
+        workshopTabShiftRange = workshop.get("tab_shift_range");
         bionicSrand((int) (System.currentTimeMillis() / 1000L));
     }
 
@@ -416,13 +444,13 @@ public final class BrilliantRingGlesPipeline {
         width = Math.max(1, surfaceWidth);
         height = Math.max(1, surfaceHeight);
         if (width <= height) {
-            simHeight = LONG_AXIS_CELLS;
-            simWidth = Math.max(1, (int) ((width / (float) height) * LONG_AXIS_CELLS));
+            simHeight = workshopLongAxisCells;
+            simWidth = Math.max(1, (int) ((width / (float) height) * workshopLongAxisCells));
             screenPixelsPerCell = width / (float) simWidth;
         } else {
-            simWidth = LONG_AXIS_CELLS;
-            simHeight = Math.max(1, (int) ((height / (float) width) * LONG_AXIS_CELLS));
-            screenPixelsPerCell = width / (float) LONG_AXIS_CELLS;
+            simWidth = workshopLongAxisCells;
+            simHeight = Math.max(1, (int) ((height / (float) width) * workshopLongAxisCells));
+            screenPixelsPerCell = width / (float) workshopLongAxisCells;
         }
         int cellCount = simWidth * simHeight;
         narrowField = new float[cellCount];
@@ -435,9 +463,9 @@ public final class BrilliantRingGlesPipeline {
 
         radialProgram = new Program(RADIAL_VERTEX_SHADER, RADIAL_FRAGMENT_SHADER);
         advectProgram = new Program(ADVECT_VERTEX_SHADER, ADVECT_FRAGMENT_SHADER);
-        ringProgram = new Program(RING_VERTEX_SHADER, overlayRingFragmentShader());
+        ringProgram = new Program(RING_VERTEX_SHADER, workshopRingFragmentShader());
         radialTarget = new RenderTarget(width, height);
-        advectTarget = new RenderTarget(simWidth * ADVECT_SCALE, simHeight * ADVECT_SCALE);
+        advectTarget = new RenderTarget(simWidth * workshopAdvectScale, simHeight * workshopAdvectScale);
         alphaTexture = createLuminanceTexture(simWidth, simHeight, false);
         blurTexture = createLuminanceTexture(simWidth, simHeight, true);
         backgroundTexture = createRgbaTexture(1, 1, true, true);
@@ -478,10 +506,10 @@ public final class BrilliantRingGlesPipeline {
                 lastTouchX = x;
                 lastTouchY = y;
                 if (records.isEmpty()) {
-                    tabOffsetX = ((x - width * 0.5f) / (width * 0.5f)) * TAB_SHIFT_RANGE;
-                    tabOffsetY = ((height * 0.5f - y) / (height * 0.5f)) * TAB_SHIFT_RANGE;
+                    tabOffsetX = ((x - width * 0.5f) / (width * 0.5f)) * workshopTabShiftRange;
+                    tabOffsetY = ((height * 0.5f - y) / (height * 0.5f)) * workshopTabShiftRange;
                 }
-                addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                addRecord(x, y, workshop.intValue("normal_initial_age"), TYPE_NORMAL);
                 lastEmissionX = x;
                 lastEmissionY = y;
                 hasLastEmission = true;
@@ -496,11 +524,11 @@ public final class BrilliantRingGlesPipeline {
                 }
                 float dx = x - lastEmissionX;
                 float dy = y - lastEmissionY;
-                float threshold = NORMAL_EMIT_DISTANCE_CELLS * screenPixelsPerCell;
+                float threshold = workshopNormalEmitDistanceCells * screenPixelsPerCell;
                 float distance = (float) Math.sqrt(dx * dx + dy * dy);
                 if (distance > threshold
-                        || updatesSinceEmission >= NORMAL_EMIT_TIMEOUT_UPDATES) {
-                    addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                        || updatesSinceEmission >= workshop.intValue("normal_emit_timeout")) {
+                    addRecord(x, y, workshop.intValue("normal_initial_age"), TYPE_NORMAL);
                     lastEmissionX = x;
                     lastEmissionY = y;
                     updatesSinceEmission = 0;
@@ -528,10 +556,10 @@ public final class BrilliantRingGlesPipeline {
                 lastTouchX = x;
                 lastTouchY = y;
                 if (records.isEmpty()) {
-                    tabOffsetX = ((x - width * 0.5f) / (width * 0.5f)) * TAB_SHIFT_RANGE;
-                    tabOffsetY = ((height * 0.5f - y) / (height * 0.5f)) * TAB_SHIFT_RANGE;
+                    tabOffsetX = ((x - width * 0.5f) / (width * 0.5f)) * workshopTabShiftRange;
+                    tabOffsetY = ((height * 0.5f - y) / (height * 0.5f)) * workshopTabShiftRange;
                 }
-                addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                addRecord(x, y, workshop.intValue("normal_initial_age"), TYPE_NORMAL);
                 lastEmissionX = x;
                 lastEmissionY = y;
                 hasLastEmission = true;
@@ -546,11 +574,11 @@ public final class BrilliantRingGlesPipeline {
                 }
                 float dx = x - lastEmissionX;
                 float dy = y - lastEmissionY;
-                float threshold = NORMAL_EMIT_DISTANCE_CELLS * screenPixelsPerCell;
+                float threshold = workshopNormalEmitDistanceCells * screenPixelsPerCell;
                 float distance = (float) Math.sqrt(dx * dx + dy * dy);
                 if (distance > threshold
-                        || emissionTimeoutReached(updatesSinceEmissionCredits)) {
-                    addRecord(x, y, NORMAL_INITIAL_AGE, TYPE_NORMAL);
+                        || updatesSinceEmissionCredits >= workshop.get("normal_emit_timeout")) {
+                    addRecord(x, y, workshop.intValue("normal_initial_age"), TYPE_NORMAL);
                     lastEmissionX = x;
                     lastEmissionY = y;
                     updatesSinceEmissionCredits = 0.0f;
@@ -567,7 +595,7 @@ public final class BrilliantRingGlesPipeline {
     private void updateSimulation() {
         java.util.Arrays.fill(narrowField, 0.0f);
         java.util.Arrays.fill(wideField, 0.0f);
-        int overflow = records.size() - MAX_ACTIVE_RECORDS;
+        int overflow = records.size() - workshopMaxActiveRecords;
         for (int i = 0; i < overflow; ++i) {
             records.get(i).type = TYPE_FORCED_FADE;
         }
@@ -613,7 +641,7 @@ public final class BrilliantRingGlesPipeline {
             }
             return;
         }
-        int overflow = records.size() - MAX_ACTIVE_RECORDS;
+        int overflow = records.size() - workshopMaxActiveRecords;
         for (int i = 0; i < overflow; ++i) {
             records.get(i).type = TYPE_FORCED_FADE;
         }
@@ -654,27 +682,27 @@ public final class BrilliantRingGlesPipeline {
             return true;
         }
         if (record.type == TYPE_FORCED_FADE) {
-            record.opacity -= NORMAL_FORCED_FADE_STEP;
+            record.opacity -= workshopNormalForcedFadeStep;
             if (record.opacity <= 0.0f) {
                 return false;
             }
-        } else if (record.age < NORMAL_OPACITY_HOLD) {
+        } else if (record.age < workshopNormalOpacityHold) {
             record.opacity = 1.0f;
         } else {
-            record.opacity = 1.0f - sineInOut80((record.age - NORMAL_OPACITY_HOLD)
-                    / (NORMAL_DURATION - NORMAL_OPACITY_HOLD));
+            record.opacity = 1.0f - sineInOut80((record.age - workshopNormalOpacityHold)
+                    / (Math.max(1f, workshopNormalDuration - workshopNormalOpacityHold)));
         }
-        record.outer = NORMAL_RADIUS * sineInOut90(record.age / NORMAL_DURATION);
-        record.inner = record.age < NORMAL_INNER_DELAY ? 0.0f
-                : NORMAL_RADIUS * sineInOut90((record.age - NORMAL_INNER_DELAY)
-                / (NORMAL_DURATION - NORMAL_INNER_DELAY));
+        record.outer = workshopNormalRadius * sineInOut90(record.age / workshopNormalDuration);
+        record.inner = record.age < workshopNormalInnerDelay ? 0.0f
+                : workshopNormalRadius * sineInOut90((record.age - workshopNormalInnerDelay)
+                / (Math.max(1f, workshopNormalDuration - workshopNormalInnerDelay)));
         if (unlockActive && record.inner > 0.0f) {
             record.inner *= 1.225f;
-            if (record.inner >= NORMAL_RADIUS) {
+            if (record.inner >= workshopNormalRadius) {
                 return false;
             }
         }
-        return record.age < NORMAL_REMOVAL_AGE && record.opacity > 0.0f;
+        return record.age < workshop.get("normal_removal_age") && record.opacity > 0.0f;
     }
 
     /**
@@ -711,29 +739,29 @@ public final class BrilliantRingGlesPipeline {
         }
         if (record.type == TYPE_FORCED_FADE) {
             record.opacity = scaleLinearFade(record.opacity,
-                    NORMAL_FORCED_FADE_STEP, logicalCredits);
+                    workshopNormalForcedFadeStep, logicalCredits);
             if (record.opacity <= 0.0f) {
                 return false;
             }
-        } else if (age < NORMAL_OPACITY_HOLD) {
+        } else if (age < workshopNormalOpacityHold) {
             record.opacity = 1.0f;
         } else {
-            record.opacity = 1.0f - sineInOut80((age - NORMAL_OPACITY_HOLD)
-                    / (NORMAL_DURATION - NORMAL_OPACITY_HOLD));
+            record.opacity = 1.0f - sineInOut80((age - workshopNormalOpacityHold)
+                    / (Math.max(1f, workshopNormalDuration - workshopNormalOpacityHold)));
         }
-        record.outer = NORMAL_RADIUS * sineInOut90(age / NORMAL_DURATION);
-        record.inner = age < NORMAL_INNER_DELAY ? 0.0f
-                : NORMAL_RADIUS * sineInOut90((age - NORMAL_INNER_DELAY)
-                / (NORMAL_DURATION - NORMAL_INNER_DELAY));
+        record.outer = workshopNormalRadius * sineInOut90(age / workshopNormalDuration);
+        record.inner = age < workshopNormalInnerDelay ? 0.0f
+                : workshopNormalRadius * sineInOut90((age - workshopNormalInnerDelay)
+                / (Math.max(1f, workshopNormalDuration - workshopNormalInnerDelay)));
         if (unlockActive && record.inner > 0.0f) {
             // Type-0 inner is derived from age every sample, so this stock unlock modifier is
             // an instantaneous geometry scale, not the persistent type-1 recurrence above.
             record.inner = applyNormalUnlockInnerScale(record.inner);
-            if (record.inner >= NORMAL_RADIUS) {
+            if (record.inner >= workshopNormalRadius) {
                 return false;
             }
         }
-        return isAdaptiveRecordAgeVisible(record.type, age) && record.opacity > 0.0f;
+        return age < workshop.get("normal_removal_age") && record.opacity > 0.0f;
     }
 
     private void rasterizeRecord(Record record) {
@@ -927,7 +955,7 @@ public final class BrilliantRingGlesPipeline {
     }
 
     private void prepareRadialQuad(Record record) {
-        float half = record.outer * RADIAL_QUAD_SCALE * 0.5f;
+        float half = record.outer * workshopRadialQuadScale * 0.5f;
         float left = (record.x - half) / simWidth;
         float right = (record.x + half) / simWidth;
         // SPDrawBrilliantRadial::setPosition receives (xGrid, simH - yGrid).
@@ -1016,10 +1044,10 @@ public final class BrilliantRingGlesPipeline {
     }
 
     private void prepareTabScaledUv() {
-        float lowX = 1.0f - TAB_SCALE + tabOffsetX;
-        float highX = TAB_SCALE + tabOffsetX;
-        float lowY = 1.0f - TAB_SCALE + tabOffsetY;
-        float highY = TAB_SCALE + tabOffsetY;
+        float lowX = 1.0f - workshopTabScale + tabOffsetX;
+        float highX = workshopTabScale + tabOffsetX;
+        float lowY = 1.0f - workshopTabScale + tabOffsetY;
+        float highY = workshopTabScale + tabOffsetY;
         // Matches SPDrawBrilliantRing::createTabScaledTextureUV vertex order.
         put(tabScaledUv,
                 lowX, highY, 0.0f,
@@ -1546,6 +1574,18 @@ public final class BrilliantRingGlesPipeline {
             + " }\n"
             + " gl_FragColor.a = uAlpha;\n"
             + "}\n";
+
+    private String workshopRingFragmentShader() {
+        String shader = overlayRingFragmentShader();
+        if (!workshop.enabled) return shader;
+        return shader.replace("hsv.g > 0.85", "hsv.g > " + workshop.get("saturation_threshold"))
+                .replace("hsv.b < 0.7", "hsv.b < " + workshop.get("brightness_threshold"))
+                .replace("hsv.r - 0.027", "hsv.r - " + workshop.get("hue_shift"))
+                .replace("hsv.g = 1.4", "hsv.g = " + workshop.get("saturation_boost"))
+                .replace("hsv.b * 1.3", "hsv.b * " + workshop.get("brightness_boost"))
+                .replace("+ blurColor + alpha", "+ blurColor * " + workshop.get("blur_gain")
+                        + " + alpha * " + workshop.get("shine_gain"));
+    }
 
     private static String overlayRingFragmentShader() {
         // Same local-alpha patch staged into ARM32 SrkCommon: only the final alpha instruction

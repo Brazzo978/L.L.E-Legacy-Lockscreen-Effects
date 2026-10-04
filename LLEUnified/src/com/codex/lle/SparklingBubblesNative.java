@@ -6,7 +6,7 @@ import android.graphics.Bitmap;
 final class SparklingBubblesNative {
     static final int TEXTURE_BACKGROUND = 0;
     static final int TEXTURE_BLUR_MASK = 1;
-    static final int BRIDGE_VERSION = 2;
+    static final int BRIDGE_VERSION = 3;
 
     private static final boolean LIBRARY_LOADED;
 
@@ -38,6 +38,8 @@ final class SparklingBubblesNative {
     }
 
     static native int nativeBridgeVersion();
+
+    static native void nativeSetWorkshop(long handle, float[] values);
 
     static native long nativeCreate(long seed);
 

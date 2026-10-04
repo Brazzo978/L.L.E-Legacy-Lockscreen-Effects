@@ -15,6 +15,61 @@ extern "C" {
 
 typedef struct LleSparkSim LleSparkSim;
 
+/* Immutable per-instance tuning, array order documented in WORKSHOP.md. */
+typedef struct LleSparkWorkshop {
+    float press_count;
+    float hint_count;
+    float press_small_radius_min;
+    float press_small_radius_max;
+    float press_medium_radius_min;
+    float press_medium_radius_max;
+    float press_large_radius_min;
+    float press_large_radius_max;
+    float hint_small_radius_min;
+    float hint_small_radius_max;
+    float hint_medium_radius_min;
+    float hint_medium_radius_max;
+    float hint_large_radius_min;
+    float hint_large_radius_max;
+    float small_size_min;
+    float small_size_max;
+    float medium_size_min;
+    float medium_size_max;
+    float medium_target_size_min;
+    float medium_target_size_max;
+    float large_size_min;
+    float large_size_max;
+    float large_target_size_min;
+    float large_target_size_max;
+    float press_lifetime_min;
+    float press_lifetime_max;
+    float hint_small_lifetime_min;
+    float hint_small_lifetime_max;
+    float hint_medium_lifetime_min;
+    float hint_medium_lifetime_max;
+    float hint_large_lifetime_min;
+    float hint_large_lifetime_max;
+    float medium_growth_min;
+    float medium_growth_max;
+    float large_growth_min;
+    float large_growth_max;
+    float press_alpha_min;
+    float press_alpha_max;
+    float press_large_alpha_min;
+    float press_large_alpha_max;
+    float hint_alpha_min;
+    float hint_alpha_max;
+    float speed_min;
+    float speed_max;
+    float press_acceleration;
+    float hint_acceleration;
+    float edge_band_min;
+    float edge_band_max;
+} LleSparkWorkshop;
+#define LLE_SPARK_WORKSHOP_COUNT 48u
+void lle_spark_sim_set_workshop(LleSparkSim *sim, const float *values, size_t count);
+
+
 typedef struct LleSparkParticleSnapshot {
     float x;
     float y;

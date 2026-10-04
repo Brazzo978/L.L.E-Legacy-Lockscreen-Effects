@@ -49,6 +49,8 @@ final class WatercolorArm64Native {
 
     native void destroy();
 
+    /** Explicit IDs: 1 brush scale, 2 drag threshold, 3 spacing, 4 noise, 5 radial,
+     * 6 saturation, 7/8/9 R/G/B saturation, 10 brightness. Per-instance; finite bounded values. */
     native void setParameters(int[] numbers, float[] values);
 
     native void loadModel(String name, byte[] bytes);

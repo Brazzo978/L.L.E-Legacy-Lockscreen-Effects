@@ -49,21 +49,30 @@ final class LgHulaHoopScene {
     private long lastTouchAt;
     private long lastPhysicsAt;
 
-    LgHulaHoopScene() {}
+    private final EffectWorkshopConfig.Values workshop;
+
+    LgHulaHoopScene() { this(EffectWorkshopConfig.originals(42)); }
+
+    LgHulaHoopScene(EffectWorkshopConfig.Values workshop) {
+        this.workshop = workshop == null ? EffectWorkshopConfig.originals(42) : workshop;
+    }
+
+    float layerTransition(int index) { return workshop.get("v1_layer_trail_" + index); }
+    float layerAngle(int index) { return workshop.get("v1_layer_angle_" + index); }
 
     void configure(int width, int height, float density) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
         this.density = finite(density) && density > 0f ? density : 1f;
-        transitionPerDot = thresholdRadius() / Math.max(1f,
+        transitionPerDot = workshop.get("v1_trail_scale") * thresholdRadius() / Math.max(1f,
                 5f * (float) Math.hypot(this.width, this.height));
-        velocityThreshold = 16f * this.density;
+        velocityThreshold = workshop.get("v1_fast_velocity") * this.density;
     }
 
     int state() { return stage; }
     boolean gestureActive() { return stage == ACTIVE; }
-    float minimumRadius() { return 50.2f * density; }
-    float thresholdRadius() { return 128f * density; }
+    float minimumRadius() { return workshop.get("v1_minimum_radius") * density; }
+    float thresholdRadius() { return workshop.get("v1_drag_threshold") * density; }
 
     void begin(float x, float y, long now) {
         if (!finite(x) || !finite(y)) return;
@@ -173,13 +182,14 @@ final class LgHulaHoopScene {
             out.ringAlpha = .9f;
             out.backgroundAlpha = 1f;
             out.radius = minimumRadius();
-            out.layerScale = 1.2f;
+            out.layerScale = workshop.enabled
+                    ? workshop.get("v1_layer_base") - workshop.get("v1_layer_change") : 1.2f;
             out.layerRadius = out.radius * out.layerScale;
-            out.rotationPeriodMs = 2_500f;
+            out.rotationPeriodMs = workshop.get("v1_rotation_max");
             advanceAngles(now, out.rotationPeriodMs);
             out.angle = currentAngle;
             out.pivotAngle = currentPivotAngle;
-            out.pivotRadius = .5f * Math.abs(out.layerRadius - out.radius);
+            out.pivotRadius = workshop.get("v1_pivot_ratio") * Math.abs(out.layerRadius - out.radius);
             out.pivotX = polarX(out.pivotRadius, out.pivotAngle);
             out.pivotY = polarY(out.pivotRadius, out.pivotAngle);
             out.trailX = trailX;
@@ -240,14 +250,15 @@ final class LgHulaHoopScene {
         // ColorLayeredCircleEffect.setRadius(): colored circle radius is 1.3x the hole near the
         // minimum and eases to 1.2x at the maximum. Its first 300 ms use the donor's tension-2
         // OvershootInterpolator, starting at 30 percent of the destination scale.
-        out.layerScale = (1.3f - .1f * deceleratedRadius) * introScale(age);
+        out.layerScale = (workshop.get("v1_layer_base") - workshop.get("v1_layer_change") * deceleratedRadius) * introScale(age);
         out.layerRadius = out.radius * out.layerScale;
         // The donor is fastest near the minimum radius and slows as the opening grows.
-        out.rotationPeriodMs = 700f + 1_800f * deceleratedRadius;
+        out.rotationPeriodMs = workshop.get("v1_rotation_min") + (workshop.get("v1_rotation_max")
+                - workshop.get("v1_rotation_min")) * deceleratedRadius;
         advanceAngles(now, out.rotationPeriodMs);
         out.angle = currentAngle;
         out.pivotAngle = currentPivotAngle;
-        out.pivotRadius = .5f * Math.abs(out.layerRadius - out.radius);
+        out.pivotRadius = workshop.get("v1_pivot_ratio") * Math.abs(out.layerRadius - out.radius);
         out.pivotX = polarX(out.pivotRadius, out.pivotAngle);
         out.pivotY = polarY(out.pivotRadius, out.pivotAngle);
         out.trailX = trailX;
@@ -296,7 +307,7 @@ final class LgHulaHoopScene {
         currentAngle = normalizeDegrees(currentAngle + elapsed * 360f
                 / Math.max(1f, rotationPeriodMs));
         float difference = shortestAngle(destinationPivotAngle - currentPivotAngle);
-        float maxStep = 5f * elapsed / 16f;
+        float maxStep = workshop.get("v1_pivot_speed") * elapsed / 16f;
         if (Math.abs(difference) <= maxStep) currentPivotAngle = destinationPivotAngle;
         else currentPivotAngle = normalizeDegrees(currentPivotAngle
                 + Math.copySign(maxStep, difference));
@@ -309,17 +320,27 @@ final class LgHulaHoopScene {
         // The stock handler applies one thirty-first of the remaining displacement on every
         // nominal 16 ms update. The exponential form preserves that behavior across dropped
         // frames instead of making the return depend on the display refresh rate.
-        float decay = (float) Math.pow(30f / 31f, elapsed / 16f);
+        float decay = (float) Math.pow(workshop.get("v1_trail_decay"), elapsed / 16f);
         trailX *= decay;
         trailY *= decay;
-        if (Math.abs(trailX) * LAYER_TRANSITION[0] < 1f) trailX = 0f;
-        if (Math.abs(trailY) * LAYER_TRANSITION[0] < 1f) trailY = 0f;
+        float cutoffScale = layerTransition(0);
+        if (workshop.enabled) {
+            // All holders share this displacement. A disabled first holder must
+            // not clear the visible trail belonging to another holder.
+            cutoffScale = 0f;
+            for (int i = 0; i < 4; i++) {
+                cutoffScale = Math.max(cutoffScale, Math.abs(layerTransition(i)));
+            }
+        }
+        if (Math.abs(trailX) * cutoffScale < 1f) trailX = 0f;
+        if (Math.abs(trailY) * cutoffScale < 1f) trailY = 0f;
     }
 
-    private static float introScale(long ageMs) {
-        if (ageMs >= 300L) return 1f;
-        float t = clamp(ageMs / 300f, 0f, 1f) - 1f;
-        float overshoot = t * t * (3f * t + 2f) + 1f; // tension = 2
+    private float introScale(long ageMs) {
+        if (ageMs >= workshop.get("v1_intro_ms")) return 1f;
+        float t = clamp(ageMs / workshop.get("v1_intro_ms"), 0f, 1f) - 1f;
+        float tension = workshop.get("v1_intro_tension");
+        float overshoot = t * t * ((tension + 1f) * t + tension) + 1f; // tension = 2
         return .3f + .7f * overshoot;
     }
 

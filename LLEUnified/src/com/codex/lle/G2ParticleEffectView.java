@@ -50,6 +50,7 @@ interface G2ParticleEffectHost {
 public final class G2ParticleEffectView extends GLSurfaceView
         implements UnlockEffectRenderer, BackgroundSourceRenderer,
         UnlockEffectReadiness, G2ParticleEffectHost {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 33);
     private static final String TAG = "LLEG2Particle";
 
     private final ParticleRenderer renderer;
@@ -66,7 +67,7 @@ public final class G2ParticleEffectView extends GLSurfaceView
 
     public G2ParticleEffectView(Context context) {
         super(context);
-        renderer = new ParticleRenderer(this, context);
+        renderer = new ParticleRenderer(this, context, workshop);
         soundPool = new SoundPool.Builder().setMaxStreams(1)
                 .setAudioAttributes(EffectAudio.soundPoolAttributes(context)).build();
         unlockSound = soundPool.load(context, R.raw.lg_particle_unlock, 1);
@@ -557,10 +558,8 @@ public final class G2ParticleEffectView extends GLSurfaceView
         private final Context context;
         private final Object sceneLock = new Object();
         private final Object sourceLock = new Object();
-        private final G2ParticleScene scene = new G2ParticleScene();
-        private final FloatBuffer particles = ByteBuffer.allocateDirect(
-                G2ParticleScene.PARTICLE_COUNT * G2ParticleScene.VERTEX_STRIDE * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        private final G2ParticleScene scene;
+        private final FloatBuffer particles;
         private final FloatBuffer quad = ByteBuffer.allocateDirect(8 * 4)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer();
         private final FloatBuffer revealFan = ByteBuffer.allocateDirect(66 * 2 * 4)
@@ -592,7 +591,10 @@ public final class G2ParticleEffectView extends GLSurfaceView
         private boolean disposed;
         private boolean fatalError;
 
-        ParticleRenderer(G2ParticleEffectHost host, Context context) {
+        ParticleRenderer(G2ParticleEffectHost host, Context context, EffectWorkshopConfig.Values values) {
+            scene = new G2ParticleScene(values);
+            particles = ByteBuffer.allocateDirect(scene.particleCount() * G2ParticleScene.VERTEX_STRIDE * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
             this.host = host;
             this.context = context.getApplicationContext();
             scene.setDensity(context.getResources().getDisplayMetrics().density);
@@ -797,6 +799,7 @@ public final class G2ParticleEffectView extends GLSurfaceView
         }
 
         private void drawParticles() {
+            if (scene.particleCount() == 0) return;
             GLES20.glUseProgram(program);
             GLES20.glUniform2f(surfaceUniform, surfaceWidth, surfaceHeight);
             GLES20.glEnable(GLES20.GL_BLEND);
@@ -810,7 +813,7 @@ public final class G2ParticleEffectView extends GLSurfaceView
             particles.position(4);
             GLES20.glVertexAttribPointer(particleMaskStartAttribute, 1, GLES20.GL_FLOAT,
                     false, G2ParticleScene.VERTEX_STRIDE * 4, particles);
-            GLES20.glDrawArrays(GLES20.GL_POINTS, 0, G2ParticleScene.PARTICLE_COUNT);
+            GLES20.glDrawArrays(GLES20.GL_POINTS, 0, scene.particleCount());
             GLES20.glDisableVertexAttribArray(particleAttribute);
             GLES20.glDisableVertexAttribArray(particleMaskStartAttribute);
             GLES20.glDisable(GLES20.GL_BLEND);

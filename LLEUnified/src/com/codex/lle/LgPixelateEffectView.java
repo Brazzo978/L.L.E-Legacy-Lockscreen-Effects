@@ -43,11 +43,12 @@ interface LgPixelateRendererListener {
 public final class LgPixelateEffectView extends FrameLayout
         implements UnlockEffectRenderer, BackgroundSourceRenderer, RawArgb8888BackgroundRenderer,
         SecondaryBackgroundSourceRenderer, UnlockEffectReadiness, LgPixelateRendererListener {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 32);
     private static final String TAG = "LLELgPixelate";
 
     private final Object sceneLock = new Object();
     private final Object soundLock = new Object();
-    private final LgPixelateScene scene = new LgPixelateScene();
+    private final LgPixelateScene scene = new LgPixelateScene(workshop);
     private final PixelateGlSurface glSurface;
     private final SoundPool soundPool;
     private final int touchdownSound;
@@ -82,7 +83,7 @@ public final class LgPixelateEffectView extends FrameLayout
         setClipChildren(false);
         setClipToPadding(false);
         setBackgroundColor(Color.TRANSPARENT);
-        glSurface = new PixelateGlSurface(context, sceneLock, scene, this);
+        glSurface = new PixelateGlSurface(context, sceneLock, scene, this, workshop);
         addView(glSurface, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         soundPool = new SoundPool.Builder()
@@ -359,6 +360,7 @@ public final class LgPixelateEffectView extends FrameLayout
 
     /** GLES thread owns texture creation and all draws; source copies survive context loss. */
     static final class PixelateGlSurface extends GLSurfaceView implements GLSurfaceView.Renderer {
+        private final EffectWorkshopConfig.Values workshop;
         private static final long LEGACY_FRAME_NS = 16666667L;
         private static final String MESH_VERTEX =
                 "attribute vec2 aPosition;attribute vec2 aTexCoord;"
@@ -437,8 +439,9 @@ public final class LgPixelateEffectView extends FrameLayout
         private FloatBuffer effectBuffer;
 
         PixelateGlSurface(Context context, Object lock, LgPixelateScene scene,
-                LgPixelateRendererListener listener) {
+                LgPixelateRendererListener listener, EffectWorkshopConfig.Values values) {
             super(context);
+            workshop = values;
             sceneLock = lock;
             this.scene = scene;
             this.listener = listener;
@@ -627,7 +630,7 @@ public final class LgPixelateEffectView extends FrameLayout
         }
 
         private void rebuildMesh() {
-            mesh = LgPixelateMesh.build(width, height);
+            mesh = LgPixelateMesh.build(width, height, workshop);
             positionBuffer = buffer(mesh.positions);
             textureBuffer = buffer(mesh.textureCoordinates);
             mosaicBuffer = buffer(mesh.mosaicCoordinates);

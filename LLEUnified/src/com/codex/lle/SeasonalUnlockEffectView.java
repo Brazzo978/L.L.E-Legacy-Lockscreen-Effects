@@ -46,6 +46,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     private boolean destroyed;
     private boolean gestureActive;
     private final boolean partnerMode;
+    private final EffectWorkshopConfig.Values workshop;
     private SoundPool soundPool;
     private final int[][] sounds = new int[4][3];
 
@@ -58,6 +59,10 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         seasonMode = season;
         activeSeason = resolveSeason();
         partnerMode = partner;
+        // The default constructor is the doodle partner, whose separate preferences
+        // intentionally remain independent of the selected unlock effect workshop.
+        workshop = partner ? null : EffectWorkshopPrefs.values(context,
+                season >= 0 && season <= 3 ? 16 + season : 20);
         setWillNotDraw(false);
         loadBitmaps();
     }
@@ -131,7 +136,8 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
             }
             float dx = screenX - lastParticleX;
             float dy = screenY - lastParticleY;
-            float minimumTravel = PARTICLE_MOVE_MIN_DP * density() * displaySizeScale();
+            float minimumTravel = setting("spawn_distance", PARTICLE_MOVE_MIN_DP)
+                    * density() * displaySizeScale();
             if (dx * dx + dy * dy >= minimumTravel * minimumTravel) {
                 spawnParticle(screenX, screenY);
                 lastParticleX = screenX;
@@ -274,51 +280,54 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
     }
 
     private void spawnParticle(float x, float y) {
+        if (workshop != null && workshop.enabled && particles.size() >= 256) return;
         int season = activeSeason;
         float displayScale = displaySizeScale();
         int randomSlot;
         int spriteIndex;
         float dx;
         if (season == SeasonalDoodleView.SEASON_SPRING) {
-            randomSlot = random.nextInt(7);
+            randomSlot = emissionSlot(7, 4);
             if (randomSlot >= 4) {
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f * displayScale;
+            dx = random.nextFloat() * 200f * displayScale * setting("spread", 1f);
             addParticle(season, spriteIndex, x - dx, y + dx, springScale(spriteIndex),
                     0.55f, 125L, 375L, 500L, 250L, 750L,
                     random.nextInt(360), 1000L);
         } else if (season == SeasonalDoodleView.SEASON_SUMMER) {
-            randomSlot = random.nextInt(11);
+            randomSlot = emissionSlot(11, 6);
             if (randomSlot >= 6) {
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f * displayScale;
+            dx = random.nextFloat() * 200f * displayScale * setting("spread", 1f);
             Sprite particle = addParticle(season, spriteIndex, x - dx, y + dx, summerScale(spriteIndex),
                     0.55f, 125L, 375L, 500L, 250L, 500L,
                     359f, 1000L);
             if (particle != null) {
-                particle.alphaHoldMs = 250L;
+                particle.alphaHoldMs = scaledTime(250L);
+                particle.durationMs = Math.max(particle.durationMs,
+                        particle.alphaInMs + particle.alphaHoldMs + particle.alphaOutMs);
             }
         } else if (season == SeasonalDoodleView.SEASON_AUTUMN) {
-            randomSlot = random.nextInt(9);
+            randomSlot = emissionSlot(9, 5);
             if (randomSlot >= 5) {
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 200f * displayScale;
+            dx = random.nextFloat() * 200f * displayScale * setting("spread", 1f);
             addParticle(season, spriteIndex, x - dx, y + dx, 1f,
                     0.5f, 125L, 375L, 500L, 250L, 750L,
                     random.nextInt(360), 1000L);
         } else {
-            randomSlot = random.nextInt(5);
+            randomSlot = emissionSlot(5, 3);
             if (randomSlot >= 3) {
                 return;
             }
             spriteIndex = randomSlot;
-            dx = random.nextFloat() * 100f * displayScale;
+            dx = random.nextFloat() * 100f * displayScale * setting("spread", 1f);
             if (spriteIndex == 0) {
                 addParticle(season, spriteIndex, x - dx, y + dx,
                         0.6f + 0.1f * random.nextInt(9), 0f,
@@ -348,15 +357,16 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         sprite.y = y;
         sprite.peakScale = peakScale;
         sprite.endScale = endScale;
-        sprite.scaleInMs = scaleInMs;
-        sprite.holdMs = holdMs;
-        sprite.scaleOutMs = scaleOutMs;
-        sprite.alphaInMs = alphaInMs;
-        sprite.alphaOutMs = alphaOutMs;
-        sprite.rotationEnd = rotationEnd;
-        sprite.rotationMs = rotationMs;
+        sprite.scaleInMs = scaledTime(scaleInMs);
+        sprite.holdMs = scaledTime(holdMs);
+        sprite.scaleOutMs = scaledTime(scaleOutMs);
+        sprite.alphaInMs = scaledTime(alphaInMs);
+        sprite.alphaOutMs = scaledTime(alphaOutMs);
+        sprite.rotationEnd = rotationEnd * setting("rotation", 1f);
+        sprite.rotationMs = scaledTime(rotationMs);
         sprite.startMs = SystemClock.uptimeMillis();
-        sprite.durationMs = Math.max(scaleInMs + holdMs + scaleOutMs, alphaInMs + alphaOutMs);
+        sprite.durationMs = Math.max(sprite.scaleInMs + sprite.holdMs + sprite.scaleOutMs,
+                sprite.alphaInMs + sprite.alphaOutMs);
         particles.add(sprite);
         return sprite;
     }
@@ -365,7 +375,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         if (touch.bitmap == null || touch.bitmap.isRecycled()) {
             return;
         }
-        float age = now - touch.startMs;
+        float age = (now - touch.startMs) / setting("touch_duration", 1f);
         float scale = touchScale(touch, age);
         int alpha = Math.round(255f * touchAlpha(touch, age));
         drawBitmap(canvas, touch.bitmap, touch.x, touch.y, scale, 0f, alpha);
@@ -410,7 +420,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         if (touch.mode == TouchSprite.MODE_STATIC) {
             return false;
         }
-        float age = now - touch.startMs;
+        float age = (now - touch.startMs) / setting("touch_duration", 1f);
         if (touch.mode == TouchSprite.MODE_SUMMER) {
             return age < (touch.offsetXdp > 80f ? 2130f : 330f);
         }
@@ -463,7 +473,7 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         paint.setAlpha(Math.max(0, Math.min(255, alpha)));
         matrix.reset();
         matrix.postTranslate(-bitmap.getWidth() * 0.5f, -bitmap.getHeight() * 0.5f);
-        float renderScale = scale * displaySizeScale();
+        float renderScale = scale * displaySizeScale() * setting("size", 1f);
         matrix.postScale(renderScale, renderScale);
         if (rotation != 0f) {
             matrix.postRotate(rotation);
@@ -605,8 +615,32 @@ public class SeasonalUnlockEffectView extends View implements UnlockEffectRender
         ensureSounds();
         if (soundPool != null && id >= 0 && id < sounds[season].length
                 && sounds[season][id] != 0) {
-            soundPool.play(sounds[season][id], 0.3f, 0.3f, 0, 0, 1f);
+            float volume = Math.min(1f, 0.3f * setting("sound_gain", 1f));
+            soundPool.play(sounds[season][id], volume, volume, 0, 0, 1f);
         }
+    }
+
+    private float setting(String key, float original) {
+        return workshop != null && workshop.enabled ? workshop.get(key) : original;
+    }
+
+    private long scaledTime(long original) {
+        if (original == 0L) return 0L;
+        return Math.max(1L, Math.round(original * setting("lifetime", 1f)));
+    }
+
+    private int emissionSlot(int slots, int accepted) {
+        int slot = random.nextInt(slots);
+        float multiplier = setting("emission", 1f);
+        if (multiplier == 1f) return slot; // Preserve the stock random sequence.
+        if (multiplier < 1f) {
+            return slot < accepted && random.nextFloat() < multiplier ? slot : slots;
+        }
+        if (slot < accepted) return slot;
+        float probability = accepted / (float) slots;
+        float extraProbability = (Math.min(1f, probability * multiplier) - probability)
+                / (1f - probability);
+        return random.nextFloat() < extraProbability ? random.nextInt(accepted) : slots;
     }
 
     private boolean lockscreenSoundsEnabled() {

@@ -64,6 +64,11 @@ public final class GeometricMosaicGlesPipeline {
             {1.0000000f, 0.1882353f, 0.1882353f}  // #FF3030
     };
 
+    private final EffectWorkshopConfig.Values workshop;
+    private final float[][] palette;
+    private final float[] ringFrom = new float[5];
+    private final float[] ringDelay = new float[5];
+    private final float[] ringEnd = new float[5];
     private final TouchRecord[] touches = new TouchRecord[MAX_TOUCHES];
     private final int[] freeTouchIndices = new int[MAX_TOUCHES];
     private final RingLayer[] rings = new RingLayer[5];
@@ -116,6 +121,21 @@ public final class GeometricMosaicGlesPipeline {
     private long colorSeed = System.currentTimeMillis() / 1000L;
 
     public GeometricMosaicGlesPipeline() {
+        this(EffectWorkshopConfig.originals(8));
+    }
+
+    GeometricMosaicGlesPipeline(EffectWorkshopConfig.Values workshop) {
+        this.workshop = workshop;
+        palette = new float[PALETTE.length][3];
+        String[] channels = {"r", "g", "b"};
+        for (int i=0; i<palette.length; i++) for (int c=0; c<3; c++) {
+            palette[i][c] = workshop.enabled ? workshop.get("palette_"+i+"_"+channels[c])/255f : PALETTE[i][c];
+        }
+        for (int i=0; i<5; i++) {
+            ringFrom[i] = workshop.enabled ? BASE_RADIUS * workshop.get("ring_from_"+i) : RING_FROM[i];
+            ringDelay[i] = workshop.enabled ? workshop.get("ring_delay_"+i) : RING_DELAY[i];
+            ringEnd[i] = workshop.enabled ? ringDelay[i]+workshop.get("ring_duration_"+i) : RING_END[i];
+        }
         for (int i = 0; i < touches.length; ++i) {
             touches[i] = new TouchRecord(i);
         }
@@ -154,8 +174,8 @@ public final class GeometricMosaicGlesPipeline {
         blurTarget = new RenderTarget(gridColumns, gridRows, false, false);
         Random sceneRandom = new Random(colorSeed);
         // The original consumes one shared stream: 45 + 30 palette draws, then 252 bytes.
-        circle3Mesh = CircleMesh.firstLattice(sceneRandom, 3);
-        circle2Mesh = CircleMesh.secondLattice(sceneRandom, 2);
+        circle3Mesh = CircleMesh.firstLattice(sceneRandom, 3, palette, BASE_RADIUS * setting("ring_scale", 1f));
+        circle2Mesh = CircleMesh.secondLattice(sceneRandom, 2, palette, BASE_RADIUS * setting("ring_scale", 1f));
 
         int[] texture = new int[1];
         GLES20.glGenTextures(1, texture, 0);
@@ -195,8 +215,8 @@ public final class GeometricMosaicGlesPipeline {
         colorSeed = seed;
         if (initialized) {
             Random sceneRandom = new Random(colorSeed);
-            circle3Mesh = CircleMesh.firstLattice(sceneRandom, 3);
-            circle2Mesh = CircleMesh.secondLattice(sceneRandom, 2);
+            circle3Mesh = CircleMesh.firstLattice(sceneRandom, 3, palette, BASE_RADIUS * setting("ring_scale", 1f));
+            circle2Mesh = CircleMesh.secondLattice(sceneRandom, 2, palette, BASE_RADIUS * setting("ring_scale", 1f));
             ByteBuffer originNoise = ByteBuffer.allocateDirect(gridColumns * gridRows);
             for (int i = 0; i < gridColumns * gridRows; ++i) {
                 originNoise.put((byte) sceneRandom.nextInt(256));
@@ -269,7 +289,7 @@ public final class GeometricMosaicGlesPipeline {
         if (hasLastTouch) {
             float dx = x - lastTouchX;
             float dy = y - lastTouchY;
-            if ((float) Math.sqrt(dx * dx + dy * dy) < TOUCH_SAMPLE_THRESHOLD) {
+            if ((float) Math.sqrt(dx * dx + dy * dy) < setting("touch_spacing", TOUCH_SAMPLE_THRESHOLD)) {
                 return false;
             }
         }
@@ -339,7 +359,7 @@ public final class GeometricMosaicGlesPipeline {
         if (terminal == null || !terminal.active) {
             terminal = obtainTerminalTouch();
         }
-        float radius = terminal.active ? terminal.radiusAt(now) : TOUCH_START_RADIUS;
+        float radius = terminal.active ? terminal.radiusAt(now) : setting("touch_start", TOUCH_START_RADIUS);
         terminal.begin(2.0f * clamp(x, 0.0f, 1.0f) - 1.0f,
                 1.0f - 2.0f * clamp(y, 0.0f, 1.0f), now);
         terminal.unlock(now, radius);
@@ -457,7 +477,7 @@ public final class GeometricMosaicGlesPipeline {
                 }
             } else if (!record.decaying && now >= record.growthExpiresAt) {
                 // FUN_1b580 distinguishes the current record from old trail records.
-                record.beginDecay(now, record == currentTouch ? 0.0f : TOUCH_START_RADIUS);
+                record.beginDecay(now, record == currentTouch ? 0.0f : setting("touch_start", TOUCH_START_RADIUS));
             } else if (record.decaying && now >= record.cleanupTime) {
                 reclaimTouch(record);
                 if (record == currentTouch) {
@@ -466,7 +486,7 @@ public final class GeometricMosaicGlesPipeline {
             }
         }
         // The timed-byte animator keeps +0xe4 set through the inclusive end time.
-        if (specialActive && now - specialStartSeconds > AFFORDANCE_SECONDS) {
+        if (specialActive && now - specialStartSeconds > setting("hint_duration", AFFORDANCE_SECONDS)) {
             specialActive = false;
         }
         if (!specialActive && !hasActiveTouches()) {
@@ -514,7 +534,7 @@ public final class GeometricMosaicGlesPipeline {
     }
 
     private boolean isAnimating(double now) {
-        if (specialActive || (ringsActive && now - ringStartSeconds <= RING_END[2])) {
+        if (specialActive || (ringsActive && now - ringStartSeconds <= longestRingEnd())) {
             return true;
         }
         for (TouchRecord record : touches) {
@@ -532,14 +552,14 @@ public final class GeometricMosaicGlesPipeline {
         // this hold all five reconstructed bands reach alpha zero by 3.6 s and
         // leave only the triangular colour-origin layer visible.
         if (ringsActive && !specialActive && hasActiveTouches()) {
-            age = Math.min(age, RING_END[0]);
+            age = Math.min(age, ringEnd[0]);
         }
         for (int i = 0; i < rings.length; ++i) {
             RingLayer ring = rings[i];
-            float progress = clamp((age - RING_DELAY[i])
-                    / Math.max(0.0001f, RING_END[i] - RING_DELAY[i]), 0.0f, 1.0f);
-            ring.radius = mix(RING_FROM[i], BASE_RADIUS, progress);
-            ring.alpha = clamp(1.5f - ring.radius * 3.0f / (2.0f * BASE_RADIUS),
+            float progress = clamp((age - ringDelay[i])
+                    / Math.max(0.0001f, ringEnd[i] - ringDelay[i]), 0.0f, 1.0f);
+            ring.radius = mix(ringFrom[i], BASE_RADIUS, progress) * setting("ring_scale", 1f);
+            ring.alpha = clamp(1.5f - ring.radius * 3.0f / (2.0f * BASE_RADIUS * setting("ring_scale", 1f)),
                     0.0f, 1.0f);
         }
     }
@@ -613,13 +633,13 @@ public final class GeometricMosaicGlesPipeline {
     }
 
     private float specialMaskCoverage(float vx, float vy, double now) {
-        float progress = clamp((float) ((now - specialStartSeconds) / AFFORDANCE_SECONDS),
+        float progress = clamp((float) ((now - specialStartSeconds) / setting("hint_duration", AFFORDANCE_SECONDS)),
                 0.0f, 1.0f);
-        float radius = mix(AFFORDANCE_RADIUS_FROM, AFFORDANCE_RADIUS_TO, progress);
+        float radius = mix(setting("hint_from", AFFORDANCE_RADIUS_FROM), setting("hint_to", AFFORDANCE_RADIUS_TO), progress);
         float dx = (vx - specialCenterX) * maskScaleX;
         float dy = (vy - specialCenterY) * maskScaleY;
         float distance = (float) Math.sqrt(dx * dx + dy * dy);
-        float denominator = radius + 1.8f;
+        float denominator = Math.max(.05f, radius + 1.8f);
         float gain = 10.5f / (denominator * denominator * denominator);
         return gain * (0.5f - Math.abs(radius - distance));
     }
@@ -708,7 +728,9 @@ public final class GeometricMosaicGlesPipeline {
         bindFullscreen(blurProgram);
         bindSampler(blurProgram, "uTexture", backgroundTexture, 0);
         GLES20.glUniform2f(blurProgram.uniform("uTexel"),
-                1.0f / width, 1.0f / height);
+                setting("blur_radius", 1f) / width, setting("blur_radius", 1f) / height);
+        GLES20.glUniform1f(blurProgram.uniform("uDarkThreshold"), setting("brightness_threshold", .2f));
+        GLES20.glUniform1f(blurProgram.uniform("uDarkLift"), setting("brightness_lift", .3f));
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         unbindFullscreen(blurProgram);
     }
@@ -733,6 +755,9 @@ public final class GeometricMosaicGlesPipeline {
         GLES20.glUniform1f(finalProgram.uniform("uBlockSizeHeightNormalize"),
                 1.0f / gridRows);
         GLES20.glUniform1i(finalProgram.uniform("uLandscape"), width > height ? 1 : 0);
+        GLES20.glUniform1f(finalProgram.uniform("uCircleBlend"), setting("circle_blend", .75f));
+        GLES20.glUniform1f(finalProgram.uniform("uSoftBlend"), setting("soft_blend", .4f));
+        GLES20.glUniform1f(finalProgram.uniform("uMosaicBlend"), setting("mosaic_blend", .75f));
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         unbindFullscreen(finalProgram);
         GLES20.glDisable(GLES20.GL_BLEND);
@@ -789,7 +814,7 @@ public final class GeometricMosaicGlesPipeline {
                 repeat ? GLES20.GL_REPEAT : GLES20.GL_CLAMP_TO_EDGE);
     }
 
-    private static final class TouchRecord {
+    private final class TouchRecord {
         final int index;
         boolean active;
         boolean unlocking;
@@ -816,7 +841,7 @@ public final class GeometricMosaicGlesPipeline {
             x = clipX;
             y = clipY;
             start = now;
-            growthExpiresAt = now + TOUCH_GROW_SECONDS;
+            growthExpiresAt = now + setting("touch_grow", TOUCH_GROW_SECONDS);
             cleanupTime = 0.0;
         }
 
@@ -824,7 +849,7 @@ public final class GeometricMosaicGlesPipeline {
             decayFrom = radiusAt(now);
             decayTo = targetRadius;
             decayStart = now;
-            cleanupTime = now + TOUCH_SHRINK_SECONDS;
+            cleanupTime = now + setting("touch_shrink", TOUCH_SHRINK_SECONDS);
             decaying = true;
         }
 
@@ -842,12 +867,12 @@ public final class GeometricMosaicGlesPipeline {
             }
             if (decaying) {
                 float progress = clamp((float) ((now - decayStart)
-                        / TOUCH_SHRINK_SECONDS), 0.0f, 1.0f);
+                        / setting("touch_shrink", TOUCH_SHRINK_SECONDS)), 0.0f, 1.0f);
                 return mix(decayFrom, decayTo, progress * progress * progress);
             }
             float age = Math.max(0.0f, (float) (now - start));
-            float progress = clamp(age / TOUCH_GROW_SECONDS, 0.0f, 1.0f);
-            return mix(TOUCH_START_RADIUS, TOUCH_PEAK_RADIUS,
+            float progress = clamp(age / setting("touch_grow", TOUCH_GROW_SECONDS), 0.0f, 1.0f);
+            return mix(setting("touch_start", TOUCH_START_RADIUS), setting("touch_peak", TOUCH_PEAK_RADIUS),
                     cosineEaseInOut(progress));
         }
     }
@@ -894,17 +919,17 @@ public final class GeometricMosaicGlesPipeline {
             }
         }
 
-        static CircleMesh firstLattice(Random random, int layerCount) {
+        static CircleMesh firstLattice(Random random, int layerCount, float[][] palette, float radius) {
             CircleMesh mesh = new CircleMesh(5 * 6, layerCount);
             for (int y = 0; y < 6; ++y) {
                 for (int x = 0; x < 5; ++x) {
                     float centerX = -4.0f / 3.0f + x * (2.0f / 3.0f);
                     float centerY = -1.0f + y * 0.4f;
-                    mesh.putQuadGeometry(centerX, centerY, BASE_RADIUS, 0.25f);
+                    mesh.putQuadGeometry(centerX, centerY, radius, 0.25f);
                 }
             }
             for (int layer = 0; layer < layerCount; ++layer) {
-                float[][] seeds = drawSeedColors(random);
+                float[][] seeds = drawSeedColors(random, palette);
                 for (int row = 0; row < FIRST_COLOR_PATTERN.length; ++row) {
                     for (int column = 0; column < FIRST_COLOR_PATTERN[row].length; ++column) {
                         mesh.putCellColor(layer, seeds[FIRST_COLOR_PATTERN[row][column]]);
@@ -915,17 +940,17 @@ public final class GeometricMosaicGlesPipeline {
             return mesh;
         }
 
-        static CircleMesh secondLattice(Random random, int layerCount) {
+        static CircleMesh secondLattice(Random random, int layerCount, float[][] palette, float radius) {
             CircleMesh mesh = new CircleMesh(4 * 7, layerCount);
             for (int y = 0; y < 7; ++y) {
                 for (int x = 0; x < 4; ++x) {
                     float centerX = -1.0f + x * (2.0f / 3.0f);
                     float centerY = -1.2f + y * 0.4f;
-                    mesh.putQuadGeometry(centerX, centerY, BASE_RADIUS, 0.25f);
+                    mesh.putQuadGeometry(centerX, centerY, radius, 0.25f);
                 }
             }
             for (int layer = 0; layer < layerCount; ++layer) {
-                float[][] seeds = drawSeedColors(random);
+                float[][] seeds = drawSeedColors(random, palette);
                 for (int row = 0; row < SECOND_COLOR_PATTERN.length; ++row) {
                     for (int column = 0; column < SECOND_COLOR_PATTERN[row].length;
                             ++column) {
@@ -937,10 +962,10 @@ public final class GeometricMosaicGlesPipeline {
             return mesh;
         }
 
-        private static float[][] drawSeedColors(Random random) {
+        private static float[][] drawSeedColors(Random random, float[][] palette) {
             float[][] result = new float[15][];
             for (int i = 0; i < result.length; ++i) {
-                result[i] = PALETTE[random.nextInt(PALETTE.length)];
+                result[i] = palette[random.nextInt(palette.length)];
             }
             return result;
         }
@@ -1108,6 +1133,14 @@ public final class GeometricMosaicGlesPipeline {
         return buffer;
     }
 
+    private float setting(String key, float original) { return workshop.enabled ? workshop.get(key) : original; }
+
+    private float longestRingEnd() {
+        float end=0;
+        for (float value : ringEnd) end=Math.max(end,value);
+        return end;
+    }
+
     private static double seconds(long nanos) {
         return nanos * 1.0e-9;
     }
@@ -1253,7 +1286,7 @@ public final class GeometricMosaicGlesPipeline {
 
     private static final String BLUR_FRAGMENT_SHADER =
             "precision mediump float;varying vec2 UVNorm;uniform sampler2D uTexture;"
-            + "uniform vec2 uTexel;\n"
+            + "uniform vec2 uTexel;uniform float uDarkThreshold;uniform float uDarkLift;\n"
             + "void main(){vec3 c=vec3(0.0);int distance=10;"
             + "for(int i=-distance;i<=distance;i+=2){"
             + "float xCoord=UVNorm.x+float(i)*uTexel.x;"
@@ -1262,7 +1295,7 @@ public final class GeometricMosaicGlesPipeline {
             + "c+=texture2D(uTexture,vec2(xCoord,yCoord)).rgb;}}"
             + "c=c/vec3((distance+1)*(distance+1));"
             + "float g=0.299*c.r+0.587*c.g+0.114*c.b;"
-            + "if(g<0.2)c+=0.3;gl_FragColor=vec4(c,1.0);}\n";
+            + "if(g<uDarkThreshold)c+=uDarkLift;gl_FragColor=vec4(c,1.0);}\n";
 
     private static final String FINAL_FRAGMENT_SHADER =
             "precision mediump float;varying vec2 UV;varying highp vec2 UVhighp;"
@@ -1270,7 +1303,7 @@ public final class GeometricMosaicGlesPipeline {
             + "uniform sampler2D uBackground;uniform sampler2D uMask;"
             + "uniform sampler2D uTextureCircles;uniform sampler2D uTextureAnotherCircles;"
             + "uniform sampler2D uTextureOrigin;uniform sampler2D uTextureColorOrigin;\n"
-            + "uniform float uBlockSizeWidthNormalize;"
+            + "uniform float uCircleBlend;uniform float uSoftBlend;uniform float uMosaicBlend;uniform float uBlockSizeWidthNormalize;"
             + "uniform float uBlockSizeHeightNormalize;uniform int uLandscape;\n"
             + "float overlay1(float a,float b){return a<0.5?2.0*a*b:1.0-2.0*(1.0-a)*(1.0-b);}"
             + "vec3 overlay3(vec3 a,vec3 b){return vec3(overlay1(a.r,b.r),overlay1(a.g,b.g),overlay1(a.b,b.b));}"
@@ -1292,10 +1325,10 @@ public final class GeometricMosaicGlesPipeline {
             + "vec3 circleB=texture2D(uTextureAnotherCircles,circleUV).rgb;"
             + "float colorGrayB=texture2D(uTextureOrigin,coordL).a;"
             + "float colorGrayC=texture2D(uTextureOrigin,coordRInv).a;"
-            + "vec3 c1=mix(colorLayerA,linearDodge(colorLayerA,circleA),0.75);"
-            + "vec3 c2=mix(c1,softLight(c1,circleB),0.40);"
+            + "vec3 c1=mix(colorLayerA,linearDodge(colorLayerA,circleA),uCircleBlend);"
+            + "vec3 c2=mix(c1,softLight(c1,circleB),uSoftBlend);"
             + "vec3 c3=overlay3(c2,colorLayerB);"
-            + "vec3 c4=mix(c3,max(c3,colorMosaicC),0.75);"
+            + "vec3 c4=mix(c3,max(c3,colorMosaicC),uMosaicBlend);"
             + "vec3 c5=mix(c4,overlayGray(c4,colorGrayB),0.5);"
             + "vec3 c6=mix(c5,overlayGray(c5,colorGrayC),0.5);"
             + "float m=clamp(1.0-alpha,0.0,1.0);float a=sqrt(m);"

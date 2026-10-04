@@ -62,6 +62,7 @@ typedef struct LleColourGroup {
 } LleColourGroup;
 
 struct LleColourSim {
+    LleColourWorkshop workshop;
   LleColourGroup groups[LLE_COLOUR_GROUP_CAPACITY];
   float width;
   float height;
@@ -437,10 +438,10 @@ static void initialize_particle(LleColourSim *sim, LleColourGroup *group,
   particle->smoothing_radius = cell_width * 0.1f;
   particle->target_scale = 1.0f;
   particle->fade_rate = 1.0f;
-  particle->rest_density = 12.0f;
+  particle->rest_density = 12.0f * sim->workshop.density_scale;
   particle->pressure = 0.0f;
   particle->near_pressure = 0.0f;
-  particle->viscosity = 3.0f;
+  particle->viscosity = 3.0f * sim->workshop.viscosity_scale;
   particle->active = true;
   particle->special = special;
 }
@@ -643,13 +644,13 @@ static void update_particle_growth(const LleColourSim *sim,
                                    LleColourParticle *particle,
                                    float increment,
                                    float frame_scale) {
-  const float target_radius = stock_cell_width_px(sim) * 3.7f;
-  const float target_density = sim->project_kind == 1 ? 6.0f : 4.0f;
+  const float target_radius = stock_cell_width_px(sim) * 3.7f * sim->workshop.radius_scale;
+  const float target_density = (sim->project_kind == 1 ? 6.0f : 4.0f) * sim->workshop.density_scale;
   float interpolation;
   if (particle->scale >= 1.0f) {
     return;
   }
-  particle->scale = minf(particle->scale + increment * frame_scale, 1.0f);
+  particle->scale = minf(particle->scale + increment * frame_scale * sim->workshop.growth_scale, 1.0f);
   interpolation = sine_in_out33(particle->scale);
   /* Fractional display frames need the equivalent temporal relaxation. */
   interpolation = scaled_blend(interpolation, frame_scale);
@@ -657,15 +658,15 @@ static void update_particle_growth(const LleColourSim *sim,
       (target_radius - particle->smoothing_radius) * interpolation;
   particle->rest_density +=
       (target_density - particle->rest_density) * interpolation;
-  particle->pressure += (0.4f - particle->pressure) * interpolation;
-  particle->near_pressure += (0.4f - particle->near_pressure) * interpolation;
+  particle->pressure += (0.4f * sim->workshop.pressure_scale - particle->pressure) * interpolation;
+  particle->near_pressure += (0.4f * sim->workshop.near_pressure_scale - particle->near_pressure) * interpolation;
 }
 
 static void constrain_particle(const LleColourSim *sim,
                                LleColourParticle *particle) {
   if (particle->x < 0.0f) {
     const float overshoot = -particle->x;
-    particle->velocity_x = -particle->velocity_x * 0.15f;
+    particle->velocity_x = -particle->velocity_x * sim->workshop.edge_bounce;
     particle->x = 2.0f * overshoot;
   }
   /*
@@ -675,17 +676,17 @@ static void constrain_particle(const LleColourSim *sim,
    */
   if (particle->x > sim->width) {
     const float overshoot = particle->x - sim->width;
-    particle->velocity_x = -particle->velocity_x * 0.15f;
+    particle->velocity_x = -particle->velocity_x * sim->workshop.edge_bounce;
     particle->x = sim->width - 2.0f * overshoot;
   }
   if (particle->y < 0.0f) {
     const float overshoot = -particle->y;
-    particle->velocity_y = -particle->velocity_y * 0.15f;
+    particle->velocity_y = -particle->velocity_y * sim->workshop.edge_bounce;
     particle->y = 2.0f * overshoot;
   }
   if (particle->y > sim->height) {
     const float overshoot = particle->y - sim->height;
-    particle->velocity_y = -particle->velocity_y * 0.15f;
+    particle->velocity_y = -particle->velocity_y * sim->workshop.edge_bounce;
     particle->y = sim->height - 2.0f * overshoot;
   }
 }
@@ -1083,12 +1084,61 @@ static void advance_group_state(LleColourSim *sim, LleColourGroup *group,
   }
 }
 
+void lle_colour_sim_set_workshop(LleColourSim *sim, const float *values, size_t count) {
+    if (sim == NULL) return;
+    /* Invalid arrays restore all defaults atomically; each non-finite field uses its default. */
+    const bool supplied = values != NULL && count == LLE_COLOUR_WORKSHOP_COUNT;
+    { float v = supplied && isfinite(values[0]) ? values[0] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.radius_scale = v; }
+    { float v = supplied && isfinite(values[1]) ? values[1] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.density_scale = v; }
+    { float v = supplied && isfinite(values[2]) ? values[2] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.viscosity_scale = v; }
+    { float v = supplied && isfinite(values[3]) ? values[3] : 1.0f;
+      v = fmaxf(0.0f, fminf(1.5f, v));
+      sim->workshop.pressure_scale = v; }
+    { float v = supplied && isfinite(values[4]) ? values[4] : 1.0f;
+      v = fmaxf(0.0f, fminf(1.5f, v));
+      sim->workshop.near_pressure_scale = v; }
+    { float v = supplied && isfinite(values[5]) ? values[5] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.growth_scale = v; }
+    { float v = supplied && isfinite(values[6]) ? values[6] : 0.15f;
+      v = fmaxf(0.0f, fminf(0.6f, v));
+      sim->workshop.edge_bounce = v; }
+    { float v = supplied && isfinite(values[7]) ? values[7] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.tilt_x_scale = v; }
+    { float v = supplied && isfinite(values[8]) ? values[8] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.tilt_y_scale = v; }
+    { float v = supplied && isfinite(values[9]) ? values[9] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.refraction_scale = v; }
+    { float v = supplied && isfinite(values[10]) ? values[10] : 0.6f;
+      v = fmaxf(0.0f, fminf(1.2f, v));
+      sim->workshop.shadow_width = v; }
+    { float v = supplied && isfinite(values[11]) ? values[11] : 1.3f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.saturation = v; }
+    { float v = supplied && isfinite(values[12]) ? values[12] : 1.3f;
+      v = fmaxf(0.5f, fminf(2.0f, v));
+      sim->workshop.brightness = v; }
+    { float v = supplied && isfinite(values[13]) ? values[13] : 0.15f;
+      v = fmaxf(0.0f, fminf(0.5f, v));
+      sim->workshop.minimum_value = v; }
+}
+
 LleColourSim *lle_colour_sim_create(float width, float height, int project_kind,
                                     uint64_t seed) {
   LleColourSim *sim = (LleColourSim *)calloc(1u, sizeof(*sim));
   if (sim == NULL) {
     return NULL;
   }
+  lle_colour_sim_set_workshop(sim, NULL, 0u);
   sim->project_kind = project_kind;
   sim->current_group = LLE_COLOUR_INVALID_GROUP;
   seed_vendor_rng(sim, seed);
@@ -1218,8 +1268,8 @@ void lle_colour_sim_sensor(LleColourSim *sim, int sensor_type, float x, float y,
   if (sensor_type != 0 && sensor_type != 1) {
     return;
   }
-  sim->sensor_acceleration_x = -clampf(x, -10.0f, 10.0f) * 0.01f;
-  sim->sensor_acceleration_y = -clampf(y, -10.0f, 10.0f) * 0.015f;
+  sim->sensor_acceleration_x = -clampf(x, -10.0f, 10.0f) * 0.01f * sim->workshop.tilt_x_scale;
+  sim->sensor_acceleration_y = -clampf(y, -10.0f, 10.0f) * 0.015f * sim->workshop.tilt_y_scale;
 }
 
 void lle_colour_sim_affordance(LleColourSim *sim, float x, float y) {
@@ -1828,4 +1878,9 @@ void lle_colour_sim_get_draw_params(const LleColourSim *sim,
     return;
   }
   *out_params = sim->draw_params;
+  out_params->refraction_ratio *= sim->workshop.refraction_scale;
+  out_params->inner_shadow_width = sim->workshop.shadow_width;
+  out_params->color_saturation = sim->workshop.saturation;
+  out_params->color_brightness = sim->workshop.brightness;
+  out_params->color_min_value = sim->workshop.minimum_value;
 }

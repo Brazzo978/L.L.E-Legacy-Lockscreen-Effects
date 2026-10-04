@@ -20,6 +20,18 @@ import java.util.ArrayList;
  * without replacing the live lock-screen wallpaper.</p>
  */
 public final class BrilliantCutGlesPipeline {
+    private final EffectWorkshopConfig.Values workshop;
+    private float workshopTouchRadius;
+    private float workshopTouchBrightness;
+    private float workshopTouchLifetimeSeconds;
+    private float workshopTouchRepeatCount;
+    private float workshopTouchNextTermSeconds;
+    private float workshopTouchGrowSeconds;
+    private float workshopNormalImageShift;
+    private float workshopAffordanceSeconds;
+    private float workshopAffordanceCenterX;
+    private float workshopAffordanceCenterY;
+    private float workshopAffordanceStroke;
     private static final String TAG = "LLEBrilliantCutGL";
 
     public static final int ACTION_DOWN = 0;
@@ -84,7 +96,7 @@ public final class BrilliantCutGlesPipeline {
     private boolean unlockFinalFramePending;
     private final AdaptiveFinalFrameHold adaptiveFinalFrameHold = new AdaptiveFinalFrameHold();
     private final ArrayList<LightState> touchLights = new ArrayList<LightState>(24);
-    private float touchEmitClock = TOUCH_NEXT_TERM_SECONDS;
+    private float touchEmitClock = workshopTouchNextTermSeconds;
     private boolean releaseBounceActive;
     private float releaseBounceAge;
     private float releaseBounceStartX;
@@ -92,7 +104,22 @@ public final class BrilliantCutGlesPipeline {
     private float releaseBounceTargetX;
     private float releaseBounceTargetY;
 
-    public BrilliantCutGlesPipeline() {
+    public BrilliantCutGlesPipeline() { this(EffectWorkshopConfig.originals(15)); }
+
+    BrilliantCutGlesPipeline(EffectWorkshopConfig.Values workshop) {
+        this.workshop = workshop;
+        workshopTouchRadius = workshop.get("touch_radius");
+        workshopTouchBrightness = workshop.get("touch_brightness");
+        workshopTouchLifetimeSeconds = workshop.get("touch_lifetime_seconds");
+        workshopTouchRepeatCount = workshop.get("touch_repeat_count");
+        workshopTouchNextTermSeconds = workshop.get("touch_next_term_seconds");
+        workshopTouchGrowSeconds = Math.min(workshop.get("touch_grow_seconds"), workshopTouchLifetimeSeconds * .9f);
+        touchEmitClock = workshopTouchNextTermSeconds;
+        workshopNormalImageShift = workshop.get("normal_image_shift");
+        workshopAffordanceSeconds = workshop.get("affordance_seconds");
+        workshopAffordanceCenterX = workshop.get("affordance_center_x");
+        workshopAffordanceCenterY = workshop.get("affordance_center_y");
+        workshopAffordanceStroke = workshop.get("affordance_stroke");
     }
 
     /** Creates all context-owned resources and decodes the exact stock portrait/landscape mesh. */
@@ -112,7 +139,7 @@ public final class BrilliantCutGlesPipeline {
         }
         buildMeshStreams(mesh);
 
-        program = new Program(VERTEX_SHADER, OVERLAY_FRAGMENT_SHADER);
+        program = new Program(workshopVertexShader(), OVERLAY_FRAGMENT_SHADER);
         maskProgram = new Program(MASK_VERTEX_SHADER, MASK_FRAGMENT_SHADER);
         affordanceMaskProgram = new Program(AFFORDANCE_MASK_VERTEX_SHADER,
                 AFFORDANCE_MASK_FRAGMENT_SHADER);
@@ -218,7 +245,7 @@ public final class BrilliantCutGlesPipeline {
         lightX = 0.0f;
         lightY = 0.0f;
         touchLights.clear();
-        touchEmitClock = TOUCH_NEXT_TERM_SECONDS;
+        touchEmitClock = workshopTouchNextTermSeconds;
         releaseBounceActive = false;
         releaseBounceAge = 0.0f;
         clearPlanes();
@@ -343,7 +370,7 @@ public final class BrilliantCutGlesPipeline {
             if (event.action == ACTION_DOWN || event.action == ACTION_MOVE) {
                 affordanceActive = false;
                 releaseBounceActive = false;
-                if (touchEmitClock >= TOUCH_NEXT_TERM_SECONDS) {
+                if (touchEmitClock >= workshopTouchNextTermSeconds) {
                     touchLights.add(new LightState(event.x, event.y));
                     touchEmitClock = 0.0f;
                 }
@@ -374,19 +401,19 @@ public final class BrilliantCutGlesPipeline {
         for (int i = touchLights.size() - 1; i >= 0; --i) {
             LightState light = touchLights.get(i);
             light.age += elapsed;
-            if (light.age > TOUCH_LIFETIME_SECONDS) {
+            if (light.age > workshopTouchLifetimeSeconds) {
                 touchLights.remove(i);
             }
         }
         if (releaseBounceActive) {
             releaseBounceAge += elapsed;
-            if (releaseBounceAge < TOUCH_GROW_SECONDS) {
-                float amount = cosineInOut(releaseBounceAge / TOUCH_GROW_SECONDS);
+            if (releaseBounceAge < workshopTouchGrowSeconds) {
+                float amount = cosineInOut(releaseBounceAge / workshopTouchGrowSeconds);
                 lightX = mix(releaseBounceStartX, releaseBounceTargetX, amount);
                 lightY = mix(releaseBounceStartY, releaseBounceTargetY, amount);
-            } else if (releaseBounceAge < TOUCH_LIFETIME_SECONDS) {
-                float amount = cosineInOut((releaseBounceAge - TOUCH_GROW_SECONDS)
-                        / (TOUCH_LIFETIME_SECONDS - TOUCH_GROW_SECONDS));
+            } else if (releaseBounceAge < workshopTouchLifetimeSeconds) {
+                float amount = cosineInOut((releaseBounceAge - workshopTouchGrowSeconds)
+                        / (workshopTouchLifetimeSeconds - workshopTouchGrowSeconds));
                 lightX = mix(releaseBounceTargetX, releaseBounceStartX, amount);
                 lightY = mix(releaseBounceTargetY, releaseBounceStartY, amount);
             } else {
@@ -397,8 +424,8 @@ public final class BrilliantCutGlesPipeline {
         }
         if (affordanceActive) {
             affordanceAge += elapsed;
-            if (affordanceAge >= AFFORDANCE_SECONDS) {
-                affordanceAge = AFFORDANCE_SECONDS;
+            if (affordanceAge >= workshopAffordanceSeconds) {
+                affordanceAge = workshopAffordanceSeconds;
                 affordanceActive = false;
             }
         }
@@ -425,19 +452,19 @@ public final class BrilliantCutGlesPipeline {
         for (int i = touchLights.size() - 1; i >= 0; --i) {
             LightState light = touchLights.get(i);
             light.age += elapsed;
-            if (light.age > TOUCH_LIFETIME_SECONDS) {
+            if (light.age > workshopTouchLifetimeSeconds) {
                 touchLights.remove(i);
             }
         }
         if (releaseBounceActive) {
             releaseBounceAge += elapsed;
-            if (releaseBounceAge < TOUCH_GROW_SECONDS) {
-                float amount = cosineInOut(releaseBounceAge / TOUCH_GROW_SECONDS);
+            if (releaseBounceAge < workshopTouchGrowSeconds) {
+                float amount = cosineInOut(releaseBounceAge / workshopTouchGrowSeconds);
                 lightX = mix(releaseBounceStartX, releaseBounceTargetX, amount);
                 lightY = mix(releaseBounceStartY, releaseBounceTargetY, amount);
-            } else if (releaseBounceAge < TOUCH_LIFETIME_SECONDS) {
-                float amount = cosineInOut((releaseBounceAge - TOUCH_GROW_SECONDS)
-                        / (TOUCH_LIFETIME_SECONDS - TOUCH_GROW_SECONDS));
+            } else if (releaseBounceAge < workshopTouchLifetimeSeconds) {
+                float amount = cosineInOut((releaseBounceAge - workshopTouchGrowSeconds)
+                        / (workshopTouchLifetimeSeconds - workshopTouchGrowSeconds));
                 lightX = mix(releaseBounceTargetX, releaseBounceStartX, amount);
                 lightY = mix(releaseBounceTargetY, releaseBounceStartY, amount);
             } else {
@@ -448,8 +475,8 @@ public final class BrilliantCutGlesPipeline {
         }
         if (affordanceActive) {
             affordanceAge += elapsed;
-            if (affordanceAge >= AFFORDANCE_SECONDS) {
-                affordanceAge = AFFORDANCE_SECONDS;
+            if (affordanceAge >= workshopAffordanceSeconds) {
+                affordanceAge = workshopAffordanceSeconds;
                 affordanceActive = false;
             }
         }
@@ -507,11 +534,11 @@ public final class BrilliantCutGlesPipeline {
         float renderLightX = lightX;
         float renderLightY = lightY;
         // Stock keeps the composite/glint multiplier at 1.0 for normal touch.
-        // TOUCH_BRIGHTNESS_ORACLE belongs only to the LightBrush mask below.
+        // workshopTouchBrightness belongs only to the LightBrush mask below.
         float brightness = AFFORDANCE_UNLOCK_BRIGHTNESS;
         if (affordanceActive) {
             float progress = cosineInOut(Math.min(1.0f,
-                    affordanceAge / AFFORDANCE_SECONDS));
+                    affordanceAge / workshopAffordanceSeconds));
             renderLightX = 1.0f - 2.0f * progress;
             renderLightY = 1.0f - 2.0f * progress;
             brightness = AFFORDANCE_UNLOCK_BRIGHTNESS;
@@ -528,7 +555,7 @@ public final class BrilliantCutGlesPipeline {
         GLES20.glUniform1f(program.uniform("uBrightness"), brightness);
         GLES20.glUniform3f(program.uniform("uLightPosition"),
                 renderLightX, renderLightY, 1.0f);
-        GLES20.glUniform1f(program.uniform("uShift"), NORMAL_IMAGE_SHIFT);
+        GLES20.glUniform1f(program.uniform("uShift"), workshopNormalImageShift);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, backgroundTexture);
         GLES20.glUniform1i(program.uniform("uBGTexture"), 0);
@@ -577,19 +604,19 @@ public final class BrilliantCutGlesPipeline {
     }
 
     private void drawTouchMask(LightState light) {
-        float age = Math.min(TOUCH_LIFETIME_SECONDS, light.age);
-        float peakBrightness = TOUCH_REPEAT_COUNT / TOUCH_LIFETIME_SECONDS;
+        float age = Math.min(workshopTouchLifetimeSeconds, light.age);
+        float peakBrightness = workshopTouchRepeatCount / workshopTouchLifetimeSeconds;
         float brightness;
         float size;
-        if (age < TOUCH_GROW_SECONDS) {
-            float amount = cosineInOut(age / TOUCH_GROW_SECONDS);
+        if (age < workshopTouchGrowSeconds) {
+            float amount = cosineInOut(age / workshopTouchGrowSeconds);
             brightness = peakBrightness * amount;
-            size = mix(TOUCH_RADIUS_ORACLE * 0.5f, TOUCH_RADIUS_ORACLE, amount);
+            size = mix(workshopTouchRadius * 0.5f, workshopTouchRadius, amount);
         } else {
-            float amount = cosineInOut((age - TOUCH_GROW_SECONDS)
-                    / (TOUCH_LIFETIME_SECONDS - TOUCH_GROW_SECONDS));
+            float amount = cosineInOut((age - workshopTouchGrowSeconds)
+                    / (workshopTouchLifetimeSeconds - workshopTouchGrowSeconds));
             brightness = peakBrightness * (1.0f - amount);
-            size = mix(TOUCH_RADIUS_ORACLE, TOUCH_RADIUS_ORACLE * 0.5f, amount);
+            size = mix(workshopTouchRadius, workshopTouchRadius * 0.5f, amount);
         }
 
         maskProgram.use();
@@ -600,7 +627,7 @@ public final class BrilliantCutGlesPipeline {
         GLES20.glUniform2f(maskProgram.uniform("uScale"),
                 size * maximum / maskWidth, size * maximum / maskHeight);
         GLES20.glUniform1f(maskProgram.uniform("uBrightness"),
-                brightness * TOUCH_BRIGHTNESS_ORACLE);
+                brightness * workshopTouchBrightness);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, brushTexture);
         GLES20.glUniform1i(maskProgram.uniform("uLightTexture"), 0);
@@ -612,11 +639,11 @@ public final class BrilliantCutGlesPipeline {
     }
 
     private void drawAffordanceMask() {
-        float time = cosineInOut(Math.min(1.0f, affordanceAge / AFFORDANCE_SECONDS));
+        float time = cosineInOut(Math.min(1.0f, affordanceAge / workshopAffordanceSeconds));
         float maximum = Math.max(maskWidth, maskHeight);
-        float centerX = maximum * AFFORDANCE_CENTER_X;
-        float centerY = maximum * AFFORDANCE_CENTER_Y;
-        float stroke = maximum * AFFORDANCE_STROKE;
+        float centerX = maximum * workshopAffordanceCenterX;
+        float centerY = maximum * workshopAffordanceCenterY;
+        float stroke = maximum * workshopAffordanceStroke;
         float start = distance(centerX, centerY, maskWidth, 0.0f);
         float end = distance(centerX, centerY, 0.0f, maskHeight) + stroke;
         float currentLength = mix(start, end, time);
@@ -954,6 +981,13 @@ public final class BrilliantCutGlesPipeline {
     }
 
     /* Literal Samsung normal-image glare math with transparent final composition. */
+    private String workshopVertexShader() {
+        if (!workshop.enabled) return VERTEX_SHADER;
+        return VERTEX_SHADER.replace("0.7*pow", Float.toString(workshop.get("specular_strength")) + "*pow")
+                .replace(")),10.0)", "))," + Float.toString(workshop.get("specular_power")) + ")")
+                .replace("vec4(color,1.0)*1.5", "vec4(color,1.0)*" + Float.toString(workshop.get("glare_gain")));
+    }
+
     private static final String VERTEX_SHADER =
             "precision highp float;\n"
             + "attribute vec3 aPosition;\n"

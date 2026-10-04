@@ -34,6 +34,7 @@ import java.util.Set;
  */
 public final class LgLightParticleEffectView extends View
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 40);
     static final long COMPLETE_MS = LgLightParticleScene.COMPLETE_MS;
     static final long COMPLETE_HOLD_MS = LgLightParticleScene.COMPLETE_HOLD_MS;
 
@@ -58,7 +59,7 @@ public final class LgLightParticleEffectView extends View
             + "}";
 
     private final LgLightParticleScene scene;
-    private final LgLightParticleScene.Frame frame = new LgLightParticleScene.Frame();
+    private final LgLightParticleScene.Frame frame;
     private final Bitmap[] textures = new Bitmap[LgLightParticleScene.TEXTURE_COUNT];
     private final Paint underlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG
             | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
@@ -125,7 +126,8 @@ public final class LgLightParticleEffectView extends View
         scene = new LgLightParticleScene(BuildFlavor.TESTER,
                 normalizedRevision == OverlayPrefs.G2_LIGHT_PARTICLE_REVISION_V2
                         ? LgLightParticleScene.REVISION_LG_NATIVE
-                        : LgLightParticleScene.REVISION_XLOCKER);
+                        : LgLightParticleScene.REVISION_XLOCKER, workshop);
+        frame = new LgLightParticleScene.Frame(scene.particleCapacity());
         android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
         float density = metrics.density;
         scene.setDensity(density);
@@ -364,8 +366,7 @@ public final class LgLightParticleEffectView extends View
     }
 
     private void drawArchivedReveal(Canvas canvas, LgLightParticleScene.Frame current) {
-        float bandwidth = LgLightParticleScene.edgeBandwidth(
-                current.radius, scene.minRadius());
+        float bandwidth = scene.configuredEdgeBandwidth(current.radius);
         if (Build.VERSION.SDK_INT >= 33 && revealShader != null) {
             if (underlayShader == null) rebuildUnderlayShader();
             if (underlayShader != null) {

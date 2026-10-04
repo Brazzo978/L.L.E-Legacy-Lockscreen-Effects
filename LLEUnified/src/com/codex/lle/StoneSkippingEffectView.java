@@ -25,6 +25,16 @@ import java.util.List;
  * geometry and timing without the obsolete SystemUI and DVFS dependencies.</p>
  */
 final class StoneSkippingEffectView extends View implements UnlockEffectRenderer {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 13);
+    private long workshopRippleDurationMs = (long) workshop.get("ripple_duration_ms");
+    private long workshopSecondRingDelayMs = (long) workshop.get("second_ring_delay_ms");
+    private long workshopLongPressSoundMs = (long) workshop.get("long_press_sound_ms");
+    private int workshopMaxRippleSlots = workshop.intValue("max_ripple_slots");
+    private int workshopMaxMovingRipples = workshop.intValue("max_moving_ripples");
+    private float workshopMoveRatioStep = workshop.get("move_ratio_step");
+    private float workshopNormalDiameterDp = workshop.get("normal_diameter_dp");
+    private float workshopAffordanceDiameterDp = workshop.get("affordance_diameter_dp");
+    private float workshopMovingDiameterStep = workshop.get("moving_diameter_step");
     private static final long RIPPLE_DURATION_MS = 1300L;
     private static final long SECOND_RING_DELAY_MS = 400L;
     private static final long LONG_PRESS_SOUND_MS = 600L;
@@ -38,7 +48,7 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
     private static final float[] STROKE_DP = {49f, 26.6f, 37f, 30f};
 
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final List<Ripple> ripples = new ArrayList<Ripple>(MAX_RIPPLE_SLOTS);
+    private final List<Ripple> ripples = new ArrayList<Ripple>(workshopMaxRippleSlots);
     private final SoundPool soundPool;
     private final int downSound;
     private final int upSound;
@@ -74,7 +84,7 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
             movingRippleCount = 0;
             addRipple(pendingAffordanceX, pendingAffordanceY, 0, true);
             removeCallbacks(affordanceSecondRingRunnable);
-            postDelayed(affordanceSecondRingRunnable, SECOND_RING_DELAY_MS);
+            postDelayed(affordanceSecondRingRunnable, workshopSecondRingDelayMs);
         }
     };
     private final Runnable affordanceSecondRingRunnable = new Runnable() {
@@ -128,7 +138,7 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
         pendingGestureSecondX = screenX;
         pendingGestureSecondY = screenY;
         removeCallbacks(gestureSecondRingRunnable);
-        postDelayed(gestureSecondRingRunnable, SECOND_RING_DELAY_MS);
+        postDelayed(gestureSecondRingRunnable, workshopSecondRingDelayMs);
     }
 
     @Override
@@ -141,9 +151,9 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
             return;
         }
         float ratio = distanceRatio(screenX, screenY);
-        if (ratio < MOVE_RATIO_STEP
-                || Math.abs(previousMovingRatio - ratio) <= MOVE_RATIO_STEP
-                || movingRippleCount >= MAX_MOVING_RIPPLES) {
+        if (ratio < workshopMoveRatioStep
+                || Math.abs(previousMovingRatio - ratio) <= workshopMoveRatioStep
+                || movingRippleCount >= workshopMaxMovingRipples) {
             return;
         }
         previousMovingRatio = ratio;
@@ -159,7 +169,7 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
             return;
         }
         gestureActive = false;
-        if (SystemClock.uptimeMillis() - pressStartedAt > LONG_PRESS_SOUND_MS) {
+        if (SystemClock.uptimeMillis() - pressStartedAt > workshopLongPressSoundMs) {
             play(downSound);
         }
         firstTouchX = 0f;
@@ -227,19 +237,21 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
         Iterator<Ripple> iterator = ripples.iterator();
         while (iterator.hasNext()) {
             Ripple ripple = iterator.next();
-            float progress = (now - ripple.startedAt) / (float) RIPPLE_DURATION_MS;
+            float progress = (now - ripple.startedAt) / (float) workshopRippleDurationMs;
             if (progress >= 1f) {
                 iterator.remove();
                 continue;
             }
             progress = Math.max(0f, progress);
-            float decelerated = 1f - (1f - progress) * (1f - progress);
+            float decelerated = workshop.enabled
+                    ? 1f - (float) Math.pow(1f - progress, workshop.get("expansion_power"))
+                    : 1f - (1f - progress) * (1f - progress);
             float remaining = 1f - progress;
             float radius = ripple.diameterPx * 0.5f * decelerated;
             float stroke = Math.max(1f,
                     ripple.strokePx * remaining * Math.max(0.01f, decelerated));
             int alpha = Math.max(0, Math.min(255,
-                    Math.round(255f * (1f - decelerated))));
+                    Math.round(workshop.get("opacity") * (1f - decelerated))));
             ringPaint.setStrokeWidth(stroke);
             ringPaint.setAlpha(alpha);
             // MassRippleImageView builds the oval inset by one complete stroke width,
@@ -254,22 +266,22 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
     }
 
     private void addRipple(float x, float y, int strokeIndex, boolean affordance) {
-        if (destroyed || movingRippleCount > 2) {
+        if (destroyed || movingRippleCount >= workshopMaxMovingRipples) {
             return;
         }
-        if (ripples.size() >= MAX_RIPPLE_SLOTS) {
+        if (ripples.size() >= workshopMaxRippleSlots) {
             ripples.remove(0);
         }
         float diameterDp = affordance
-                ? AFFORDANCE_DIAMETER_DP
-                : NORMAL_DIAMETER_DP
-                        * (1f - MOVING_DIAMETER_STEP * movingRippleCount);
+                ? workshopAffordanceDiameterDp
+                : workshopNormalDiameterDp
+                        * Math.max(.1f, 1f - workshopMovingDiameterStep * movingRippleCount);
         int safeStrokeIndex = Math.max(0, Math.min(STROKE_DP.length - 1, strokeIndex));
         ripples.add(new Ripple(
                 x,
                 y,
                 dp(diameterDp),
-                dp(STROKE_DP[safeStrokeIndex]),
+                dp(workshop.get("stroke_" + safeStrokeIndex)),
                 SystemClock.uptimeMillis()));
         postInvalidateOnAnimation();
     }
@@ -292,7 +304,7 @@ final class StoneSkippingEffectView extends View implements UnlockEffectRenderer
                 || !OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
             return;
         }
-        soundPool.play(soundId, 1f, 1f, 0, 0, 1f);
+        soundPool.play(soundId, workshop.get("sound_volume"), workshop.get("sound_volume"), 0, 0, 1f);
     }
 
     private float dp(float value) {

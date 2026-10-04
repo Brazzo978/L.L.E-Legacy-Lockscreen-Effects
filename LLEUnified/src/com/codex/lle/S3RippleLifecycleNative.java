@@ -57,6 +57,10 @@ final class S3RippleLifecycleNative {
 
     static native void nativeResetInk();
 
+    /** Bounded tuning for the current owned GPU lifecycle; nativeInitGpu resets defaults. */
+    static native void nativeConfigureInk(float radius, float impulse, float velocity,
+            float advection, float densityDecay, float velocityDecay, int jacobiIterations);
+
     static native boolean nativeAdvanceInk(float centerX, float centerY, int drag);
 
     static native boolean nativeInjectInk(

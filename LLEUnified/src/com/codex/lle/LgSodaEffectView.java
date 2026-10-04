@@ -108,8 +108,11 @@ public final class LgSodaEffectView extends View
         }
     };
 
+    private final EffectWorkshopConfig.Values workshop;
+
     public LgSodaEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 38);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         // The captured pre-lock frame belongs inside Soda's opening. Outside the radial
@@ -368,14 +371,14 @@ public final class LgSodaEffectView extends View
 
         if (state.radius > 2f) {
             glowPaint.setAlpha(Math.round(48f * state.alpha));
-            glowPaint.setStrokeWidth(Math.max(1f, state.radius * 0.022f));
-            canvas.drawCircle(centerX, centerY, state.radius * 0.92f, glowPaint);
+            glowPaint.setStrokeWidth(Math.max(1f, state.radius * workshop.get("glow_width")));
+            canvas.drawCircle(centerX, centerY, state.radius * workshop.get("glow_radius"), glowPaint);
             glowPaint.setAlpha(255);
         }
     }
 
     private void applyCutoutGradient(float radius) {
-        float outer = Math.max(1f, radius * 1.2f);
+        float outer = Math.max(1f, radius * workshop.get("cutout_radius"));
         if (cutoutGradient == null
                 || Math.abs(gradientCenterX - centerX) > 0.25f
                 || Math.abs(gradientCenterY - centerY) > 0.25f
@@ -437,11 +440,11 @@ public final class LgSodaEffectView extends View
                 // It does not orbit continuously. A new pseudo-random angle every 600-800 ms
                 // gives the dense, flickering ring visible in the N4 recording.
                 int cycle = Math.max(0, (int) Math.floor(age / cycleSeconds));
-                localAngle = particle.angle + cycle * 2.3999631f;
+                localAngle = particle.angle + cycle * workshop.get("cycle_angle");
                 float anchoredRadius = stage == STAGE_ACTIVE
                         ? state.radius : terminalStartRadius;
                 float centerRadius = Math.max(dp(30f),
-                        anchoredRadius * PARTICLE_HALO_RADIUS_MULTIPLIER)
+                        anchoredRadius * workshop.get("halo_radius"))
                         // Donor stores positions in a quarter-scale orthographic scene:
                         // density*1.67 world units maps back to 6.68 dp on screen.
                         + (particle.radius - 0.5f) * dp(6.68f);
@@ -451,13 +454,13 @@ public final class LgSodaEffectView extends View
                 if (stage == STAGE_COMPLETE) {
                     // Donor unlock velocity: density * (0.25..0.31) world units/ms,
                     // projected back to pixels by the original quarter-scale scene.
-                    float burst = dp(500f + particle.phase / 6.2831855f * 120f)
+                    float burst = dp(500f + particle.phase / 6.2831855f * 120f) * workshop.get("burst_scale")
                             * state.escape;
                     x += (float) Math.cos(localAngle) * burst;
                     y += (float) Math.sin(localAngle) * burst;
                 } else if (stage == STAGE_CANCEL) {
                     float cancelAge = terminalAgeSeconds(state);
-                    float drift = dp(120f + particle.angularVelocity * 280f) * cancelAge;
+                    float drift = dp(120f + particle.angularVelocity * 280f) * cancelAge * workshop.get("cancel_drift_scale");
                     x += (float) Math.sin(particle.wander) * drift;
                     y -= (float) Math.cos(particle.wander) * drift;
                 }
@@ -470,11 +473,11 @@ public final class LgSodaEffectView extends View
                 float holdSeconds = particle.holdMs * 0.001f;
                 float cycleAge = positiveMod(age, cycleSeconds);
                 int cycle = Math.max(0, (int) Math.floor(age / cycleSeconds));
-                localAngle = particle.angle + cycle * 2.3999631f;
+                localAngle = particle.angle + cycle * workshop.get("cycle_angle");
                 float anchoredRadius = stage == STAGE_ACTIVE
                         ? state.radius : terminalStartRadius;
                 float risingRadius = Math.max(dp(28f),
-                        anchoredRadius * PARTICLE_HALO_RADIUS_MULTIPLIER)
+                        anchoredRadius * workshop.get("halo_radius"))
                         + (particle.radius - 0.5f) * dp(6.68f);
                 float baseX = centerX + (float) Math.cos(localAngle) * risingRadius;
                 float baseY = centerY + (float) Math.sin(localAngle) * risingRadius;
@@ -484,7 +487,7 @@ public final class LgSodaEffectView extends View
                     alpha *= Math.min(1f, cycleAge / Math.max(0.001f, cycleSeconds * 0.1f));
                 } else {
                     float flightAge = cycleAge - holdSeconds;
-                    float speed = dp(80f + particle.angularVelocity * 240f);
+                    float speed = dp(EffectWorkshopLgOpticsParameters.sodaRiseSpeed(workshop, particle.angularVelocity, false));
                     x = baseX + (float) Math.sin(particle.wander) * speed * flightAge;
                     y = baseY - (float) Math.cos(particle.wander) * speed * flightAge;
                 }
@@ -492,7 +495,7 @@ public final class LgSodaEffectView extends View
                     float dx = x - centerX;
                     float dy = y - centerY;
                     float magnitude = Math.max(1f, (float) Math.hypot(dx, dy));
-                    float burst = dp(500f + particle.phase / 6.2831855f * 120f)
+                    float burst = dp(500f + particle.phase / 6.2831855f * 120f) * workshop.get("burst_scale")
                             * state.escape;
                     x += dx / magnitude * burst;
                     y += dy / magnitude * burst;
@@ -503,7 +506,7 @@ public final class LgSodaEffectView extends View
                 // Original C0066g/C0068i: quads are born across the lower semicircle and
                 // travel upward with only a small angular spread.
                 size = particle.texture.getWidth() * assetScale * particle.size;
-                float travel = getHeight() + getWidth() * 0.72f + size * 2f;
+                float travel = getHeight() + getWidth() * workshop.get("large_travel_ratio") + size * 2f;
                 float along = travel * local;
                 x = particle.lane * getWidth()
                         + (float) Math.sin(particle.angle) * along;
@@ -514,7 +517,7 @@ public final class LgSodaEffectView extends View
             default: {
                 // Original C0070k: 10/15/20 dp point sprites share the same upward field.
                 size = dp(particle.pointSizeDp);
-                float travel = getHeight() + getWidth() * 0.62f + size * 2f;
+                float travel = getHeight() + getWidth() * workshop.get("column_travel_ratio") + size * 2f;
                 float along = travel * local;
                 x = particle.lane * getWidth()
                         + (float) Math.sin(particle.angle) * along;
@@ -528,15 +531,16 @@ public final class LgSodaEffectView extends View
             float dx = x - centerX;
             float dy = y - centerY;
             float magnitude = Math.max(1f, (float) Math.hypot(dx, dy));
-            float push = dp(500f + particle.phase / 6.2831855f * 120f)
+            float push = dp(500f + particle.phase / 6.2831855f * 120f) * workshop.get("burst_scale")
                     * state.escape;
             x += (dx / magnitude) * push;
             y += (dy / magnitude) * push;
         }
         particle.drawX = x;
         particle.drawY = y;
-        particle.drawSize = Math.max(1f, size);
-        particle.drawAlpha = clamp(alpha * state.alpha, 0f, 1f);
+        particle.drawSize = Math.max(1f, EffectWorkshopLgOpticsParameters.sodaSpriteSize(
+                workshop, particle.kind, size));
+        particle.drawAlpha = EffectWorkshopLgOpticsParameters.sodaParticleAlpha(workshop, alpha, state.alpha);
         // The archival point/quad shaders never rotate the source texture.
         particle.drawRotation = 0f;
     }
@@ -550,23 +554,23 @@ public final class LgSodaEffectView extends View
         for (int textureIndex = 0; textureIndex < smallTextures.length; textureIndex++) {
             Bitmap texture = smallTextures[textureIndex];
             if (texture == null || texture.isRecycled()) continue;
-            for (int i = 0; i < 8; i++) {
+            for (int i = 0; i < workshop.intValue("center_count"); i++) {
                 Particle particle = addSmallParticle(texture, KIND_CENTER,
-                        600L + random.nextInt(201), i < 2 ? 0L : random.nextInt(700),
+                        Math.round((600L + random.nextInt(201)) * workshop.get("center_life_scale")),
+                        i < 2 ? 0L : Math.round(random.nextInt(700) * workshop.get("center_delay_scale")),
                         0.32f + random.nextFloat() * 0.63f);
-                particle.wander = (random.nextFloat() - 0.5f) * 0.942478f;
+                particle.wander = (random.nextFloat() - 0.5f) * workshop.get("wander_spread");
             }
-            for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < workshop.intValue("rising_count"); i++) {
                 Particle particle = addSmallParticle(texture, KIND_CENTER_RISING,
                         2600L + random.nextInt(1000), 0L,
                         0.32f + random.nextFloat() * 0.63f);
-                particle.holdMs = random.nextInt(1001);
-                particle.wander = (random.nextFloat() - 0.5f) * 0.942478f;
+                particle.holdMs = Math.round(random.nextInt(1001) * workshop.get("rising_hold_scale"));
+                particle.wander = (random.nextFloat() - 0.5f) * workshop.get("wander_spread");
                 particle.angularVelocity = random.nextFloat();
-                float speed = dp(80f + particle.angularVelocity * 240f);
-                particle.cycleMs = particle.holdMs + Math.max(1L,
-                        Math.round((screenDiagonal() + maxRingRadius())
-                                / Math.max(1f, speed) * 1000f));
+                float speed = dp(EffectWorkshopLgOpticsParameters.sodaRiseSpeed(workshop, particle.angularVelocity, false));
+                particle.cycleMs = particle.holdMs + EffectWorkshopLgOpticsParameters.sodaRiseCycle(
+                        workshop, screenDiagonal() + maxRingRadius(), speed);
             }
         }
 
@@ -586,19 +590,18 @@ public final class LgSodaEffectView extends View
         for (int textureIndex = 0; textureIndex < 2; textureIndex++) {
             Bitmap texture = smallTextures[textureIndex];
             if (texture == null || texture.isRecycled()) continue;
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < workshop.intValue("column_count"); i++) {
                 Particle particle = newParticle(texture, KIND_SMALL_RISING, 1L, 0L);
-                particle.angle = (random.nextFloat() - 0.5f) * 0.942478f;
+                particle.angle = (random.nextFloat() - 0.5f) * workshop.get("wander_spread");
                 particle.pointSizeDp = 10f + random.nextInt(3) * 5f;
                 particle.alpha = discreteParticleAlpha();
                 particle.radius = random.nextFloat();
                 particle.lane = 0.04f + random.nextFloat() * 0.92f;
                 particle.angularVelocity = random.nextFloat();
-                float speed = dp(80f + particle.angularVelocity * 240f);
-                float travel = getHeight() + getWidth() * 0.62f
+                float speed = dp(EffectWorkshopLgOpticsParameters.sodaRiseSpeed(workshop, particle.angularVelocity, false));
+                float travel = getHeight() + getWidth() * workshop.get("column_travel_ratio")
                         + dp(particle.pointSizeDp) * 2f;
-                particle.cycleMs = Math.max(1L,
-                        Math.round(travel / Math.max(1f, speed) * 1000f));
+                particle.cycleMs = EffectWorkshopLgOpticsParameters.sodaRiseCycle(workshop, travel, speed);
                 particle.size = 1f;
                 particles.add(particle);
             }
@@ -619,16 +622,15 @@ public final class LgSodaEffectView extends View
     private void addLargeParticle(Bitmap texture, long cycleMs, float size, float alpha) {
         if (texture == null || texture.isRecycled()) return;
         Particle particle = newParticle(texture, KIND_LARGE_RISING, cycleMs, 0L);
-        particle.angle = (random.nextFloat() - 0.5f) * 0.942478f;
+        particle.angle = (random.nextFloat() - 0.5f) * workshop.get("wander_spread");
         particle.size = size;
         particle.alpha = alpha;
         particle.lane = 0.04f + random.nextFloat() * 0.92f;
         particle.angularVelocity = random.nextFloat();
-        float speed = dp(80f + particle.angularVelocity * 220f);
-        float travel = getHeight() + getWidth() * 0.72f
+        float speed = dp(EffectWorkshopLgOpticsParameters.sodaRiseSpeed(workshop, particle.angularVelocity, true));
+        float travel = getHeight() + getWidth() * workshop.get("large_travel_ratio")
                 + texture.getWidth() * archiveDensityScale() * size * 2f;
-        particle.cycleMs = Math.max(1L,
-                Math.round(travel / Math.max(1f, speed) * 1000f));
+        particle.cycleMs = EffectWorkshopLgOpticsParameters.sodaRiseCycle(workshop, travel, speed);
         particles.add(particle);
     }
 
@@ -739,9 +741,9 @@ public final class LgSodaEffectView extends View
         });
     }
 
-    private float minRingRadius() { return dp(44f); }
+    private float minRingRadius() { return dp(workshop.get("minimum_radius")); }
 
-    private float maxRingRadius() { return dp(113.32999f); }
+    private float maxRingRadius() { return dp(workshop.get("drag_threshold")); }
 
     private float fullRevealRadius() {
         return screenDiagonal();

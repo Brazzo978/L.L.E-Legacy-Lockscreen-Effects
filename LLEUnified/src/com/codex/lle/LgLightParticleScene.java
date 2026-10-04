@@ -12,6 +12,7 @@ import java.util.Random;
  * orientation and boundary-ring distribution.</p>
  */
 final class LgLightParticleScene {
+    private final EffectWorkshopConfig.Values workshop;
     static final long TOUCH_FADE_IN_MS = 300L;
     static final long CANCEL_MS = 300L;
     static final long COMPLETE_MS = 500L;
@@ -50,7 +51,7 @@ final class LgLightParticleScene {
 
     private final Random random;
     private final int revision;
-    private final Particle[] particles = new Particle[PARTICLE_CAPACITY];
+    private final Particle[] particles;
     private int particleCount;
     private int state = IDLE;
     private int width = 1;
@@ -78,7 +79,12 @@ final class LgLightParticleScene {
         this(deterministic, REVISION_XLOCKER);
     }
 
-    LgLightParticleScene(boolean deterministic, int requestedRevision) {
+    LgLightParticleScene(boolean deterministic, int requestedRevision) { this(deterministic, requestedRevision, EffectWorkshopConfig.originals(40)); }
+
+    LgLightParticleScene(boolean deterministic, int requestedRevision, EffectWorkshopConfig.Values values) {
+        workshop = values;
+        int capacity = values.intValue("bg_count") + values.intValue("a1_count") + values.intValue("a1_small_count") + values.intValue("a2_count") + values.intValue("a3_count") + values.intValue("a4_count") + values.intValue("a4_small_count") + values.intValue("b1_count") + values.intValue("b2_count") + values.intValue("d1_count") + values.intValue("d2_count") + values.intValue("d3_count");
+        particles = new Particle[capacity];
         revision = requestedRevision == REVISION_LG_NATIVE
                 ? REVISION_LG_NATIVE : REVISION_XLOCKER;
         random = deterministic ? new Random(TESTER_SEED) : new Random();
@@ -132,7 +138,7 @@ final class LgLightParticleScene {
         if (state != ACTIVE) {
             return;
         }
-        Frame active = sample(now, new Frame());
+        Frame active = sample(now, new Frame(particles.length));
         terminalRadius = radius;
         terminalParticleAlpha = active.particleAlpha;
         terminalBackgroundScale = active.backgroundSizeScale;
@@ -162,7 +168,7 @@ final class LgLightParticleScene {
         }
         long sceneElapsed = Math.max(0L, now - startedAt);
         if (state == ACTIVE) {
-            float touch = accelerate(clamp(sceneElapsed / (float) TOUCH_FADE_IN_MS, 0f, 1f));
+            float touch = accelerate(clamp(sceneElapsed / (float) workshop.get("touch_fade_ms"), 0f, 1f));
             float spriteScale = lerp(0.6f, 1f, touch);
             out.set(true, true, ACTIVE, radius,
                     lerp(0.5f, 1f, touch), spriteScale, spriteScale,
@@ -174,8 +180,8 @@ final class LgLightParticleScene {
 
         long terminalElapsed = Math.max(0L, now - terminalAt);
         if (state == CANCEL) {
-            float t = clamp(terminalElapsed / (float) CANCEL_MS, 0f, 1f);
-            boolean running = terminalElapsed < CANCEL_MS;
+            float t = clamp(terminalElapsed / (float) workshop.get("cancel_ms"), 0f, 1f);
+            boolean running = terminalElapsed < workshop.get("cancel_ms");
             if (!running) {
                 state = IDLE;
             }
@@ -208,18 +214,21 @@ final class LgLightParticleScene {
         return out;
     }
 
+    int particleCapacity() { return particles.length; }
+    float configuredEdgeBandwidth(float radius) { return Math.min(Math.max(0f, radius), minRadius()) * workshop.get("edge_width"); }
     float centreX() { return centreX; }
     float centreY() { return centreY; }
     float dragDistance() { return dragDistance; }
     float minRadius() {
-        return (revision == REVISION_LG_NATIVE ? LG_NATIVE_MIN_RADIUS_DP : MIN_RADIUS_DP)
+        return (revision == REVISION_LG_NATIVE ? workshop.get("min_radius_v2_dp") : workshop.get("min_radius_v1_dp"))
                 * density;
     }
     float unlockRadius() {
         if (revision == REVISION_LG_NATIVE) {
-            return LG_NATIVE_BOUNDARY_RADIUS_MM * horizontalDpi / 25.4f;
+            float boundary = workshop.get("boundary_v2_mm") * horizontalDpi / 25.4f;
+            return workshop.enabled ? Math.max(minRadius() + 1f, boundary) : boundary;
         }
-        return UNLOCK_RADIUS_DP * density;
+        return workshop.get("boundary_v1_dp") * density;
     }
     float fullRadius() { return (float) Math.hypot(width, height); }
     int revision() { return revision; }
@@ -237,19 +246,19 @@ final class LgLightParticleScene {
     }
 
     private void buildParticleLayout() {
-        addGroup(KIND_BACKGROUND, TEXTURE_BG, 5, 1.50f, 2.00f, 0L, 0L);
-        addGroup(KIND_BOKEH, TEXTURE_A_1, 7, 0.40f, 1.00f, 1500L, 2500L);
-        addGroup(KIND_BOKEH, TEXTURE_A_1, 8, 0.20f, 0.75f, 1000L, 3500L);
-        addGroup(KIND_BOKEH, TEXTURE_A_2, 7, 0.40f, 1.00f, 1500L, 2500L);
-        addGroup(KIND_BOKEH, TEXTURE_A_3, 7, 0.40f, 1.00f, 1500L, 2500L);
-        addGroup(KIND_BOKEH, TEXTURE_A_4, 7, 0.40f, 1.00f, 1500L, 2500L);
-        addGroup(KIND_BOKEH, TEXTURE_A_4, 8, 0.20f, 0.75f, 1000L, 3500L);
-        addGroup(KIND_BOKEH, TEXTURE_B_1, 8, 0.20f, 0.75f, 1000L, 3500L);
-        addGroup(KIND_BOKEH, TEXTURE_B_2, 8, 0.20f, 0.75f, 1000L, 3500L);
-        addGroup(KIND_BOKEH, TEXTURE_D_1, 3, 1.50f, 2.00f, 1500L, 3000L);
-        addGroup(KIND_BOKEH, TEXTURE_D_2, 3, 1.50f, 2.00f, 1500L, 3000L);
-        addGroup(KIND_BOKEH, TEXTURE_D_3, 3, 1.50f, 2.00f, 1500L, 3000L);
-        if (particleCount != PARTICLE_CAPACITY) {
+        addGroup(KIND_BACKGROUND, TEXTURE_BG, workshop.intValue("bg_count"), workshop.get("bg_size_min"), workshop.get("bg_size_min") + workshop.get("bg_size_range"), 0L, 0L);
+        addGroup(KIND_BOKEH, TEXTURE_A_1, workshop.intValue("a1_count"), workshop.get("a_size_min"), workshop.get("a_size_min") + workshop.get("a_size_range"), (long) workshop.get("a_life_min"), (long) (workshop.get("a_life_min") + workshop.get("a_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_A_1, workshop.intValue("a1_small_count"), workshop.get("small_size_min"), workshop.get("small_size_min") + workshop.get("small_size_range"), (long) workshop.get("small_life_min"), (long) (workshop.get("small_life_min") + workshop.get("small_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_A_2, workshop.intValue("a2_count"), workshop.get("a_size_min"), workshop.get("a_size_min") + workshop.get("a_size_range"), (long) workshop.get("a_life_min"), (long) (workshop.get("a_life_min") + workshop.get("a_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_A_3, workshop.intValue("a3_count"), workshop.get("a_size_min"), workshop.get("a_size_min") + workshop.get("a_size_range"), (long) workshop.get("a_life_min"), (long) (workshop.get("a_life_min") + workshop.get("a_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_A_4, workshop.intValue("a4_count"), workshop.get("a_size_min"), workshop.get("a_size_min") + workshop.get("a_size_range"), (long) workshop.get("a_life_min"), (long) (workshop.get("a_life_min") + workshop.get("a_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_A_4, workshop.intValue("a4_small_count"), workshop.get("small_size_min"), workshop.get("small_size_min") + workshop.get("small_size_range"), (long) workshop.get("small_life_min"), (long) (workshop.get("small_life_min") + workshop.get("small_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_B_1, workshop.intValue("b1_count"), workshop.get("small_size_min"), workshop.get("small_size_min") + workshop.get("small_size_range"), (long) workshop.get("small_life_min"), (long) (workshop.get("small_life_min") + workshop.get("small_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_B_2, workshop.intValue("b2_count"), workshop.get("small_size_min"), workshop.get("small_size_min") + workshop.get("small_size_range"), (long) workshop.get("small_life_min"), (long) (workshop.get("small_life_min") + workshop.get("small_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_D_1, workshop.intValue("d1_count"), workshop.get("d_size_min"), workshop.get("d_size_min") + workshop.get("d_size_range"), (long) workshop.get("d_life_min"), (long) (workshop.get("d_life_min") + workshop.get("d_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_D_2, workshop.intValue("d2_count"), workshop.get("d_size_min"), workshop.get("d_size_min") + workshop.get("d_size_range"), (long) workshop.get("d_life_min"), (long) (workshop.get("d_life_min") + workshop.get("d_life_range")));
+        addGroup(KIND_BOKEH, TEXTURE_D_3, workshop.intValue("d3_count"), workshop.get("d_size_min"), workshop.get("d_size_min") + workshop.get("d_size_range"), (long) workshop.get("d_life_min"), (long) (workshop.get("d_life_min") + workshop.get("d_life_range")));
+        if (particleCount != particles.length) {
             throw new IllegalStateException("Light Particle layout=" + particleCount);
         }
     }
@@ -276,10 +285,10 @@ final class LgLightParticleScene {
                 float slice = TWO_PI / particle.groupCount;
                 particle.angle = particle.indexInGroup * slice + random.nextFloat() * slice;
                 particle.radialOffsetPx = (1.5f + random.nextFloat() * 1.5f)
-                        * 9.6f * density * 4f;
+                        * 9.6f * density * 4f * workshop.get("radial_scale");
                 particle.angularRatePerMs = ((random.nextFloat() * 0.1f) - 0.05f)
-                        * 0.125f * density * DONOR_FRAMES_PER_MS;
-                particle.orbitRadiusPx = random.nextFloat() * 6.25f * density * 4f;
+                        * 0.125f * density * DONOR_FRAMES_PER_MS * workshop.get("orbit_speed");
+                particle.orbitRadiusPx = random.nextFloat() * 6.25f * density * 4f * workshop.get("orbit_scale");
                 particle.baseAlpha = random.nextInt(2) == 0 ? 0.2f : 0.6f;
                 particle.baseSizeFactor = lerp(
                         particle.minSizeFactor, particle.maxSizeFactor, random.nextFloat());
@@ -299,7 +308,7 @@ final class LgLightParticleScene {
                     + (lifeRange == 0L ? 0L : nextLongBounded(lifeRange));
             configureBokehOrbit(particle);
             particle.startedAt = now + (particle.indexInGroup < particle.groupCount / 3
-                    ? 0L : random.nextInt(1500));
+                    ? 0L : (workshop.intValue("initial_delay_ms") == 0 ? 0 : random.nextInt(workshop.intValue("initial_delay_ms"))));
             particle.initialPhase = 0f;
         }
     }
@@ -308,10 +317,10 @@ final class LgLightParticleScene {
         float angleSeed = random.nextFloat();
         float offsetSeed = random.nextFloat();
         particle.angle = TWO_PI * angleSeed;
-        particle.radialOffsetPx = ((3f * offsetSeed) - 1f) * 4.375f * density * 4f;
+        particle.radialOffsetPx = ((3f * offsetSeed) - 1f) * 4.375f * density * 4f * workshop.get("radial_scale");
         particle.angularRatePerMs = ((0.1f * offsetSeed) - 0.05f)
-                * 0.25f * density * DONOR_FRAMES_PER_MS;
-        particle.orbitRadiusPx = angleSeed * 1.25f * density * 4f;
+                * 0.25f * density * DONOR_FRAMES_PER_MS * workshop.get("orbit_speed");
+        particle.orbitRadiusPx = angleSeed * 1.25f * density * 4f * workshop.get("orbit_scale");
     }
 
     private void populateParticles(Frame frame, long now) {
@@ -330,7 +339,7 @@ final class LgLightParticleScene {
                 addSprite(frame, particle.texture, x, y,
                         particle.baseSizeFactor * frame.backgroundSizeScale,
                         frame.particleDragDistance * 0.25f * frame.backgroundSizeScale,
-                        particle.baseAlpha * frame.particleAlpha, 0f);
+                        particle.baseAlpha * frame.particleAlpha * workshop.get("opacity_gain"), 0f);
                 continue;
             }
 
@@ -362,7 +371,7 @@ final class LgLightParticleScene {
                     particle.baseSizeFactor * (0.7f + 0.3f * eased)
                             * frame.bokehSizeScale,
                     0f,
-                    particle.baseAlpha * envelope * frame.particleAlpha,
+                    particle.baseAlpha * envelope * frame.particleAlpha * workshop.get("opacity_gain"),
                     revision == REVISION_LG_NATIVE ? particle.textureRotationRadians : 0f);
         }
     }
@@ -420,9 +429,12 @@ final class LgLightParticleScene {
         float particleDragDistance;
         long elapsedMs;
         int spriteCount;
-        final ParticleSprite[] sprites = new ParticleSprite[PARTICLE_CAPACITY];
+        final ParticleSprite[] sprites;
 
-        Frame() {
+        Frame() { this(PARTICLE_CAPACITY); }
+
+        Frame(int capacity) {
+            sprites = new ParticleSprite[Math.max(0, capacity)];
             for (int index = 0; index < sprites.length; index++) {
                 sprites[index] = new ParticleSprite();
             }

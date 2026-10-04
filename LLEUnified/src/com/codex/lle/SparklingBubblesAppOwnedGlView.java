@@ -36,6 +36,7 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
     private static final int WARM_KEEP_ALIVE_FRAMES = 100;
 
     private final Listener listener;
+    private final EffectWorkshopConfig.Values workshop;
     private final Object bitmapLock = new Object();
     private final Bitmap blurMask;
 
@@ -77,7 +78,18 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
             boolean nativeRefreshPhysicsEnabled,
             float speedMultiplier,
             Listener listener) {
+        this(context, blurMask, nativeRefreshPhysicsEnabled, speedMultiplier, listener, EffectWorkshopConfig.originals(22));
+    }
+
+    SparklingBubblesAppOwnedGlView(
+            Context context,
+            Bitmap blurMask,
+            boolean nativeRefreshPhysicsEnabled,
+            float speedMultiplier,
+            Listener listener,
+            EffectWorkshopConfig.Values workshop) {
         super(context);
+        this.workshop = workshop == null ? EffectWorkshopConfig.originals(22) : workshop;
         this.blurMask = blurMask;
         this.nativeRefreshPhysicsEnabled = nativeRefreshPhysicsEnabled;
         this.adaptiveSpeedMultiplier = nativeRefreshPhysicsEnabled
@@ -106,6 +118,8 @@ final class SparklingBubblesAppOwnedGlView extends GLSurfaceView
                 if (nativeHandle == 0L) {
                     throw new IllegalStateException("nativeCreate returned zero");
                 }
+                if (workshop.enabled) SparklingBubblesNative.nativeSetWorkshop(
+                        nativeHandle, EffectWorkshopDropsParameters.pack(workshop));
             } else {
                 SparklingBubblesNative.nativeAbandonGpu(nativeHandle);
             }

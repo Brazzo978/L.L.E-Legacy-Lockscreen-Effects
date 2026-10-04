@@ -35,6 +35,20 @@ Java_com_codex_lle_AbstractTilesNative_nativeBridgeVersion(JNIEnv *env, jclass c
     return AT_BRIDGE_VERSION;
 }
 
+JNIEXPORT void JNICALL
+Java_com_codex_lle_AbstractTilesNative_nativeConfigureWorkshop(
+        JNIEnv *env, jclass clazz, jfloatArray values) {
+    (void) clazz;
+    if (values == NULL || (*env)->GetArrayLength(env, values) != AT_WORKSHOP_COUNT) {
+        at_scene_configure(&g_scene, NULL, 0);
+        return;
+    }
+    float tuning[AT_WORKSHOP_COUNT];
+    (*env)->GetFloatArrayRegion(env, values, 0, AT_WORKSHOP_COUNT, tuning);
+    if ((*env)->ExceptionCheck(env)) return;
+    at_scene_configure(&g_scene, tuning, AT_WORKSHOP_COUNT);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_codex_lle_AbstractTilesNative_nativeInitGpu(
         JNIEnv *env, jclass clazz, jint width, jint height, jboolean line_enabled) {

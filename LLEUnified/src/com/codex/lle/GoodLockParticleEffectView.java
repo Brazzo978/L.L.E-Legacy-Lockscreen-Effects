@@ -41,6 +41,7 @@ public final class GoodLockParticleEffectView extends View
     private static final float TOUCH_SOUND_VOLUME = 0.3f;
 
     private final Variant variant;
+    private final Settings workshop;
     private final Simulation simulation;
     private final Map<Particle, Paint> paints = new IdentityHashMap<Particle, Paint>();
     private final HighFrameClock highFrameClock = new HighFrameClock();
@@ -144,8 +145,10 @@ public final class GoodLockParticleEffectView extends View
             throw new IllegalArgumentException("variant == null");
         }
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        workshop = new Settings(EffectWorkshopPrefs.values(context,
+                variant == Variant.POPPING ? 28 : variant == Variant.RECTANGLE ? 29 : 30), variant);
         simulation = new Simulation(variant, Math.max(1, metrics.widthPixels),
-                Math.max(1, metrics.heightPixels), random);
+                Math.max(1, metrics.heightPixels), random, workshop);
         this.variant = variant;
         soundPool = new SoundPool.Builder()
                 .setMaxStreams(6)
@@ -433,7 +436,8 @@ public final class GoodLockParticleEffectView extends View
     private void play(int soundId, float volume) {
         if (!destroyed && soundId != 0
                 && OverlayPrefs.unlockEffectSoundAllowedNow(getContext())) {
-            soundPool.play(soundId, volume, volume, 0, 0, 1.0f);
+            float gain = Math.min(1f, volume * workshop.soundGain);
+            soundPool.play(soundId, gain, gain, 0, 0, 1.0f);
         }
     }
 
@@ -578,10 +582,37 @@ public final class GoodLockParticleEffectView extends View
         int getPixel(int x, int y);
     }
 
-    /**
-     * Android-free physics/input core.  Its package-visible seams are used by host tests to pin
-     * the OEM formulae while the View remains the small Android drawing/lifecycle adapter.
-     */
+    /** Immutable parameters shared by the view, simulation and each emitted particle. */
+    static final class Settings {
+        final boolean enabled;
+        final int spawnCount, colorJitter;
+        final float interpolation, spawnDistance, size, velocityX, velocityY;
+        final float rotation, gravity, friction, soundGain;
+
+        Settings() { this(null, null); }
+
+        Settings(EffectWorkshopConfig.Values values, Variant variant) {
+            enabled = values != null && values.enabled;
+            spawnCount = enabled ? values.intValue("spawn_count") : 5;
+            colorJitter = enabled ? values.intValue("color_jitter") : 20;
+            interpolation = value(values, "interpolation", 20f);
+            spawnDistance = value(values, "spawn_distance", 1f);
+            size = value(values, "size", 1f);
+            velocityX = value(values, "velocity_x", 1f);
+            velocityY = value(values, "velocity_y", 1f);
+            // Only read variant-specific keys when their schema contains them.
+            rotation = variant == Variant.RECTANGLE ? value(values, "rotation", 1f) : 1f;
+            gravity = variant == Variant.BOUNCING ? value(values, "gravity", 1f) : 1f;
+            friction = variant == Variant.BOUNCING ? value(values, "friction", 1f) : 1f;
+            soundGain = value(values, "sound_gain", 1f);
+        }
+
+        private float value(EffectWorkshopConfig.Values values, String key, float fallback) {
+            return enabled ? values.get(key) : fallback;
+        }
+    }
+
+    /** Android-free physics/input core; old overloads retain the deterministic stock seam. */
     static final class Simulation {
         static final int ACTION_DOWN = 0;
         static final int ACTION_MOVE = 2;
@@ -596,12 +627,18 @@ public final class GoodLockParticleEffectView extends View
         /* Decompiled stock derives this from X and then applies it to both axes. */
         private final float minimumCreateDistance;
         private final RandomSource random;
+        private final Settings workshop;
         private final ArrayList<Particle> particles = new ArrayList<Particle>();
         private final ArrayList<Particle> releasedParticles = new ArrayList<Particle>();
         private float oldTouchX = -1.0f;
         private float oldTouchY = -1.0f;
 
         Simulation(Variant variant, float screenWidth, float screenHeight, RandomSource random) {
+            this(variant, screenWidth, screenHeight, random, new Settings());
+        }
+
+        Simulation(Variant variant, float screenWidth, float screenHeight, RandomSource random,
+                Settings workshop) {
             if (variant == null || random == null) {
                 throw new IllegalArgumentException("variant/random == null");
             }
@@ -609,9 +646,10 @@ public final class GoodLockParticleEffectView extends View
             this.screenWidth = Math.max(1.0f, screenWidth);
             this.screenHeight = Math.max(1.0f, screenHeight);
             this.random = random;
-            interpolationX = this.screenWidth / PARTICLE_INTERPOLATION_COUNT;
-            interpolationY = this.screenHeight / PARTICLE_INTERPOLATION_COUNT;
-            minimumCreateDistance = interpolationX / 2.0f;
+            this.workshop = workshop;
+            interpolationX = this.screenWidth / workshop.interpolation;
+            interpolationY = this.screenHeight / workshop.interpolation;
+            minimumCreateDistance = interpolationX / 2.0f * workshop.spawnDistance;
         }
 
         void touch(int action, float currentX, float currentY, PixelSampler wallpaper) {
@@ -632,7 +670,7 @@ public final class GoodLockParticleEffectView extends View
             }
             boolean skip = false;
             if (action == ACTION_DOWN) {
-                interpolationStepCnt = INITIAL_PARTICLE_COUNT;
+                interpolationStepCnt = workshop.spawnCount;
             } else if (interpolationStepCnt == 0) {
                 if (Math.abs(distanceX) < minimumCreateDistance
                         && Math.abs(distanceY) < minimumCreateDistance) {
@@ -643,9 +681,11 @@ public final class GoodLockParticleEffectView extends View
             }
             // Retain Samsung's signed formula.  It is counter-intuitive but deliberately mirrors
             // a drag segment around the old touch point instead of heading toward the new point.
+            if (workshop.enabled) interpolationStepCnt = Math.min(160, interpolationStepCnt);
             float interpolationDistanceX = distanceX / interpolationStepCnt;
             float interpolationDistanceY = distanceY / interpolationStepCnt;
             for (int step = 1; step <= interpolationStepCnt; step++) {
+                if (workshop.enabled && particles.size() >= 2048) break;
                 float stepX = oldTouchX + step * interpolationDistanceX;
                 float stepY = oldTouchY + step * interpolationDistanceY;
                 float adjustedX = stepX * (wallpaper.width() / screenWidth);
@@ -654,7 +694,7 @@ public final class GoodLockParticleEffectView extends View
                         && adjustedY >= 0.0f && wallpaper.height() > adjustedY) {
                     particles.add(Particle.create(variant,
                             wallpaper.getPixel((int) adjustedX, (int) adjustedY),
-                            stepX, stepY, random));
+                            stepX, stepY, random, workshop));
                 }
             }
             if (!skip) {
@@ -733,6 +773,8 @@ public final class GoodLockParticleEffectView extends View
         final float movementY;
         final float rotation;
         final float decelerationX;
+        float gravity = 1f;
+        float bounceImpulse = 1f;
         float x;
         float y;
         float movementX;
@@ -757,12 +799,20 @@ public final class GoodLockParticleEffectView extends View
 
         static Particle create(Variant variant, int wallpaperColor, float x, float y,
                 RandomSource random) {
-            int color = adjustColor(wallpaperColor, random.nextInt(40) - 20);
+            return create(variant, wallpaperColor, x, y, random, new Settings());
+        }
+
+        static Particle create(Variant variant, int wallpaperColor, float x, float y,
+                RandomSource random, Settings workshop) {
+            int jitter = workshop.colorJitter;
+            int color = adjustColor(wallpaperColor,
+                    random.nextInt(Math.max(1, jitter * 2)) - jitter);
             if (variant == Variant.POPPING) {
                 float movementX = random.nextFloat() * 3.0f - 1.5f;
                 float movementY = random.nextFloat() * 5.0f + 5.0f;
                 float radius = random.nextFloat() * 30.0f + 10.0f;
-                return new Particle(variant, color, x, y, radius, movementX, movementY,
+                return new Particle(variant, color, x, y, radius * workshop.size,
+                        movementX * workshop.velocityX, movementY * workshop.velocityY,
                         0.0f, 0.0f, 0.0f);
             }
             if (variant == Variant.RECTANGLE) {
@@ -771,8 +821,9 @@ public final class GoodLockParticleEffectView extends View
                 float size = random.nextFloat() * 30.0f + 10.0f;
                 float rotation = random.nextFloat() * 8.0f - 4.0f;
                 rotation = rotation < 0.0f ? rotation - 2.0f : rotation + 2.0f;
-                return new Particle(variant, color, x, y, size, movementX, movementY,
-                        rotation, 0.0f, 0.0f);
+                return new Particle(variant, color, x, y, size * workshop.size,
+                        movementX * workshop.velocityX, movementY * workshop.velocityY,
+                        rotation * workshop.rotation, 0.0f, 0.0f);
             }
             float movementX = random.nextFloat() * 7.0f - 3.5f;
             movementX = movementX < 0.0f ? movementX - 3.0f : movementX + 3.0f;
@@ -785,8 +836,12 @@ public final class GoodLockParticleEffectView extends View
                     decelerationX *= -1.0f;
                 }
             }
-            return new Particle(variant, color, x, y, radius, movementX, 0.0f,
-                    0.0f, accelerationY, decelerationX);
+            Particle particle = new Particle(variant, color, x, y, radius * workshop.size,
+                    movementX * workshop.velocityX, 0.0f, 0.0f,
+                    accelerationY * workshop.velocityY, decelerationX * workshop.friction);
+            particle.gravity = workshop.gravity;
+            particle.bounceImpulse = workshop.velocityY;
+            return particle;
         }
 
         void advance(float step, float screenWidth, float screenHeight, RandomSource random) {
@@ -807,9 +862,9 @@ public final class GoodLockParticleEffectView extends View
             // This remains per draw, rather than per elapsed 10 ms unit, exactly as Samsung.
             movementX += decelerationX;
             y -= accelerationY * step;
-            accelerationY -= 1.0f;
+            accelerationY -= gravity;
             if (y + size >= screenHeight) {
-                accelerationY = random.nextFloat() * 19.0f + 5.0f;
+                accelerationY = (random.nextFloat() * 19.0f + 5.0f) * bounceImpulse;
                 y = screenHeight - size;
             }
             removed = x < 0.0f || screenWidth < x;
@@ -840,10 +895,10 @@ public final class GoodLockParticleEffectView extends View
             x += stockStep * (movementX * q
                     + 0.5f * decelerationX * q * (q - 1.0f));
             movementX += decelerationX * q;
-            y -= stockStep * (accelerationY * q - 0.5f * q * (q - 1.0f));
-            accelerationY -= q;
+            y -= stockStep * (accelerationY * q - 0.5f * gravity * q * (q - 1.0f));
+            accelerationY -= gravity * q;
             if (y + size >= screenHeight) {
-                accelerationY = random.nextFloat() * 19.0f + 5.0f;
+                accelerationY = (random.nextFloat() * 19.0f + 5.0f) * bounceImpulse;
                 y = screenHeight - size;
             }
             removed = x < 0.0f || screenWidth < x;

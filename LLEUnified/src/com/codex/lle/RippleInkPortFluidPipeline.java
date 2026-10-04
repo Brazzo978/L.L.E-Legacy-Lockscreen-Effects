@@ -412,6 +412,40 @@ final class RippleInkPortFluidPipeline {
     private boolean nativeWorkerFailed;
     private String nativeWorkerFailureDetail = "not initialized";
 
+    private float radiusMultiplier = 1f, impulseMultiplier = 1f, velocityMultiplier = 1f;
+    private float advectionMultiplier = 1f, densityDecayMultiplier = 1f, velocityDecayMultiplier = 1f;
+    private int jacobiIterations = JACOBI_ITERATIONS;
+
+    /** Called before surface creation; the snapshot belongs to this pipeline only. */
+    void configureWorkshop(float radius, float impulse, float velocity, float advection,
+            float densityDecay, float velocityDecay, int iterations) {
+        radiusMultiplier = bounded(radius, .25f, 2f, 1f);
+        impulseMultiplier = bounded(impulse, .1f, 3f, 1f);
+        velocityMultiplier = bounded(velocity, 0f, 2f, 1f);
+        advectionMultiplier = bounded(advection, .25f, 2f, 1f);
+        densityDecayMultiplier = bounded(densityDecay, .25f, 3f, 1f);
+        velocityDecayMultiplier = bounded(velocityDecay, .25f, 2f, 1f);
+        jacobiIterations = Math.max(4, Math.min(20, iterations));
+        densityDissipationState = densityDecay(DENSITY_DISSIPATION_PRESS);
+        persistentProfile = workshopPreset(defaultPreset());
+        persistentProfile.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_PRESS);
+    }
+
+    private static float bounded(float value, float min, float max, float original) {
+        return Float.isNaN(value) || Float.isInfinite(value) ? original : Math.max(min, Math.min(max, value));
+    }
+    private float densityDecay(float original) {
+        return densityDecayMultiplier == 1f ? original : Math.max(0f, 1f - (1f-original)*densityDecayMultiplier);
+    }
+    private Preset workshopPreset(Preset preset) {
+        preset.addRadius *= radiusMultiplier;
+        preset.addImpulse *= impulseMultiplier;
+        preset.divergenceStrength *= velocityMultiplier;
+        if (velocityDecayMultiplier != 1f) preset.velocityDissipation =
+                Math.max(0f, 1f - (1f-preset.velocityDissipation)*velocityDecayMultiplier);
+        return preset;
+    }
+
     RippleInkPortFluidPipeline() {
         workerRandomSeed = nextHostWorkerRandomSeed(System.identityHashCode(this));
         workerRandom = new JavaWorkerRandom(workerRandomSeed);
@@ -458,6 +492,8 @@ final class RippleInkPortFluidPipeline {
                 nativeWorkerFailed = true;
                 nativeWorkerFailureDetail = "N3 Ripple Ink JNI worker create returned zero";
             } else {
+                N3RippleInkWorkerNative.nativeConfigure(nativeWorkerHandle,
+                        jacobiIterations, VELOCITY_SELF_ADVECT_STEP * advectionMultiplier);
                 nativeWorkerFailureDetail = "ready";
             }
         } catch (LinkageError error) {
@@ -568,7 +604,7 @@ final class RippleInkPortFluidPipeline {
         previousX = 0.0f;
         previousY = 0.0f;
         adjustedPressure = 1.2f;
-        densityDissipationState = DENSITY_DISSIPATION_PRESS;
+        densityDissipationState = densityDecay(DENSITY_DISSIPATION_PRESS);
         synchronized (inputLock) {
             latestInput = null;
             inputGeneration = 0L;
@@ -578,7 +614,8 @@ final class RippleInkPortFluidPipeline {
         stateStep = 0;
         dragStep = 0;
         heldMovingMode = 0;
-        persistentProfile = defaultPreset();
+        persistentProfile = workshopPreset(defaultPreset());
+        persistentProfile.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_PRESS);
         pressCenterX = 0.0f;
         pressCenterY = 0.0f;
         pressPressure = 0.0f;
@@ -710,8 +747,8 @@ final class RippleInkPortFluidPipeline {
         sink.advectDensity(new AdvectPass(
                 densityIndex,
                 destination,
-                VELOCITY_TIME_STEP * DENSITY_TIME_STEP_SCALE * q / fluidWidth,
-                VELOCITY_TIME_STEP * DENSITY_TIME_STEP_SCALE * q / fluidHeight,
+                VELOCITY_TIME_STEP * DENSITY_TIME_STEP_SCALE * advectionMultiplier * q / fluidWidth,
+                VELOCITY_TIME_STEP * DENSITY_TIME_STEP_SCALE * advectionMultiplier * q / fluidHeight,
                 snapshot.backwardStep,
                 dissipation,
                 viewportWidth,
@@ -784,8 +821,8 @@ final class RippleInkPortFluidPipeline {
             preset.forceProjection = true;
             preset.divergenceRadius = PRESS_DIVERGENCE_RADIUS;
             preset.divergenceStrength = tick < 5 ? 12.0f * tick : 0.0f;
-            preset.nextDensityDissipation = DENSITY_DISSIPATION_PRESS;
-            return pressureScaledInkPreset(preset, emission.pressure);
+            preset.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_PRESS);
+            return workshopPreset(pressureScaledInkPreset(preset, emission.pressure));
         }
         preset.addInk = inkEnabled;
         if (!emission.tap) {
@@ -803,7 +840,7 @@ final class RippleInkPortFluidPipeline {
                 preset.velocityDissipation = 0.96f;
                 preset.divergenceRadius = VELOCITY_DIVERGENCE_RADIUS;
                 preset.divergenceStrength = VELOCITY_DIVERGENCE_STRENGTH;
-                preset.nextDensityDissipation = DENSITY_DISSIPATION_PRESS;
+                preset.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_PRESS);
             } else if (emission.movingMode == 1) {
                 preset.mode = 1;
                 preset.addRadius = SOURCE_MODE_1_RADIUS;
@@ -811,7 +848,7 @@ final class RippleInkPortFluidPipeline {
                 preset.velocityDissipation = 0.94f;
                 preset.divergenceRadius = SOURCE_MODE_1_DIVERGENCE_RADIUS;
                 preset.divergenceStrength = SOURCE_MODE_1_DIVERGENCE_STRENGTH;
-                preset.nextDensityDissipation = DENSITY_DISSIPATION_PRESS;
+                preset.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_PRESS);
             } else {
                 preset.mode = 0;
                 preset.addRadius = SOURCE_TAP_RADIUS * nativeAdjustedPressure(emission.pressure);
@@ -820,16 +857,16 @@ final class RippleInkPortFluidPipeline {
                 preset.divergenceRadius = SOURCE_MODE_0_DIVERGENCE_RADIUS;
                 preset.divergenceStrength = SOURCE_MODE_0_DIVERGENCE_STRENGTH
                         * nativeAdjustedPressure(emission.pressure);
-                preset.nextDensityDissipation = DENSITY_DISSIPATION_MODE_0;
+                preset.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_MODE_0);
             }
         } else {
             preset.mode = -1;
             preset.addRadius = SOURCE_TAP_RADIUS * nativeAdjustedPressure(emission.pressure);
             preset.addImpulse = SOURCE_TAP_IMPULSE;
             preset.velocityDissipation = 0.80f;
-            preset.nextDensityDissipation = DENSITY_DISSIPATION_MODE_0;
+            preset.nextDensityDissipation = densityDecay(DENSITY_DISSIPATION_MODE_0);
         }
-        return pressureScaledInkPreset(preset, emission.pressure);
+        return workshopPreset(pressureScaledInkPreset(preset, emission.pressure));
     }
 
     private static Preset pressureScaledInkPreset(Preset preset, float pressure) {
@@ -894,8 +931,8 @@ final class RippleInkPortFluidPipeline {
             snapshot.persistentProfile = snapshot.nextPreset;
         }
         if (snapshot.sourceStateAtStart == SOURCE_RELEASING && !snapshot.inkInjected) {
-            snapshot.densityUpperBound *= q == 1.0f ? DENSITY_DISSIPATION_RELEASE
-                    : RippleInkPortEngine.scaleDissipation(DENSITY_DISSIPATION_RELEASE, q);
+            snapshot.densityUpperBound *= q == 1.0f ? densityDecay(DENSITY_DISSIPATION_RELEASE)
+                    : RippleInkPortEngine.scaleDissipation(densityDecay(DENSITY_DISSIPATION_RELEASE), q);
             if (snapshot.densityUpperBound < TAIL_DENSITY_THRESHOLD) {
                 snapshot.sourceState = SOURCE_IDLE;
             }
@@ -961,7 +998,7 @@ final class RippleInkPortFluidPipeline {
         snapshot.pressCenterY = 0.0f;
         snapshot.pressPressure = 0.0f;
         snapshot.sourceState = SOURCE_RELEASING;
-        snapshot.densityDissipation = DENSITY_DISSIPATION_RELEASE;
+        snapshot.densityDissipation = densityDecay(DENSITY_DISSIPATION_RELEASE);
     }
 
     private void clearPressProfile() {
@@ -998,7 +1035,7 @@ final class RippleInkPortFluidPipeline {
             previousY = flippedY;
             committedX = input.x;
             committedY = flippedY;
-            densityDissipationState = DENSITY_DISSIPATION_PRESS;
+            densityDissipationState = densityDecay(DENSITY_DISSIPATION_PRESS);
             return;
         }
         if (pressActive) {
@@ -1022,7 +1059,7 @@ final class RippleInkPortFluidPipeline {
                 pressLastEventY = flippedY;
             } else if (!pressActive) {
                 sourceState = SOURCE_RELEASING;
-                densityDissipationState = DENSITY_DISSIPATION_RELEASE;
+                densityDissipationState = densityDecay(DENSITY_DISSIPATION_RELEASE);
             }
             return;
         }
@@ -1175,8 +1212,8 @@ final class RippleInkPortFluidPipeline {
                 int index = y * fluidWidth + x;
                 float sourceX = finiteOrZero(flowX[index]);
                 float sourceY = finiteOrZero(flowY[index]);
-                float u = ((x + 0.5f) - VELOCITY_SELF_ADVECT_STEP * sourceX) * inverseWidth;
-                float v = (cellCenterY - VELOCITY_SELF_ADVECT_STEP * sourceY) * inverseHeight;
+                float u = ((x + 0.5f) - VELOCITY_SELF_ADVECT_STEP * advectionMultiplier * sourceX) * inverseWidth;
+                float v = (cellCenterY - VELOCITY_SELF_ADVECT_STEP * advectionMultiplier * sourceY) * inverseHeight;
                 float sampledX = sampleVelocityBilinear(flowX, u, v);
                 float sampledY = sampleVelocityBilinear(flowY, u, v);
 
@@ -1286,7 +1323,7 @@ final class RippleInkPortFluidPipeline {
         }
 
         int pressureIndex = 0;
-        for (int iteration = 0; iteration < JACOBI_ITERATIONS; ++iteration) {
+        for (int iteration = 0; iteration < jacobiIterations; ++iteration) {
             int destination = 1 - pressureIndex;
             float[] source = pressure[pressureIndex];
             float[] target = pressure[destination];

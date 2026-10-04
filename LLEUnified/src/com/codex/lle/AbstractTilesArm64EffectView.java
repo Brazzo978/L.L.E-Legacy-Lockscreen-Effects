@@ -63,6 +63,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             new IdentityHashMap<Bitmap, Boolean>());
     private final boolean ownsNativeSlot;
     private final boolean lineEnabled;
+    private final EffectWorkshopConfig.Values workshop;
     /* Presentation cadence for the display-refresh opt-in. */
     private final boolean highRefreshPresentation;
     private final SoundPool soundPool;
@@ -126,6 +127,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
      */
     public AbstractTilesArm64EffectView(Context context, boolean highRefreshPresentation) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 7);
         lineEnabled = OverlayPrefs.abstractTilesLineEnabled(context);
         this.highRefreshPresentation = highRefreshPresentation;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
@@ -220,7 +222,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
         lastScreenX = screenX;
         lastScreenY = screenY;
         stopDragSoundImmediately();
-        dragSoundVolume = 1.0f;
+        dragSoundVolume = workshop.get("sound_gain");
         playOneShot(tapSound);
         queueTouch(MotionEvent.ACTION_DOWN, screenX, screenY, now);
     }
@@ -886,7 +888,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
 
     private void playOneShot(int soundId) {
         if (!destroyed && soundId != 0 && canPlaySound()) {
-            soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
+            soundPool.play(soundId, workshop.get("sound_gain"), workshop.get("sound_gain"), 1, 0, 1.0f);
         }
     }
 
@@ -908,7 +910,7 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
                 || !canPlaySound()) {
             return;
         }
-        dragSoundVolume = 1.0f;
+        dragSoundVolume = workshop.get("sound_gain");
         dragSoundFading = false;
         removeCallbacks(dragSoundFadeRunnable);
         dragSoundStreamId = soundPool.play(
@@ -1030,6 +1032,10 @@ public final class AbstractTilesArm64EffectView extends GLSurfaceView
             setReadinessState(UnlockEffectReadiness.STATE_SURFACE_READY,
                     "surface resize " + surfaceWidth + "x" + surfaceHeight);
             try {
+                EffectWorkshopConfig.Parameter[] parameters = EffectWorkshopMosaicParameters.parametersFor(7);
+                float[] tuning = workshop.enabled ? new float[parameters.length - 1] : null;
+                if (tuning != null) for (int i=0; i<tuning.length; i++) tuning[i] = workshop.get(parameters[i].key);
+                AbstractTilesNative.nativeConfigureWorkshop(tuning);
                 if (!AbstractTilesNative.nativeInitGpu(
                         surfaceWidth, surfaceHeight, lineEnabled)) {
                     initializationFailed = true;

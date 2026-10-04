@@ -46,6 +46,8 @@ public final class LgWhiteHoleEffectView extends View
             + "uniform float uAbsorbRadius;"
             + "uniform float uBandWidth;"
             + "uniform float uAlpha;"
+            + "uniform float uAbsorbStrength;"
+            + "uniform float uEdgeStrength;"
             + "half4 main(float2 p) {"
             + " float2 delta=p-uCenter; float dist=length(delta);"
             + " float outer=uAbsorbRadius+uBandWidth;"
@@ -54,10 +56,10 @@ public final class LgWhiteHoleEffectView extends View
             + " float2 dir=delta/dist; float normal; float strength;"
             + " if (uRadius>=uAbsorbRadius) {"
             + "  normal=clamp((outer-dist)/max(uBandWidth,0.001),0.0,1.0);"
-            + "  strength=0.14;"
+            + "  strength=uEdgeStrength;"
             + " } else {"
             + "  normal=clamp((outer-dist)/max(outer,0.001),0.0,1.0);"
-            + "  strength=0.48;"
+            + "  strength=uAbsorbStrength;"
             + " }"
             + " float offset=strength*normal*normal*uBounds.x;"
             + " float2 samplePoint=p+offset*float2(dir.x-dir.y,dir.y+dir.x);"
@@ -107,8 +109,11 @@ public final class LgWhiteHoleEffectView extends View
         }
     };
 
+    private final EffectWorkshopConfig.Values workshop;
+
     public LgWhiteHoleEffectView(Context context) {
         super(context);
+        workshop = EffectWorkshopPrefs.values(context, 37);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -364,8 +369,7 @@ public final class LgWhiteHoleEffectView extends View
     }
 
     private void drawDistortedLockscreen(Canvas canvas, Frame frame) {
-        float bandWidth = LgWhiteHoleWarp.bandWidth(
-                getResources().getDisplayMetrics().density);
+        float bandWidth = workshop.get("band_width") * getResources().getDisplayMetrics().density;
         float outerRadius = frame.absorbRadius + bandWidth;
         if (!LgWhiteHoleWarp.active(frame.radius, frame.absorbRadius, bandWidth)) {
             return;
@@ -382,6 +386,8 @@ public final class LgWhiteHoleEffectView extends View
                 distortionShader.setFloatUniform("uAbsorbRadius", frame.absorbRadius);
                 distortionShader.setFloatUniform("uBandWidth", bandWidth);
                 distortionShader.setFloatUniform("uAlpha", frame.alpha);
+                distortionShader.setFloatUniform("uAbsorbStrength", workshop.get("absorb_strength"));
+                distortionShader.setFloatUniform("uEdgeStrength", workshop.get("edge_strength"));
                 bitmapPaint.setShader(distortionShader);
                 destinationRect.set(0f, 0f, getWidth(), getHeight());
                 canvas.drawRect(destinationRect, bitmapPaint);
@@ -403,7 +409,8 @@ public final class LgWhiteHoleEffectView extends View
             float outer = frame.radius + span * (band + 1f) / FALLBACK_DISTORTION_BANDS;
             float middle = (inner + outer) * .5f;
             float displacement = LgWhiteHoleWarp.displacement(middle,
-                    frame.radius, frame.absorbRadius, bandWidth, getWidth());
+                    frame.radius, frame.absorbRadius, bandWidth, getWidth(),
+                    workshop.get("absorb_strength"), workshop.get("edge_strength"));
             float scale = middle / Math.max(middle + displacement, .001f);
             scale = clamp(scale, .35f, 1f);
             float rotation = (float) Math.toDegrees(
@@ -453,7 +460,7 @@ public final class LgWhiteHoleEffectView extends View
     }
 
     private float minRadius() {
-        return 54f * getResources().getDisplayMetrics().density;
+        return workshop.get("minimum_radius") * getResources().getDisplayMetrics().density;
     }
 
     private float maxRadius() {
@@ -463,17 +470,17 @@ public final class LgWhiteHoleEffectView extends View
     }
 
     private float unlockDistance() {
-        return Math.min(getWidth(), getHeight()) * 0.31f;
+        return Math.min(getWidth(), getHeight()) * workshop.get("drag_threshold");
     }
 
     private void drawOriginalCorona(Canvas canvas, Frame frame) {
         if (sparkle == null || sparkle.isRecycled()
                 || sparkleAlternate == null || sparkleAlternate.isRecycled()) return;
-        float halfSize = frame.radius * CORONA_HALF_SIZE_PER_RADIUS;
+        float halfSize = frame.radius * workshop.get("corona_scale");
         coronaDestination.set(centerX - halfSize, centerY - halfSize,
                 centerX + halfSize, centerY + halfSize);
         coronaPaint.setAlpha(Math.round(255f * frame.alpha));
-        float degrees = frame.elapsedMs * 0.0072f;
+        float degrees = frame.elapsedMs * workshop.get("corona_rotation");
         int save = canvas.save();
         canvas.rotate(degrees, centerX, centerY);
         canvas.drawBitmap(sparkle, null, coronaDestination, coronaPaint);

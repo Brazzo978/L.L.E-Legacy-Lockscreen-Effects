@@ -58,6 +58,7 @@ typedef struct LleSparkGroup {
 } LleSparkGroup;
 
 struct LleSparkSim {
+    LleSparkWorkshop workshop;
     LleSparkGroup groups[LLE_SPARK_GROUP_CAPACITY];
     uint8_t active_order[LLE_SPARK_GROUP_CAPACITY];
     size_t active_order_count;
@@ -205,7 +206,7 @@ static void initialize_common_particle(
     const float angle = rng_range(sim, 0.0f, 2.0f * LLE_SPARK_PI);
     const float radial_x = cosf(angle) * radius;
     const float radial_y = sinf(angle) * radius;
-    const float velocity_scale = rng_range(sim, 0.01f, 0.03f);
+    const float velocity_scale = rng_range(sim, sim->workshop.speed_min, sim->workshop.speed_max);
 
     memset(particle, 0, sizeof(*particle));
     particle->x = center_x + radial_x;
@@ -220,7 +221,7 @@ static void initialize_common_particle(
             ? LLE_SPARK_ANIMATION_PRESS
             : LLE_SPARK_ANIMATION_AFFORDANCE;
     particle->alpha_start_tick = 1.5f * (float)LLE_SPARK_TICK_HZ;
-    particle->edge_band_ratio = rng_range(sim, 0.03f, 0.12f);
+    particle->edge_band_ratio = rng_range(sim, sim->workshop.edge_band_min, sim->workshop.edge_band_max);
     particle->size_control_seconds = 0.3f;
     particle->affordance_y_factor = 0.4f;
     particle->active = true;
@@ -228,11 +229,11 @@ static void initialize_common_particle(
     if (center_x < sim->width * 0.5f) {
         particle->edge_direction = LLE_SPARK_EDGE_LEFT;
         particle->acceleration_x =
-                kind == LLE_SPARK_BURST_PRESS ? -0.6f : -1.0f;
+                kind == LLE_SPARK_BURST_PRESS ? -sim->workshop.press_acceleration : -sim->workshop.hint_acceleration;
     } else {
         particle->edge_direction = LLE_SPARK_EDGE_RIGHT;
         particle->acceleration_x =
-                kind == LLE_SPARK_BURST_PRESS ? 0.6f : 1.0f;
+                kind == LLE_SPARK_BURST_PRESS ? sim->workshop.press_acceleration : sim->workshop.hint_acceleration;
     }
 }
 
@@ -258,51 +259,51 @@ static void initialize_press_particle(
         float center_y) {
     float radius;
     const size_t small_end =
-            (size_t)((float)LLE_SPARK_PARTICLES_PER_GROUP * 0.8f);
+            (size_t)(sim->workshop.press_count * 0.8f);
     const size_t medium_end = small_end +
-            (size_t)((float)LLE_SPARK_PARTICLES_PER_GROUP * 0.15f);
+            (size_t)(sim->workshop.press_count * 0.15f);
 
     if (particle_index <= small_end) {
-        radius = scaled(sim, rng_range(sim, 40.0f, 250.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.press_small_radius_min, sim->workshop.press_small_radius_max));
     } else if (particle_index <= medium_end) {
-        radius = scaled(sim, rng_range(sim, 10.0f, 220.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.press_medium_radius_min, sim->workshop.press_medium_radius_max));
     } else {
-        radius = scaled(sim, rng_range(sim, 10.0f, 240.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.press_large_radius_min, sim->workshop.press_large_radius_max));
     }
 
     initialize_common_particle(
             sim, particle, LLE_SPARK_BURST_PRESS,
             center_x, center_y, radius);
     particle->max_lifetime =
-            rng_range(sim, 2.2f, 2.5f) * (float)LLE_SPARK_TICK_HZ;
+            rng_range(sim, sim->workshop.press_lifetime_min, sim->workshop.press_lifetime_max) * (float)LLE_SPARK_TICK_HZ;
 
     if (particle_index <= small_end) {
-        particle->alpha = rng_range(sim, 0.35f, 0.60f);
+        particle->alpha = rng_range(sim, sim->workshop.press_alpha_min, sim->workshop.press_alpha_max);
         configure_size_growth(
                 particle,
-                scaled(sim, rng_range(sim, 4.0f, 10.0f)),
+                scaled(sim, rng_range(sim, sim->workshop.small_size_min, sim->workshop.small_size_max)),
                 0.0f,
                 0.3f);
         particle->max_size = particle->size;
         particle->size_increment = 0.0f;
     } else if (particle_index <= medium_end) {
         const float size =
-                scaled(sim, rng_range(sim, 12.0f, 18.0f));
+                scaled(sim, rng_range(sim, sim->workshop.medium_size_min, sim->workshop.medium_size_max));
         const float max_size =
-                scaled(sim, rng_range(sim, 12.0f, 25.0f));
-        particle->alpha = rng_range(sim, 0.35f, 0.60f);
+                scaled(sim, rng_range(sim, sim->workshop.medium_target_size_min, sim->workshop.medium_target_size_max));
+        particle->alpha = rng_range(sim, sim->workshop.press_alpha_min, sim->workshop.press_alpha_max);
         configure_size_growth(
-                particle, size, max_size, rng_range(sim, 0.3f, 0.5f));
+                particle, size, max_size, rng_range(sim, sim->workshop.medium_growth_min, sim->workshop.medium_growth_max));
     } else {
         const float size =
-                scaled(sim, rng_range(sim, 24.0f, 28.0f));
+                scaled(sim, rng_range(sim, sim->workshop.large_size_min, sim->workshop.large_size_max));
         const float max_size =
-                scaled(sim, rng_range(sim, 28.0f, 43.0f));
+                scaled(sim, rng_range(sim, sim->workshop.large_target_size_min, sim->workshop.large_target_size_max));
         particle->twinkle = true;
         particle->next_twinkle = rng_range(sim, 0.0f, 0.2f);
-        particle->alpha = rng_range(sim, 0.25f, 0.60f);
+        particle->alpha = rng_range(sim, sim->workshop.press_large_alpha_min, sim->workshop.press_large_alpha_max);
         configure_size_growth(
-                particle, size, max_size, rng_range(sim, 0.3f, 0.7f));
+                particle, size, max_size, rng_range(sim, sim->workshop.large_growth_min, sim->workshop.large_growth_max));
     }
 }
 
@@ -314,53 +315,53 @@ static void initialize_affordance_particle(
         float center_y) {
     float radius;
     const size_t small_end =
-            (size_t)((float)LLE_SPARK_PARTICLES_PER_GROUP * 0.8f);
+            (size_t)(sim->workshop.hint_count * 0.8f);
     const size_t medium_end = small_end +
-            (size_t)((float)LLE_SPARK_PARTICLES_PER_GROUP * 0.15f);
+            (size_t)(sim->workshop.hint_count * 0.15f);
 
     if (particle_index <= small_end) {
-        radius = scaled(sim, rng_range(sim, 30.0f, 250.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.hint_small_radius_min, sim->workshop.hint_small_radius_max));
     } else if (particle_index <= medium_end) {
-        radius = scaled(sim, rng_range(sim, 10.0f, 220.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.hint_medium_radius_min, sim->workshop.hint_medium_radius_max));
     } else {
-        radius = scaled(sim, rng_range(sim, 10.0f, 200.0f));
+        radius = scaled(sim, rng_range(sim, sim->workshop.hint_large_radius_min, sim->workshop.hint_large_radius_max));
     }
 
     initialize_common_particle(
             sim, particle, LLE_SPARK_BURST_AFFORDANCE,
             center_x, center_y, radius);
-    particle->alpha = rng_range(sim, 0.50f, 0.60f);
+    particle->alpha = rng_range(sim, sim->workshop.hint_alpha_min, sim->workshop.hint_alpha_max);
 
     if (particle_index <= small_end) {
         particle->max_lifetime =
-                rng_range(sim, 2.0f, 2.5f) * (float)LLE_SPARK_TICK_HZ;
+                rng_range(sim, sim->workshop.hint_small_lifetime_min, sim->workshop.hint_small_lifetime_max) * (float)LLE_SPARK_TICK_HZ;
         configure_size_growth(
                 particle,
-                scaled(sim, rng_range(sim, 4.0f, 10.0f)),
+                scaled(sim, rng_range(sim, sim->workshop.small_size_min, sim->workshop.small_size_max)),
                 0.0f,
                 0.3f);
         particle->max_size = particle->size;
         particle->size_increment = 0.0f;
     } else if (particle_index <= medium_end) {
         const float size =
-                scaled(sim, rng_range(sim, 12.0f, 18.0f));
+                scaled(sim, rng_range(sim, sim->workshop.medium_size_min, sim->workshop.medium_size_max));
         const float max_size =
-                scaled(sim, rng_range(sim, 12.0f, 25.0f));
+                scaled(sim, rng_range(sim, sim->workshop.medium_target_size_min, sim->workshop.medium_target_size_max));
         particle->max_lifetime =
-                rng_range(sim, 1.8f, 2.3f) * (float)LLE_SPARK_TICK_HZ;
+                rng_range(sim, sim->workshop.hint_medium_lifetime_min, sim->workshop.hint_medium_lifetime_max) * (float)LLE_SPARK_TICK_HZ;
         configure_size_growth(
-                particle, size, max_size, rng_range(sim, 0.3f, 0.5f));
+                particle, size, max_size, rng_range(sim, sim->workshop.medium_growth_min, sim->workshop.medium_growth_max));
     } else {
         const float size =
-                scaled(sim, rng_range(sim, 24.0f, 28.0f));
+                scaled(sim, rng_range(sim, sim->workshop.large_size_min, sim->workshop.large_size_max));
         const float max_size =
-                scaled(sim, rng_range(sim, 28.0f, 43.0f));
+                scaled(sim, rng_range(sim, sim->workshop.large_target_size_min, sim->workshop.large_target_size_max));
         particle->max_lifetime =
-                rng_range(sim, 1.6f, 2.1f) * (float)LLE_SPARK_TICK_HZ;
+                rng_range(sim, sim->workshop.hint_large_lifetime_min, sim->workshop.hint_large_lifetime_max) * (float)LLE_SPARK_TICK_HZ;
         particle->twinkle = true;
         particle->next_twinkle = rng_range(sim, 0.0f, 0.2f);
         configure_size_growth(
-                particle, size, max_size, rng_range(sim, 0.3f, 0.7f));
+                particle, size, max_size, rng_range(sim, sim->workshop.large_growth_min, sim->workshop.large_growth_max));
     }
 }
 
@@ -380,7 +381,8 @@ static bool emit_group(
     group = &sim->groups[group_index];
     memset(group, 0, sizeof(*group));
     for (particle_index = 0;
-            particle_index < LLE_SPARK_PARTICLES_PER_GROUP;
+            particle_index < (size_t)(kind == LLE_SPARK_BURST_PRESS
+                    ? sim->workshop.press_count : sim->workshop.hint_count);
             ++particle_index) {
         if (kind == LLE_SPARK_BURST_PRESS) {
             initialize_press_particle(
@@ -673,6 +675,178 @@ static void compact_active_order(LleSparkSim *sim) {
     sim->active_order_count = write_index;
 }
 
+void lle_spark_sim_set_workshop(LleSparkSim *sim, const float *values, size_t count) {
+    if (sim == NULL) return;
+    /* Invalid arrays restore all defaults atomically; each non-finite field uses its default. */
+    const bool supplied = values != NULL && count == LLE_SPARK_WORKSHOP_COUNT;
+    { float v = supplied && isfinite(values[0]) ? values[0] : 1100.0f;
+      v = fmaxf(1.0f, fminf(1100.0f, v));
+      sim->workshop.press_count = roundf(v); }
+    { float v = supplied && isfinite(values[1]) ? values[1] : 1100.0f;
+      v = fmaxf(1.0f, fminf(1100.0f, v));
+      sim->workshop.hint_count = roundf(v); }
+    { float v = supplied && isfinite(values[2]) ? values[2] : 40.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_small_radius_min = v; }
+    { float v = supplied && isfinite(values[3]) ? values[3] : 250.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_small_radius_max = v; }
+    { float v = supplied && isfinite(values[4]) ? values[4] : 10.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_medium_radius_min = v; }
+    { float v = supplied && isfinite(values[5]) ? values[5] : 220.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_medium_radius_max = v; }
+    { float v = supplied && isfinite(values[6]) ? values[6] : 10.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_large_radius_min = v; }
+    { float v = supplied && isfinite(values[7]) ? values[7] : 240.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.press_large_radius_max = v; }
+    { float v = supplied && isfinite(values[8]) ? values[8] : 30.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_small_radius_min = v; }
+    { float v = supplied && isfinite(values[9]) ? values[9] : 250.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_small_radius_max = v; }
+    { float v = supplied && isfinite(values[10]) ? values[10] : 10.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_medium_radius_min = v; }
+    { float v = supplied && isfinite(values[11]) ? values[11] : 220.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_medium_radius_max = v; }
+    { float v = supplied && isfinite(values[12]) ? values[12] : 10.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_large_radius_min = v; }
+    { float v = supplied && isfinite(values[13]) ? values[13] : 200.0f;
+      v = fmaxf(0.0f, fminf(400.0f, v));
+      sim->workshop.hint_large_radius_max = v; }
+    { float v = supplied && isfinite(values[14]) ? values[14] : 4.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.small_size_min = v; }
+    { float v = supplied && isfinite(values[15]) ? values[15] : 10.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.small_size_max = v; }
+    { float v = supplied && isfinite(values[16]) ? values[16] : 12.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.medium_size_min = v; }
+    { float v = supplied && isfinite(values[17]) ? values[17] : 18.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.medium_size_max = v; }
+    { float v = supplied && isfinite(values[18]) ? values[18] : 12.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.medium_target_size_min = v; }
+    { float v = supplied && isfinite(values[19]) ? values[19] : 25.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.medium_target_size_max = v; }
+    { float v = supplied && isfinite(values[20]) ? values[20] : 24.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.large_size_min = v; }
+    { float v = supplied && isfinite(values[21]) ? values[21] : 28.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.large_size_max = v; }
+    { float v = supplied && isfinite(values[22]) ? values[22] : 28.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.large_target_size_min = v; }
+    { float v = supplied && isfinite(values[23]) ? values[23] : 43.0f;
+      v = fmaxf(1.0f, fminf(80.0f, v));
+      sim->workshop.large_target_size_max = v; }
+    { float v = supplied && isfinite(values[24]) ? values[24] : 2.2f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.press_lifetime_min = v; }
+    { float v = supplied && isfinite(values[25]) ? values[25] : 2.5f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.press_lifetime_max = v; }
+    { float v = supplied && isfinite(values[26]) ? values[26] : 2.0f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_small_lifetime_min = v; }
+    { float v = supplied && isfinite(values[27]) ? values[27] : 2.5f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_small_lifetime_max = v; }
+    { float v = supplied && isfinite(values[28]) ? values[28] : 1.8f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_medium_lifetime_min = v; }
+    { float v = supplied && isfinite(values[29]) ? values[29] : 2.3f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_medium_lifetime_max = v; }
+    { float v = supplied && isfinite(values[30]) ? values[30] : 1.6f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_large_lifetime_min = v; }
+    { float v = supplied && isfinite(values[31]) ? values[31] : 2.1f;
+      v = fmaxf(0.5f, fminf(5.0f, v));
+      sim->workshop.hint_large_lifetime_max = v; }
+    { float v = supplied && isfinite(values[32]) ? values[32] : 0.3f;
+      v = fmaxf(0.1f, fminf(2.0f, v));
+      sim->workshop.medium_growth_min = v; }
+    { float v = supplied && isfinite(values[33]) ? values[33] : 0.5f;
+      v = fmaxf(0.1f, fminf(2.0f, v));
+      sim->workshop.medium_growth_max = v; }
+    { float v = supplied && isfinite(values[34]) ? values[34] : 0.3f;
+      v = fmaxf(0.1f, fminf(2.0f, v));
+      sim->workshop.large_growth_min = v; }
+    { float v = supplied && isfinite(values[35]) ? values[35] : 0.7f;
+      v = fmaxf(0.1f, fminf(2.0f, v));
+      sim->workshop.large_growth_max = v; }
+    { float v = supplied && isfinite(values[36]) ? values[36] : 0.35f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.press_alpha_min = v; }
+    { float v = supplied && isfinite(values[37]) ? values[37] : 0.6f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.press_alpha_max = v; }
+    { float v = supplied && isfinite(values[38]) ? values[38] : 0.25f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.press_large_alpha_min = v; }
+    { float v = supplied && isfinite(values[39]) ? values[39] : 0.6f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.press_large_alpha_max = v; }
+    { float v = supplied && isfinite(values[40]) ? values[40] : 0.5f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.hint_alpha_min = v; }
+    { float v = supplied && isfinite(values[41]) ? values[41] : 0.6f;
+      v = fmaxf(0.0f, fminf(1.0f, v));
+      sim->workshop.hint_alpha_max = v; }
+    { float v = supplied && isfinite(values[42]) ? values[42] : 0.01f;
+      v = fmaxf(0.0f, fminf(0.08f, v));
+      sim->workshop.speed_min = v; }
+    { float v = supplied && isfinite(values[43]) ? values[43] : 0.03f;
+      v = fmaxf(0.0f, fminf(0.08f, v));
+      sim->workshop.speed_max = v; }
+    { float v = supplied && isfinite(values[44]) ? values[44] : 0.6f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.press_acceleration = v; }
+    { float v = supplied && isfinite(values[45]) ? values[45] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.hint_acceleration = v; }
+    { float v = supplied && isfinite(values[46]) ? values[46] : 0.03f;
+      v = fmaxf(0.01f, fminf(0.3f, v));
+      sim->workshop.edge_band_min = v; }
+    { float v = supplied && isfinite(values[47]) ? values[47] : 0.12f;
+      v = fmaxf(0.01f, fminf(0.3f, v));
+      sim->workshop.edge_band_max = v; }
+    if (sim->workshop.press_small_radius_max < sim->workshop.press_small_radius_min) sim->workshop.press_small_radius_max = sim->workshop.press_small_radius_min;
+    if (sim->workshop.press_medium_radius_max < sim->workshop.press_medium_radius_min) sim->workshop.press_medium_radius_max = sim->workshop.press_medium_radius_min;
+    if (sim->workshop.press_large_radius_max < sim->workshop.press_large_radius_min) sim->workshop.press_large_radius_max = sim->workshop.press_large_radius_min;
+    if (sim->workshop.hint_small_radius_max < sim->workshop.hint_small_radius_min) sim->workshop.hint_small_radius_max = sim->workshop.hint_small_radius_min;
+    if (sim->workshop.hint_medium_radius_max < sim->workshop.hint_medium_radius_min) sim->workshop.hint_medium_radius_max = sim->workshop.hint_medium_radius_min;
+    if (sim->workshop.hint_large_radius_max < sim->workshop.hint_large_radius_min) sim->workshop.hint_large_radius_max = sim->workshop.hint_large_radius_min;
+    if (sim->workshop.small_size_max < sim->workshop.small_size_min) sim->workshop.small_size_max = sim->workshop.small_size_min;
+    if (sim->workshop.medium_size_max < sim->workshop.medium_size_min) sim->workshop.medium_size_max = sim->workshop.medium_size_min;
+    if (sim->workshop.medium_target_size_max < sim->workshop.medium_target_size_min) sim->workshop.medium_target_size_max = sim->workshop.medium_target_size_min;
+    if (sim->workshop.large_size_max < sim->workshop.large_size_min) sim->workshop.large_size_max = sim->workshop.large_size_min;
+    if (sim->workshop.large_target_size_max < sim->workshop.large_target_size_min) sim->workshop.large_target_size_max = sim->workshop.large_target_size_min;
+    if (sim->workshop.press_lifetime_max < sim->workshop.press_lifetime_min) sim->workshop.press_lifetime_max = sim->workshop.press_lifetime_min;
+    if (sim->workshop.hint_small_lifetime_max < sim->workshop.hint_small_lifetime_min) sim->workshop.hint_small_lifetime_max = sim->workshop.hint_small_lifetime_min;
+    if (sim->workshop.hint_medium_lifetime_max < sim->workshop.hint_medium_lifetime_min) sim->workshop.hint_medium_lifetime_max = sim->workshop.hint_medium_lifetime_min;
+    if (sim->workshop.hint_large_lifetime_max < sim->workshop.hint_large_lifetime_min) sim->workshop.hint_large_lifetime_max = sim->workshop.hint_large_lifetime_min;
+    if (sim->workshop.medium_growth_max < sim->workshop.medium_growth_min) sim->workshop.medium_growth_max = sim->workshop.medium_growth_min;
+    if (sim->workshop.large_growth_max < sim->workshop.large_growth_min) sim->workshop.large_growth_max = sim->workshop.large_growth_min;
+    if (sim->workshop.press_alpha_max < sim->workshop.press_alpha_min) sim->workshop.press_alpha_max = sim->workshop.press_alpha_min;
+    if (sim->workshop.press_large_alpha_max < sim->workshop.press_large_alpha_min) sim->workshop.press_large_alpha_max = sim->workshop.press_large_alpha_min;
+    if (sim->workshop.hint_alpha_max < sim->workshop.hint_alpha_min) sim->workshop.hint_alpha_max = sim->workshop.hint_alpha_min;
+    if (sim->workshop.speed_max < sim->workshop.speed_min) sim->workshop.speed_max = sim->workshop.speed_min;
+    if (sim->workshop.edge_band_max < sim->workshop.edge_band_min) sim->workshop.edge_band_max = sim->workshop.edge_band_min;
+}
+
 LleSparkSim *lle_spark_sim_create(
         float width,
         float height,
@@ -681,6 +855,7 @@ LleSparkSim *lle_spark_sim_create(
     if (sim == NULL) {
         return NULL;
     }
+    lle_spark_sim_set_workshop(sim, NULL, 0u);
     seed_vendor_rng(sim, seed);
     lle_spark_sim_set_surface(sim, width, height);
     return sim;
@@ -930,6 +1105,7 @@ void lle_spark_sim_unlock(LleSparkSim *sim) {
 }
 
 void lle_spark_sim_reset(LleSparkSim *sim) {
+    LleSparkWorkshop workshop;
     uint32_t rng_state[LLE_SPARK_VENDOR_RNG_DEGREE];
     uint8_t rng_front;
     uint8_t rng_rear;
@@ -945,7 +1121,9 @@ void lle_spark_sim_reset(LleSparkSim *sim) {
     width = sim->width;
     height = sim->height;
     scale_value = sim->scale;
+    workshop = sim->workshop;
     memset(sim, 0, sizeof(*sim));
+    sim->workshop = workshop;
     memcpy(sim->rng_state, rng_state, sizeof(rng_state));
     sim->rng_front = rng_front;
     sim->rng_rear = rng_rear;

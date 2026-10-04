@@ -15,7 +15,7 @@
 #include <string.h>
 
 #define LLE_S6_WATER_LOG_TAG "LLES6WaterDroplet"
-#define LLE_S6_WATER_BRIDGE_VERSION 3
+#define LLE_S6_WATER_BRIDGE_VERSION 4
 #define LLE_S6_WATER_STOCK_DT (1.0f / 60.0f)
 #define LLE_S6_WATER_HANDLE_MAGIC UINT64_C(0x4c4c455336574154)
 #define LLE_S6_WATER_DEFAULT_WIDTH 1440
@@ -1009,4 +1009,19 @@ Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeGetLastError(
     message[sizeof(message) - 1U] = '\0';
     s6_water_unlock(handle);
     return (*env)->NewStringUTF(env, message);
+}
+
+/* Called on the owning GL thread immediately after CPU handle creation. */
+JNIEXPORT void JNICALL
+Java_com_codex_lle_S6WaterDropletAppOwnedNative_nativeSetWorkshop(JNIEnv *env, jclass clazz, jlong native_handle, jfloatArray values) {
+    (void)clazz;
+    LleS6WaterHandle *handle = s6_water_handle(native_handle);
+    if (handle == NULL || handle->sim == NULL || values == NULL
+            || (*env)->GetArrayLength(env, values) != LLE_S6_WATER_WORKSHOP_COUNT) return;
+    float packed[LLE_S6_WATER_WORKSHOP_COUNT];
+    (*env)->GetFloatArrayRegion(env, values, 0, LLE_S6_WATER_WORKSHOP_COUNT, packed);
+    if ((*env)->ExceptionCheck(env)) return;
+    pthread_mutex_lock(&handle->mutex);
+    lle_s6_water_sim_set_workshop(handle->sim, packed, LLE_S6_WATER_WORKSHOP_COUNT);
+    pthread_mutex_unlock(&handle->mutex);
 }

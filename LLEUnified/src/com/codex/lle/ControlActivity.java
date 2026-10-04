@@ -2806,6 +2806,20 @@ public class ControlActivity extends Activity {
         }
         root.addView(controls);
 
+        LinearLayout workshop = verticalGroup();
+        styleCard(workshop);
+        workshop.addView(sectionTitle("Effects workshop"));
+        workshop.addView(infoText("Advanced controls for the selected effect: "
+                + OverlayPrefs.effectLabel(current)
+                + ". Each effect keeps its own settings and can return to the original values."));
+        workshop.addView(outlineButton("Open advanced workshop", new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                int selected = pendingUnlockEffect >= 0
+                        ? pendingUnlockEffect : OverlayPrefs.unlockEffect(ControlActivity.this);
+                EffectWorkshopDialog.show(ControlActivity.this, selected);
+            }
+        }));
+
         LinearLayout effects = verticalGroup();
         LinearLayout.LayoutParams effectsParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -3070,6 +3084,7 @@ public class ControlActivity extends Activity {
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)) {
             root.addView(screenshotServiceControls(current));
         }
+        root.addView(workshop);
         return root;
     }
 

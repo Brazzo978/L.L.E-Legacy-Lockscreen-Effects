@@ -34,6 +34,20 @@ import android.view.View;
  */
 public final class BlindArm64EffectView extends View
         implements UnlockEffectRenderer, BackgroundSourceRenderer, UnlockEffectReadiness {
+    private final EffectWorkshopConfig.Values workshop = EffectWorkshopPrefs.values(getContext(), 11);
+    private int workshopPortraitColumns = workshop.intValue("portrait_columns");
+    private int workshopLandscapeColumns = workshop.intValue("landscape_columns");
+    private long workshopDownDurationMs = (long) workshop.get("down_duration_ms");
+    private long workshopUpDurationMs = (long) workshop.get("up_duration_ms");
+    private long workshopAffordanceHoldMs = (long) workshop.get("affordance_hold_ms");
+    private float workshopDownInitialValue = workshop.get("down_initial_value");
+    private float workshopPortraitScaleFactor = workshop.get("portrait_scale_factor");
+    private float workshopLandscapeBrightRange = workshop.get("landscape_bright_range");
+    private float workshopPortraitBrightRange = workshop.get("portrait_bright_range");
+    private float workshopDistanceDivisor = workshop.get("distance_divisor");
+    private float workshopBrightnessMultiplier = workshop.get("brightness_multiplier");
+    private float workshopReleaseSplitPx = workshop.get("release_split_px");
+    private float workshopLightMaxAlpha = workshop.get("light_max_alpha");
     private static final String TAG = "ChargingTabSBlindOwn";
 
     private static final int PORTRAIT_COLUMNS = 25;
@@ -103,7 +117,7 @@ public final class BlindArm64EffectView extends View
         public void run() {
             if (!destroyed) {
                 playDownAnimator(currentX, currentY);
-                postDelayed(affordanceUp, AFFORDANCE_HOLD_MS);
+                postDelayed(affordanceUp, workshopAffordanceHoldMs);
             }
         }
     };
@@ -364,9 +378,9 @@ public final class BlindArm64EffectView extends View
             return;
         }
         boolean landscape = width > height;
-        int columns = landscape ? LANDSCAPE_COLUMNS : PORTRAIT_COLUMNS;
-        float brightRange = landscape ? LANDSCAPE_BRIGHT_RANGE : PORTRAIT_BRIGHT_RANGE;
-        float scaleFactor = landscape ? 1f : PORTRAIT_SCALE_FACTOR;
+        int columns = landscape ? workshopLandscapeColumns : workshopPortraitColumns;
+        float brightRange = landscape ? workshopLandscapeBrightRange : workshopPortraitBrightRange;
+        float scaleFactor = landscape ? 1f : workshopPortraitScaleFactor;
         float reach = Math.min(width, height) / brightRange;
 
         for (int index = 0; index < columns; index++) {
@@ -377,10 +391,10 @@ public final class BlindArm64EffectView extends View
             }
             float midPoint = left + (right - left) * 0.5f;
             float distance = Math.max(0f,
-                    (reach - Math.abs(midPoint - pointX)) / DISTANCE_DIVISOR);
+                    (reach - Math.abs(midPoint - pointX)) / workshopDistanceDivisor);
             if (upAnimator != null && upAnimator.isRunning()) {
                 distance = Math.max(distance, Math.max(0f,
-                        (reach - Math.abs(midPoint - point2X)) / DISTANCE_DIVISOR));
+                        (reach - Math.abs(midPoint - point2X)) / workshopDistanceDivisor));
             }
             if (distance <= 0f) {
                 continue;
@@ -398,7 +412,7 @@ public final class BlindArm64EffectView extends View
                     midPoint + halfWidth, height * 0.5f + halfHeight);
             sourceRect.set(left, 0, right, height);
 
-            float brightness = animationValue * distance * BRIGHTNESS_MULTIPLIER;
+            float brightness = animationValue * distance * workshopBrightnessMultiplier;
             brightnessMatrix.set(new float[] {
                     1f, 0f, 0f, 0f, brightness,
                     0f, 1f, 0f, 0f, brightness,
@@ -412,7 +426,7 @@ public final class BlindArm64EffectView extends View
 
         int lightSize = Math.max(1, Math.min(width, height) / 2);
         float lightAlpha = Math.max(0f, Math.min(1f,
-                animationValue * LIGHT_MAX_ALPHA));
+                animationValue * workshopLightMaxAlpha));
         lightPaint.setAlpha(Math.round(lightAlpha * 255f));
         destinationRect.set(lightX - lightSize * 0.5f, lightY - lightSize * 0.5f,
                 lightX + lightSize * 0.5f, lightY + lightSize * 0.5f);
@@ -452,8 +466,8 @@ public final class BlindArm64EffectView extends View
         lightX = x;
         lightY = y;
 
-        downAnimator = ValueAnimator.ofFloat(DOWN_INITIAL_VALUE, 1f);
-        downAnimator.setDuration(DOWN_DURATION_MS);
+        downAnimator = ValueAnimator.ofFloat(workshopDownInitialValue, 1f);
+        downAnimator.setDuration(workshopDownDurationMs);
         downAnimator.setInterpolator(QUINT_EASE_OUT);
         downAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
@@ -474,14 +488,14 @@ public final class BlindArm64EffectView extends View
         downAnimator = null;
         float releaseStart = animationValue;
         upAnimator = ValueAnimator.ofFloat(1f, 0f);
-        upAnimator.setDuration(UP_DURATION_MS);
+        upAnimator.setDuration(workshopUpDurationMs);
         upAnimator.setInterpolator(QUINT_EASE_OUT);
         upAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
                 float value = ((Float) animation.getAnimatedValue()).floatValue();
                 animationValue = releaseStart * value;
-                float split = (1f - animationValue) * RELEASE_SPLIT_PX;
+                float split = (1f - animationValue) * workshopReleaseSplitPx;
                 pointX -= split;
                 point2X += split;
                 invalidate();
@@ -512,7 +526,7 @@ public final class BlindArm64EffectView extends View
                 long nowNs = SystemClock.elapsedRealtimeNanos();
                 long elapsedNs = lastMoveFrameNs == 0L ? 0L : nowNs - lastMoveFrameNs;
                 lastMoveFrameNs = nowNs;
-                float moveFollow = moveFollowForElapsedNanos(elapsedNs);
+                float moveFollow = moveFollowForElapsedNanos(elapsedNs, workshop.get("move_follow"));
                 pointX += (currentX - pointX) * moveFollow;
                 point2Y += (currentY - point2Y) * moveFollow;
                 point2X += (currentX - point2X) * moveFollow;
@@ -548,14 +562,18 @@ public final class BlindArm64EffectView extends View
      * that response at all refresh rates, including fractional virtual 60 Hz ticks after jitter.
      */
     static float moveFollowForElapsedNanos(long elapsedNs) {
+        return moveFollowForElapsedNanos(elapsedNs, MOVE_FOLLOW);
+    }
+
+    static float moveFollowForElapsedNanos(long elapsedNs, float follow) {
         if (elapsedNs <= 0L) {
             return 0f;
         }
         if (elapsedNs == STOCK_FRAME_INTERVAL_NS) {
-            return MOVE_FOLLOW;
+            return follow;
         }
         double ticks = elapsedNs / (double) STOCK_FRAME_INTERVAL_NS;
-        return (float) (1.0d - Math.pow(1.0d - MOVE_FOLLOW, ticks));
+        return (float) (1.0d - Math.pow(1.0d - follow, ticks));
     }
 
     private void cancelAnimator(ValueAnimator animator) {

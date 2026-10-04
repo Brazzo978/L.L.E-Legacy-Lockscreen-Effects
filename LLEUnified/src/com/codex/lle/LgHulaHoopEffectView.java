@@ -46,14 +46,15 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
     private static final int FLUIDIC_OVERLAP = Color.rgb(107, 76, 165);
     private static final int FLUIDIC_ALPHA = Math.round(255f * .8f);
 
+    private final EffectWorkshopConfig.Values workshop;
     private final LgHulaHoopScene scene;
     private final LgHulaHoopScene.Frame frame = new LgHulaHoopScene.Frame();
-    private final LgHulaHoopFluidicScene fluidicScene = new LgHulaHoopFluidicScene();
+    private final LgHulaHoopFluidicScene fluidicScene;
     private final LgHulaHoopFluidicScene.Frame fluidicFrame =
             new LgHulaHoopFluidicScene.Frame();
-    private final FluidicMesh fluidicHole = new FluidicMesh();
-    private final FluidicMesh fluidicCyan = new FluidicMesh();
-    private final FluidicMesh fluidicMagenta = new FluidicMesh();
+    private final FluidicMesh fluidicHole;
+    private final FluidicMesh fluidicCyan;
+    private final FluidicMesh fluidicMagenta;
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint layerPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint reflectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -115,7 +116,12 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
     LgHulaHoopEffectView(Context context, int variant) {
         super(context);
         this.variant = OverlayPrefs.normalizeHulaHoopVariant(variant);
-        scene = new LgHulaHoopScene();
+        workshop = EffectWorkshopPrefs.values(context, 42);
+        scene = new LgHulaHoopScene(workshop);
+        fluidicScene = new LgHulaHoopFluidicScene(workshop);
+        fluidicHole = new FluidicMesh(workshop);
+        fluidicCyan = new FluidicMesh(workshop);
+        fluidicMagenta = new FluidicMesh(workshop);
         setWillNotDraw(false);
         setBackgroundColor(Color.TRANSPARENT);
         for (int i = 0; i < layers.length; i++) layers[i] = decode(LAYER_RESOURCES[i]);
@@ -421,9 +427,9 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
 
         if (current.stretched && current.stretchDelayFrames == 0) {
             fluidicCyan.setRadii(current.radius,
-                    current.dragDistance * (.7f + fluidicRandom.nextFloat() * .4f));
+                    current.dragDistance * fluidicScene.stretchScale(fluidicRandom.nextFloat()));
             fluidicMagenta.setRadii(current.radius,
-                    current.dragDistance * (.7f + fluidicRandom.nextFloat() * .4f));
+                    current.dragDistance * fluidicScene.stretchScale(fluidicRandom.nextFloat()));
             fluidicCyan.setAngle(current.angle + fluidicCyanOffset);
             fluidicMagenta.setAngle(current.angle + fluidicMagentaOffset);
             fluidicCyan.setPivot(fluidicCyanOffset, fluidicMagentaOffset, 1f);
@@ -432,15 +438,15 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
             fluidicHole.setAngle(current.angle);
         } else {
             float ringRadius = current.stretchDelayFrames > 0 ? 0f
-                    : Math.min(.12f * current.radius, fluidicScene.outerRingStride());
+                    : Math.min(workshop.get("v2_ring_ratio") * current.radius, fluidicScene.outerRingStride());
             float cyanDelay = current.unlock ? 1f + fluidicRandom.nextFloat() * .3f : 1f;
             float magentaDelay = current.unlock ? 1f + fluidicRandom.nextFloat() * .3f : 1f;
             float cyanRadius = current.radius + ringRadius * cyanDelay;
             float magentaRadius = current.radius + ringRadius * magentaDelay;
             fluidicCyan.setRadii(cyanRadius, cyanRadius);
             fluidicMagenta.setRadii(magentaRadius, magentaRadius);
-            fluidicCyan.setPivot(ringRadius * .25f * cyanDelay, 0f, 1f);
-            fluidicMagenta.setPivot(ringRadius * .25f * magentaDelay, 0f, 1f);
+            fluidicCyan.setPivot(ringRadius * workshop.get("v2_ring_pivot") * cyanDelay, 0f, 1f);
+            fluidicMagenta.setPivot(ringRadius * workshop.get("v2_ring_pivot") * magentaDelay, 0f, 1f);
             fluidicHole.setRadii(current.radius, current.radius);
             // The stock renderer keeps the last gesture angle even while the target
             // relaxes back to a circle. Resetting it here visibly snaps a still-soft
@@ -473,13 +479,13 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
     private void resetFluidicRotationSpeeds() {
         fluidicCyan.setRotationSpeed(randomFluidicRotationSpeed());
         fluidicMagenta.setRotationSpeed(randomFluidicRotationSpeed());
-        fluidicCyanOffset = (fluidicRandom.nextFloat() * 2f - 1f) * 8f;
-        fluidicMagentaOffset = (fluidicRandom.nextFloat() * 2f - 1f) * 8f;
+        fluidicCyanOffset = (fluidicRandom.nextFloat() * 2f - 1f) * workshop.get("v2_angular_offset");
+        fluidicMagentaOffset = (fluidicRandom.nextFloat() * 2f - 1f) * workshop.get("v2_angular_offset");
     }
 
     private float randomFluidicRotationSpeed() {
         float sign = fluidicRandom.nextBoolean() ? -1f : 1f;
-        return sign * (1f + fluidicRandom.nextFloat()) * .18f;
+        return sign * (1f + fluidicRandom.nextFloat()) * .18f * workshop.get("v2_rotation_scale");
     }
 
     private void drawFluidicSingle(Canvas canvas, Path base, Path exclude1,
@@ -504,7 +510,7 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
 
     private void fillFluidicClip(Canvas canvas, int color) {
         fluidicPaint.setColor(color);
-        fluidicPaint.setAlpha(FLUIDIC_ALPHA);
+        fluidicPaint.setAlpha(Math.round(255f * workshop.get("v2_alpha")));
         canvas.drawRect(0f, 0f, getWidth(), getHeight(), fluidicPaint);
     }
 
@@ -524,11 +530,11 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
             // The stock holder center moves only a tiny display-normalized amount opposite the
             // finger. Most of the apparent orbit comes from rotating the bitmap around its
             // internal pivot, not from translating the whole layer across the screen.
-            float cx = current.x + current.trailX * LgHulaHoopScene.LAYER_TRANSITION[i];
-            float cy = current.y + current.trailY * LgHulaHoopScene.LAYER_TRANSITION[i];
+            float cx = current.x + current.trailX * scene.layerTransition(i);
+            float cy = current.y + current.trailY * scene.layerTransition(i);
             drawStockLayerHolder(canvas, layer, cx, cy,
                     current.layerRadius / Math.max(1f, layer.getWidth() * .5f),
-                    current.angle + LgHulaHoopScene.LAYER_ANGLE_OFFSET[i],
+                    current.angle + scene.layerAngle(i),
                     current.pivotX, current.pivotY);
         }
         canvas.restoreToCount(coronaClip);
@@ -539,9 +545,9 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
         float ringCenterY = current.y;
         drawCentered(canvas, innerRing, ringCenterX, ringCenterY,
                 current.radius * 2.02f, current.ringAlpha, 0f);
-        float outerDiameter = STOCK_OUTER_RING_RADIUS_DP * displayMetrics.density * 2f;
+        float outerDiameter = workshop.get("v1_outer_ring") * displayMetrics.density * 2f;
         drawCentered(canvas, outerRing, ringCenterX, ringCenterY,
-                outerDiameter, current.ringAlpha, -current.angle * .35f);
+                outerDiameter, current.ringAlpha, -current.angle * workshop.get("v1_outer_rotation"));
         layerPaint.setAlpha(255);
     }
 
@@ -569,15 +575,15 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
                 current.backgroundAlpha, 0f, 1f);
         if (globalScale <= 0f || globalAlpha <= 0f) return;
         float donorDensityScale = displayMetrics.density / DONOR_XHDPI_DENSITY;
-        float angle = current.ageMs * 360f / Math.max(1, reflectionRotationCycleMs);
+        float angle = current.ageMs * 360f * workshop.get("v1_reflection_rotation") / Math.max(1, reflectionRotationCycleMs);
         for (int i = 0; i < REFLECTION_COUNT; i++) {
             float halfW = decoCircle.getWidth() * .5f * donorDensityScale
-                    * reflectionScaleX[i] * globalScale;
+                    * reflectionScaleX[i] * globalScale * workshop.get("v1_reflection_size");
             float halfH = decoCircle.getHeight() * .5f * donorDensityScale
-                    * reflectionScaleY[i] * globalScale;
+                    * reflectionScaleY[i] * globalScale * workshop.get("v1_reflection_size");
             destination.set(reflectionX[i] - halfW, reflectionY[i] - halfH,
                     reflectionX[i] + halfW, reflectionY[i] + halfH);
-            reflectionPaint.setAlpha(Math.round(255f * reflectionAlpha[i] * globalAlpha));
+            reflectionPaint.setAlpha(Math.round(255f * reflectionAlpha[i] * globalAlpha * workshop.get("v1_reflection_alpha")));
             int save = canvas.save();
             canvas.rotate(angle, reflectionX[i], reflectionY[i]);
             canvas.drawBitmap(decoCircle, null, destination, reflectionPaint);
@@ -733,108 +739,8 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
     }
 
     /** 100-segment Hermite soft body translated from LG's FluidicCircleObject. */
-    private static final class FluidicMesh {
-        private static final int RESOLUTION = 100;
-        private static final int VERTICES = RESOLUTION + 2;
-        private static final float HERMITE_TANGENT = 1.6568542f;
-        private static final float KS = .01f;
-        private static final float KD = .03f;
-        private static final float NOMINAL_FRAME_MS = 16.666666f;
-
-        private final float[] position = new float[VERTICES * 2];
-        private final float[] previousPosition = new float[VERTICES * 2];
-        private final float[] previousVelocity = new float[VERTICES * 2];
-        private final float[] targetPosition = new float[VERTICES * 2];
-        private float innerRadius;
-        private float outerRadius;
-        private float angle;
-        private float rotationSpeed = .18f;
-        private float pivotX;
-        private float pivotY;
-        private float targetPivotX;
-        private float targetPivotY;
-        private float pivotStep;
-        private boolean rotating;
-        private boolean softbody = true;
-        private long previousUpdateAt;
-        private long previousRotateAt;
-
-        void reset(long now) {
-            java.util.Arrays.fill(position, 0f);
-            java.util.Arrays.fill(previousPosition, 0f);
-            java.util.Arrays.fill(previousVelocity, 0f);
-            java.util.Arrays.fill(targetPosition, 0f);
-            innerRadius = outerRadius = 0f;
-            pivotX = pivotY = targetPivotX = targetPivotY = pivotStep = 0f;
-            softbody = true;
-            previousUpdateAt = 0L;
-            previousRotateAt = now;
-        }
-
-        void setRadii(float innerRadius, float outerRadius) {
-            this.innerRadius = Math.max(0f, innerRadius);
-            this.outerRadius = Math.max(0f, outerRadius);
-        }
-
-        void setAngle(float angle) { this.angle = angle; }
-
-        void setRotationSpeed(float speed) {
-            rotationSpeed = speed;
-            rotating = true;
-        }
-
-        void setPivot(float x, float y, float step) {
-            targetPivotX = x;
-            targetPivotY = y;
-            pivotStep = step;
-        }
-
-        void setSoftbody(boolean softbody) { this.softbody = softbody; }
-
-        void rotate(long now) {
-            float elapsed = previousRotateAt == 0L ? NOMINAL_FRAME_MS : now - previousRotateAt;
-            previousRotateAt = now;
-            if (elapsed < 0f || elapsed > 50f) elapsed = NOMINAL_FRAME_MS;
-            if (rotating) angle += rotationSpeed * elapsed;
-            if (pivotStep > 0f) {
-                pivotX = stepPivot(pivotX, targetPivotX, pivotStep);
-                pivotY = stepPivot(pivotY, targetPivotY, pivotStep);
-            } else {
-                pivotX = targetPivotX;
-                pivotY = targetPivotY;
-            }
-        }
-
-        void update(long now) {
-            float elapsed = previousUpdateAt == 0L ? NOMINAL_FRAME_MS : now - previousUpdateAt;
-            previousUpdateAt = now;
-            if (elapsed < 0f || elapsed > 50f) elapsed = NOMINAL_FRAME_MS;
-            float normalTime = elapsed / NOMINAL_FRAME_MS;
-            updateTarget();
-            if (!softbody) {
-                System.arraycopy(targetPosition, 0, position, 0, position.length);
-                return;
-            }
-            // LG's integrator assumes one update per 16.666 ms display frame. Reusing its
-            // unscaled velocity term at 90/120/144 Hz injects energy twice as often and makes
-            // the hoop oscillate violently. Semi-implicit fractional/sub-stepped integration
-            // is identical to the donor when normalTime == 1, but preserves that response on
-            // modern high-refresh panels and across an occasional dropped frame.
-            int steps = Math.max(1, (int) Math.ceil(normalTime));
-            float stepTime = normalTime / steps;
-            for (int i = 0; i < position.length; i++) {
-                float p = previousPosition[i];
-                float velocity = previousVelocity[i];
-                for (int step = 0; step < steps; step++) {
-                    float force = -KS * (p - targetPosition[i]) - KD * velocity;
-                    velocity += force * stepTime;
-                    p += velocity * stepTime;
-                }
-                position[i] = p;
-                previousVelocity[i] = velocity;
-                previousPosition[i] = p;
-            }
-        }
+    private static final class FluidicMesh extends LgHulaHoopFluidicScene.SoftBody {
+        FluidicMesh(EffectWorkshopConfig.Values workshop) { super(workshop); }
 
         void buildPath(Path path, float centerX, float centerY) {
             path.reset();
@@ -853,49 +759,6 @@ public final class LgHulaHoopEffectView extends View implements UnlockEffectRend
             path.close();
         }
 
-        private void updateTarget() {
-            float stretch = innerRadius > 0f ? outerRadius / innerRadius : 1f;
-            if (Float.isNaN(stretch) || Float.isInfinite(stretch)) stretch = 1f;
-            targetPosition[0] = targetPosition[1] = 0f;
-            int vertex = 1;
-            vertex = addQuarter(vertex, -1f, 0f, 0f, -HERMITE_TANGENT,
-                    0f, -1f, HERMITE_TANGENT, 0f, innerRadius);
-            vertex = addQuarter(vertex, 0f, -1f, HERMITE_TANGENT, 0f,
-                    stretch, 0f, 0f, HERMITE_TANGENT, innerRadius);
-            vertex = addQuarter(vertex, stretch, 0f, 0f, HERMITE_TANGENT,
-                    0f, 1f, -HERMITE_TANGENT, 0f, innerRadius);
-            addQuarter(vertex, 0f, 1f, -HERMITE_TANGENT, 0f,
-                    -1f, 0f, 0f, -HERMITE_TANGENT, innerRadius);
-            targetPosition[(RESOLUTION + 1) * 2] = targetPosition[2];
-            targetPosition[(RESOLUTION + 1) * 2 + 1] = targetPosition[3];
-        }
-
-        private int addQuarter(int startVertex, float fromX, float fromY,
-                float tangentFromX, float tangentFromY, float toX, float toY,
-                float tangentToX, float tangentToY, float scale) {
-            int quarter = RESOLUTION / 4;
-            for (int i = 0; i < quarter; i++) {
-                float s = i / (float) quarter;
-                float s2 = s * s;
-                float s3 = s2 * s;
-                float h1 = 2f * s3 - 3f * s2 + 1f;
-                float h2 = -2f * s3 + 3f * s2;
-                float h3 = s3 - 2f * s2 + s;
-                float h4 = s3 - s2;
-                int index = (startVertex + i) * 2;
-                targetPosition[index] = (fromX * h1 + toX * h2
-                        + tangentFromX * h3 + tangentToX * h4) * scale;
-                targetPosition[index + 1] = (fromY * h1 + toY * h2
-                        + tangentFromY * h3 + tangentToY * h4) * scale;
-            }
-            return startVertex + quarter;
-        }
-
-        private static float stepPivot(float from, float to, float step) {
-            float difference = from - to;
-            if (Math.abs(difference) <= step) return to;
-            return difference > 0f ? from - step : from + step;
-        }
     }
 
     private static void recycle(Bitmap bitmap) {

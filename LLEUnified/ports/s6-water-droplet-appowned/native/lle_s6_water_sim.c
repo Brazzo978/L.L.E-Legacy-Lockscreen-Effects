@@ -77,6 +77,7 @@ typedef struct LleS6Event {
 } LleS6Event;
 
 struct LleS6WaterSim {
+    LleS6WaterWorkshop workshop;
   LleS6Group groups[LLE_S6_GROUP_CAPACITY];
   LleS6Event events[LLE_S6_WATER_EVENT_QUEUE_CAPACITY];
   size_t event_head;
@@ -366,10 +367,10 @@ static void s6_initialize_particle_at(const LleS6WaterSim *sim,
   particle->extra_scale = 0.0f;
   particle->smoothing_radius =
       sim->cell_width * 0.1f * s6_pixels_per_world(sim);
-  particle->rest_density = 12.0f;
+  particle->rest_density = 12.0f * sim->workshop.density_scale;
   particle->pressure = 0.0f;
   particle->near_pressure = 0.0f;
-  particle->viscosity_sigma = 3.0f;
+  particle->viscosity_sigma = 3.0f * sim->workshop.viscosity_scale;
   particle->viscosity_beta = 0.5f;
   particle->active = true;
 }
@@ -430,22 +431,22 @@ static void s6_constrain(const LleS6WaterSim *sim,
                          LleS6Particle *particle) {
   if (particle->x < 0.0f) {
     const float overshoot = -particle->x;
-    particle->velocity_x = -particle->velocity_x * 0.15f;
+    particle->velocity_x = -particle->velocity_x * sim->workshop.edge_bounce;
     particle->x = 2.0f * overshoot;
   }
   if (particle->x > sim->width) {
     const float overshoot = particle->x - sim->width;
-    particle->velocity_x = -particle->velocity_x * 0.15f;
+    particle->velocity_x = -particle->velocity_x * sim->workshop.edge_bounce;
     particle->x = sim->width - 2.0f * overshoot;
   }
   if (particle->y < 0.0f) {
     const float overshoot = -particle->y;
-    particle->velocity_y = -particle->velocity_y * 0.15f;
+    particle->velocity_y = -particle->velocity_y * sim->workshop.edge_bounce;
     particle->y = 2.0f * overshoot;
   }
   if (particle->y > sim->height) {
     const float overshoot = particle->y - sim->height;
-    particle->velocity_y = -particle->velocity_y * 0.15f;
+    particle->velocity_y = -particle->velocity_y * sim->workshop.edge_bounce;
     particle->y = sim->height - 2.0f * overshoot;
   }
 }
@@ -713,9 +714,9 @@ static void s6_apply_wall_fields(LleS6WaterSim *sim, float frame_scale) {
   const float bounded_scale =
       s6_clamp(frame_scale, 0.25f, LLE_S6_NATIVE_REFRESH_MAX_SCALE);
   const float sensor_x =
-      -s6_clamp(sim->mapped_tilt_x, -10.0f, 10.0f) * 0.01f;
+      -s6_clamp(sim->mapped_tilt_x, -10.0f, 10.0f) * 0.01f * sim->workshop.tilt_x_scale;
   const float sensor_y =
-      s6_clamp(sim->mapped_tilt_y, -10.0f, 10.0f) * 0.015f;
+      s6_clamp(sim->mapped_tilt_y, -10.0f, 10.0f) * 0.015f * sim->workshop.tilt_y_scale;
   for (group_index = 0u; group_index < LLE_S6_GROUP_CAPACITY;
        ++group_index) {
     LleS6Group *group = &sim->groups[group_index];
@@ -772,7 +773,7 @@ static void s6_apply_wall_fields(LleS6WaterSim *sim, float frame_scale) {
           particle->phase =
               s6_clamp(particle->phase - 0.015f * bounded_scale,
                        0.0f, 1.0f);
-          particle->rest_density = tablet ? 4.5f : 3.0f;
+          particle->rest_density = (tablet ? 4.5f : 3.0f) * sim->workshop.density_scale;
           s6_nudge_primary_neighbours(
               sim, particle, direction_x * 0.35f * 0.0001f * bounded_scale *
                                  s6_pixels_per_world(sim),
@@ -782,7 +783,7 @@ static void s6_apply_wall_fields(LleS6WaterSim *sim, float frame_scale) {
       if (hard_y) {
         particle->render_offset_y += direction_y * hard_step;
         if (broad) {
-          particle->rest_density = 4.5f;
+          particle->rest_density = 4.5f * sim->workshop.density_scale;
           s6_nudge_primary_neighbours(
               sim, particle, direction_y * 0.35f * 0.0001f * bounded_scale *
                                  s6_pixels_per_world(sim),
@@ -817,13 +818,13 @@ static void s6_grow_particle(const LleS6WaterSim *sim,
   float curve;
   float blend;
   const float target_density =
-      sim->project_kind == LLE_S6_WATER_PROJECT_TABLET ? 6.0f : 4.0f;
+      (sim->project_kind == LLE_S6_WATER_PROJECT_TABLET ? 6.0f : 4.0f) * sim->workshop.density_scale;
   const float target_radius =
-      sim->cell_width * 3.7f * s6_pixels_per_world(sim);
+      sim->cell_width * 3.7f * s6_pixels_per_world(sim) * sim->workshop.radius_scale;
   if (particle->phase >= 1.0f) {
     return;
   }
-  particle->phase = s6_min(particle->phase + increment, 1.0f);
+  particle->phase = s6_min(particle->phase + increment * sim->workshop.growth_scale, 1.0f);
   curve = s6_sine33(particle->phase);
   /* phase is already advanced in elapsed 60 Hz ticks. Convert the recovered
    * per-tick attraction coefficient as well, otherwise high-refresh draws
@@ -833,8 +834,8 @@ static void s6_grow_particle(const LleS6WaterSim *sim,
       (target_radius - particle->smoothing_radius) * blend;
   particle->rest_density +=
       (target_density - particle->rest_density) * blend;
-  particle->pressure += (0.4f - particle->pressure) * blend;
-  particle->near_pressure += (0.4f - particle->near_pressure) * blend;
+  particle->pressure += (0.4f * sim->workshop.pressure_scale - particle->pressure) * blend;
+  particle->near_pressure += (0.4f * sim->workshop.near_pressure_scale - particle->near_pressure) * blend;
 }
 
 static void s6_advance_affordance(LleS6WaterSim *sim, LleS6Group *group,
@@ -1235,6 +1236,60 @@ static void s6_reset_state(LleS6WaterSim *sim) {
   ++sim->reset_serial;
 }
 
+void lle_s6_water_sim_set_workshop(LleS6WaterSim *sim, const float *values, size_t count) {
+    if (sim == NULL) return;
+    /* Invalid arrays restore all defaults atomically; each non-finite field uses its default. */
+    const bool supplied = values != NULL && count == LLE_S6_WATER_WORKSHOP_COUNT;
+    { float v = supplied && isfinite(values[0]) ? values[0] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.radius_scale = v; }
+    { float v = supplied && isfinite(values[1]) ? values[1] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.density_scale = v; }
+    { float v = supplied && isfinite(values[2]) ? values[2] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.viscosity_scale = v; }
+    { float v = supplied && isfinite(values[3]) ? values[3] : 1.0f;
+      v = fmaxf(0.0f, fminf(1.5f, v));
+      sim->workshop.pressure_scale = v; }
+    { float v = supplied && isfinite(values[4]) ? values[4] : 1.0f;
+      v = fmaxf(0.0f, fminf(1.5f, v));
+      sim->workshop.near_pressure_scale = v; }
+    { float v = supplied && isfinite(values[5]) ? values[5] : 1.0f;
+      v = fmaxf(0.5f, fminf(1.5f, v));
+      sim->workshop.growth_scale = v; }
+    { float v = supplied && isfinite(values[6]) ? values[6] : 0.15f;
+      v = fmaxf(0.0f, fminf(0.6f, v));
+      sim->workshop.edge_bounce = v; }
+    { float v = supplied && isfinite(values[7]) ? values[7] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.tilt_x_scale = v; }
+    { float v = supplied && isfinite(values[8]) ? values[8] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.tilt_y_scale = v; }
+    { float v = supplied && isfinite(values[9]) ? values[9] : 1.0f;
+      v = fmaxf(0.0f, fminf(2.0f, v));
+      sim->workshop.refraction_scale = v; }
+    { float v = supplied && isfinite(values[10]) ? values[10] : 0.5f;
+      v = fmaxf(0.25f, fminf(0.8f, v));
+      sim->workshop.density_threshold = v; }
+    { float v = supplied && isfinite(values[11]) ? values[11] : 0.075f;
+      v = fmaxf(0.0f, fminf(0.15f, v));
+      sim->workshop.edge_offset = v; }
+    { float v = supplied && isfinite(values[12]) ? values[12] : 0.15f;
+      v = fmaxf(0.0f, fminf(0.3f, v));
+      sim->workshop.shadow_offset = v; }
+    { float v = supplied && isfinite(values[13]) ? values[13] : 12.0f;
+      v = fmaxf(0.0f, fminf(24.0f, v));
+      sim->workshop.shadow_range = v; }
+    { float v = supplied && isfinite(values[14]) ? values[14] : 0.75001875f;
+      v = fmaxf(0.5f, fminf(1.0f, v));
+      sim->workshop.refraction_eta = v; }
+    { float v = supplied && isfinite(values[15]) ? values[15] : 0.075f;
+      v = fmaxf(0.0f, fminf(0.15f, v));
+      sim->workshop.refraction_amplitude = v; }
+}
+
 LleS6WaterSim *lle_s6_water_sim_create(float width, float height,
                                        int project_kind, int quality,
                                        uint64_t seed) {
@@ -1247,6 +1302,7 @@ LleS6WaterSim *lle_s6_water_sim_create(float width, float height,
   if (sim == NULL) {
     return NULL;
   }
+  lle_s6_water_sim_set_workshop(sim, NULL, 0u);
   sim->project_kind = project_kind;
   sim->quality = quality;
   sim->width = width > 0.0f && isfinite(width) ? width : 1.0f;
@@ -1681,16 +1737,16 @@ void lle_s6_water_sim_get_render_state(const LleS6WaterSim *sim,
            ? 0.0009765625f
            : 0.00078125f);
   out_state->edge_ratio = sim->edge_ratio;
-  out_state->refraction_ratio = sim->refraction_ratio;
+  out_state->refraction_ratio = sim->refraction_ratio * sim->workshop.refraction_scale;
   out_state->edge_offset_ratio = sim->edge_offset_ratio;
   out_state->specular_ratio = sim->specular_ratio;
   out_state->bottom_offset = 0.0f;
-  out_state->density_threshold = 0.5f;
-  out_state->edge_offset = 0.075f;
-  out_state->shadow_offset = 0.15f;
-  out_state->shadow_range = 12.0f;
-  out_state->refraction_eta = 0.7500187504687617f;
-  out_state->refraction_amplitude = 0.075f;
+  out_state->density_threshold = sim->workshop.density_threshold;
+  out_state->edge_offset = sim->workshop.edge_offset;
+  out_state->shadow_offset = sim->workshop.shadow_offset;
+  out_state->shadow_range = sim->workshop.shadow_range;
+  out_state->refraction_eta = sim->workshop.refraction_eta;
+  out_state->refraction_amplitude = sim->workshop.refraction_amplitude;
   out_state->density_particle_count =
       lle_s6_water_sim_particle_count(sim);
   out_state->frame_index = sim->frame_index;

@@ -65,6 +65,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
 
     private final boolean inkMode;
     private final boolean adaptiveRefresh;
+    private final EffectWorkshopConfig.Values workshop;
     private final RippleRenderer rippleRenderer = new RippleRenderer();
     private final Object bitmapLock = new Object();
     private final Set<Bitmap> ownedBitmaps = Collections.newSetFromMap(
@@ -114,6 +115,7 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
     S3Arm64RippleEffectView(Context context, boolean inkMode, boolean adaptiveRefresh) {
         super(context);
         this.inkMode = inkMode;
+        workshop = EffectWorkshopPrefs.values(context, inkMode ? 12 : 10);
         this.adaptiveRefresh = adaptiveRefresh;
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
@@ -1144,6 +1146,12 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     logNativeError("Indigo density init failed");
                     return;
                 }
+                if (inkMode && workshop.enabled) {
+                    S3RippleLifecycleNative.nativeConfigureInk(workshop.get("ink_radius"),
+                            workshop.get("ink_impulse"), workshop.get("ink_velocity"),
+                            workshop.get("ink_advection"), workshop.get("ink_decay"),
+                            workshop.get("velocity_decay"), workshop.intValue("jacobi_iterations"));
+                }
                 gpuReady = true;
                 initializationFailed = false;
                 initializedGeneration = contextGeneration;
@@ -1211,13 +1219,13 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                         renderMeshHeight,
                         DETAIL_WIDTH / 2,
                         DETAIL_HEIGHT / 2,
-                        REFRACTIVE_INDEX,
-                        REFLECTION_RATIO,
+                        workshop.get("refraction"),
+                        workshop.get("reflection"),
                         ALPHA_RATIO_1,
                         ALPHA_RATIO_2,
-                        FRESNEL_RATIO,
-                        SPECULAR_RATIO,
-                        EXPONENT_RATIO);
+                        workshop.get("fresnel"),
+                        workshop.get("specular"),
+                        workshop.get("exponent"));
                 if (!rendered) {
                     if (!renderErrorLogged) {
                         logNativeError("normal render failed");
@@ -1556,8 +1564,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     DETAIL_WIDTH,
                     DETAIL_HEIGHT,
                     true,
-                    REDUCTION_RATE,
-                    WAVE_COEFFICIENT);
+                    workshop.get("wave_damping"),
+                    workshop.get("wave_coefficient"));
             fillGpuHeights();
             if (inkMode && inkFramesRemaining > 0) {
                 if (!S3RippleLifecycleNative.nativeAdvanceInk(
@@ -1596,8 +1604,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
                     DETAIL_WIDTH,
                     DETAIL_HEIGHT,
                     true,
-                    REDUCTION_RATE,
-                    WAVE_COEFFICIENT,
+                    workshop.get("wave_damping"),
+                    workshop.get("wave_coefficient"),
                     stockTicks);
             fillGpuHeights();
             simulationIdle = empty != 0 && !glTouched;
@@ -1659,7 +1667,8 @@ public final class S3Arm64RippleEffectView extends GLSurfaceView
         }
 
         private float currentIntensity() {
-            return surfaceWidth > surfaceHeight ? LANDSCAPE_INTENSITY : PORTRAIT_INTENSITY;
+            return (surfaceWidth > surfaceHeight ? LANDSCAPE_INTENSITY : PORTRAIT_INTENSITY)
+                    * workshop.get("wave_intensity");
         }
 
         private int dragRippleThresholdPx() {

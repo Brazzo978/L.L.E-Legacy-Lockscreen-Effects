@@ -1,6 +1,7 @@
 #include "../lle_n3_ink_worker.h"
 
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -89,6 +90,39 @@ static void check_mode_fallback_to_mode2_transition(int fallback_mode,
   lle_n3_ink_worker_destroy(worker);
 }
 
+static void configured_trace(int iterations, float backtrace, int configure,
+                             int reset, unsigned char *output) {
+  lle_n3_ink_worker_reset_host_lrand48_for_test();
+  LleN3InkWorker *worker = lle_n3_ink_worker_create(20, 20, 240, 240);
+  LleN3InkWorkerStep step = worker_step(120,120,100,110);
+  require(worker != NULL, "configured worker create");
+  if (configure) lle_n3_ink_worker_configure(worker, iterations, backtrace);
+  if (reset) lle_n3_ink_worker_reset(worker);
+  for (int i=0; i<8; ++i) require(lle_n3_ink_worker_step(worker, &step, output, 1600),
+                                 "configured worker tick");
+  lle_n3_ink_worker_destroy(worker);
+}
+static void verify_workshop_config(void) {
+  unsigned char stock[1600], defaults[1600], tuned[1600], reset[1600], bounded[1600];
+  configured_trace(10, .25f, 0, 0, stock);
+  configured_trace(10, .25f, 1, 0, defaults);
+  require(memcmp(stock,defaults,1600)==0, "explicit defaults changed stock worker");
+  configured_trace(4, .25f, 1, 0, tuned);
+  require(memcmp(stock,tuned,1600)!=0, "Jacobi tuning did not affect actual velocity");
+  configured_trace(10, .5f, 1, 0, tuned);
+  require(memcmp(stock,tuned,1600)!=0, "backtrace tuning did not affect actual velocity");
+  configured_trace(4, .5f, 1, 0, tuned);
+  require(memcmp(stock,tuned,1600)!=0, "solver/advection tuning did not affect velocity");
+  configured_trace(4, .5f, 1, 1, reset);
+  require(memcmp(tuned,reset,1600)==0, "reset lost per-worker configuration");
+  configured_trace(-100, 100.f, 1, 0, bounded);
+  require(memcmp(tuned,bounded,1600)==0, "native config bounds not enforced");
+  configured_trace(10, NAN, 1, 0, bounded);
+  require(memcmp(stock,bounded,1600)==0, "nonfinite native advection did not use default");
+  configured_trace(10, .25f, 0, 0, defaults);
+  require(memcmp(stock,defaults,1600)==0, "configuration leaked to next worker");
+}
+
 int main(void) {
   lle_n3_ink_worker_reset_host_lrand48_for_test();
   const int expected[] = {851401618, 1804928587, 758783491, 959030623, 684387517};
@@ -169,6 +203,7 @@ int main(void) {
   free(second);
   free(third);
   lle_n3_ink_worker_destroy(worker);
+  verify_workshop_config();
   puts("N3 Ripple Ink worker host tests passed");
   return 0;
 }

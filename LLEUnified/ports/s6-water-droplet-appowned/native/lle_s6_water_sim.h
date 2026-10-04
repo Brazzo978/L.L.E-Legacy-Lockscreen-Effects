@@ -28,6 +28,29 @@ extern "C" {
 
 typedef struct LleS6WaterSim LleS6WaterSim;
 
+/* Immutable per-instance tuning, array order documented in WORKSHOP.md. */
+typedef struct LleS6WaterWorkshop {
+    float radius_scale;
+    float density_scale;
+    float viscosity_scale;
+    float pressure_scale;
+    float near_pressure_scale;
+    float growth_scale;
+    float edge_bounce;
+    float tilt_x_scale;
+    float tilt_y_scale;
+    float refraction_scale;
+    float density_threshold;
+    float edge_offset;
+    float shadow_offset;
+    float shadow_range;
+    float refraction_eta;
+    float refraction_amplitude;
+} LleS6WaterWorkshop;
+#define LLE_S6_WATER_WORKSHOP_COUNT 16u
+void lle_s6_water_sim_set_workshop(LleS6WaterSim *sim, const float *values, size_t count);
+
+
 /*
  * Immutable, renderer-facing density descriptor. Coordinates are surface
  * pixels in Android top-left space. diameter_px is the recovered stock

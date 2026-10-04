@@ -47,6 +47,8 @@ struct LleN3InkWorker {
   float *divergence;
   /* ENB4's persisted direct-capsule gate (+0x12c), initially 60px. */
   float margin_state;
+  int jacobi_iterations;
+  float backtrace_step;
   LleN3InkWorkerStep pending_step;
   bool worker_pending;
 #ifdef LLE_N3_INK_WORKER_TEST_API
@@ -212,9 +214,9 @@ static void n3_self_advect_velocity(LleN3InkWorker *worker,
       const size_t index = n3_index(worker, x, y);
       const float source_x = n3_finite_or_zero(worker->flow_x[index]);
       const float source_y = n3_finite_or_zero(worker->flow_y[index]);
-      const float u = ((float)x + 0.5f - LLE_N3_INK_BACKTRACE_STEP * source_x)
+      const float u = ((float)x + 0.5f - worker->backtrace_step * source_x)
           * inverse_width;
-      const float v = (cell_center_y - LLE_N3_INK_BACKTRACE_STEP * source_y)
+      const float v = (cell_center_y - worker->backtrace_step * source_y)
           * inverse_height;
       float sampled_x = n3_sample_bilinear(worker, worker->flow_x, u, v);
       float sampled_y = n3_sample_bilinear(worker, worker->flow_y, u, v);
@@ -269,7 +271,7 @@ static void n3_project_velocity(LleN3InkWorker *worker,
   }
   float *source = worker->pressure_a;
   float *target = worker->pressure_b;
-  for (int iteration = 0; iteration < LLE_N3_INK_JACOBI_ITERATIONS; ++iteration) {
+  for (int iteration = 0; iteration < worker->jacobi_iterations; ++iteration) {
     for (int y = 0; y < worker->velocity_height; ++y) {
       for (int x = 0; x < worker->velocity_width; ++x) {
         const size_t index = n3_index(worker, x, y);
@@ -423,6 +425,8 @@ LleN3InkWorker *lle_n3_ink_worker_create(int velocity_width,
   worker->screen_width = screen_width;
   worker->screen_height = screen_height;
   worker->cell_count = count;
+  worker->jacobi_iterations = LLE_N3_INK_JACOBI_ITERATIONS;
+  worker->backtrace_step = LLE_N3_INK_BACKTRACE_STEP;
   worker->margin_state = LLE_N3_INK_MARGIN_PX;
   worker->flow_x = calloc(count, sizeof(float));
   worker->flow_y = calloc(count, sizeof(float));
@@ -438,6 +442,13 @@ LleN3InkWorker *lle_n3_ink_worker_create(int velocity_width,
     return NULL;
   }
   return worker;
+}
+
+void lle_n3_ink_worker_configure(LleN3InkWorker *worker, int iterations, float backtrace_step) {
+  if (worker == NULL || !n3_join_worker(worker)) return;
+  worker->jacobi_iterations = iterations < 4 ? 4 : (iterations > 20 ? 20 : iterations);
+  worker->backtrace_step = isfinite(backtrace_step)
+      ? n3_clamp(backtrace_step, .0625f, .5f) : LLE_N3_INK_BACKTRACE_STEP;
 }
 
 void lle_n3_ink_worker_reset(LleN3InkWorker *worker) {

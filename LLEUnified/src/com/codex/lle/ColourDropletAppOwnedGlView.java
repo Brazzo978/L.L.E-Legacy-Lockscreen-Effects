@@ -64,6 +64,7 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
     }
 
     private final Listener listener;
+    private final EffectWorkshopConfig.Values workshop;
     private final Object bitmapLock = new Object();
     private final Object commandLock = new Object();
     private final AtomicInteger animationGeneration = new AtomicInteger();
@@ -130,7 +131,22 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
             Listener listener,
             boolean nativeRefreshPhysicsEnabled,
             float nativeRefreshSpeedMultiplier) {
+        this(context, normalMap, edgeDensityMap, projectKind, logicalWidth, logicalHeight, listener, nativeRefreshPhysicsEnabled, nativeRefreshSpeedMultiplier, EffectWorkshopConfig.originals(23));
+    }
+
+    ColourDropletAppOwnedGlView(
+            Context context,
+            Bitmap normalMap,
+            Bitmap edgeDensityMap,
+            int projectKind,
+            int logicalWidth,
+            int logicalHeight,
+            Listener listener,
+            boolean nativeRefreshPhysicsEnabled,
+            float nativeRefreshSpeedMultiplier,
+            EffectWorkshopConfig.Values workshop) {
         super(context);
+        this.workshop = workshop == null ? EffectWorkshopConfig.originals(23) : workshop;
         this.normalMap = normalMap;
         this.edgeDensityMap = edgeDensityMap;
         this.projectKind = projectKind;
@@ -164,6 +180,8 @@ final class ColourDropletAppOwnedGlView extends GLSurfaceView
                 if (nativeHandle == 0L) {
                     throw new IllegalStateException("nativeCreate returned zero");
                 }
+                if (workshop.enabled) ColourDropletNative.nativeSetWorkshop(
+                        nativeHandle, EffectWorkshopDropsParameters.pack(workshop));
             } else {
                 ColourDropletNative.nativeAbandonGpu(nativeHandle);
             }

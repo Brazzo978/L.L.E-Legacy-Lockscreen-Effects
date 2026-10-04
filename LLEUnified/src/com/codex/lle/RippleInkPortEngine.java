@@ -114,6 +114,16 @@ public final class RippleInkPortEngine {
     private int densityPressStep;
     private boolean releaseDensityActive;
 
+    private float waveDamping = REDUCTION_RATE;
+    private float waveCoefficient = WAVE_COEFFICIENT;
+    private float intensityMultiplier = 1.0f;
+
+    void configureWorkshop(float damping, float coefficient, float intensity) {
+        waveDamping = damping;
+        waveCoefficient = coefficient;
+        intensityMultiplier = intensity;
+    }
+
     public RippleInkPortEngine() {
         water.initWaters(
                 VERTEX_COUNT,
@@ -531,7 +541,7 @@ public final class RippleInkPortEngine {
     }
 
     private float currentIntensity() {
-        return surfaceWidth > surfaceHeight ? LANDSCAPE_INTENSITY : PORTRAIT_INTENSITY;
+        return (surfaceWidth > surfaceHeight ? LANDSCAPE_INTENSITY : PORTRAIT_INTENSITY) * intensityMultiplier;
     }
 
     private void injectWater(float localX, float localY, float strength) {
@@ -724,8 +734,8 @@ public final class RippleInkPortEngine {
                 yEnd,
                 DETAIL_WIDTH,
                 DETAIL_HEIGHT,
-                REDUCTION_RATE,
-                WAVE_COEFFICIENT,
+                waveDamping,
+                waveCoefficient,
                 stockTicks);
     }
 
@@ -923,8 +933,8 @@ public final class RippleInkPortEngine {
                 yEnd,
                 DETAIL_WIDTH,
                 DETAIL_HEIGHT,
-                REDUCTION_RATE,
-                WAVE_COEFFICIENT);
+                waveDamping,
+                waveCoefficient);
     }
 
     private void fillGpuHeights() {

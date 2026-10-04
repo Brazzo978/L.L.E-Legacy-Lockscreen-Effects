@@ -41,7 +41,10 @@ typedef struct AtTriangle {
     bool ray_active;
 } AtTriangle;
 
+enum { AT_WORKSHOP_COUNT = 13 };
 typedef struct AtScene {
+    bool workshop_enabled;
+    float workshop[AT_WORKSHOP_COUNT];
     AtTriangle triangles[AT_MAX_TRIANGLES];
     int triangle_count;
     int width;
@@ -92,6 +95,7 @@ typedef struct AtGles {
 } AtGles;
 
 void at_scene_init(AtScene *scene, int width, int height);
+void at_scene_configure(AtScene *scene, const float *values, size_t count);
 void at_scene_reset(AtScene *scene);
 void at_scene_touch(AtScene *scene, int action, float x, float y, int64_t event_time_ms);
 void at_scene_realign(AtScene *scene, float x, float y);

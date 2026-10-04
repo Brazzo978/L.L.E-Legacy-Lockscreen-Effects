@@ -135,7 +135,7 @@ public final class SparklingBubblesAppOwnedEffectView extends FrameLayout
 
         Bitmap blurMask = decodeMask();
         glView = new SparklingBubblesAppOwnedGlView(
-                context, blurMask, nativeRefreshPhysicsEnabled, speedMultiplier, this);
+                context, blurMask, nativeRefreshPhysicsEnabled, speedMultiplier, this, EffectWorkshopPrefs.values(context, 22));
         addView(glView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 

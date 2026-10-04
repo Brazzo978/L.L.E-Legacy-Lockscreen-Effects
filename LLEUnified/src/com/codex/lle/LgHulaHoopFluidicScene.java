@@ -43,6 +43,14 @@ final class LgHulaHoopFluidicScene {
     private int rotationDelayFrames;
     private long lastRenderedAt = Long.MIN_VALUE;
 
+    private final EffectWorkshopConfig.Values workshop;
+
+    LgHulaHoopFluidicScene() { this(EffectWorkshopConfig.originals(42)); }
+
+    LgHulaHoopFluidicScene(EffectWorkshopConfig.Values workshop) {
+        this.workshop = workshop == null ? EffectWorkshopConfig.originals(42) : workshop;
+    }
+
     void configure(int width, int height, float density) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
@@ -51,8 +59,16 @@ final class LgHulaHoopFluidicScene {
 
     int state() { return stage; }
     boolean gestureActive() { return stage == ACTIVE; }
-    float minimumRadius() { return MIN_RADIUS_DP * density; }
-    float outerRingStride() { return OUTER_RING_STRIDE_DP * density; }
+    float minimumRadius() { return workshop.get("v2_minimum_radius") * density; }
+    float outerRingStride() { return workshop.get("v2_ring_stride") * density; }
+    float stretchScale(float randomUnit) {
+        // Keep the donor's literal range in the disabled path: subtracting the
+        // schema endpoints (1.1f - .7f) changes its floating-point result.
+        return workshop.enabled
+                ? workshop.get("v2_stretch_min") + randomUnit
+                        * (workshop.get("v2_stretch_max") - workshop.get("v2_stretch_min"))
+                : .7f + randomUnit * .4f;
+    }
     float maxDistance() { return (float) Math.hypot(width, height); }
 
     void begin(float x, float y, long now) {
@@ -85,10 +101,10 @@ final class LgHulaHoopFluidicScene {
         // sign or diagonal drags bend the hoop in the mirrored direction.
         angle = (float) -Math.toDegrees(Math.atan2(nextY - downY, nextX - downX));
 
-        if (speed < STRETCH_SPEED_PX_PER_MS) {
+        if (speed < workshop.get("v2_stretch_speed")) {
             radius = Math.max(nextDistance, minimumRadius());
             dragDistance = radius;
-            if (stretched) rotationDelayFrames = STRETCH_DELAY_FRAMES;
+            if (stretched) rotationDelayFrames = workshop.intValue("v2_stretch_delay");
             stretched = false;
         } else {
             radius = Math.max(radius, minimumRadius());
@@ -96,7 +112,7 @@ final class LgHulaHoopFluidicScene {
                 dragDistance = radius;
                 stretched = false;
             } else if (nextDistance > radius) {
-                if (!stretched) stretchDelayFrames = STRETCH_DELAY_FRAMES;
+                if (!stretched) stretchDelayFrames = workshop.intValue("v2_stretch_delay");
                 stretched = true;
                 dragDistance = nextDistance;
             } else {
@@ -105,8 +121,8 @@ final class LgHulaHoopFluidicScene {
                 stretched = false;
             }
         }
-        if (radius > 0f && dragDistance / radius > MAX_STRETCH_RATIO) {
-            radius = dragDistance / MAX_STRETCH_RATIO;
+        if (radius > 0f && dragDistance / radius > workshop.get("v2_max_stretch")) {
+            radius = dragDistance / workshop.get("v2_max_stretch");
         }
         previousDragDistance = nextDistance;
         previousTouchAt = now;
@@ -120,7 +136,7 @@ final class LgHulaHoopFluidicScene {
             stage = COMPLETE;
             stretched = false;
             unlock = true;
-            rotationDelayFrames = STRETCH_DELAY_FRAMES;
+            rotationDelayFrames = workshop.intValue("v2_stretch_delay");
             float bounce = clamp(dragDistance / maxDistance(), .5f, 1f);
             radiusStartValue = radius * bounce;
             maxRingSize = maxDistance() * (.7f + bounce);
@@ -234,6 +250,161 @@ final class LgHulaHoopFluidicScene {
             stretchDelayFrames = rotationDelayFrames = 0;
             terminalAgeMs = 0L;
             x = y = radius = dragDistance = angle = 0f;
+        }
+    }
+    static class SoftBody {
+        protected static final int RESOLUTION = 100;
+        private static final int VERTICES = RESOLUTION + 2;
+        private static final float HERMITE_TANGENT = 1.6568542f;
+        private static final float KS = .01f;
+        private static final float KD = .03f;
+        private static final float NOMINAL_FRAME_MS = 16.666666f;
+
+        private final EffectWorkshopConfig.Values workshop;
+
+        SoftBody(EffectWorkshopConfig.Values workshop) { this.workshop = workshop; }
+
+        protected final float[] position = new float[VERTICES * 2];
+        private final float[] previousPosition = new float[VERTICES * 2];
+        private final float[] previousVelocity = new float[VERTICES * 2];
+        private final float[] targetPosition = new float[VERTICES * 2];
+        private float innerRadius;
+        private float outerRadius;
+        protected float angle;
+        private float rotationSpeed = .18f;
+        protected float pivotX;
+        protected float pivotY;
+        private float targetPivotX;
+        private float targetPivotY;
+        private float pivotStep;
+        private boolean rotating;
+        private boolean softbody = true;
+        private long previousUpdateAt;
+        private long previousRotateAt;
+
+        float coordinate(int index) { return position[index]; }
+
+        void reset(long now) {
+            java.util.Arrays.fill(position, 0f);
+            java.util.Arrays.fill(previousPosition, 0f);
+            java.util.Arrays.fill(previousVelocity, 0f);
+            java.util.Arrays.fill(targetPosition, 0f);
+            innerRadius = outerRadius = 0f;
+            pivotX = pivotY = targetPivotX = targetPivotY = pivotStep = 0f;
+            softbody = true;
+            previousUpdateAt = 0L;
+            previousRotateAt = now;
+        }
+
+        void setRadii(float innerRadius, float outerRadius) {
+            this.innerRadius = Math.max(0f, innerRadius);
+            this.outerRadius = Math.max(0f, outerRadius);
+        }
+
+        void setAngle(float angle) { this.angle = angle; }
+
+        void setRotationSpeed(float speed) {
+            rotationSpeed = speed;
+            rotating = true;
+        }
+
+        void setPivot(float x, float y, float step) {
+            targetPivotX = x;
+            targetPivotY = y;
+            pivotStep = step;
+        }
+
+        void setSoftbody(boolean softbody) { this.softbody = softbody; }
+
+        void rotate(long now) {
+            float elapsed = previousRotateAt == 0L ? NOMINAL_FRAME_MS : now - previousRotateAt;
+            previousRotateAt = now;
+            if (elapsed < 0f || elapsed > 50f) elapsed = NOMINAL_FRAME_MS;
+            if (rotating) angle += rotationSpeed * elapsed;
+            if (pivotStep > 0f) {
+                pivotX = stepPivot(pivotX, targetPivotX, pivotStep);
+                pivotY = stepPivot(pivotY, targetPivotY, pivotStep);
+            } else {
+                pivotX = targetPivotX;
+                pivotY = targetPivotY;
+            }
+        }
+
+        void update(long now) {
+            float elapsed = previousUpdateAt == 0L ? NOMINAL_FRAME_MS : now - previousUpdateAt;
+            previousUpdateAt = now;
+            if (elapsed < 0f || elapsed > 50f) elapsed = NOMINAL_FRAME_MS;
+            float normalTime = elapsed / NOMINAL_FRAME_MS;
+            updateTarget();
+            if (!softbody) {
+                System.arraycopy(targetPosition, 0, position, 0, position.length);
+                return;
+            }
+            // LG's integrator assumes one update per 16.666 ms display frame. Reusing its
+            // unscaled velocity term at 90/120/144 Hz injects energy twice as often and makes
+            // the hoop oscillate violently. Semi-implicit fractional/sub-stepped integration
+            // is identical to the donor when normalTime == 1, but preserves that response on
+            // modern high-refresh panels and across an occasional dropped frame.
+            int steps = Math.max(1, (int) Math.ceil(normalTime));
+            float stepTime = normalTime / steps;
+            for (int i = 0; i < position.length; i++) {
+                float p = previousPosition[i];
+                float velocity = previousVelocity[i];
+                for (int step = 0; step < steps; step++) {
+                    float force = -workshop.get("v2_spring") * (p - targetPosition[i])
+                            - workshop.get("v2_damping") * velocity;
+                    velocity += force * stepTime;
+                    p += velocity * stepTime;
+                }
+                position[i] = p;
+                previousVelocity[i] = velocity;
+                previousPosition[i] = p;
+            }
+        }
+
+        private void updateTarget() {
+            float stretch = innerRadius > 0f ? outerRadius / innerRadius : 1f;
+            if (Float.isNaN(stretch) || Float.isInfinite(stretch)) stretch = 1f;
+            targetPosition[0] = targetPosition[1] = 0f;
+            float tangent = workshop.get("v2_hermite_tangent");
+            int vertex = 1;
+            vertex = addQuarter(vertex, -1f, 0f, 0f, -tangent,
+                    0f, -1f, tangent, 0f, innerRadius);
+            vertex = addQuarter(vertex, 0f, -1f, tangent, 0f,
+                    stretch, 0f, 0f, tangent, innerRadius);
+            vertex = addQuarter(vertex, stretch, 0f, 0f, tangent,
+                    0f, 1f, -tangent, 0f, innerRadius);
+            addQuarter(vertex, 0f, 1f, -tangent, 0f,
+                    -1f, 0f, 0f, -tangent, innerRadius);
+            targetPosition[(RESOLUTION + 1) * 2] = targetPosition[2];
+            targetPosition[(RESOLUTION + 1) * 2 + 1] = targetPosition[3];
+        }
+
+        private int addQuarter(int startVertex, float fromX, float fromY,
+                float tangentFromX, float tangentFromY, float toX, float toY,
+                float tangentToX, float tangentToY, float scale) {
+            int quarter = RESOLUTION / 4;
+            for (int i = 0; i < quarter; i++) {
+                float s = i / (float) quarter;
+                float s2 = s * s;
+                float s3 = s2 * s;
+                float h1 = 2f * s3 - 3f * s2 + 1f;
+                float h2 = -2f * s3 + 3f * s2;
+                float h3 = s3 - 2f * s2 + s;
+                float h4 = s3 - s2;
+                int index = (startVertex + i) * 2;
+                targetPosition[index] = (fromX * h1 + toX * h2
+                        + tangentFromX * h3 + tangentToX * h4) * scale;
+                targetPosition[index + 1] = (fromY * h1 + toY * h2
+                        + tangentFromY * h3 + tangentToY * h4) * scale;
+            }
+            return startVertex + quarter;
+        }
+
+        private static float stepPivot(float from, float to, float step) {
+            float difference = from - to;
+            if (Math.abs(difference) <= step) return to;
+            return difference > 0f ? from - step : from + step;
         }
     }
 }

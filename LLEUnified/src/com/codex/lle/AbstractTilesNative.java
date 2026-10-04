@@ -40,6 +40,8 @@ final class AbstractTilesNative {
 
     static native int nativeBridgeVersion();
 
+    static native void nativeConfigureWorkshop(float[] values);
+
     /** Creates or resizes GPU state. A GLES2 context must be current. */
     static native boolean nativeInitGpu(int width, int height, boolean lineEnabled);
 

@@ -44,6 +44,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
 
     private final FrameLayout windowHost;
     private final boolean adaptiveRefresh;
+    private final EffectWorkshopConfig.Values workshop;
     private final WatercolorRenderer renderer = new WatercolorRenderer();
     private final Object bitmapLock = new Object();
     private final Object readinessLock = new Object();
@@ -108,6 +109,7 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
     WatercolorArm64EffectView(Context context, boolean adaptiveRefresh) {
         super(context);
         this.adaptiveRefresh = adaptiveRefresh;
+        workshop = EffectWorkshopPrefs.values(context, 3);
         ownsNativeSlot = NATIVE_OWNER.compareAndSet(null, this);
 
         setEGLContextClientVersion(2);
@@ -598,6 +600,13 @@ public final class WatercolorArm64EffectView extends GLSurfaceView
             }
             try {
                 nativeBridge.init(Math.max(1, width), Math.max(1, height), true);
+                if (workshop.enabled) nativeBridge.setParameters(
+                        new int[]{1,2,3,4,5,6,7,8,9,10}, new float[]{
+                        workshop.get("brush_scale"), workshop.get("drag_threshold"),
+                        workshop.get("stamp_spacing"), workshop.get("noise_scalar"),
+                        workshop.get("radial_scalar"), workshop.get("saturation"),
+                        workshop.get("red_saturation"), workshop.get("green_saturation"),
+                        workshop.get("blue_saturation"), workshop.get("brightness")});
                 adaptiveFrameClock.reset();
                 initialized = true;
                 uploadAssets();
