@@ -102,6 +102,8 @@ public class ControlActivity extends Activity {
             "pending_lock_wallpaper_preview";
     private static final String STATE_EFFECT_FILTER = "effect_filter";
     private static final String STATE_ADVANCED_PAGE = "advanced_page";
+    private static final String STATE_WORKSHOP_DRAFT = "workshop_draft";
+    private static final String STATE_SCROLL_Y = "main_scroll_y";
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND = 4917;
     private static final int REQUEST_SETUP_WIZARD = 4918;
     private static final int REQUEST_IMPORTED_EFFECT_BACKGROUND_CROP = 4919;
@@ -116,20 +118,11 @@ public class ControlActivity extends Activity {
     private static final int TAB_EASTER_EGG = 3;
     private static final String PROJECT_GITHUB_URL =
             "https://github.com/Brazzo978/L.L.E-Legacy-Lockscreen-Effects";
-    private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
-    private static final int COLOR_SURFACE = Color.WHITE;
-    private static final int COLOR_TEXT = Color.rgb(33, 33, 33);
-    private static final int COLOR_MUTED = Color.rgb(117, 117, 117);
-    private static final int COLOR_DIVIDER = Color.rgb(230, 230, 230);
-    private static final int COLOR_ACCENT = Color.rgb(64, 152, 160);
-    private static final int COLOR_ACCENT_DEEP = Color.rgb(0, 132, 142);
-    private static final int COLOR_ACCENT_SOFT = Color.rgb(231, 247, 248);
-    private static final int COLOR_OK = Color.rgb(22, 160, 98);
-    private static final int COLOR_ERROR = Color.rgb(207, 67, 72);
-    private static final int COLOR_HEADER_TOP = Color.rgb(244, 249, 252);
-    private static final int COLOR_HEADER_BOTTOM = Color.WHITE;
-    private static final int COLOR_GRACE_NAVY = Color.rgb(39, 55, 111);
-    private static final int COLOR_GRACE_BLUE = Color.rgb(61, 111, 169);
+    private AppAppearance.Palette appearance;
+    private boolean darkMode;
+    private int COLOR_BACKGROUND, COLOR_SURFACE, COLOR_TEXT, COLOR_MUTED, COLOR_DIVIDER;
+    private int COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_ACCENT_SOFT, COLOR_OK, COLOR_ERROR;
+    private int COLOR_HEADER_TOP, COLOR_HEADER_BOTTOM, COLOR_GRACE_NAVY, COLOR_GRACE_BLUE;
     private static final int COLOR_GRACE_AQUA = Color.rgb(91, 199, 194);
     private static final int COLOR_GRACE_LILAC = Color.rgb(106, 79, 176);
     private static final String[] RIPPLE_INK_PALETTE_NAMES = {
@@ -157,6 +150,7 @@ public class ControlActivity extends Activity {
     private static final int ADVANCED_PAGE_TESTER_TOOLS = 6;
     private static final int ADVANCED_PAGE_DIAGNOSTICS = 7;
     private static final int ADVANCED_PAGE_DANGEROUS = 8;
+    private static final int ADVANCED_PAGE_APPEARANCE = 9;
 
     /**
      * Preview one fully developed stock Samsung ink layer over white.  At w=1,
@@ -197,6 +191,10 @@ public class ControlActivity extends Activity {
     private int selectedTab = TAB_LOCKSCREEN_EFFECT;
     private final KonamiCode konamiCode = new KonamiCode();
     private FrameLayout appScene;
+    private ScrollView mainScrollView;
+    private AppearanceTransition.Snapshot pendingAppearanceTransition;
+    private AppearanceTransition.Reveal appearanceReveal;
+    private boolean appearanceChangePending;
     private KonamiConfettiView konamiConfettiView;
     private View konamiButtonA;
     private View konamiButtonB;
@@ -264,7 +262,9 @@ public class ControlActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        initializeAppearance();
         Log.i("LLE64", "native baseline abi=" + Lle64Abi.verify());
         configureGraceWindow();
         prefs = OverlayPrefs.get(this);
@@ -326,6 +326,7 @@ public class ControlActivity extends Activity {
         showTab(selectedTab, false, 0);
 
         ScrollView scrollView = new ScrollView(this);
+        mainScrollView = scrollView;
         scrollView.setFillViewport(true);
         scrollView.setBackgroundColor(Color.TRANSPARENT);
         scrollView.addView(root, new ScrollView.LayoutParams(
@@ -341,7 +342,27 @@ public class ControlActivity extends Activity {
         setContentView(scene);
         forceSansSerif(outer);
         updateAccessibilityStatus();
-        playGraceEntrance(headerView, tabsView, tabPager);
+        if (savedInstanceState == null) playGraceEntrance(headerView, tabsView, tabPager);
+        if (savedInstanceState != null) {
+            final int restoredScroll = Math.max(0, savedInstanceState.getInt(STATE_SCROLL_Y, 0));
+            mainScrollView.getViewTreeObserver().addOnPreDrawListener(
+                    new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    mainScrollView.getViewTreeObserver().removeOnPreDrawListener(this);
+                    mainScrollView.scrollTo(0, restoredScroll);
+                    return true;
+                }
+            });
+        }
+        Object retainedAppearance = getLastNonConfigurationInstance();
+        if (retainedAppearance instanceof AppearanceTransition.Snapshot) {
+            appearanceReveal = AppearanceTransition.attach(scene,
+                    (AppearanceTransition.Snapshot) retainedAppearance, darkMode,
+                    uiAnimationsEnabled());
+        }
+        if (savedInstanceState != null) {
+            EffectWorkshopDialog.restore(this, savedInstanceState.getBundle(STATE_WORKSHOP_DRAFT));
+        }
         if (savedInstanceState == null && SetupWizardActivity.shouldLaunch(this)) {
             startActivityForResult(
                     SetupWizardActivity.createLaunchIntent(this, false),
@@ -360,7 +381,17 @@ public class ControlActivity extends Activity {
                 pendingLockWallpaperPreview);
         outState.putInt(STATE_EFFECT_FILTER, effectFilter);
         outState.putInt(STATE_ADVANCED_PAGE, advancedPage);
+        outState.putInt(STATE_SCROLL_Y, mainScrollView == null ? 0 : mainScrollView.getScrollY());
+        Bundle workshopDraft = EffectWorkshopDialog.snapshot(this);
+        if (workshopDraft != null) outState.putBundle(STATE_WORKSHOP_DRAFT, workshopDraft);
         super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    public Object onRetainNonConfigurationInstance() {
+        AppearanceTransition.Snapshot retained = pendingAppearanceTransition;
+        pendingAppearanceTransition = null;
+        return retained;
     }
 
     @Override
@@ -382,6 +413,10 @@ public class ControlActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (AppAppearance.isDark(this) != darkMode) {
+            recreate();
+            return;
+        }
         updateAccessibilityStatus();
         updateTouchBoxSummary();
         updateEffectProfilerSummary();
@@ -531,6 +566,10 @@ public class ControlActivity extends Activity {
 
     @Override
     protected void onStop() {
+        if (appearanceReveal != null) {
+            appearanceReveal.finish();
+            appearanceReveal = null;
+        }
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
         clearKonamiConfetti();
         resetKonamiCode();
@@ -542,6 +581,11 @@ public class ControlActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (pendingAppearanceTransition != null) {
+            pendingAppearanceTransition.release();
+            pendingAppearanceTransition = null;
+        }
+        EffectWorkshopDialog.release(this);
         uiHandler.removeCallbacks(applyPendingUnlockEffectRunnable);
         clearKonamiConfetti();
         resetKonamiCode();
@@ -552,6 +596,11 @@ public class ControlActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (appearanceChangePending) return true;
+        if (appearanceReveal != null && appearanceReveal.getParent() != null) {
+            resetTabSwipeState();
+            return super.dispatchTouchEvent(event);
+        }
         if (konamiConfettiView != null) {
             return super.dispatchTouchEvent(event);
         }
@@ -570,14 +619,37 @@ public class ControlActivity extends Activity {
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             window.setStatusBarColor(Color.TRANSPARENT);
-            window.setNavigationBarColor(Color.rgb(232, 241, 246));
+            window.setNavigationBarColor(COLOR_BACKGROUND);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             window.getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         }
+        AppAppearance.configureWindow(this);
+    }
+
+    private void initializeAppearance() {
+        appearance = AppAppearance.palette(this);
+        darkMode = appearance.dark;
+        COLOR_BACKGROUND = appearance.background;
+        COLOR_SURFACE = appearance.surface;
+        COLOR_TEXT = appearance.text;
+        COLOR_MUTED = appearance.muted;
+        COLOR_DIVIDER = appearance.divider;
+        COLOR_ACCENT = appearance.accent;
+        COLOR_ACCENT_DEEP = appearance.accentDeep;
+        COLOR_ACCENT_SOFT = appearance.accentSoft;
+        COLOR_OK = uiColor(Color.rgb(22, 160, 98), Color.rgb(113, 221, 164));
+        COLOR_ERROR = uiColor(Color.rgb(207, 67, 72), Color.rgb(255, 141, 147));
+        COLOR_HEADER_TOP = appearance.surfaceRaised;
+        COLOR_HEADER_BOTTOM = appearance.surface;
+        COLOR_GRACE_NAVY = uiColor(Color.rgb(39, 55, 111), Color.rgb(191, 212, 244));
+        COLOR_GRACE_BLUE = uiColor(Color.rgb(61, 111, 169), Color.rgb(145, 194, 237));
+    }
+
+    private int uiColor(int light, int dark) {
+        return darkMode ? dark : light;
     }
 
     private void playGraceEntrance(final View header, final View tabs, final View content) {
@@ -662,7 +734,7 @@ public class ControlActivity extends Activity {
 
         TextView version = new TextView(this);
         version.setText("v" + appVersionName());
-        version.setTextColor(Color.rgb(89, 104, 137));
+        version.setTextColor(COLOR_MUTED);
         version.setTextSize(10f);
         version.setSingleLine(true);
         version.setPadding(dp(7), 0, 0, dp(5));
@@ -670,7 +742,7 @@ public class ControlActivity extends Activity {
 
         TextView subtitle = new TextView(this);
         subtitle.setText("Legacy Lockscreen effect");
-        subtitle.setTextColor(Color.rgb(65, 75, 104));
+        subtitle.setTextColor(COLOR_MUTED);
         subtitle.setTextSize(11f);
         subtitle.setSingleLine(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -768,7 +840,7 @@ public class ControlActivity extends Activity {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setPadding(dp(5), dp(5), dp(5), dp(5));
-        tabs.setBackground(solidDrawable(Color.argb(242, 255, 255, 255), dp(22),
+        tabs.setBackground(solidDrawable(uiColor(Color.argb(242, 255, 255, 255), appearance.surface), dp(22),
                 Color.argb(90, 177, 198, 210), dp(1)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             tabs.setElevation(dp(4));
@@ -994,7 +1066,7 @@ public class ControlActivity extends Activity {
                 chip.setTextSize(21f);
                 chip.setGravity(Gravity.CENTER);
                 chip.setPadding(dp(12), 0, dp(12), 0);
-                chip.setBackground(solidDrawable(Color.rgb(232, 247, 245), dp(14),
+                chip.setBackground(solidDrawable(uiColor(Color.rgb(232, 247, 245), appearance.accentSoft), dp(14),
                         COLOR_ACCENT_DEEP, dp(1)));
                 chip.setContentDescription("Remove " + emoji);
                 chip.setOnClickListener(new View.OnClickListener() {
@@ -1197,7 +1269,7 @@ public class ControlActivity extends Activity {
             final int step) {
         TextView button = konamiActionLabel(label, true);
         button.setTextSize(27f);
-        button.setBackground(solidDrawable(COLOR_GRACE_NAVY,
+        button.setBackground(solidDrawable(uiColor(COLOR_GRACE_NAVY, Color.rgb(42, 63, 89)),
                 dp(44), Color.WHITE, dp(3)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(dp(14));
@@ -1225,7 +1297,7 @@ public class ControlActivity extends Activity {
         button.setGravity(Gravity.CENTER);
         button.setContentDescription(label + " Konami button");
         button.setBackground(solidDrawable(
-                primary ? COLOR_GRACE_NAVY : Color.rgb(232, 247, 248),
+                primary ? uiColor(COLOR_GRACE_NAVY, Color.rgb(42, 63, 89)) : uiColor(Color.rgb(232, 247, 248), appearance.accentSoft),
                 dp(22), COLOR_GRACE_AQUA, dp(2)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(dp(5));
@@ -1801,10 +1873,10 @@ public class ControlActivity extends Activity {
         }
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] {android.R.attr.state_pressed},
-                solidDrawable(Color.rgb(225, 244, 244), dp(17), Color.TRANSPARENT, 0));
+                solidDrawable(uiColor(Color.rgb(225, 244, 244), appearance.accentSoft), dp(17), Color.TRANSPARENT, 0));
         states.addState(new int[] {}, selected
                 ? gradient(GradientDrawable.Orientation.TL_BR,
-                        new int[] {Color.WHITE, Color.rgb(225, 248, 247)},
+                        new int[] {COLOR_SURFACE, uiColor(Color.rgb(225, 248, 247), appearance.accentSoft)},
                         dp(17), Color.argb(100, 68, 177, 181), dp(1))
                 : solidDrawable(Color.TRANSPARENT, dp(17), Color.TRANSPARENT, 0));
         button.setBackground(states);
@@ -1851,9 +1923,9 @@ public class ControlActivity extends Activity {
     private void styleWallpaperSourcePanel(LinearLayout section) {
         section.setPadding(dp(14), dp(12), dp(14), dp(14));
         section.setBackground(solidDrawable(
-                Color.rgb(248, 251, 252),
+                appearance.surfaceRaised,
                 dp(18),
-                Color.rgb(218, 229, 232),
+                uiColor(Color.rgb(218, 229, 232), appearance.divider),
                 dp(1)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             section.setElevation(0f);
@@ -2052,7 +2124,7 @@ public class ControlActivity extends Activity {
         automationChip.setGravity(Gravity.CENTER);
         automationChip.setIncludeFontPadding(false);
         automationChip.setBackground(solidDrawable(
-                Color.argb(205, 231, 247, 248),
+                uiColor(Color.argb(205, 231, 247, 248), appearance.accentSoft),
                 dp(13),
                 Color.argb(105, 64, 152, 160),
                 dp(1)));
@@ -2538,8 +2610,8 @@ public class ControlActivity extends Activity {
     private View seasonCalendarControl() {
         LinearLayout panel = verticalGroup();
         panel.setPadding(dp(14), dp(12), dp(14), dp(14));
-        panel.setBackground(solidDrawable(Color.rgb(248, 251, 252), dp(16),
-                Color.rgb(218, 229, 232), dp(1)));
+        panel.setBackground(solidDrawable(appearance.surfaceRaised, dp(16),
+                uiColor(Color.rgb(218, 229, 232), appearance.divider), dp(1)));
         LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -2592,7 +2664,7 @@ public class ControlActivity extends Activity {
     }
 
     private void styleSeasonCalendarChoice(TextView choice, int calendar, int current) {
-        choice.setTextColor(calendar == current ? Color.WHITE : COLOR_ACCENT_DEEP);
+        choice.setTextColor(calendar == current ? appearance.buttonText : COLOR_ACCENT_DEEP);
         choice.setTypeface(Typeface.DEFAULT,
                 calendar == current ? Typeface.BOLD : Typeface.NORMAL);
         choice.setBackground(solidDrawable(
@@ -3104,7 +3176,7 @@ public class ControlActivity extends Activity {
         warning.setPadding(dp(15), dp(12), dp(15), dp(12));
         warning.setBackground(gradient(
                 GradientDrawable.Orientation.TL_BR,
-                new int[] {Color.rgb(255, 249, 235), Color.rgb(255, 241, 232)},
+                new int[] {uiColor(Color.rgb(255, 249, 235), Color.rgb(49, 38, 26)), uiColor(Color.rgb(255, 241, 232), Color.rgb(57, 36, 30))},
                 dp(18),
                 Color.rgb(232, 154, 77),
                 dp(1)));
@@ -3129,7 +3201,7 @@ public class ControlActivity extends Activity {
         TextView copy = infoText("Missing"
                 + (missing.isEmpty() ? "." : " for " + missing + ".")
                 + " Tap recapture, then lock \u2192 wait \u2192 unlock.");
-        copy.setTextColor(Color.rgb(104, 76, 59));
+        copy.setTextColor(uiColor(Color.rgb(104, 76, 59), Color.rgb(247, 200, 161)));
         copy.setTextSize(12.5f);
         copy.setPadding(0, 0, 0, dp(6));
         warning.addView(copy);
@@ -3175,7 +3247,7 @@ public class ControlActivity extends Activity {
         button.setText(text);
         button.setAllCaps(false);
         button.setTextSize(12.5f);
-        button.setTextColor(filled ? Color.WHITE : Color.rgb(181, 89, 35));
+        button.setTextColor(filled ? Color.WHITE : uiColor(Color.rgb(181, 89, 35), Color.rgb(255, 196, 136)));
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setGravity(Gravity.CENTER);
         button.setIncludeFontPadding(false);
@@ -3187,7 +3259,7 @@ public class ControlActivity extends Activity {
                 ? gradient(GradientDrawable.Orientation.LEFT_RIGHT,
                         new int[] {Color.rgb(216, 104, 43), Color.rgb(238, 151, 56)},
                         dp(14), Color.TRANSPARENT, 0)
-                : solidDrawable(Color.argb(115, 255, 255, 255), dp(14),
+                : solidDrawable(uiColor(Color.argb(115, 255, 255, 255), appearance.surfaceRaised), dp(14),
                         Color.argb(150, 216, 104, 43), dp(1)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(filled ? dp(2) : 0f);
@@ -3241,16 +3313,16 @@ public class ControlActivity extends Activity {
     private View effectPreviewHint() {
         TextView hint = new TextView(this);
         hint.setText("Hold an effect icon for preview");
-        hint.setTextColor(Color.rgb(69, 83, 103));
+        hint.setTextColor(uiColor(Color.rgb(69, 83, 103), appearance.text));
         hint.setTextSize(12f);
         hint.setGravity(Gravity.CENTER_VERTICAL);
         hint.setPadding(dp(14), 0, dp(14), 0);
         hint.setBackground(gradient(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[] {
-                        Color.argb(175, 221, 248, 244),
-                        Color.argb(130, 241, 225, 249),
-                        Color.argb(105, 255, 236, 197)
+                        uiColor(Color.argb(175, 221, 248, 244), Color.rgb(28, 55, 57)),
+                        uiColor(Color.argb(130, 241, 225, 249), Color.rgb(45, 36, 58)),
+                        uiColor(Color.argb(105, 255, 236, 197), Color.rgb(54, 44, 31))
                 },
                 dp(15),
                 Color.argb(80, 105, 181, 183),
@@ -3321,12 +3393,12 @@ public class ControlActivity extends Activity {
     }
 
     private void styleEffectFilterChip(TextView chip, boolean selected) {
-        chip.setTextColor(selected ? Color.WHITE : COLOR_ACCENT_DEEP);
+        chip.setTextColor(selected ? appearance.buttonText : COLOR_ACCENT_DEEP);
         chip.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
         chip.setSelected(selected);
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] {android.R.attr.state_pressed},
-                solidDrawable(selected ? Color.rgb(0, 112, 122) : Color.rgb(212, 239, 240),
+                solidDrawable(selected ? uiColor(Color.rgb(0, 112, 122), Color.rgb(99, 193, 189)) : uiColor(Color.rgb(212, 239, 240), Color.rgb(45, 82, 89)),
                         dp(17), Color.argb(130, 64, 152, 160), dp(1)));
         states.addState(new int[] {android.R.attr.state_focused},
                 solidDrawable(selected ? COLOR_ACCENT_DEEP : COLOR_ACCENT_SOFT,
@@ -4543,7 +4615,7 @@ public class ControlActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         FrameLayout previewFrame = new FrameLayout(this);
-        previewFrame.setBackground(solidDrawable(Color.rgb(245, 248, 250), dp(14),
+        previewFrame.setBackground(solidDrawable(uiColor(Color.rgb(245, 248, 250), appearance.background), dp(14),
                 Color.TRANSPARENT, 0));
         previewFrame.setClipToOutline(true);
 
@@ -6183,7 +6255,7 @@ public class ControlActivity extends Activity {
         TextView button = new TextView(this);
         button.setText(text);
         button.setTextSize(10.5f);
-        button.setTextColor(randomPoolEditMode ? Color.WHITE : COLOR_ACCENT_DEEP);
+        button.setTextColor(randomPoolEditMode ? appearance.buttonText : COLOR_ACCENT_DEEP);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setGravity(Gravity.CENTER);
         button.setIncludeFontPadding(false);
@@ -6193,7 +6265,7 @@ public class ControlActivity extends Activity {
         button.setFocusable(true);
         button.setBackground(randomPoolEditMode
                 ? solidDrawable(COLOR_ACCENT_DEEP, dp(15), Color.TRANSPARENT, 0)
-                : solidDrawable(Color.argb(125, 239, 250, 250), dp(15),
+                : solidDrawable(uiColor(Color.argb(125, 239, 250, 250), appearance.accentSoft), dp(15),
                         Color.argb(145, 33, 158, 166), dp(1)));
         return button;
     }
@@ -7102,6 +7174,12 @@ public class ControlActivity extends Activity {
         LinearLayout root = verticalGroup();
         root.addView(infoText("Manage setup, compatibility and diagnostics. Expand a section "
                 + "to see its controls."));
+        root.addView(advancedNavigationRow("Appearance",
+                AppearanceMode.label(AppAppearance.mode(this)) + " · App theme",
+                ADVANCED_PAGE_APPEARANCE));
+        if (advancedPage == ADVANCED_PAGE_APPEARANCE) {
+            root.addView(advancedExpandedControls(appearanceControls()));
+        }
         root.addView(advancedNavigationRow("Setup",
                 (isChargingAccessibilityEnabled() ? "Accessibility enabled" : "Setup needed")
                         + " · Re-run the guided setup",
@@ -7157,6 +7235,72 @@ public class ControlActivity extends Activity {
             root.addView(advancedExpandedControls(dangerousControls()));
         }
         return root;
+    }
+
+    private View appearanceControls() {
+        LinearLayout choices = verticalGroup();
+        choices.addView(infoText("Auto follows your device's theme. Use the moon to force "
+                + "Dark, or the sun to force Light."));
+        LinearLayout selector = new LinearLayout(this);
+        selector.setOrientation(LinearLayout.HORIZONTAL);
+        selector.setPadding(dp(4), dp(4), dp(4), dp(4));
+        selector.setBackground(controlRowBackground(false));
+        int current = AppAppearance.mode(this);
+        for (final int mode : new int[] {AppearanceMode.SYSTEM, AppearanceMode.DARK,
+                AppearanceMode.LIGHT}) {
+            final Drawable icon = mode == AppearanceMode.SYSTEM ? null
+                    : getDrawable(mode == AppearanceMode.DARK
+                            ? R.drawable.ic_theme_moon : R.drawable.ic_theme_sun).mutate();
+            if (icon != null) icon.setTint(mode == current ? COLOR_ACCENT_DEEP : COLOR_MUTED);
+            RadioButton option = new RadioButton(this) {
+                @Override protected void onDraw(Canvas canvas) {
+                    super.onDraw(canvas);
+                    if (icon != null) {
+                        int size = dp(23);
+                        int left = (getWidth() - size) / 2;
+                        int top = (getHeight() - size) / 2;
+                        icon.setBounds(left, top, left + size, top + size);
+                        icon.draw(canvas);
+                    }
+                }
+            };
+            option.setButtonDrawable((Drawable) null);
+            option.setText(mode == AppearanceMode.SYSTEM ? "Auto" : "");
+            option.setContentDescription(mode == AppearanceMode.SYSTEM
+                    ? "Auto theme, follow system" : AppearanceMode.label(mode) + " theme, forced");
+            if (Build.VERSION.SDK_INT >= 26) option.setTooltipText(AppearanceMode.label(mode));
+            option.setGravity(Gravity.CENTER);
+            option.setTextSize(14);
+            option.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            option.setTextColor(mode == current ? COLOR_ACCENT_DEEP : COLOR_MUTED);
+            option.setChecked(mode == current);
+            option.setPadding(0, 0, 0, 0);
+            option.setMinWidth(0);
+            option.setMinimumHeight(dp(48));
+            option.setBackground(controlRowBackground(mode == current));
+            option.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    if (appearanceChangePending ||
+                            AppAppearance.mode(ControlActivity.this) == mode) return;
+                    appearanceChangePending = true;
+                    AppAppearance.setMode(ControlActivity.this, mode);
+                    boolean targetDark = AppAppearance.isDark(ControlActivity.this);
+                    if (targetDark != darkMode && uiAnimationsEnabled()) {
+                        pendingAppearanceTransition = AppearanceTransition.capture(
+                                appScene, view, targetDark);
+                    }
+                    recreate();
+                }
+            });
+            LinearLayout.LayoutParams segment = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            segment.setMargins(dp(2), 0, dp(2), 0);
+            selector.addView(option, segment);
+        }
+        LinearLayout.LayoutParams row = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        row.topMargin = dp(8);
+        choices.addView(selector, row);
+        return choices;
     }
 
     private View advancedExpandedControls(View controls) {
@@ -7528,7 +7672,7 @@ public class ControlActivity extends Activity {
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         packageInput.setPadding(dp(14), 0, dp(14), 0);
         packageInput.setBackground(solidDrawable(
-                Color.WHITE, dp(14), Color.argb(90, 135, 172, 185), dp(1)));
+                COLOR_SURFACE, dp(14), Color.argb(90, 135, 172, 185), dp(1)));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
         inputParams.setMargins(0, dp(4), 0, dp(4));
@@ -7819,7 +7963,7 @@ public class ControlActivity extends Activity {
                     "L.L.E is active. Accessibility is enabled. Tap to open settings.");
         } else if (accessibilityEnabled) {
             accessibilityStatus.setText("Paused");
-            accessibilityStatus.setTextColor(Color.rgb(185, 112, 23));
+            accessibilityStatus.setTextColor(uiColor(Color.rgb(185, 112, 23), Color.rgb(255, 197, 112)));
             accessibilityStatus.setBackground(statusBadgeBackground(
                     Color.argb(185, 218, 145, 51), Color.argb(42, 255, 255, 255)));
             accessibilityStatus.setContentDescription(
@@ -7854,7 +7998,7 @@ public class ControlActivity extends Activity {
     private GradientDrawable pageBackground() {
         return gradient(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[] {Color.rgb(235, 245, 249), Color.rgb(224, 238, 244)},
+                new int[] {uiColor(Color.rgb(235, 245, 249), appearance.background), uiColor(Color.rgb(224, 238, 244), appearance.surface)},
                 0,
                 Color.TRANSPARENT,
                 0);
@@ -7864,9 +8008,9 @@ public class ControlActivity extends Activity {
         return gradient(
                 GradientDrawable.Orientation.TL_BR,
                 new int[] {
-                        Color.rgb(165, 236, 228),
-                        Color.rgb(221, 197, 249),
-                        Color.rgb(255, 216, 136)
+                        uiColor(Color.rgb(165, 236, 228), Color.rgb(26, 61, 66)),
+                        uiColor(Color.rgb(221, 197, 249), Color.rgb(41, 42, 68)),
+                        uiColor(Color.rgb(255, 216, 136), Color.rgb(59, 49, 34))
                 },
                 0,
                 Color.TRANSPARENT,
@@ -7876,9 +8020,9 @@ public class ControlActivity extends Activity {
     private GradientDrawable cardBackground(boolean accent) {
         return gradient(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[] {Color.argb(252, 255, 255, 255), Color.rgb(249, 252, 253)},
+                new int[] {uiColor(Color.argb(252, 255, 255, 255), appearance.surface), uiColor(Color.rgb(249, 252, 253), Color.rgb(21, 31, 42))},
                 dp(22),
-                accent ? Color.rgb(198, 224, 226) : Color.argb(105, 170, 192, 204),
+                accent ? uiColor(Color.rgb(198, 224, 226), Color.rgb(49, 88, 94)) : Color.argb(105, 170, 192, 204),
                 dp(1));
     }
 
@@ -7902,10 +8046,10 @@ public class ControlActivity extends Activity {
     private StateListDrawable controlRowBackground(boolean selected) {
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] {android.R.attr.state_pressed},
-                solidDrawable(Color.rgb(225, 244, 244), dp(16),
+                solidDrawable(uiColor(Color.rgb(225, 244, 244), appearance.accentSoft), dp(16),
                         Color.argb(80, 80, 170, 175), dp(1)));
         states.addState(new int[] {},
-                solidDrawable(selected ? COLOR_ACCENT_SOFT : Color.rgb(248, 251, 252),
+                solidDrawable(selected ? COLOR_ACCENT_SOFT : appearance.surfaceRaised,
                         dp(16),
                         Color.argb(75, 174, 195, 205),
                         dp(1)));
@@ -7916,14 +8060,14 @@ public class ControlActivity extends Activity {
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] {android.R.attr.state_pressed},
                 gradient(GradientDrawable.Orientation.TL_BR,
-                        new int[] {Color.rgb(225, 244, 244), Color.WHITE},
+                        new int[] {uiColor(Color.rgb(225, 244, 244), appearance.accentSoft), COLOR_SURFACE},
                         dp(18), Color.argb(100, 63, 164, 171), dp(1)));
         states.addState(new int[] {},
                 selected
                         ? gradient(GradientDrawable.Orientation.TL_BR,
-                                new int[] {Color.WHITE, Color.rgb(224, 247, 246)},
+                                new int[] {COLOR_SURFACE, uiColor(Color.rgb(224, 247, 246), appearance.accentSoft)},
                                 dp(18), Color.argb(150, 33, 158, 166), dp(1))
-                        : solidDrawable(Color.WHITE, dp(18),
+                        : solidDrawable(COLOR_SURFACE, dp(18),
                                 Color.argb(65, 167, 190, 201), dp(1)));
         return states;
     }
@@ -8031,7 +8175,7 @@ public class ControlActivity extends Activity {
                 },
                 new int[] {
                         COLOR_ACCENT,
-                        Color.rgb(143, 159, 181)
+                        uiColor(Color.rgb(143, 159, 181), Color.rgb(120, 143, 161))
                 });
     }
 
@@ -8043,7 +8187,7 @@ public class ControlActivity extends Activity {
                 },
                 new int[] {
                         Color.argb(120, 44, 205, 213),
-                        Color.rgb(198, 208, 221)
+                        uiColor(Color.rgb(198, 208, 221), Color.rgb(67, 84, 99))
                 });
     }
 
@@ -8115,7 +8259,7 @@ public class ControlActivity extends Activity {
                 new int[] {COLOR_ACCENT_DEEP}));
         slider.setProgressBackgroundTintList(new ColorStateList(
                 new int[][] {new int[] {}},
-                new int[] {Color.rgb(198, 211, 227)}));
+                new int[] {uiColor(Color.rgb(198, 211, 227), appearance.divider)}));
     }
 
     private final class GraceBackdropView extends View {
@@ -8134,9 +8278,9 @@ public class ControlActivity extends Activity {
             int height = getHeight();
             paint.setShader(new LinearGradient(0f, 0f, 0f, height,
                     new int[] {
-                            Color.rgb(228, 241, 247),
-                            Color.rgb(242, 248, 250),
-                            Color.rgb(222, 237, 243)
+                            uiColor(Color.rgb(228, 241, 247), Color.rgb(14, 23, 32)),
+                            uiColor(Color.rgb(242, 248, 250), Color.rgb(18, 29, 39)),
+                            uiColor(Color.rgb(222, 237, 243), Color.rgb(12, 21, 30))
                     },
                     new float[] {0f, 0.46f, 1f},
                     Shader.TileMode.CLAMP));

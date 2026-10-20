@@ -62,9 +62,10 @@ public final class WallpaperCropActivity extends Activity {
     private static final String STATE_OFFSET_X = "crop_offset_x";
     private static final String STATE_OFFSET_Y = "crop_offset_y";
     private static final int REQUEST_OPEN_DOCUMENT = 7231;
-    private static final int BLUE = Color.rgb(64, 142, 255);
-    private static final int SURFACE = Color.rgb(19, 24, 32);
-    private static final int MUTED = Color.rgb(165, 176, 192);
+    private AppAppearance.Palette palette;
+    private int BLUE;
+    private int SURFACE;
+    private int MUTED;
 
     private WallpaperCropView cropView;
     private TextView zoomLabel;
@@ -93,7 +94,12 @@ public final class WallpaperCropActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        palette = AppAppearance.palette(this);
+        BLUE = palette.accent;
+        SURFACE = palette.surface;
+        MUTED = palette.muted;
         configureWindow();
         readConfiguration(getIntent());
         if (savedInstanceState != null) {
@@ -243,7 +249,7 @@ public final class WallpaperCropActivity extends Activity {
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text("Center your wallpaper", Color.WHITE, 21f, true);
+        TextView title = text("Center your wallpaper", palette.text, 21f, true);
         titles.addView(title);
         String destination = MODE_SET_LOCK_AND_CACHE.equals(mode)
                 ? "Lock screen + all LLE effects"
@@ -298,7 +304,7 @@ public final class WallpaperCropActivity extends Activity {
         status.setGravity(Gravity.CENTER_VERTICAL);
         status.addView(text("Pinch to zoom  •  drag to position", MUTED, 13f, false),
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        zoomLabel = text("100%", Color.WHITE, 13f, true);
+        zoomLabel = text("100%", palette.text, 13f, true);
         status.addView(zoomLabel);
         footer.addView(status);
 
@@ -739,7 +745,7 @@ public final class WallpaperCropActivity extends Activity {
     private Button iconButton(String value, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(value);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(palette.text);
         button.setTextSize(28f);
         button.setGravity(Gravity.CENTER);
         button.setPadding(0, 0, 0, dp(4));
@@ -759,15 +765,15 @@ public final class WallpaperCropActivity extends Activity {
         button.setAllCaps(false);
         button.setTextSize(14f);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(primary ? palette.buttonText : palette.text);
         button.setMinWidth(0);
         button.setMinHeight(0);
         button.setPadding(dp(8), 0, dp(8), 0);
         GradientDrawable background = new GradientDrawable();
-        background.setColor(primary ? BLUE : Color.rgb(35, 43, 55));
+        background.setColor(primary ? palette.actionFill : palette.surfaceRaised);
         background.setCornerRadius(dp(10));
         if (!primary) {
-            background.setStroke(dp(1), Color.rgb(65, 76, 92));
+            background.setStroke(dp(1), palette.divider);
         }
         button.setBackground(background);
         button.setOnClickListener(listener);

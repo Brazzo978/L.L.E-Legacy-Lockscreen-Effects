@@ -44,11 +44,12 @@ public final class AppPickerActivity extends Activity {
     static final String EXTRA_MODE = "picker_mode";
     static final String MODE_EXCLUSIONS = "exclusions";
     static final String MODE_LOCKSCREEN_ALLOWLIST = "lockscreen_allowlist";
-    private static final int COLOR_BACKGROUND = Color.rgb(238, 246, 251);
-    private static final int COLOR_TEXT = Color.rgb(33, 33, 33);
-    private static final int COLOR_MUTED = Color.rgb(117, 117, 117);
-    private static final int COLOR_ACCENT = Color.rgb(0, 132, 142);
-    private static final int COLOR_ACCENT_SOFT = Color.rgb(231, 247, 248);
+    private AppAppearance.Palette palette;
+    private int COLOR_BACKGROUND;
+    private int COLOR_TEXT;
+    private int COLOR_MUTED;
+    private int COLOR_ACCENT;
+    private int COLOR_ACCENT_SOFT;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final List<AppPickerModel.Entry> allApps =
@@ -67,7 +68,14 @@ public final class AppPickerActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        palette = AppAppearance.palette(this);
+        COLOR_BACKGROUND = palette.background;
+        COLOR_TEXT = palette.text;
+        COLOR_MUTED = palette.muted;
+        COLOR_ACCENT = palette.accentDeep;
+        COLOR_ACCENT_SOFT = palette.accentSoft;
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         configureBars();
         allowlistMode = MODE_LOCKSCREEN_ALLOWLIST.equals(
@@ -118,7 +126,7 @@ public final class AppPickerActivity extends Activity {
         search.setHintTextColor(COLOR_MUTED);
         search.setTextSize(14f);
         search.setPadding(dp(14), 0, dp(14), 0);
-        search.setBackground(rounded(Color.WHITE, dp(13), Color.argb(70, 0, 132, 142)));
+        search.setBackground(rounded(palette.surface, dp(13), palette.divider));
         root.addView(search, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
         search.addTextChangedListener(new TextWatcher() {
@@ -180,7 +188,7 @@ public final class AppPickerActivity extends Activity {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.setStatusBarColor(COLOR_BACKGROUND);
         window.setNavigationBarColor(COLOR_BACKGROUND);
-        window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        AppAppearance.configureWindow(this);
     }
 
     private void loadApplications() {
@@ -302,8 +310,8 @@ public final class AppPickerActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(12), dp(9), dp(10), dp(9));
         row.setBackground(rounded(entry.selected
-                ? COLOR_ACCENT_SOFT : Color.WHITE, dp(12),
-                entry.selected ? COLOR_ACCENT : Color.argb(28, 0, 0, 0)));
+                ? COLOR_ACCENT_SOFT : palette.surface, dp(12),
+                entry.selected ? COLOR_ACCENT : palette.divider));
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         rowParams.setMargins(0, 0, 0, dp(8));
@@ -415,9 +423,9 @@ public final class AppPickerActivity extends Activity {
         button.setTypeface(Typeface.DEFAULT,
                 selected ? Typeface.BOLD : Typeface.NORMAL);
         button.setBackground(rounded(
-                selected ? COLOR_ACCENT_SOFT : Color.WHITE,
+                selected ? COLOR_ACCENT_SOFT : palette.surface,
                 dp(10),
-                selected ? COLOR_ACCENT : Color.argb(28, 0, 0, 0)));
+                selected ? COLOR_ACCENT : palette.divider));
     }
 
     private LinearLayout.LayoutParams weightedButtonParams() {

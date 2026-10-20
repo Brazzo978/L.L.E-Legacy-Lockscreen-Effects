@@ -2384,6 +2384,10 @@ public class ChargingAccessibilityService extends AccessibilityService
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (AppAppearance.PREF_MODE.equals(key)) {
+            // App appearance cannot change a live lockscreen renderer or its handoff.
+            return;
+        }
         if (suppressUnlockEffectPreferenceCallback
                 && OverlayPrefs.UNLOCK_EFFECT.equals(key)) {
             // Internal profiler/fallback transitions already own the renderer lifecycle.

@@ -1,10 +1,29 @@
 <resources>
-    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <style name="AppTheme" parent="AppThemeLight" />
+
+    <style name="AppThemeLight" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#74d7ff</item>
+        <item name="android:colorAccent">#00848e</item>
+        <item name="android:windowBackground">#eef6fb</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="AppThemeDark" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#80ddd8</item>
+        <item name="android:windowBackground">#0e151d</item>
+        <item name="android:colorBackground">#18232e</item>
+        <item name="android:colorButtonNormal">#21313e</item>
+        <item name="android:textColorPrimary">#edf4f7</item>
+        <item name="android:textColorSecondary">#a8bac7</item>
+        <item name="android:navigationBarColor">#0e151d</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 

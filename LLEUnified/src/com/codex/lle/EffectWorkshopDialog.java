@@ -13,6 +13,8 @@ import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.Build;
+import android.os.Bundle;
+import android.content.DialogInterface;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -31,14 +33,72 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
+import java.lang.ref.WeakReference;
 
 /** Draft editor: only Apply writes preferences; Cancel discards every edit. */
 final class EffectWorkshopDialog {
-    private static final int ACCENT = Color.rgb(0, 132, 142);
-    private static final int SOFT = Color.rgb(231, 247, 248);
-    private static final int INK = Color.rgb(33, 49, 58);
-    private static final int MUTED = Color.rgb(102, 123, 131);
+    // Neither the key nor the value keeps an Activity alive. A showing dialog owns
+    // its Editor through the dismiss listener, and dismissal removes the registration.
+    private static final WeakHashMap<Activity, WeakReference<Editor>> EDITORS =
+            new WeakHashMap<Activity, WeakReference<Editor>>();
+
     private EffectWorkshopDialog() {}
+
+    static Bundle snapshot(Activity activity) {
+        WeakReference<Editor> reference = EDITORS.get(activity);
+        Editor editor = reference == null ? null : reference.get();
+        return editor == null || !editor.dialog.isShowing() ? null : editor.snapshot();
+    }
+
+    static void restore(Activity activity, Bundle state) {
+        if (state == null) return;
+        int effect = state.getInt("effect", -1);
+        if (EffectWorkshopConfig.parametersFor(effect).length == 0) return;
+        release(activity);
+        edit(activity, effect, state);
+    }
+
+    static void release(Activity activity) {
+        WeakReference<Editor> reference = EDITORS.remove(activity);
+        Editor editor = reference == null ? null : reference.get();
+        if (editor != null) editor.dialog.dismiss();
+    }
+
+    private static final class Editor {
+        final int effect;
+        final AlertDialog dialog;
+        final Switch enabled;
+        final Map<String, Float> draftBase;
+        final ArrayList<Row> rows;
+        final ScrollView scroll;
+
+        Editor(int effect, AlertDialog dialog, Switch enabled,
+                Map<String, Float> draftBase, ArrayList<Row> rows, ScrollView scroll) {
+            this.effect = effect;
+            this.dialog = dialog;
+            this.enabled = enabled;
+            this.draftBase = draftBase;
+            this.rows = rows;
+            this.scroll = scroll;
+        }
+
+        Bundle snapshot() {
+            Bundle state = new Bundle();
+            state.putInt("effect", effect);
+            state.putBoolean("enabled", enabled.isChecked());
+            Bundle base = new Bundle();
+            for (Map.Entry<String, Float> entry : draftBase.entrySet()) {
+                base.putFloat(entry.getKey(), entry.getValue());
+            }
+            state.putBundle("base", base);
+            Bundle raw = new Bundle();
+            for (Row row : rows) raw.putString(row.parameter.key, row.value.getText().toString());
+            state.putBundle("raw", raw);
+            state.putInt("scroll", scroll.getScrollY());
+            return state;
+        }
+    }
 
     static void show(final Activity activity, int selectedEffect) {
         if (EffectWorkshopConfig.parametersFor(selectedEffect).length == 0) {
@@ -47,20 +107,28 @@ final class EffectWorkshopDialog {
                     .setPositiveButton("Close", null).show();
             return;
         }
-        edit(activity, selectedEffect);
+        release(activity);
+        edit(activity, selectedEffect, null);
     }
 
-    private static void edit(final Activity activity, final int effect) {
+    private static void edit(final Activity activity, final int effect, final Bundle restored) {
+        final AppAppearance.Palette palette = AppAppearance.palette(activity);
         final EffectWorkshopConfig.Parameter[] parameters = EffectWorkshopConfig.parametersFor(effect);
         EffectWorkshopConfig.Values saved = EffectWorkshopPrefs.values(activity, effect);
         final Map<String, Float> draftBase = new LinkedHashMap<String, Float>(saved.configuredValues());
+        if (restored != null && restored.getBundle("base") != null) {
+            draftBase.clear();
+            Bundle base = restored.getBundle("base");
+            for (String key : base.keySet()) draftBase.put(key, base.getFloat(key));
+        }
+        final Bundle restoredRaw = restored == null ? null : restored.getBundle("raw");
         LinearLayout content = new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(activity, 12);
         content.setPadding(padding, dp(activity, 4), padding, dp(activity, 8));
         TextView intro = new TextView(activity);
         intro.setText("Drag or tap − / + to adjust; tap the value to type. Apply saves your changes. ⓘ explains each control.");
-        intro.setTextColor(MUTED);
+        intro.setTextColor(palette.muted);
         intro.setTextSize(13);
         intro.setLineSpacing(dp(activity, 1), 1);
         content.addView(intro);
@@ -71,33 +139,35 @@ final class EffectWorkshopDialog {
                     ? "Effects are paused in " + appName + ". Enable the app on its main screen to see your changes."
                     : appName + "'s accessibility service is not connected. Enable it in Android Accessibility settings to see your changes.");
             runtimeNote.setPadding(0, padding, 0, 0);
-            runtimeNote.setTextColor(MUTED);
+            runtimeNote.setTextColor(palette.muted);
             content.addView(runtimeNote);
         }
         final Switch enabled = new Switch(activity);
         enabled.setText("Enable custom settings");
-        enabled.setTextColor(INK);
+        enabled.setTextColor(palette.text);
         enabled.setTextSize(14);
         enabled.setThumbTintList(new ColorStateList(new int[][] {
                 new int[] {android.R.attr.state_checked}, new int[] {}},
-                new int[] {ACCENT, Color.rgb(157, 174, 180)}));
+                new int[] {palette.accent, palette.muted}));
         enabled.setTrackTintList(new ColorStateList(new int[][] {
                 new int[] {android.R.attr.state_checked}, new int[] {}},
-                new int[] {Color.rgb(163, 216, 219), Color.rgb(218, 228, 231)}));
-        enabled.setChecked(saved.enabled);
+                new int[] {palette.accentSoft, palette.divider}));
+        enabled.setChecked(restored == null ? saved.enabled : restored.getBoolean("enabled"));
         enabled.setPadding(0, dp(activity, 6), 0, dp(activity, 6));
         enabled.setMinimumHeight(dp(activity, 48));
         content.addView(enabled);
         final ArrayList<Row> rows = new ArrayList<Row>();
         String group = "";
         for (EffectWorkshopConfig.Parameter parameter : parameters) {
-            if (effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP) {
+            // Recreate exactly the previously visible variant rows.
+            if (restoredRaw != null && !restoredRaw.containsKey(parameter.key)) continue;
+            if (restoredRaw == null && effect == OverlayPrefs.EFFECT_LG_G1_HULA_HOOP) {
                 boolean fluidic = OverlayPrefs.hulaHoopVariant(activity)
                         == OverlayPrefs.HULA_HOOP_VARIANT_V2;
                 if ((fluidic && parameter.key.startsWith("v1_"))
                         || (!fluidic && parameter.key.startsWith("v2_"))) continue;
             }
-            if (effect == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
+            if (restoredRaw == null && effect == OverlayPrefs.EFFECT_LG_G2_LIGHT_PARTICLE) {
                 boolean nativeRevision = OverlayPrefs.g2LightParticleRevision(activity)
                         == OverlayPrefs.G2_LIGHT_PARTICLE_REVISION_V2;
                 if ((nativeRevision && parameter.key.contains("_v1_"))
@@ -108,7 +178,7 @@ final class EffectWorkshopDialog {
                 TextView heading = new TextView(activity);
                 heading.setText(group);
                 heading.setTextSize(16);
-                heading.setTextColor(ACCENT);
+                heading.setTextColor(palette.accentDeep);
                 heading.setTypeface(null, android.graphics.Typeface.BOLD);
                 heading.setPadding(0, dp(activity, 10), 0, dp(activity, 6));
                 content.addView(heading);
@@ -117,14 +187,15 @@ final class EffectWorkshopDialog {
                     new Runnable() {
                         @Override public void run() { enabled.setChecked(true); }
                     });
+            if (restoredRaw != null) row.restoreRaw(restoredRaw.getString(parameter.key, ""));
             rows.add(row);
             content.addView(row.view);
         }
-        ScrollView scroll = new ScrollView(activity);
+        final ScrollView scroll = new ScrollView(activity);
         scroll.addView(content);
         LinearLayout body = new LinearLayout(activity);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setBackground(surface(activity, Color.rgb(238, 246, 251), 20, 0));
+        body.setBackground(surface(activity, palette.background, 20, 0));
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(padding, dp(activity, 10), padding, dp(activity, 6));
@@ -132,13 +203,13 @@ final class EffectWorkshopDialog {
         eyebrow.setText("EFFECT WORKSHOP");
         eyebrow.setTextSize(10);
         eyebrow.setLetterSpacing(.14f);
-        eyebrow.setTextColor(ACCENT);
+        eyebrow.setTextColor(palette.accentDeep);
         header.addView(eyebrow);
         TextView effectTitle = new TextView(activity);
         effectTitle.setText(OverlayPrefs.effectLabel(effect));
         effectTitle.setTextSize(20);
         effectTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        effectTitle.setTextColor(INK);
+        effectTitle.setTextColor(palette.text);
         effectTitle.setPadding(0, dp(activity, 2), 0, 0);
         header.addView(effectTitle);
         body.addView(header);
@@ -148,7 +219,7 @@ final class EffectWorkshopDialog {
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setPadding(padding, dp(activity, 6), padding, dp(activity, 8));
         View divider = new View(activity);
-        divider.setBackgroundColor(Color.rgb(214, 229, 231));
+        divider.setBackgroundColor(palette.divider);
         body.addView(divider, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 1)));
         body.addView(footer, new LinearLayout.LayoutParams(
@@ -205,10 +276,21 @@ final class EffectWorkshopDialog {
                 for (Row row : rows) row.setValue(row.parameter.defaultValue);
             }
         });
+        final Editor editor = new Editor(effect, dialog, enabled, draftBase, rows, scroll);
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(DialogInterface dismissed) {
+                WeakReference<Editor> reference = EDITORS.get(activity);
+                if (reference != null && reference.get() == editor) EDITORS.remove(activity);
+            }
+        });
+        EDITORS.put(activity, new WeakReference<Editor>(editor));
         dialog.show();
+        if (restored != null) scroll.post(new Runnable() {
+            @Override public void run() { scroll.scrollTo(0, restored.getInt("scroll", 0)); }
+        });
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(surface(activity,
-                    Color.rgb(238, 246, 251), 20, 0));
+                    palette.background, 20, 0));
             dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams
                     .SOFT_INPUT_ADJUST_RESIZE | android.view.WindowManager.LayoutParams
                     .SOFT_INPUT_STATE_ALWAYS_HIDDEN);
@@ -218,11 +300,12 @@ final class EffectWorkshopDialog {
     }
 
     private static Button actionButton(Activity activity, String label, boolean primary) {
+        final AppAppearance.Palette palette = AppAppearance.palette(activity);
         Button button = new Button(activity);
         button.setText(label);
         button.setAllCaps(false);
         button.setTextSize(14);
-        button.setTextColor(primary ? Color.WHITE : Color.rgb(0, 132, 142));
+        button.setTextColor(primary ? palette.buttonText : palette.accentDeep);
         button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(activity, 48));
         button.setMinimumHeight(dp(activity, 48));
@@ -231,10 +314,10 @@ final class EffectWorkshopDialog {
         button.setPadding(dp(activity, 10), dp(activity, 6), dp(activity, 10), dp(activity, 6));
         GradientDrawable background = new GradientDrawable();
         background.setCornerRadius(dp(activity, 10));
-        background.setColor(primary ? Color.rgb(0, 132, 142) : Color.rgb(231, 247, 248));
-        if (!primary) background.setStroke(dp(activity, 1), Color.rgb(190, 222, 225));
+        background.setColor(primary ? palette.actionFill : palette.accentSoft);
+        if (!primary) background.setStroke(dp(activity, 1), palette.divider);
         button.setBackground(new RippleDrawable(ColorStateList.valueOf(
-                primary ? Color.argb(60, 255, 255, 255) : Color.argb(35, 0, 132, 142)),
+                primary ? Color.argb(60, 255, 255, 255) : Color.argb(35, Color.red(palette.accent), Color.green(palette.accent), Color.blue(palette.accent))),
                 background, null));
         button.setElevation(0);
         button.setStateListAnimator(null);
@@ -261,13 +344,14 @@ final class EffectWorkshopDialog {
 
         Row(final Activity activity, final EffectWorkshopConfig.Parameter parameter, float initial,
                 final Runnable onEdit) {
+            final AppAppearance.Palette palette = AppAppearance.palette(activity);
             this.parameter = parameter;
             scale = new WorkshopSliderScale(parameter.min, parameter.max, parameter.step);
             view = new LinearLayout(activity);
             view.setOrientation(LinearLayout.VERTICAL);
             int inset = dp(activity, 10);
             view.setPadding(inset, dp(activity, 2), inset, dp(activity, 6));
-            view.setBackground(surface(activity, Color.WHITE, 12, Color.rgb(214, 229, 233)));
+            view.setBackground(surface(activity, palette.surface, 12, palette.divider));
             LinearLayout.LayoutParams cardLayout = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cardLayout.bottomMargin = dp(activity, 8);
@@ -276,7 +360,7 @@ final class EffectWorkshopDialog {
             title.setGravity(Gravity.CENTER_VERTICAL);
             TextView label = new TextView(activity);
             label.setText(parameter.label);
-            label.setTextColor(INK);
+            label.setTextColor(palette.text);
             label.setTextSize(14);
             label.setTypeface(null, android.graphics.Typeface.BOLD);
             title.addView(label, new LinearLayout.LayoutParams(0,
@@ -286,8 +370,8 @@ final class EffectWorkshopDialog {
             reset.setPadding(0, 0, 0, 0);
             reset.setIncludeFontPadding(false);
             reset.setBackground(new RippleDrawable(ColorStateList.valueOf(
-                    Color.argb(35, 0, 132, 142)), null,
-                    surface(activity, Color.WHITE, 10, 0)));
+                    Color.argb(35, Color.red(palette.accent), Color.green(palette.accent), Color.blue(palette.accent))), null,
+                    surface(activity, palette.surface, 10, 0)));
             reset.setContentDescription("Reset " + parameter.label + " to default "
                     + format(parameter.defaultValue) + " " + parameter.unit);
             if (Build.VERSION.SDK_INT >= 26) reset.setTooltipText("Reset default");
@@ -304,8 +388,8 @@ final class EffectWorkshopDialog {
             help.setPadding(0, 0, 0, 0);
             help.setIncludeFontPadding(false);
             help.setBackground(new RippleDrawable(ColorStateList.valueOf(
-                    Color.argb(35, 0, 132, 142)), null,
-                    surface(activity, Color.WHITE, 10, 0)));
+                    Color.argb(35, Color.red(palette.accent), Color.green(palette.accent), Color.blue(palette.accent))), null,
+                    surface(activity, palette.surface, 10, 0)));
             help.setMinWidth(dp(activity, 48));
             help.setMinimumWidth(dp(activity, 48));
             help.setContentDescription("About " + parameter.label);
@@ -333,7 +417,7 @@ final class EffectWorkshopDialog {
             valueBadge.setOrientation(LinearLayout.HORIZONTAL);
             valueBadge.setGravity(Gravity.CENTER);
             valueBadge.setPadding(dp(activity, 4), 0, dp(activity, 6), 0);
-            valueBadge.setBackground(surface(activity, SOFT, 12, 0));
+            valueBadge.setBackground(surface(activity, palette.accentSoft, 12, 0));
             LinearLayout.LayoutParams badgeLayout = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
             badgeLayout.setMargins(dp(activity, 6), 0, dp(activity, 6), 0);
@@ -341,7 +425,7 @@ final class EffectWorkshopDialog {
             value = new EditText(activity);
             value.setSingleLine(true);
             value.setTextSize(18);
-            value.setTextColor(ACCENT);
+            value.setTextColor(palette.accentDeep);
             value.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
             value.setGravity(Gravity.CENTER);
             value.setBackgroundColor(Color.TRANSPARENT);
@@ -356,7 +440,7 @@ final class EffectWorkshopDialog {
             TextView unit = new TextView(activity);
             unit.setText(parameter.unit);
             unit.setTextSize(10);
-            unit.setTextColor(MUTED);
+            unit.setTextColor(palette.muted);
             unit.setGravity(Gravity.CENTER);
             unit.setMaxWidth(dp(activity, 64));
             valueBadge.addView(unit);
@@ -373,9 +457,9 @@ final class EffectWorkshopDialog {
             slider.setContentDescription(parameter.label + " slider, step " + format(parameter.step));
             slider.setPadding(dp(activity, 12), 0, dp(activity, 12), 0);
             slider.setSplitTrack(false);
-            GradientDrawable track = surface(activity, Color.rgb(216, 233, 235), 3, 0);
+            GradientDrawable track = surface(activity, palette.divider, 3, 0);
             track.setSize(dp(activity, 100), dp(activity, 6));
-            GradientDrawable fill = surface(activity, ACCENT, 3, 0);
+            GradientDrawable fill = surface(activity, palette.accent, 3, 0);
             fill.setSize(dp(activity, 100), dp(activity, 6));
             LayerDrawable progress = new LayerDrawable(new android.graphics.drawable.Drawable[] {
                     track, new ClipDrawable(fill, Gravity.LEFT, ClipDrawable.HORIZONTAL)});
@@ -384,16 +468,16 @@ final class EffectWorkshopDialog {
             slider.setProgressDrawable(progress);
             GradientDrawable thumb = new GradientDrawable();
             thumb.setShape(GradientDrawable.OVAL);
-            thumb.setColor(Color.WHITE);
-            thumb.setStroke(dp(activity, 2), ACCENT);
+            thumb.setColor(palette.surface);
+            thumb.setStroke(dp(activity, 2), palette.accent);
             thumb.setSize(dp(activity, 20), dp(activity, 20));
             slider.setThumb(thumb);
             slider.setThumbOffset(dp(activity, 10));
-            slider.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
+            slider.setBackgroundTintList(ColorStateList.valueOf(palette.accent));
             if (Build.VERSION.SDK_INT >= 24 && scale.steps <= 30) {
                 GradientDrawable tick = new GradientDrawable();
                 tick.setShape(GradientDrawable.OVAL);
-                tick.setColor(Color.rgb(134, 191, 197));
+                tick.setColor(palette.muted);
                 tick.setSize(dp(activity, 3), dp(activity, 3));
                 slider.setTickMark(tick);
             }
@@ -417,21 +501,21 @@ final class EffectWorkshopDialog {
             LinearLayout bounds = new LinearLayout(activity);
             TextView minimum = new TextView(activity);
             minimum.setText(format(parameter.min));
-            minimum.setTextColor(MUTED);
+            minimum.setTextColor(palette.muted);
             minimum.setTextSize(11);
             bounds.addView(minimum, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             TextView hint = new TextView(activity);
             hint.setText("Default " + format(parameter.defaultValue) + " · Step " + format(parameter.step));
             hint.setTextSize(10);
-            hint.setTextColor(MUTED);
+            hint.setTextColor(palette.muted);
             hint.setGravity(Gravity.CENTER);
             hint.setPadding(dp(activity, 4), 0, dp(activity, 4), 0);
             bounds.addView(hint, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 4));
             TextView maximum = new TextView(activity);
             maximum.setText(format(parameter.max));
-            maximum.setTextColor(MUTED);
+            maximum.setTextColor(palette.muted);
             maximum.setTextSize(11);
             maximum.setGravity(Gravity.RIGHT);
             bounds.addView(maximum, new LinearLayout.LayoutParams(0,
@@ -465,6 +549,21 @@ final class EffectWorkshopDialog {
                 }
                 @Override public void afterTextChanged(Editable s) {}
             });
+        }
+
+        void restoreRaw(String raw) {
+            syncing = true;
+            value.setText(raw);
+            try {
+                float parsed = Float.parseFloat(raw.trim().replace(',', '.'));
+                if (EffectWorkshopConfig.finite(parsed)) {
+                    slider.setProgress(scale.progressFor(parsed));
+                    updateNudges(parsed);
+                }
+            } catch (NumberFormatException incomplete) {
+                // Preserve the unfinished string; Apply still performs normal validation.
+            }
+            syncing = false;
         }
 
         void setValue(float number) {
@@ -512,18 +611,19 @@ final class EffectWorkshopDialog {
 
     private static void showHelp(final Activity activity, View anchor,
             EffectWorkshopConfig.Parameter parameter) {
+        final AppAppearance.Palette palette = AppAppearance.palette(activity);
         LinearLayout body = new LinearLayout(activity);
         body.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(activity, 16);
         body.setPadding(padding, padding, padding, padding);
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.WHITE);
+        background.setColor(palette.surface);
         background.setCornerRadius(dp(activity, 12));
-        background.setStroke(dp(activity, 1), Color.rgb(190, 204, 218));
+        background.setStroke(dp(activity, 1), palette.divider);
         body.setBackground(background);
         TextView title = new TextView(activity);
         title.setText(parameter.label);
-        title.setTextColor(Color.rgb(30, 44, 60));
+        title.setTextColor(palette.text);
         title.setTextSize(17);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         body.addView(title);
@@ -532,7 +632,7 @@ final class EffectWorkshopDialog {
                 + format(parameter.defaultValue) + " " + parameter.unit
                 + "\nRange: " + format(parameter.min) + " – " + format(parameter.max)
                 + " " + parameter.unit);
-        explanation.setTextColor(Color.rgb(45, 59, 76));
+        explanation.setTextColor(palette.text);
         explanation.setTextSize(15);
         explanation.setPadding(0, dp(activity, 10), 0, dp(activity, 6));
         body.addView(explanation);

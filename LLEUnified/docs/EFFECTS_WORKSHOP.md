@@ -134,18 +134,20 @@ catalog provides CSV, JSON and a searchable HTML list for inspection.
 ranges, partial final steps, manual precision and sampled monotonic round trips
 for all 705 controls (160,188 assertions).
 
-The requested build is **Tester 1.0.7RC1**, versionCode **53**, package
-`com.codex.lle64.test`, ABI `arm64-v8a`. Build with:
+The Workshop first shipped in **Tester 1.0.7RC1**, versionCode **53**, package
+`com.codex.lle64.test`, ABI `arm64-v8a`. RC2 adds the shared app appearance UI.
+Build a separately packaged Tester with:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build-arm64.ps1 -Tester
 ```
 
-The Tester builder sets this version in its generated manifest. The canonical
-product manifest and stable package version are unchanged. GitHub tag
-`v1.0.7RC1` is published as a Tester prerelease, explicitly excluded from Latest.
-Neither Companion feed is updated: `LLE_VERSION.txt` continues to advertise the
-stable `1.0.6.7`. Companion ignores the separate Tester package.
+The Tester builder sets its RC version in a generated manifest. GitHub tag
+`v1.0.7RC1` remains a Tester prerelease, excluded from Latest. Companion ignores
+the separate Tester package. **Stable 1.0.7.0**, versionCode **55**, promotes the
+Workshop and RC2 appearance controls to `com.codex.lle64`. It uses the stable
+signing lineage and is advertised through both Companion feeds only after its
+public APK and release page are available.
 
 Validation includes the complete ARM64 Tester build, APK signature and manifest
 checks, schema persistence/bounds tests, actual custom scene tests and existing

@@ -37,11 +37,14 @@ import java.util.ArrayList;
 public class TouchBoxSetupActivity extends Activity {
     public static final String EXTRA_START_CAPTURE = "start_capture";
 
+    private static final int CALIBRATION_BLUE = Color.rgb(20, 126, 245);
     private static final long WAITING_POLL_MS = 700L;
-    private static final int GRACE_BLUE = Color.rgb(20, 126, 245);
-    private static final int GRACE_BACKGROUND = Color.rgb(244, 246, 249);
-    private static final int GRACE_TEXT = Color.rgb(36, 42, 50);
-    private static final int GRACE_MUTED = Color.rgb(104, 114, 128);
+    private static final String STATE_EDITOR = "touch_box_editor_state";
+    private AppAppearance.Palette palette;
+    private int GRACE_BLUE;
+    private int GRACE_BACKGROUND;
+    private int GRACE_TEXT;
+    private int GRACE_MUTED;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable waitingPollRunnable = new Runnable() {
@@ -52,8 +55,10 @@ public class TouchBoxSetupActivity extends Activity {
     };
 
     private Bitmap screenshotBitmap;
+    private String screenshotSourceToken;
     private final ArrayList<Bitmap> overviewBitmaps = new ArrayList<Bitmap>();
     private PinEditorView editorView;
+    private Bundle restoredEditorDraft;
     private TextView statusLabel;
     private TextView waitingStatusLabel;
     private boolean waitingForCapture;
@@ -128,7 +133,13 @@ public class TouchBoxSetupActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        palette = AppAppearance.palette(this);
+        GRACE_BLUE = palette.accent;
+        GRACE_BACKGROUND = palette.background;
+        GRACE_TEXT = palette.text;
+        GRACE_MUTED = palette.muted;
         Window window = getWindow();
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -144,6 +155,29 @@ public class TouchBoxSetupActivity extends Activity {
                 : FoldDisplayTarget.PROFILE_SINGLE;
         OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, selectedProfile);
 
+        Bundle restored = savedInstanceState == null ? null : savedInstanceState.getBundle(STATE_EDITOR);
+        if (restored != null) {
+            String profile = FoldDisplayTarget.normalizeProfile(restored.getString("profile", selectedProfile));
+            boolean profileAvailable = false;
+            for (String available : FoldDisplayTarget.backgroundProfiles(this)) {
+                if (available.equals(profile)) {
+                    selectedProfile = profile;
+                    profileAvailable = true;
+                }
+            }
+            OverlayPrefs.migrateLegacyTouchBoxIfNeeded(this, selectedProfile);
+            restoredEditorDraft = profileAvailable ? restored.getBundle("draft") : null;
+            if (foldMode && restored.getBoolean("overview", false)) {
+                restoredEditorDraft = null;
+                showFoldOverview();
+            } else if (!showEditorFromCachedScreenshot()) {
+                // Capture requests live in preferences. Observe any existing request;
+                // recreation must never issue another request or overwrite its state.
+                showWaitingView();
+            }
+            return;
+        }
+
         boolean startCapture = getIntent() == null
                 || getIntent().getBooleanExtra(EXTRA_START_CAPTURE, true);
         if (foldMode && !isCapturePending()) {
@@ -154,11 +188,26 @@ public class TouchBoxSetupActivity extends Activity {
             selectedProfile = pendingCaptureProfile();
         }
         if (!showEditorFromCachedScreenshot() && startCapture) {
-            requestScreenshotCapture();
+            if (!isCapturePending()) requestScreenshotCapture();
             showWaitingView();
         } else if (screenshotBitmap == null) {
             showWaitingView();
         }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        Bundle state = new Bundle();
+        state.putString("profile", selectedProfile);
+        state.putBoolean("overview", showingFoldOverview);
+        if (!showingFoldOverview && !waitingForCapture && editorView != null
+                && screenshotBitmap != null) {
+            state.putBundle("draft", editorView.snapshotDraft());
+        } else if (restoredEditorDraft != null) {
+            state.putBundle("draft", restoredEditorDraft);
+        }
+        outState.putBundle(STATE_EDITOR, state);
+        super.onSaveInstanceState(outState);
     }
 
     @Override
@@ -232,7 +281,12 @@ public class TouchBoxSetupActivity extends Activity {
         if (!file.exists() || file.length() <= 0L) {
             return null;
         }
-        return Argb8888BitmapStore.decode(file);
+        Bitmap bitmap = Argb8888BitmapStore.decode(file);
+        if (bitmap != null) {
+            screenshotSourceToken = file.getAbsolutePath() + ":" + file.lastModified()
+                    + ":" + file.length();
+        }
+        return bitmap;
     }
 
     private void requestScreenshotCapture() {
@@ -352,7 +406,7 @@ public class TouchBoxSetupActivity extends Activity {
         LinearLayout bottom = new LinearLayout(this);
         bottom.setOrientation(LinearLayout.VERTICAL);
         bottom.setPadding(dp(14), dp(10), dp(14), dp(14));
-        bottom.setBackgroundColor(Color.WHITE);
+        bottom.setBackgroundColor(palette.surface);
         root.addView(bottom, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -419,9 +473,14 @@ public class TouchBoxSetupActivity extends Activity {
 
         setContentView(root);
         editorView.resetAreasFromSavedBox();
+        if (restoredEditorDraft != null) {
+            editorView.restoreDraft(restoredEditorDraft);
+            restoredEditorDraft = null;
+        }
     }
 
     private void startFreshCapture() {
+        restoredEditorDraft = null;
         File file = OverlayPrefs.touchBoxScreenshotFile(this, selectedProfile);
         if (file.exists()) {
             file.delete();
@@ -458,7 +517,7 @@ public class TouchBoxSetupActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         row.setPadding(dp(20), dp(8), dp(20), dp(8));
-        row.setBackgroundColor(Color.WHITE);
+        row.setBackgroundColor(palette.surface);
 
         TextView cover = bodyText(FoldDisplayTarget.profileLabel(profiles[0]));
         cover.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
@@ -506,6 +565,7 @@ public class TouchBoxSetupActivity extends Activity {
                         screenshotBitmap.getWidth(), screenshotBitmap.getHeight());
             }
         }
+        restoredEditorDraft = null;
         selectedProfile = normalized;
         editorView = null;
         recycleScreenshot();
@@ -821,7 +881,7 @@ public class TouchBoxSetupActivity extends Activity {
         bar.setOrientation(LinearLayout.VERTICAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(20), dp(16), dp(20), dp(12));
-        bar.setBackgroundColor(Color.WHITE);
+        bar.setBackgroundColor(palette.surface);
         bar.setElevation(dp(3));
 
         TextView titleView = new TextView(this);
@@ -848,7 +908,7 @@ public class TouchBoxSetupActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(20), dp(18), dp(20), dp(20));
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.WHITE);
+        background.setColor(palette.surface);
         background.setCornerRadius(dp(8));
         panel.setBackground(background);
         panel.setElevation(dp(2));
@@ -857,9 +917,9 @@ public class TouchBoxSetupActivity extends Activity {
 
     private GradientDrawable overviewInfoBackground() {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.WHITE);
+        background.setColor(palette.surface);
         background.setCornerRadius(dp(8));
-        background.setStroke(dp(1), Color.rgb(224, 229, 235));
+        background.setStroke(dp(1), palette.divider);
         return background;
     }
 
@@ -893,10 +953,10 @@ public class TouchBoxSetupActivity extends Activity {
 
         GradientDrawable background = new GradientDrawable();
         background.setCornerRadius(dp(6));
-        background.setColor(primary ? GRACE_BLUE : Color.WHITE);
-        background.setStroke(dp(1), primary ? GRACE_BLUE : Color.rgb(214, 220, 228));
+        background.setColor(primary ? palette.actionFill : palette.surface);
+        background.setStroke(dp(1), primary ? palette.actionFill : palette.divider);
         button.setBackground(background);
-        button.setTextColor(primary ? Color.WHITE : GRACE_TEXT);
+        button.setTextColor(primary ? palette.buttonText : GRACE_TEXT);
         return button;
     }
 
@@ -958,6 +1018,53 @@ public class TouchBoxSetupActivity extends Activity {
             setBackgroundColor(Color.rgb(18, 20, 24));
             setWillNotDraw(false);
             setClickable(true);
+        }
+
+        Bundle snapshotDraft() {
+            Bundle state = new Bundle();
+            state.putString("source", screenshotSourceToken);
+            state.putInt("width", screenshotBitmap.getWidth());
+            state.putInt("height", screenshotBitmap.getHeight());
+            float[] geometry = new float[areas.size() * 4];
+            for (int i = 0; i < areas.size(); i++) {
+                RectF area = areas.get(i);
+                geometry[i * 4] = area.left;
+                geometry[i * 4 + 1] = area.top;
+                geometry[i * 4 + 2] = area.right;
+                geometry[i * 4 + 3] = area.bottom;
+            }
+            state.putFloatArray("geometry", geometry);
+            state.putInt("selected", selectedArea);
+            return state;
+        }
+
+        void restoreDraft(Bundle state) {
+            // Coordinates belong to the source screenshot, never to the screen view.
+            // A replaced source of another size cannot safely reuse this draft.
+            if (screenshotSourceToken == null
+                    || !screenshotSourceToken.equals(state.getString("source"))) return;
+            if (state.getInt("width") != screenshotBitmap.getWidth()
+                    || state.getInt("height") != screenshotBitmap.getHeight()) return;
+            float[] geometry = state.getFloatArray("geometry");
+            if (geometry == null || geometry.length % 4 != 0
+                    || geometry.length > MAX_AREAS * 4) return;
+            ArrayList<RectF> restored = new ArrayList<RectF>();
+            for (int i = 0; i < geometry.length; i += 4) {
+                for (int j = i; j < i + 4; j++) {
+                    if (Float.isNaN(geometry[j]) || Float.isInfinite(geometry[j])) return;
+                }
+                RectF area = new RectF(geometry[i], geometry[i + 1], geometry[i + 2], geometry[i + 3]);
+                if (area.left < 0 || area.top < 0 || area.right > screenshotBitmap.getWidth()
+                        || area.bottom > screenshotBitmap.getHeight()
+                        || area.width() <= 0 || area.height() <= 0) return;
+                restored.add(area);
+            }
+            areas.clear();
+            areas.addAll(restored);
+            selectedArea = clamp(state.getInt("selected", -1), -1, areas.size() - 1);
+            dragMode = DRAG_NONE;
+            updateStatus();
+            invalidate();
         }
 
         void resetAreasFromSavedBox() {
@@ -1059,7 +1166,7 @@ public class TouchBoxSetupActivity extends Activity {
 
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(dp(2));
-                paint.setColor(i == selectedArea ? GRACE_BLUE : Color.argb(190, 116, 215, 255));
+                paint.setColor(i == selectedArea ? CALIBRATION_BLUE : Color.argb(190, 116, 215, 255));
                 paint.setPathEffect(new DashPathEffect(new float[]{dp(8), dp(5)}, 0));
                 canvas.drawRect(boxRect, paint);
                 paint.setPathEffect(null);
@@ -1150,7 +1257,7 @@ public class TouchBoxSetupActivity extends Activity {
                 float x = screenToViewX(xs[i]);
                 float y = screenToViewY(ys[i]);
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(GRACE_BLUE);
+                paint.setColor(CALIBRATION_BLUE);
                 canvas.drawCircle(x, y, dp(8), paint);
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(dp(2));

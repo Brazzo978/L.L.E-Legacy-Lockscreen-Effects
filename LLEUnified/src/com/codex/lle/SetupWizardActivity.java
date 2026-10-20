@@ -118,14 +118,15 @@ public class SetupWizardActivity extends Activity {
     private static final int STEP_DONE = 7;
     private static final int STEP_COUNT = 7;
 
-    private static final int COLOR_INK = Color.rgb(28, 41, 61);
-    private static final int COLOR_MUTED = Color.rgb(98, 111, 129);
-    private static final int COLOR_ACCENT = Color.rgb(39, 151, 157);
-    private static final int COLOR_ACCENT_DARK = Color.rgb(22, 119, 130);
-    private static final int COLOR_SURFACE = Color.WHITE;
-    private static final int COLOR_OK = Color.rgb(27, 155, 104);
-    private static final int COLOR_WARN = Color.rgb(205, 128, 38);
-    private static final int COLOR_DANGER = Color.rgb(190, 36, 45);
+    private AppAppearance.Palette palette;
+    private int COLOR_INK;
+    private int COLOR_MUTED;
+    private int COLOR_ACCENT;
+    private int COLOR_ACCENT_DARK;
+    private int COLOR_SURFACE;
+    private int COLOR_OK;
+    private int COLOR_WARN;
+    private int COLOR_DANGER;
 
     private FrameLayout contentHost;
     private LinearLayout progressDots;
@@ -188,7 +189,17 @@ public class SetupWizardActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        palette = AppAppearance.palette(this);
+        COLOR_DANGER = AppAppearance.color(this, Color.rgb(190, 36, 45), Color.rgb(255, 133, 145));
+        COLOR_WARN = AppAppearance.color(this, Color.rgb(205, 128, 38), Color.rgb(255, 191, 102));
+        COLOR_OK = AppAppearance.color(this, Color.rgb(27, 155, 104), Color.rgb(86, 216, 159));
+        COLOR_INK = palette.text;
+        COLOR_MUTED = palette.muted;
+        COLOR_ACCENT = palette.accent;
+        COLOR_ACCENT_DARK = palette.accentDeep;
+        COLOR_SURFACE = palette.surface;
         boolean manual = getIntent() != null
                 && getIntent().getBooleanExtra(EXTRA_MANUAL_RELAUNCH, false);
         manualRelaunch = manual;
@@ -417,10 +428,10 @@ public class SetupWizardActivity extends Activity {
 
     private void configureWindow() {
         Window window = getWindow();
-        window.setStatusBarColor(Color.rgb(224, 241, 243));
-        window.setNavigationBarColor(Color.rgb(237, 246, 248));
+        window.setStatusBarColor(palette.background);
+        window.setNavigationBarColor(palette.background);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            AppAppearance.configureWindow(this);
         }
     }
 
@@ -428,9 +439,9 @@ public class SetupWizardActivity extends Activity {
         FrameLayout scene = new FrameLayout(this);
         scene.setBackground(gradient(GradientDrawable.Orientation.TL_BR,
                 new int[] {
-                        Color.rgb(225, 244, 244),
-                        Color.rgb(242, 239, 250),
-                        Color.rgb(252, 244, 228)
+                        AppAppearance.color(this, Color.rgb(225, 244, 244), palette.background),
+                        AppAppearance.color(this, Color.rgb(242, 239, 250), palette.background),
+                        AppAppearance.color(this, Color.rgb(252, 244, 228), palette.background)
                 }, 0, Color.TRANSPARENT));
 
         LinearLayout page = new LinearLayout(this);
@@ -1332,7 +1343,7 @@ public class SetupWizardActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(16), dp(16), dp(16));
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(palette.surface);
         root.addView(title(cacheTitle));
         root.addView(paragraph(cacheMeta));
 
@@ -1485,7 +1496,7 @@ public class SetupWizardActivity extends Activity {
     private View doneStep() {
         LinearLayout body = stepBody();
         body.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView check = text("\u2713", 38f, Color.WHITE, true);
+        TextView check = text("\u2713", 38f, palette.buttonText, true);
         check.setGravity(Gravity.CENTER);
         check.setBackground(solid(COLOR_OK, dp(34), Color.TRANSPARENT));
         body.addView(check, new LinearLayout.LayoutParams(dp(68), dp(68)));
@@ -2161,7 +2172,7 @@ public class SetupWizardActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(16), dp(18), dp(16));
         int tone = ok ? COLOR_OK : COLOR_WARN;
-        card.setBackground(solid(Color.argb(244, 255, 255, 255), dp(20),
+        card.setBackground(solid(Color.argb(244, Color.red(palette.surface), Color.green(palette.surface), Color.blue(palette.surface)), dp(20),
                 Color.argb(72, Color.red(tone), Color.green(tone), Color.blue(tone))));
         TextView headingView = text((ok ? "\u2713  " : "!  ") + heading,
                 16f, ok ? COLOR_OK : COLOR_INK, true);
@@ -2184,11 +2195,11 @@ public class SetupWizardActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(solid(Color.rgb(255, 242, 243), dp(20), COLOR_DANGER));
+        card.setBackground(solid(AppAppearance.color(this, Color.rgb(255, 242, 243), Color.rgb(62, 30, 36)), dp(20), COLOR_DANGER));
         TextView headingView = text(heading, 20f, COLOR_DANGER, true);
         headingView.setAllCaps(true);
         card.addView(headingView);
-        TextView copyView = text(copy, 15f, Color.rgb(116, 24, 31), true);
+        TextView copyView = text(copy, 15f, AppAppearance.color(this, Color.rgb(116, 24, 31), Color.rgb(255, 178, 187)), true);
         copyView.setLineSpacing(dp(2), 1f);
         copyView.setPadding(0, dp(9), 0, 0);
         card.addView(copyView);
@@ -2208,10 +2219,10 @@ public class SetupWizardActivity extends Activity {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.TOP);
         card.setPadding(dp(15), dp(13), dp(15), dp(13));
-        card.setBackground(solid(Color.argb(244, 255, 255, 255), dp(18),
-                Color.rgb(217, 224, 229)));
+        card.setBackground(solid(Color.argb(244, Color.red(palette.surface), Color.green(palette.surface), Color.blue(palette.surface)), dp(18),
+                palette.divider));
 
-        TextView numberView = text(number, 15f, Color.WHITE, true);
+        TextView numberView = text(number, 15f, palette.buttonText, true);
         numberView.setGravity(Gravity.CENTER);
         numberView.setBackground(solid(COLOR_ACCENT_DARK, dp(18), Color.TRANSPARENT));
         card.addView(numberView, new LinearLayout.LayoutParams(dp(36), dp(36)));
@@ -2246,8 +2257,8 @@ public class SetupWizardActivity extends Activity {
         card.setClickable(true);
         card.setFocusable(true);
         card.setPadding(dp(18), dp(16), dp(18), dp(17));
-        int stroke = accent ? COLOR_ACCENT : Color.rgb(205, 216, 224);
-        card.setBackground(solid(accent ? Color.rgb(240, 251, 250) : COLOR_SURFACE,
+        int stroke = accent ? COLOR_ACCENT : palette.divider;
+        card.setBackground(solid(accent ? palette.accentSoft : COLOR_SURFACE,
                 dp(22), stroke));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             card.setElevation(dp(accent ? 5 : 2));
@@ -2260,8 +2271,8 @@ public class SetupWizardActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView badgeView = text(badge, 10f, accent ? COLOR_ACCENT_DARK : COLOR_MUTED, true);
         badgeView.setPadding(dp(9), dp(4), dp(9), dp(4));
-        badgeView.setBackground(solid(accent ? Color.rgb(216, 243, 241) :
-                Color.rgb(242, 246, 248), dp(12), Color.TRANSPARENT));
+        badgeView.setBackground(solid(accent ? palette.accentSoft :
+                palette.surfaceRaised, dp(12), Color.TRANSPARENT));
         top.addView(badgeView);
         card.addView(top);
         TextView headingView = text(heading, 18f, COLOR_INK, true);
@@ -2278,10 +2289,12 @@ public class SetupWizardActivity extends Activity {
         button.setAllCaps(false);
         button.setText(value);
         button.setTextSize(16f);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(palette.buttonText);
         button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         button.setBackground(gradient(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[] {COLOR_ACCENT_DARK, COLOR_ACCENT}, dp(19), Color.TRANSPARENT));
+                new int[] {palette.actionFill,
+                        palette.dark ? COLOR_ACCENT : palette.actionFill},
+                dp(19), Color.TRANSPARENT));
         button.setStateListAnimator(null);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             button.setElevation(dp(5));

@@ -40,10 +40,11 @@ public final class DoodlePositionActivity extends Activity {
     private static final int HORIZONTAL_SNAP_PX = 5;
     private static final int VERTICAL_SNAP_PX = 5;
 
-    private static final int BLUE = Color.rgb(20, 126, 245);
-    private static final int BACKGROUND = Color.rgb(244, 246, 249);
-    private static final int TEXT = Color.rgb(36, 42, 50);
-    private static final int MUTED = Color.rgb(104, 114, 128);
+    private AppAppearance.Palette palette;
+    private int BLUE;
+    private int BACKGROUND;
+    private int TEXT;
+    private int MUTED;
 
     private int targetWidth;
     private int targetHeight;
@@ -66,7 +67,13 @@ public final class DoodlePositionActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppAppearance.prepare(this);
         super.onCreate(savedInstanceState);
+        palette = AppAppearance.palette(this);
+        BLUE = palette.accent;
+        BACKGROUND = palette.background;
+        TEXT = palette.text;
+        MUTED = palette.muted;
         configureWindow();
         resolveTargetDisplay();
         activeProfile = FoldDisplayTarget.isFoldDevice(this)
@@ -126,9 +133,9 @@ public final class DoodlePositionActivity extends Activity {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         }
+        AppAppearance.configureWindow(this);
     }
     @SuppressWarnings("deprecation")
     private void resolveTargetDisplay() {
@@ -189,7 +196,7 @@ public final class DoodlePositionActivity extends Activity {
         bar.setOrientation(LinearLayout.VERTICAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(20), dp(8), dp(20), dp(8));
-        bar.setBackgroundColor(Color.WHITE);
+        bar.setBackgroundColor(palette.surface);
 
         TextView title = text("Doodle layout", TEXT, 20f, true);
         bar.addView(title);
@@ -203,7 +210,7 @@ public final class DoodlePositionActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(14), dp(10), dp(14), dp(14));
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(palette.surface);
 
         transformLabel = text("", TEXT, 14f, true);
         transformLabel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
@@ -562,15 +569,15 @@ public final class DoodlePositionActivity extends Activity {
         button.setAllCaps(false);
         button.setTextSize(14f);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setTextColor(primary ? Color.WHITE : TEXT);
+        button.setTextColor(primary ? palette.buttonText : TEXT);
         button.setMinWidth(0);
         button.setMinHeight(0);
         button.setPadding(dp(8), 0, dp(8), 0);
         GradientDrawable background = new GradientDrawable();
-        background.setColor(primary ? BLUE : Color.rgb(241, 245, 249));
+        background.setColor(primary ? palette.actionFill : palette.surfaceRaised);
         background.setCornerRadius(dp(10));
         if (!primary) {
-            background.setStroke(dp(1), Color.rgb(204, 214, 225));
+            background.setStroke(dp(1), palette.divider);
         }
         button.setBackground(background);
         button.setOnClickListener(listener);
